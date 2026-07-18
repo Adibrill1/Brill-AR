@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>MindAR Marker Compiler</title>
+</head>
+<body>
+<h1>Marker → .mind compiler</h1>
+<p>Compiles <code>assets/marker.png</code> into a MindAR image-target file.
+Used headlessly by <code>tools/compile_marker.js</code>; artists' portal will reuse the same
+Compiler API for upload-time quality checks.</p>
+<input type="file" id="file" accept="image/*">
+<pre id="log"></pre>
+<script type="module">
+import { Compiler } from './vendor/mindar-image.prod.js';
+
+const log = (m) => { document.getElementById('log').textContent += m + '\n'; console.log(m); };
+window.__status = 'loading';
+
+async function compileImage(img) {
+  const compiler = new Compiler();
+  const t0 = performance.now();
+  const dataList = await compiler.compileImageTargets([img], (p) => {
+    window.__progress = p;
+  });
+  const secs = ((performance.now() - t0) / 1000).toFixed(1);
+  // feature counts are the raw material for the artist-facing quality score
+  const stats = dataList.map((d) => ({
+    trackingPoints: d.trackingImageList?.length ?? null,
+    matchingKeyframes: d.matchingData?.length ?? null,
+  }));
+  const buf = compiler.exportData();
+  log(`compiled in ${secs}s, ${buf.byteLength} bytes, stats: ${JSON.stringify(stats)}`);
+  const bytes = new Uint8Array(buf);
+  let bin = '';
+  const chunk = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunk) {
+    bin += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
+  }
+  window.__mindB64 = btoa(bin);
+  window.__status = 'done';
+  return buf;
+}
+
+async function autoCompile() {
+  try {
+    const img = new Image();
+    img.src = './assets/marker.png';
+    await img.decode();
+    log(`marker loaded ${img.width}x${img.height}`);
+    window.__status = 'compiling';
+    await compileImage(img);
+  } catch (e) {
+    window.__status = 'error: ' + (e.stack || e);
+    log(window.__status);
+  }
+}
+
+document.getElementById('file').addEventListener('change', async (ev) => {
+  const img = new Image();
+  img.src = URL.createObjectURL(ev.target.files[0]);
+  await img.decode();
+  const buf = await compileImage(img);
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([buf]));
+  a.download = 'targets.mind';
+  a.click();
+});
+
+autoCompile();
+</script>
+</body>
+</html>

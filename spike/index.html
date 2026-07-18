@@ -1,0 +1,277 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Peace & Technology — AR Card Spike</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; font-family: system-ui, sans-serif; background: #111; color: #eee; }
+  #container { position: fixed; inset: 0; overflow: hidden; }
+  .overlay { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center;
+             justify-content: center; gap: 16px; background: #1f4e5f; z-index: 20; text-align: center; padding: 24px; }
+  .overlay h1 { font-size: 1.6rem; }
+  .overlay p { color: #cfe2ea; max-width: 420px; line-height: 1.5; }
+  button { font-size: 1.1rem; padding: 14px 28px; border: 0; border-radius: 30px;
+           background: #d4ac0d; color: #1f2733; font-weight: 700; cursor: pointer; }
+  #hud { position: fixed; bottom: 0; left: 0; right: 0; z-index: 10; display: none;
+         flex-direction: column; align-items: center; gap: 8px; padding: 18px;
+         background: linear-gradient(transparent, rgba(0,0,0,.55)); }
+  #status { font-size: .95rem; background: rgba(0,0,0,.5); padding: 6px 14px; border-radius: 16px; }
+  #recBtn { background: #c0392b; color: #fff; border-radius: 50%; width: 72px; height: 72px;
+            font-size: .8rem; display: none; }
+  #recBtn.recording { animation: pulse 1s infinite; }
+  @keyframes pulse { 50% { transform: scale(1.12); } }
+  #result { position: fixed; inset: 0; z-index: 30; background: rgba(10,14,18,.96); display: none;
+            flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 20px; }
+  #result video { max-width: 90vw; max-height: 60vh; border-radius: 12px; border: 2px solid #d4ac0d; }
+  .row { display: flex; gap: 12px; }
+  a.btn { text-decoration: none; font-size: 1rem; padding: 12px 22px; border-radius: 26px;
+          background: #d4ac0d; color: #1f2733; font-weight: 700; }
+</style>
+</head>
+<body>
+<div class="overlay" id="startOverlay">
+  <h1>Peace &amp; Technology</h1>
+  <p>שלום וטכנולוגיה — ספייק טכני</p>
+  <p>Point your camera at an AR card. When the experience appears, tap the red button to record a
+     10-second keepsake video (saved to your device only).</p>
+  <button id="startBtn">Start / התחלה</button>
+</div>
+
+<div id="container"></div>
+
+<div id="hud">
+  <div id="status">Looking for a card…</div>
+  <button id="recBtn">REC</button>
+</div>
+
+<div id="result">
+  <h2>Your keepsake / המזכרת שלך</h2>
+  <video id="playback" controls playsinline></video>
+  <div class="row">
+    <a class="btn" id="downloadBtn" download>Save / שמירה</a>
+    <a class="btn" id="shareBtn" style="display:none">Share / שיתוף</a>
+    <a class="btn" id="againBtn">Again / שוב</a>
+  </div>
+</div>
+
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.js", "three/addons/": "./vendor/three/addons/" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { MindARThree } from './vendor/mindar-image-three.prod.js';
+
+// test hooks — the e2e harness polls these
+window.__state = { started: false, targetFound: false, recording: false, blobSize: 0, mime: '', error: '' };
+
+const container = document.getElementById('container');
+const statusEl = document.getElementById('status');
+const recBtn = document.getElementById('recBtn');
+const MAX_RECORD_MS = 10000;
+
+let mindarThree, audioCtx, audioBuffer, audioSource, recorderDest;
+let compositeCanvas, compositeCtx, mediaRecorder, recordedBlob;
+let recording = false;
+
+function buildContent(anchor) {
+  const group = new THREE.Group();
+
+  const knot = new THREE.Mesh(
+    new THREE.TorusKnotGeometry(0.22, 0.07, 100, 16),
+    new THREE.MeshStandardMaterial({ color: 0xd4ac0d, metalness: 0.6, roughness: 0.3 }),
+  );
+  knot.position.set(0, 0, 0.35);
+  group.add(knot);
+
+  const orbiters = new THREE.Group();
+  const colors = [0xc0392b, 0x27ae60, 0x8e44ad, 0xe67e22, 0x2e86c1];
+  colors.forEach((c, i) => {
+    const s = new THREE.Mesh(new THREE.SphereGeometry(0.045, 16, 16),
+      new THREE.MeshStandardMaterial({ color: c }));
+    const a = (i / colors.length) * Math.PI * 2;
+    s.position.set(Math.cos(a) * 0.5, Math.sin(a) * 0.5, 0.3);
+    orbiters.add(s);
+  });
+  group.add(orbiters);
+
+  const label = document.createElement('canvas');
+  label.width = 512; label.height = 128;
+  const lc = label.getContext('2d');
+  lc.fillStyle = 'rgba(31,78,95,0.85)'; lc.fillRect(0, 0, 512, 128);
+  lc.fillStyle = '#f5f0e8'; lc.font = 'bold 52px sans-serif'; lc.textAlign = 'center';
+  lc.fillText('PEACE & TECH', 256, 82);
+  const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(label) }));
+  sprite.scale.set(1.0, 0.25, 1);
+  sprite.position.set(0, 0.75, 0.2);
+  group.add(sprite);
+
+  group.add(new THREE.AmbientLight(0xffffff, 0.9));
+  const dir = new THREE.DirectionalLight(0xffffff, 1.2);
+  dir.position.set(0.5, 1, 1);
+  group.add(dir);
+
+  anchor.group.add(group);
+  return { knot, orbiters };
+}
+
+async function setupAudio() {
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  recorderDest = audioCtx.createMediaStreamDestination();
+  const res = await fetch('./assets/soundtrack.wav');
+  audioBuffer = await audioCtx.decodeAudioData(await res.arrayBuffer());
+}
+
+function playSoundtrack() {
+  if (!audioBuffer || audioSource) return;
+  audioSource = audioCtx.createBufferSource();
+  audioSource.buffer = audioBuffer;
+  audioSource.loop = true;
+  const gain = audioCtx.createGain();
+  gain.gain.value = 0.9;
+  audioSource.connect(gain);
+  gain.connect(audioCtx.destination);   // speakers
+  gain.connect(recorderDest);           // recording mix
+  audioSource.start();
+}
+
+function stopSoundtrack() {
+  if (audioSource) { try { audioSource.stop(); } catch {} audioSource = null; }
+}
+
+// draw camera frame with cover mapping, then the AR canvas on top
+function compositeFrame(video, glCanvas) {
+  const cw = compositeCanvas.width, ch = compositeCanvas.height;
+  const vw = video.videoWidth, vh = video.videoHeight;
+  if (vw && vh) {
+    const s = Math.max(cw / vw, ch / vh);
+    compositeCtx.drawImage(video, (cw - vw * s) / 2, (ch - vh * s) / 2, vw * s, vh * s);
+  }
+  compositeCtx.drawImage(glCanvas, 0, 0, cw, ch);
+}
+
+function pickMime() {
+  const candidates = ['video/mp4', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
+  return candidates.find((m) => MediaRecorder.isTypeSupported(m)) || '';
+}
+
+function startRecording() {
+  if (recording) return;
+  recording = true;
+  window.__state.recording = true;
+  recBtn.classList.add('recording');
+
+  const rect = container.getBoundingClientRect();
+  compositeCanvas = document.createElement('canvas');
+  compositeCanvas.width = Math.round(rect.width);
+  compositeCanvas.height = Math.round(rect.height);
+  compositeCtx = compositeCanvas.getContext('2d');
+
+  const stream = compositeCanvas.captureStream(30);
+  recorderDest.stream.getAudioTracks().forEach((t) => stream.addTrack(t));
+
+  const mime = pickMime();
+  window.__state.mime = mime;
+  mediaRecorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+  const chunks = [];
+  mediaRecorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+  mediaRecorder.onstop = () => {
+    recordedBlob = new Blob(chunks, { type: mime || 'video/webm' });
+    window.__state.blobSize = recordedBlob.size;
+    showResult();
+  };
+  mediaRecorder.start(250);
+
+  let remaining = MAX_RECORD_MS / 1000;
+  recBtn.textContent = remaining;
+  const tick = setInterval(() => {
+    remaining -= 1;
+    recBtn.textContent = remaining > 0 ? remaining : 'REC';
+    if (remaining <= 0) clearInterval(tick);
+  }, 1000);
+  setTimeout(stopRecording, MAX_RECORD_MS);
+}
+
+function stopRecording() {
+  if (!recording) return;
+  recording = false;
+  window.__state.recording = false;
+  recBtn.classList.remove('recording');
+  recBtn.textContent = 'REC';
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+}
+
+function showResult() {
+  stopSoundtrack();
+  const url = URL.createObjectURL(recordedBlob);
+  const ext = (window.__state.mime || 'video/webm').includes('mp4') ? 'mp4' : 'webm';
+  document.getElementById('playback').src = url;
+  const dl = document.getElementById('downloadBtn');
+  dl.href = url;
+  dl.download = `peace-tech-keepsake.${ext}`;
+  const share = document.getElementById('shareBtn');
+  const file = new File([recordedBlob], dl.download, { type: recordedBlob.type });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    share.style.display = '';
+    share.onclick = (e) => { e.preventDefault(); navigator.share({ files: [file] }).catch(() => {}); };
+  }
+  document.getElementById('result').style.display = 'flex';
+}
+
+document.getElementById('againBtn').addEventListener('click', () => {
+  document.getElementById('result').style.display = 'none';
+  if (window.__state.targetFound) playSoundtrack();
+});
+
+async function start() {
+  try {
+    document.getElementById('startOverlay').style.display = 'none';
+    document.getElementById('hud').style.display = 'flex';
+    await setupAudio();
+
+    mindarThree = new MindARThree({
+      container,
+      imageTargetSrc: './assets/targets.mind',
+      uiScanning: 'no', uiLoading: 'no', uiError: 'no',
+    });
+    const { renderer, scene, camera } = mindarThree;
+    const anchor = mindarThree.addAnchor(0);
+    const { knot, orbiters } = buildContent(anchor);
+
+    anchor.onTargetFound = () => {
+      window.__state.targetFound = true;
+      statusEl.textContent = 'Card found! נמצא קלף';
+      recBtn.style.display = 'block';
+      if (audioCtx.state === 'suspended') audioCtx.resume();
+      playSoundtrack();
+    };
+    anchor.onTargetLost = () => {
+      statusEl.textContent = 'Looking for a card…';
+      stopSoundtrack();
+    };
+
+    await mindarThree.start();
+    window.__state.started = true;
+
+    const clock = new THREE.Clock();
+    renderer.setAnimationLoop(() => {
+      const t = clock.getElapsedTime();
+      knot.rotation.y = t * 0.8;
+      knot.rotation.x = t * 0.3;
+      orbiters.rotation.z = t * 0.6;
+      renderer.render(scene, camera);
+      if (recording) compositeFrame(mindarThree.video, renderer.domElement);
+    });
+  } catch (e) {
+    window.__state.error = String(e.stack || e);
+    statusEl.textContent = 'Error: ' + e;
+    document.getElementById('hud').style.display = 'flex';
+  }
+}
+
+document.getElementById('startBtn').addEventListener('click', start);
+recBtn.addEventListener('click', () => (recording ? stopRecording() : startRecording()));
+</script>
+</body>
+</html>
