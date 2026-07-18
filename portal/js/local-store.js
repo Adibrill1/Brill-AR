@@ -35,7 +35,16 @@ async function tx(store, mode, fn) {
   });
 }
 
+const BLOB_KEY = { image: 'imageBlob', mind: 'mindBlob', content: 'contentBlob', audio: 'audioBlob' };
+
 export const store = {
+  mode: 'local',
+
+  fileUrl(item, kind) {
+    const blob = item[BLOB_KEY[kind]];
+    return blob ? URL.createObjectURL(blob) : null;
+  },
+
   async saveProfile(profile) {
     return tx('profile', 'readwrite', (s) => s.put({ key: 'me', ...profile }));
   },

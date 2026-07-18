@@ -11,7 +11,7 @@
   <h1>פורטל יוצרים — שלום וטכנולוגיה</h1>
   <div class="sub">Peace &amp; Technology — Artist Portal</div>
 </header>
-<div class="demo-banner">מצב הדגמה: הנתונים נשמרים בדפדפן הזה בלבד (חיבור לשרת — בשלב הבא)</div>
+<div class="demo-banner" id="modeBanner">מצב הדגמה: הנתונים נשמרים בדפדפן הזה בלבד (חיבור לשרת — בשלב הבא)</div>
 <main>
 
 <section class="card" id="profileCard">
@@ -78,7 +78,7 @@
 { "imports": { "three": "../spike/vendor/three.module.js", "three/addons/": "../spike/vendor/three/addons/" } }
 </script>
 <script type="module">
-import { store } from './js/db.js';
+import { store } from './js/store.js';
 import { analyzeTriggerImage } from './js/quality.js';
 
 window.__portal = { qualityDone: false, submitted: false, lastGrade: null, error: '' };
@@ -292,7 +292,7 @@ async function renderItems() {
     const div = document.createElement('div');
     div.className = 'item';
     const img = document.createElement('img');
-    img.src = URL.createObjectURL(it.imageBlob);
+    img.src = store.fileUrl(it, 'image');
     const meta = document.createElement('div');
     meta.className = 'meta';
     meta.innerHTML = `

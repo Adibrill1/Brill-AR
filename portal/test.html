@@ -36,7 +36,7 @@
 <script type="module">
 import * as THREE from 'three';
 import { MindARThree } from '../spike/vendor/mindar-image-three.prod.js';
-import { store } from './js/db.js';
+import { store } from './js/store.js';
 
 window.__test = { loaded: false, started: false, targetFound: false, error: '' };
 const $ = (id) => document.getElementById(id);
@@ -49,7 +49,7 @@ if (!item) {
   window.__test.error = 'item not found';
 } else {
   $('itemTitle').textContent = `"${item.title}" — ${item.contentKind === 'video' ? 'וידאו' : 'מודל תלת-מימד'}`;
-  $('triggerThumb').src = URL.createObjectURL(item.imageBlob);
+  $('triggerThumb').src = store.fileUrl(item, 'image');
   window.__test.loaded = true;
 }
 
@@ -64,8 +64,9 @@ async function buildContent(anchor) {
 
   if (item.contentKind === 'video') {
     const video = document.createElement('video');
-    video.src = URL.createObjectURL(item.contentBlob);
-    video.loop = true; video.playsInline = true; video.muted = !!item.audioBlob;
+    video.src = store.fileUrl(item, 'content');
+    video.crossOrigin = 'anonymous';
+    video.loop = true; video.playsInline = true; video.muted = !!store.fileUrl(item, 'audio');
     await new Promise((res, rej) => { video.onloadedmetadata = res; video.onerror = rej; });
     const tex = new THREE.VideoTexture(video);
     const aspect = video.videoWidth / video.videoHeight;
@@ -80,7 +81,7 @@ async function buildContent(anchor) {
     onLost = () => video.pause();
   } else {
     const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
-    const gltf = await new GLTFLoader().parseAsync(await item.contentBlob.arrayBuffer(), '');
+    const gltf = await new GLTFLoader().loadAsync(store.fileUrl(item, 'content'));
     const model = gltf.scene;
     // normalize model to a sensible size relative to the trigger image
     const box = new THREE.Box3().setFromObject(model);
@@ -98,8 +99,9 @@ async function buildContent(anchor) {
   }
 
   let audio;
-  if (item.audioBlob) {
-    audio = new Audio(URL.createObjectURL(item.audioBlob));
+  const audioUrl = store.fileUrl(item, 'audio');
+  if (audioUrl) {
+    audio = new Audio(audioUrl);
     audio.loop = true;
     const prevFound = onFound, prevLost = onLost;
     onFound = () => { prevFound(); audio.play().catch(() => {}); };
@@ -116,7 +118,7 @@ $('startBtn').addEventListener('click', async () => {
     $('status').style.display = 'block';
     const mindarThree = new MindARThree({
       container: $('container'),
-      imageTargetSrc: URL.createObjectURL(item.mindBlob),
+      imageTargetSrc: store.fileUrl(item, 'mind'),
       uiScanning: 'no', uiLoading: 'no', uiError: 'no',
     });
     const { renderer, scene, camera } = mindarThree;

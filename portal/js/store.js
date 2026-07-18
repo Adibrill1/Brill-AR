@@ -1,0 +1,21 @@
+// Picks the storage backend: Supabase when a key is configured, local demo otherwise.
+// Pages import { store } from here and never care which backend is active.
+import { config } from './config.js';
+
+let impl;
+if (config.supabaseUrl && config.supabaseAnonKey) {
+  ({ store: impl } = await import('./supabase-store.js'));
+} else {
+  ({ store: impl } = await import('./local-store.js'));
+}
+
+export const store = impl;
+export const backendMode = impl.mode;
+
+// update the banner on pages that have one
+const banner = document.getElementById('modeBanner');
+if (banner && backendMode === 'supabase') {
+  banner.textContent = 'מחובר לשרת — הנתונים והקבצים משותפים לכל היוצרים ולאדמין';
+  banner.style.background = '#27ae60';
+  banner.style.color = '#fff';
+}
