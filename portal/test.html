@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>בדיקת AR — תמונת טריגר</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; font-family: system-ui, sans-serif; background: #111; color: #eee; }
+  #container { position: fixed; inset: 0; overflow: hidden; }
+  .overlay { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center;
+             justify-content: center; gap: 14px; background: #1f4e5f; z-index: 20; text-align: center; padding: 24px; }
+  .overlay p { color: #cfe2ea; max-width: 420px; line-height: 1.5; }
+  .overlay img { max-height: 30vh; border-radius: 10px; border: 2px solid #d4ac0d; }
+  button, a.btn { font-size: 1rem; padding: 12px 24px; border: 0; border-radius: 26px; background: #d4ac0d;
+           color: #1f2733; font-weight: 700; cursor: pointer; text-decoration: none; }
+  #status { position: fixed; bottom: 18px; left: 50%; transform: translateX(-50%); z-index: 10;
+            background: rgba(0,0,0,.55); padding: 7px 16px; border-radius: 16px; display: none; }
+</style>
+</head>
+<body>
+<div class="overlay" id="startOverlay">
+  <h1>בדיקת AR</h1>
+  <p id="itemTitle"></p>
+  <img id="triggerThumb" alt="">
+  <p>הציגו את תמונת הטריגר על מסך אחר (או בהדפסה) וכוונו אליה את המצלמה.</p>
+  <button id="startBtn">התחלת בדיקה</button>
+  <a class="btn" id="backBtn" href="./index.html" style="background:transparent; color:#d4ac0d; border:2px solid #d4ac0d;">חזרה</a>
+</div>
+<div id="container"></div>
+<div id="status">מחפש את תמונת הטריגר…</div>
+
+<script type="importmap">
+{ "imports": { "three": "../spike/vendor/three.module.js", "three/addons/": "../spike/vendor/three/addons/" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { MindARThree } from '../spike/vendor/mindar-image-three.prod.js';
+import { store } from './js/db.js';
+
+window.__test = { loaded: false, started: false, targetFound: false, error: '' };
+const $ = (id) => document.getElementById(id);
+
+const id = new URLSearchParams(location.search).get('id');
+const item = id ? await store.getItem(id) : null;
+if (!item) {
+  $('itemTitle').textContent = 'תמונת הטריגר לא נמצאה';
+  $('startBtn').style.display = 'none';
+  window.__test.error = 'item not found';
+} else {
+  $('itemTitle').textContent = `"${item.title}" — ${item.contentKind === 'video' ? 'וידאו' : 'מודל תלת-מימד'}`;
+  $('triggerThumb').src = URL.createObjectURL(item.imageBlob);
+  window.__test.loaded = true;
+}
+
+async function buildContent(anchor) {
+  const group = new THREE.Group();
+  group.add(new THREE.AmbientLight(0xffffff, 0.9));
+  const dir = new THREE.DirectionalLight(0xffffff, 1.1);
+  dir.position.set(0.5, 1, 1);
+  group.add(dir);
+
+  let onFound = () => {}, onLost = () => {};
+
+  if (item.contentKind === 'video') {
+    const video = document.createElement('video');
+    video.src = URL.createObjectURL(item.contentBlob);
+    video.loop = true; video.playsInline = true; video.muted = !!item.audioBlob;
+    await new Promise((res, rej) => { video.onloadedmetadata = res; video.onerror = rej; });
+    const tex = new THREE.VideoTexture(video);
+    const aspect = video.videoWidth / video.videoHeight;
+    // plane spans the trigger image width (anchor plane width is 1 in MindAR units)
+    const plane = new THREE.Mesh(
+      new THREE.PlaneGeometry(1, 1 / aspect),
+      new THREE.MeshBasicMaterial({ map: tex }),
+    );
+    plane.position.set(0, 0, 0.05);
+    group.add(plane);
+    onFound = () => video.play().catch(() => {});
+    onLost = () => video.pause();
+  } else {
+    const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
+    const gltf = await new GLTFLoader().parseAsync(await item.contentBlob.arrayBuffer(), '');
+    const model = gltf.scene;
+    // normalize model to a sensible size relative to the trigger image
+    const box = new THREE.Box3().setFromObject(model);
+    const size = box.getSize(new THREE.Vector3()).length() || 1;
+    model.scale.setScalar(0.8 / size);
+    box.setFromObject(model);
+    const center = box.getCenter(new THREE.Vector3());
+    model.position.sub(center).add(new THREE.Vector3(0, 0, 0.25));
+    group.add(model);
+    if (gltf.animations?.length) {
+      const mixer = new THREE.AnimationMixer(model);
+      gltf.animations.forEach((clip) => mixer.clipAction(clip).play());
+      group.userData.mixer = mixer;
+    }
+  }
+
+  let audio;
+  if (item.audioBlob) {
+    audio = new Audio(URL.createObjectURL(item.audioBlob));
+    audio.loop = true;
+    const prevFound = onFound, prevLost = onLost;
+    onFound = () => { prevFound(); audio.play().catch(() => {}); };
+    onLost = () => { prevLost(); audio.pause(); };
+  }
+
+  anchor.group.add(group);
+  return { group, onFound, onLost };
+}
+
+$('startBtn').addEventListener('click', async () => {
+  try {
+    $('startOverlay').style.display = 'none';
+    $('status').style.display = 'block';
+    const mindarThree = new MindARThree({
+      container: $('container'),
+      imageTargetSrc: URL.createObjectURL(item.mindBlob),
+      uiScanning: 'no', uiLoading: 'no', uiError: 'no',
+    });
+    const { renderer, scene, camera } = mindarThree;
+    const anchor = mindarThree.addAnchor(0);
+    const { group, onFound, onLost } = await buildContent(anchor);
+
+    anchor.onTargetFound = () => {
+      window.__test.targetFound = true;
+      $('status').textContent = 'תמונת הטריגר זוהתה ✓';
+      onFound();
+    };
+    anchor.onTargetLost = () => { $('status').textContent = 'מחפש את תמונת הטריגר…'; onLost(); };
+
+    await mindarThree.start();
+    window.__test.started = true;
+    const clock = new THREE.Clock();
+    renderer.setAnimationLoop(() => {
+      group.userData.mixer?.update(clock.getDelta());
+      renderer.render(scene, camera);
+    });
+  } catch (e) {
+    window.__test.error = String(e.stack || e);
+    $('status').style.display = 'block';
+    $('status').textContent = 'שגיאה: ' + e;
+  }
+});
+</script>
+</body>
+</html>

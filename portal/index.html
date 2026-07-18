@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>שלום וטכנולוגיה — פורטל יוצרים</title>
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+<header>
+  <h1>פורטל יוצרים — שלום וטכנולוגיה</h1>
+  <div class="sub">Peace &amp; Technology — Artist Portal</div>
+</header>
+<div class="demo-banner">מצב הדגמה: הנתונים נשמרים בדפדפן הזה בלבד (חיבור לשרת — בשלב הבא)</div>
+<main>
+
+<section class="card" id="profileCard">
+  <h2>הפרופיל שלי / My profile</h2>
+  <label>שם / Name <input type="text" id="pName"></label>
+  <label>מדינה / Country <input type="text" id="pCountry"></label>
+  <label>קצת עליי / Bio <textarea id="pBio"></textarea></label>
+  <button id="saveProfileBtn">שמירת פרופיל</button>
+  <span class="progress-note" id="profileNote"></span>
+</section>
+
+<section class="card">
+  <h2>העלאת תמונת טריגר חדשה / New trigger image</h2>
+  <p class="hint">תמונת טריגר היא כל תמונה מודפסת שהמערכת מזהה — קלף, מדבקה, פוסטר או הדפס.
+     המבקרים יכוונו אליה את המצלמה כדי לפתוח את חוויית ה-AR שלך.</p>
+
+  <label>1. תמונת הטריגר (JPG/PNG, צלע ארוכה ≥ 1024px, עד 10MB)
+    <input type="file" id="imgInput" accept="image/jpeg,image/png">
+  </label>
+  <img id="imgPreview" class="preview-media" style="display:none">
+  <div class="field-error" id="imgError"></div>
+  <button id="qualityBtn" class="secondary" disabled>בדיקת איכות זיהוי</button>
+  <div class="progress-note" id="qualityProgress"></div>
+  <div id="qualityResult"></div>
+
+  <label>2. תוכן ה-AR שיקפוץ מהתמונה
+    <select id="contentKind">
+      <option value="video">וידאו / אנימציה (MP4, MOV, WebM, M4V…)</option>
+      <option value="model">מודל תלת-מימד (GLB / GLTF, עד 15MB)</option>
+    </select>
+  </label>
+  <input type="file" id="contentInput" accept="video/*,.mp4,.mov,.webm,.m4v,.ogv">
+  <p class="hint" id="contentHint">הווידאו ינוגן על גבי תמונת הטריגר. כל פורמט שהדפדפן מנגן יתקבל —
+     המערכת בודקת את הקובץ מיד עם ההעלאה.</p>
+  <video id="videoPreview" class="preview-media" style="display:none" controls muted playsinline></video>
+  <div class="field-error" id="contentError"></div>
+  <div class="progress-note" id="contentInfo"></div>
+
+  <label>3. פס קול (אופציונלי — MP3/WAV, עד 30 שניות)
+    <input type="file" id="audioInput" accept="audio/*,.mp3,.wav">
+  </label>
+  <div class="field-error" id="audioError"></div>
+  <div class="progress-note" id="audioInfo"></div>
+
+  <label>4. שם היצירה <input type="text" id="titleInput"></label>
+  <label>תיאור קצר <textarea id="descInput"></textarea></label>
+
+  <label style="font-weight:400; display:flex; gap:8px; align-items:flex-start;">
+    <input type="checkbox" id="rightsCheck" style="margin-top:3px">
+    <span>אני מצהיר/ה שהיצירה, הווידאו/המודל ופס הקול הם ביצירתי או ברישיון המתיר לי להשתמש בהם.</span>
+  </label>
+
+  <button id="submitBtn" disabled>שליחה לאישור</button>
+  <div class="field-error" id="submitError"></div>
+</section>
+
+<section class="card">
+  <h2>היצירות שלי / My trigger images</h2>
+  <div id="itemsList"><div class="empty">עוד אין תמונות טריגר — ההעלאה הראשונה שלך תופיע כאן</div></div>
+</section>
+
+</main>
+<script type="importmap">
+{ "imports": { "three": "../spike/vendor/three.module.js", "three/addons/": "../spike/vendor/three/addons/" } }
+</script>
+<script type="module">
+import { store } from './js/db.js';
+import { analyzeTriggerImage } from './js/quality.js';
+
+window.__portal = { qualityDone: false, submitted: false, lastGrade: null, error: '' };
+
+const $ = (id) => document.getElementById(id);
+const LIMITS = { imageMB: 10, imageMinPx: 1024, modelMB: 15, videoMB: 50, audioSec: 30, audioMB: 5 };
+
+// ---------- profile ----------
+(async () => {
+  const p = await store.getProfile();
+  if (p) { $('pName').value = p.name || ''; $('pCountry').value = p.country || ''; $('pBio').value = p.bio || ''; }
+})();
+$('saveProfileBtn').addEventListener('click', async () => {
+  await store.saveProfile({ name: $('pName').value.trim(), country: $('pCountry').value.trim(), bio: $('pBio').value.trim() });
+  $('profileNote').textContent = 'נשמר ✓';
+  setTimeout(() => { $('profileNote').textContent = ''; }, 2500);
+});
+
+// ---------- upload state ----------
+const draft = { imageBlob: null, imageEl: null, quality: null, mindBuffer: null,
+                contentBlob: null, contentName: '', contentKind: 'video', audioBlob: null };
+
+function refreshSubmit() {
+  $('submitBtn').disabled = !(draft.imageBlob && draft.quality && draft.quality.grade !== 'poor'
+    && draft.contentBlob && $('titleInput').value.trim() && $('rightsCheck').checked);
+}
+['titleInput'].forEach((id) => $(id).addEventListener('input', refreshSubmit));
+$('rightsCheck').addEventListener('change', refreshSubmit);
+
+// ---------- 1. trigger image ----------
+$('imgInput').addEventListener('change', async (ev) => {
+  const f = ev.target.files[0];
+  $('imgError').textContent = ''; $('qualityResult').innerHTML = '';
+  draft.imageBlob = null; draft.quality = null; draft.mindBuffer = null;
+  window.__portal.qualityDone = false;
+  $('qualityBtn').disabled = true;
+  if (!f) return;
+  if (f.size > LIMITS.imageMB * 1024 * 1024) {
+    $('imgError').textContent = `הקובץ גדול מדי (מקסימום ${LIMITS.imageMB}MB)`; return;
+  }
+  const img = new Image();
+  img.src = URL.createObjectURL(f);
+  try { await img.decode(); } catch { $('imgError').textContent = 'לא ניתן לקרוא את הקובץ כתמונה'; return; }
+  if (Math.max(img.width, img.height) < LIMITS.imageMinPx) {
+    $('imgError').textContent = `הרזולוציה נמוכה מדי (${img.width}×${img.height}) — נדרשת צלע ארוכה של לפחות ${LIMITS.imageMinPx}px כדי שההדפסה תזוהה היטב`;
+    return;
+  }
+  draft.imageBlob = f; draft.imageEl = img;
+  $('imgPreview').src = img.src; $('imgPreview').style.display = 'block';
+  $('qualityBtn').disabled = false;
+  refreshSubmit();
+});
+
+$('qualityBtn').addEventListener('click', async () => {
+  $('qualityBtn').disabled = true;
+  $('qualityProgress').textContent = 'מנתח את התמונה…';
+  try {
+    const res = await analyzeTriggerImage(draft.imageEl, (p) => {
+      $('qualityProgress').textContent = `מנתח את התמונה… ${Math.round(p)}%`;
+    });
+    draft.quality = { score: res.score, grade: res.grade, stats: res.stats };
+    draft.mindBuffer = res.mindBuffer;
+    const labels = { good: 'מצוין — התמונה תזוהה היטב', medium: 'סביר — יעבוד, אבל אפשר לשפר', poor: 'חלש — תמונה זו לא תזוהה באופן אמין' };
+    const color = { good: 'var(--ok)', medium: 'var(--warn)', poor: 'var(--bad)' }[res.grade];
+    $('qualityResult').innerHTML = `
+      <div class="quality ${res.grade}">
+        <strong>ציון זיהוי: ${res.score}/100</strong> — ${labels[res.grade]}
+        <div class="bar"><div style="width:${res.score}%; background:${color}"></div></div>
+        ${res.grade !== 'good' ? '<ul>' + ['הוסיפו ניגודיות: אזורים כהים ובהירים זה לצד זה.',
+          'פזרו פרטים קטנים ולא-חוזרים על פני כל התמונה.',
+          'הימנעו משטחי צבע אחידים גדולים.'].map((t) => `<li>${t}</li>`).join('') + '</ul>' : ''}
+        ${res.grade === 'poor' ? '<p style="margin-top:8px"><strong>לא ניתן לשלוח תמונה זו</strong> — העלו גרסה משופרת ובדקו שוב.</p>' : ''}
+      </div>`;
+    window.__portal.qualityDone = true;
+    window.__portal.lastGrade = res.grade;
+  } catch (e) {
+    $('qualityResult').innerHTML = `<div class="quality poor">בדיקת האיכות נכשלה: ${e}</div>`;
+    window.__portal.error = String(e);
+  }
+  $('qualityProgress').textContent = '';
+  $('qualityBtn').disabled = false;
+  refreshSubmit();
+});
+
+// ---------- 2. AR content ----------
+$('contentKind').addEventListener('change', () => {
+  draft.contentKind = $('contentKind').value;
+  draft.contentBlob = null;
+  $('contentInput').value = ''; $('contentError').textContent = ''; $('contentInfo').textContent = '';
+  $('videoPreview').style.display = 'none';
+  if (draft.contentKind === 'video') {
+    $('contentInput').accept = 'video/*,.mp4,.mov,.webm,.m4v,.ogv';
+    $('contentHint').textContent = 'הווידאו ינוגן על גבי תמונת הטריגר. כל פורמט שהדפדפן מנגן יתקבל — המערכת בודקת את הקובץ מיד עם ההעלאה.';
+  } else {
+    $('contentInput').accept = '.glb,.gltf,model/gltf-binary';
+    $('contentHint').textContent = 'מודל תלת-מימד בפורמט GLB/GLTF, עד 15MB.';
+  }
+  refreshSubmit();
+});
+
+$('contentInput').addEventListener('change', async (ev) => {
+  const f = ev.target.files[0];
+  $('contentError').textContent = ''; $('contentInfo').textContent = '';
+  $('videoPreview').style.display = 'none';
+  draft.contentBlob = null;
+  if (!f) { refreshSubmit(); return; }
+
+  if (draft.contentKind === 'video') {
+    if (f.size > LIMITS.videoMB * 1024 * 1024) {
+      $('contentError').textContent = `הווידאו גדול מדי (מקסימום ${LIMITS.videoMB}MB)`; refreshSubmit(); return;
+    }
+    // playability check: if this browser can decode it, the AR viewer can too
+    const v = $('videoPreview');
+    v.src = URL.createObjectURL(f);
+    try {
+      await new Promise((res, rej) => {
+        v.onloadedmetadata = res;
+        v.onerror = () => rej(new Error('decode'));
+        setTimeout(() => rej(new Error('timeout')), 15000);
+      });
+    } catch {
+      $('contentError').textContent =
+        `הדפדפן לא מצליח לנגן את הפורמט הזה (${f.name}). נסו לייצא כ-MP4 (H.264) — הפורמט הנתמך ביותר.`;
+      refreshSubmit(); return;
+    }
+    v.style.display = 'block';
+    $('contentInfo').textContent =
+      `נטען בהצלחה: ${v.videoWidth}×${v.videoHeight}, ${v.duration.toFixed(1)} שניות`;
+    draft.contentBlob = f; draft.contentName = f.name;
+  } else {
+    if (f.size > LIMITS.modelMB * 1024 * 1024) {
+      $('contentError').textContent = `המודל גדול מדי (מקסימום ${LIMITS.modelMB}MB)`; refreshSubmit(); return;
+    }
+    if (!/\.(glb|gltf)$/i.test(f.name)) {
+      $('contentError').textContent = 'נדרש קובץ GLB או GLTF'; refreshSubmit(); return;
+    }
+    $('contentInfo').textContent = `נטען: ${f.name} (${(f.size / 1024 / 1024).toFixed(1)}MB)`;
+    draft.contentBlob = f; draft.contentName = f.name;
+  }
+  refreshSubmit();
+});
+
+// ---------- 3. soundtrack ----------
+$('audioInput').addEventListener('change', async (ev) => {
+  const f = ev.target.files[0];
+  $('audioError').textContent = ''; $('audioInfo').textContent = '';
+  draft.audioBlob = null;
+  if (!f) return;
+  if (f.size > LIMITS.audioMB * 1024 * 1024) {
+    $('audioError').textContent = `קובץ השמע גדול מדי (מקסימום ${LIMITS.audioMB}MB)`; return;
+  }
+  try {
+    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const buf = await ctx.decodeAudioData(await f.arrayBuffer());
+    ctx.close();
+    if (buf.duration > LIMITS.audioSec + 0.5) {
+      $('audioError').textContent = `פס הקול ארוך מדי (${buf.duration.toFixed(1)} שניות, מקסימום ${LIMITS.audioSec})`;
+      return;
+    }
+    $('audioInfo').textContent = `נטען בהצלחה: ${buf.duration.toFixed(1)} שניות`;
+    draft.audioBlob = f;
+  } catch {
+    $('audioError').textContent = 'לא ניתן לקרוא את קובץ השמע — נסו MP3 או WAV';
+  }
+});
+
+// ---------- submit ----------
+$('submitBtn').addEventListener('click', async () => {
+  $('submitError').textContent = '';
+  try {
+    await store.saveItem({
+      id: crypto.randomUUID(),
+      title: $('titleInput').value.trim(),
+      description: $('descInput').value.trim(),
+      status: 'pending', reason: '',
+      quality: draft.quality,
+      imageBlob: draft.imageBlob,
+      mindBlob: new Blob([draft.mindBuffer]),
+      contentKind: draft.contentKind,
+      contentBlob: draft.contentBlob,
+      contentName: draft.contentName,
+      audioBlob: draft.audioBlob,
+      createdAt: Date.now(),
+    });
+    window.__portal.submitted = true;
+    ['imgInput', 'contentInput', 'audioInput', 'titleInput', 'descInput'].forEach((id) => { $(id).value = ''; });
+    $('rightsCheck').checked = false;
+    $('imgPreview').style.display = 'none'; $('videoPreview').style.display = 'none';
+    $('qualityResult').innerHTML = ''; $('contentInfo').textContent = ''; $('audioInfo').textContent = '';
+    Object.assign(draft, { imageBlob: null, quality: null, mindBuffer: null, contentBlob: null, audioBlob: null });
+    refreshSubmit();
+    await renderItems();
+    document.querySelector('main').lastElementChild.scrollIntoView({ behavior: 'smooth' });
+  } catch (e) {
+    $('submitError').textContent = 'השליחה נכשלה: ' + e;
+    window.__portal.error = String(e);
+  }
+});
+
+// ---------- my items ----------
+const STATUS_LABEL = { pending: 'ממתין לאישור', approved: 'אושר ✓', rejected: 'נדחה' };
+async function renderItems() {
+  const items = await store.listItems();
+  const el = $('itemsList');
+  if (!items.length) {
+    el.innerHTML = '<div class="empty">עוד אין תמונות טריגר — ההעלאה הראשונה שלך תופיע כאן</div>';
+    return;
+  }
+  el.innerHTML = '';
+  for (const it of items) {
+    const div = document.createElement('div');
+    div.className = 'item';
+    const img = document.createElement('img');
+    img.src = URL.createObjectURL(it.imageBlob);
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    meta.innerHTML = `
+      <h3>${it.title}</h3>
+      <div class="small">${it.contentKind === 'video' ? 'וידאו' : 'מודל תלת-מימד'} · ציון זיהוי ${it.quality?.score ?? '?'}/100</div>
+      <span class="chip ${it.status}">${STATUS_LABEL[it.status]}</span>
+      ${it.status === 'rejected' && it.reason ? `<div class="small">סיבה: ${it.reason}</div>` : ''}
+      <div class="row-actions">
+        <a class="btn secondary" href="./test.html?id=${it.id}">בדיקת AR</a>
+        <button class="danger" data-del="${it.id}">מחיקה</button>
+      </div>`;
+    div.append(img, meta);
+    el.append(div);
+  }
+  el.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', async () => {
+    if (confirm('למחוק את תמונת הטריגר הזו?')) { await store.deleteItem(b.dataset.del); renderItems(); }
+  }));
+}
+renderItems();
+</script>
+</body>
+</html>

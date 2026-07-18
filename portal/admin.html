@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>פאנל אדמין — שלום וטכנולוגיה</title>
+<link rel="stylesheet" href="./style.css">
+</head>
+<body>
+<header>
+  <h1>פאנל אדמין — אישור תמונות טריגר</h1>
+  <div class="sub">Peace &amp; Technology — Moderation</div>
+</header>
+<div class="demo-banner">מצב הדגמה: מציג נתונים מהדפדפן הזה בלבד (חיבור לשרת — בשלב הבא)</div>
+<main>
+<section class="card">
+  <h2>ממתינים לאישור</h2>
+  <div id="pendingList"></div>
+</section>
+<section class="card">
+  <h2>כל תמונות הטריגר</h2>
+  <div id="allList"></div>
+</section>
+</main>
+<script type="module">
+import { store } from './js/db.js';
+
+window.__admin = { rendered: false, error: '' };
+const STATUS_LABEL = { pending: 'ממתין לאישור', approved: 'אושר ✓', rejected: 'נדחה' };
+
+function itemRow(it, withActions) {
+  const div = document.createElement('div');
+  div.className = 'item';
+  const img = document.createElement('img');
+  img.src = URL.createObjectURL(it.imageBlob);
+  const meta = document.createElement('div');
+  meta.className = 'meta';
+  meta.innerHTML = `
+    <h3>${it.title}</h3>
+    <div class="small">${it.description || ''}</div>
+    <div class="small">${it.contentKind === 'video' ? `וידאו (${it.contentName})` : 'מודל תלת-מימד'}
+      · ציון זיהוי ${it.quality?.score ?? '?'}/100
+      · ${new Date(it.createdAt).toLocaleDateString('he-IL')}</div>
+    <span class="chip ${it.status}">${STATUS_LABEL[it.status]}</span>
+    ${it.status === 'rejected' && it.reason ? `<div class="small">סיבה: ${it.reason}</div>` : ''}
+    <div class="row-actions">
+      <a class="btn secondary" href="./test.html?id=${it.id}">בדיקת AR</a>
+      ${withActions ? `<button data-approve="${it.id}">אישור</button>
+                       <button class="danger" data-reject="${it.id}">דחייה</button>` : ''}
+    </div>`;
+  if (it.contentKind === 'video') {
+    const v = document.createElement('video');
+    v.src = URL.createObjectURL(it.contentBlob);
+    v.controls = true; v.muted = true; v.className = 'preview-media';
+    meta.append(v);
+  }
+  div.append(img, meta);
+  return div;
+}
+
+async function render() {
+  try {
+    const items = await store.listItems();
+    const pending = items.filter((i) => i.status === 'pending');
+    const pl = document.getElementById('pendingList');
+    const al = document.getElementById('allList');
+    pl.innerHTML = pending.length ? '' : '<div class="empty">אין תמונות טריגר שממתינות לאישור</div>';
+    al.innerHTML = items.length ? '' : '<div class="empty">אין עדיין תמונות טריגר במערכת</div>';
+    pending.forEach((it) => pl.append(itemRow(it, true)));
+    items.forEach((it) => al.append(itemRow(it, false)));
+
+    pl.querySelectorAll('[data-approve]').forEach((b) => b.addEventListener('click', async () => {
+      await store.setStatus(b.dataset.approve, 'approved');
+      render();
+    }));
+    pl.querySelectorAll('[data-reject]').forEach((b) => b.addEventListener('click', async () => {
+      const reason = prompt('סיבת הדחייה (תישלח ליוצר/ת):');
+      if (reason !== null) { await store.setStatus(b.dataset.reject, 'rejected', reason); render(); }
+    }));
+    window.__admin.rendered = true;
+  } catch (e) {
+    window.__admin.error = String(e);
+  }
+}
+render();
+</script>
+</body>
+</html>
