@@ -27,7 +27,9 @@
   #result video { max-width: 90vw; max-height: 60vh; border-radius: 12px; border: 2px solid #d4ac0d; }
   .row { display: flex; gap: 12px; }
   a.btn { text-decoration: none; font-size: 1rem; padding: 12px 22px; border-radius: 26px;
-          background: #d4ac0d; color: #1f2733; font-weight: 700; }
+          background: #d4ac0d; color: #1f2733; font-weight: 700; cursor: pointer; }
+  a.btn.secondary { background: transparent; color: #d4ac0d; border: 2px solid #d4ac0d; }
+  .row { flex-wrap: wrap; justify-content: center; }
 </style>
 </head>
 <body>
@@ -50,10 +52,12 @@
   <h2>Your keepsake / המזכרת שלך</h2>
   <video id="playback" controls playsinline></video>
   <div class="row">
-    <a class="btn" id="downloadBtn" download>Save / שמירה</a>
-    <a class="btn" id="shareBtn" style="display:none">Share / שיתוף</a>
-    <a class="btn" id="againBtn">Again / שוב</a>
+    <a class="btn" id="saveBtn" style="display:none">Save to gallery / שמירה לגלריה</a>
+    <a class="btn secondary" id="downloadBtn" download>Download / הורדה</a>
+    <a class="btn secondary" id="againBtn">Again / שוב</a>
   </div>
+  <p id="saveHint" style="display:none; color:#cfe2ea; font-size:.85rem; max-width:320px; text-align:center;">
+    בתפריט שייפתח בחרו "שמור וידאו" / In the menu that opens, tap "Save Video"</p>
 </div>
 
 <script type="importmap">
@@ -210,11 +214,14 @@ function showResult() {
   const dl = document.getElementById('downloadBtn');
   dl.href = url;
   dl.download = `peace-tech-keepsake.${ext}`;
-  const share = document.getElementById('shareBtn');
+  // Browsers can't write to the photo gallery directly; the closest flow is the
+  // system share sheet, where "Save Video" lands the file in Photos (iOS/Android).
+  const saveBtn = document.getElementById('saveBtn');
   const file = new File([recordedBlob], dl.download, { type: recordedBlob.type });
   if (navigator.canShare && navigator.canShare({ files: [file] })) {
-    share.style.display = '';
-    share.onclick = (e) => { e.preventDefault(); navigator.share({ files: [file] }).catch(() => {}); };
+    saveBtn.style.display = 'inline-block';
+    document.getElementById('saveHint').style.display = 'block';
+    saveBtn.onclick = (e) => { e.preventDefault(); navigator.share({ files: [file] }).catch(() => {}); };
   }
   document.getElementById('result').style.display = 'flex';
 }
