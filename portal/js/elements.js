@@ -9,8 +9,9 @@ import { buildLibraryElement } from './library.js';
 export const DEFAULT_TRANSFORM = { x: 0, y: 0, z: 0.25, scale: 1, upright: false, rotz: 0 };
 export const DEFAULT_ANIMATION = { type: 'none', speed: 1 };
 
-// cover planes are oversized so tracking jitter never exposes the printed trigger's edges
-const COVER_OVERSIZE = 1.14;
+// cover planes match the trigger exactly (1.0); raise slightly (e.g. 1.14) to mask
+// tracking jitter at the cost of the content extending past the print's edges
+const COVER_OVERSIZE = 1.0;
 
 export const ANIMATIONS = [
   { id: 'none', name: 'ללא אנימציה' },
@@ -21,16 +22,19 @@ export const ANIMATIONS = [
   { id: 'orbit', name: 'מקיף במעגל' },
 ];
 
-export const TEXT_FONTS = ['Arial', 'Verdana', 'Georgia', 'Times New Roman',
-  'Courier New', 'Impact', 'Trebuchet MS', 'Comic Sans MS'];
+// Hebrew webfonts first (bundled in portal/fonts), then universal system fonts
+export const TEXT_FONTS = ['Rubik', 'Heebo', 'Frank Ruhl Libre', 'Secular One', 'Amatic SC',
+  'Arial', 'Verdana', 'Georgia', 'Times New Roman', 'Courier New', 'Impact', 'Trebuchet MS'];
 
 export function elementLabel(kind) {
   return { video: 'וידאו', image: 'תמונה', model: 'מודל תלת-מימד', lib: 'אלמנט מהספרייה', text: 'טקסט' }[kind] || kind;
 }
 
-function buildTextMesh(THREE, el) {
+async function buildTextMesh(THREE, el) {
   const fontSize = 96, pad = 42, lineH = fontSize * 1.3;
-  const fontSpec = `${el.italic ? 'italic ' : ''}${el.bold ? 'bold ' : ''}${fontSize}px "${el.font || 'Arial'}"`;
+  const fontSpec = `${el.italic ? 'italic ' : ''}${el.bold ? 'bold ' : ''}${fontSize}px "${el.font || 'Rubik'}"`;
+  // webfonts must be loaded before canvas rendering, or the browser falls back silently
+  try { await document.fonts.load(fontSpec, 'אב Ag'); } catch { /* system font fallback */ }
   const lines = String(el.text || '').split('\n');
   const probe = document.createElement('canvas').getContext('2d');
   probe.font = fontSpec;
@@ -75,7 +79,7 @@ export async function buildElement(THREE, el, url, triggerH) {
   } else if (el.kind === 'lib') {
     inner = buildLibraryElement(THREE, el.libId, el.color);
   } else if (el.kind === 'text') {
-    inner = buildTextMesh(THREE, el);
+    inner = await buildTextMesh(THREE, el);
   } else {
     let tex, aspect;
     if (el.kind === 'video') {

@@ -167,7 +167,7 @@ async function pickImage(page, file) {
     await page.click('#addElBtn');
     await page.selectOption('.el-card:nth-child(3) [data-role=kind]', 'text');
     await page.fill('.el-card:nth-child(3) [data-role=text]', 'שלום עולם\nPEACE');
-    await page.selectOption('.el-card:nth-child(3) [data-role=font]', 'Georgia');
+    await page.selectOption('.el-card:nth-child(3) [data-role=font]', 'Rubik');
     await page.check('.el-card:nth-child(3) [data-role=bold]');
     await page.check('.el-card:nth-child(3) [data-role=bgOn]');
     await page.selectOption('.el-card:nth-child(3) [data-role=anim]', 'bob');

@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>שלום וטכנולוגיה — פורטל יוצרים</title>
 <link rel="stylesheet" href="./style.css">
+<link rel="stylesheet" href="./fonts/fonts.css">
 </head>
 <body>
 <header>
@@ -355,7 +356,7 @@ function kindBody(el) {
   if (el.kind === 'text') {
     return `<label>הטקסט <textarea data-role="text" placeholder="אפשר גם כמה שורות">${el.text || ''}</textarea></label>
       <label>פונט <select data-role="font">${TEXT_FONTS.map((f) =>
-        `<option value="${f}" ${el.font === f ? 'selected' : ''}>${f}</option>`).join('')}</select></label>
+        `<option value="${f}" ${el.font === f ? 'selected' : ''} style="font-family:'${f}'">${f}</option>`).join('')}</select></label>
       <div class="text-style">
         <label>צבע הטקסט <input type="color" data-role="color" value="${el.color}"></label>
         <label class="fit-row"><input type="checkbox" data-role="bold" ${el.bold ? 'checked' : ''}> מודגש</label>

@@ -1,0 +1,127 @@
+/* rubik-hebrew-400-normal */
+@font-face {
+  font-family: 'Rubik';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url(./files/rubik-hebrew-400-normal.woff2) format('woff2'), url(./files/rubik-hebrew-400-normal.woff) format('woff');
+}/* rubik-latin-400-normal */
+@font-face {
+  font-family: 'Rubik';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url(./files/rubik-latin-400-normal.woff2) format('woff2'), url(./files/rubik-latin-400-normal.woff) format('woff');
+}/* rubik-hebrew-700-normal */
+@font-face {
+  font-family: 'Rubik';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url(./files/rubik-hebrew-700-normal.woff2) format('woff2'), url(./files/rubik-hebrew-700-normal.woff) format('woff');
+}/* rubik-latin-700-normal */
+@font-face {
+  font-family: 'Rubik';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url(./files/rubik-latin-700-normal.woff2) format('woff2'), url(./files/rubik-latin-700-normal.woff) format('woff');
+}/* heebo-hebrew-400-normal */
+@font-face {
+  font-family: 'Heebo';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url(./files/heebo-hebrew-400-normal.woff2) format('woff2'), url(./files/heebo-hebrew-400-normal.woff) format('woff');
+}/* heebo-latin-400-normal */
+@font-face {
+  font-family: 'Heebo';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url(./files/heebo-latin-400-normal.woff2) format('woff2'), url(./files/heebo-latin-400-normal.woff) format('woff');
+}/* heebo-hebrew-700-normal */
+@font-face {
+  font-family: 'Heebo';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url(./files/heebo-hebrew-700-normal.woff2) format('woff2'), url(./files/heebo-hebrew-700-normal.woff) format('woff');
+}/* heebo-latin-700-normal */
+@font-face {
+  font-family: 'Heebo';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url(./files/heebo-latin-700-normal.woff2) format('woff2'), url(./files/heebo-latin-700-normal.woff) format('woff');
+}/* frank-ruhl-libre-hebrew-400-normal */
+@font-face {
+  font-family: 'Frank Ruhl Libre';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url(./files/frank-ruhl-libre-hebrew-400-normal.woff2) format('woff2'), url(./files/frank-ruhl-libre-hebrew-400-normal.woff) format('woff');
+}/* frank-ruhl-libre-latin-400-normal */
+@font-face {
+  font-family: 'Frank Ruhl Libre';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url(./files/frank-ruhl-libre-latin-400-normal.woff2) format('woff2'), url(./files/frank-ruhl-libre-latin-400-normal.woff) format('woff');
+}/* frank-ruhl-libre-hebrew-700-normal */
+@font-face {
+  font-family: 'Frank Ruhl Libre';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url(./files/frank-ruhl-libre-hebrew-700-normal.woff2) format('woff2'), url(./files/frank-ruhl-libre-hebrew-700-normal.woff) format('woff');
+}/* frank-ruhl-libre-latin-700-normal */
+@font-face {
+  font-family: 'Frank Ruhl Libre';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url(./files/frank-ruhl-libre-latin-700-normal.woff2) format('woff2'), url(./files/frank-ruhl-libre-latin-700-normal.woff) format('woff');
+}/* secular-one-hebrew-400-normal */
+@font-face {
+  font-family: 'Secular One';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url(./files/secular-one-hebrew-400-normal.woff2) format('woff2'), url(./files/secular-one-hebrew-400-normal.woff) format('woff');
+}/* secular-one-latin-400-normal */
+@font-face {
+  font-family: 'Secular One';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url(./files/secular-one-latin-400-normal.woff2) format('woff2'), url(./files/secular-one-latin-400-normal.woff) format('woff');
+}/* amatic-sc-hebrew-400-normal */
+@font-face {
+  font-family: 'Amatic SC';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url(./files/amatic-sc-hebrew-400-normal.woff2) format('woff2'), url(./files/amatic-sc-hebrew-400-normal.woff) format('woff');
+}/* amatic-sc-latin-400-normal */
+@font-face {
+  font-family: 'Amatic SC';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 400;
+  src: url(./files/amatic-sc-latin-400-normal.woff2) format('woff2'), url(./files/amatic-sc-latin-400-normal.woff) format('woff');
+}/* amatic-sc-hebrew-700-normal */
+@font-face {
+  font-family: 'Amatic SC';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url(./files/amatic-sc-hebrew-700-normal.woff2) format('woff2'), url(./files/amatic-sc-hebrew-700-normal.woff) format('woff');
+}/* amatic-sc-latin-700-normal */
+@font-face {
+  font-family: 'Amatic SC';
+  font-style: normal;
+  font-display: swap;
+  font-weight: 700;
+  src: url(./files/amatic-sc-latin-700-normal.woff2) format('woff2'), url(./files/amatic-sc-latin-700-normal.woff) format('woff');
+}
