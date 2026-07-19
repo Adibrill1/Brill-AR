@@ -39,6 +39,7 @@ import * as THREE from 'three';
 import { MindARThree } from '../spike/vendor/mindar-image-three.prod.js';
 import { store } from './js/store.js';
 import { buildElements, updateAnimations, elementLabel } from './js/elements.js';
+import { createStabilizer } from './js/stabilizer.js';
 
 window.__test = { loaded: false, started: false, targetFound: false, error: '' };
 const $ = (id) => document.getElementById(id);
@@ -104,14 +105,21 @@ $('startBtn').addEventListener('click', async () => {
       container: $('container'),
       imageTargetSrc: store.fileUrl(item, 'mind'),
       uiScanning: 'no', uiLoading: 'no', uiError: 'no',
-      filterMinCF: 0.0001,
-      filterBeta: 0.01,
+      filterMinCF: 0.0005,
+      filterBeta: 1000,
       warmupTolerance: 3,
       missTolerance: 8,
     });
     const { renderer, scene, camera } = mindarThree;
     const anchor = mindarThree.addAnchor(0);
     const { group, onFound, onLost } = await buildContent(anchor);
+    const holder = new THREE.Group();
+    holder.visible = false;
+    // reparent content from the raw anchor into the stabilized holder
+    anchor.group.remove(group);
+    holder.add(group);
+    scene.add(holder);
+    const stabilizer = createStabilizer(THREE);
 
     anchor.onTargetFound = () => {
       window.__test.targetFound = true;
@@ -129,6 +137,7 @@ $('startBtn').addEventListener('click', async () => {
       elapsed += dt;
       group.userData.mixers?.forEach((m) => m.update(dt));
       updateAnimations(group.userData.anims || [], elapsed);
+      stabilizer.update(holder, anchor.group);
       renderer.render(scene, camera);
     });
   } catch (e) {
