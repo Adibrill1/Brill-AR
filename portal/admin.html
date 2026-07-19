@@ -18,6 +18,10 @@
   <div id="pendingList"></div>
 </section>
 <section class="card">
+  <h2>תרומות לספרייה המשותפת</h2>
+  <div id="libPendingList"></div>
+</section>
+<section class="card">
   <h2>כל תמונות הטריגר</h2>
   <div id="allList"></div>
 </section>
@@ -82,6 +86,43 @@ async function render() {
     window.__admin.rendered = true;
   } catch (e) {
     window.__admin.error = String(e);
+  }
+  renderLibrary();
+}
+
+async function renderLibrary() {
+  const wrap = document.getElementById('libPendingList');
+  try {
+    const assets = await store.listLibraryAssets();
+    const pending = assets.filter((a) => a.status === 'pending');
+    wrap.innerHTML = pending.length ? '' : '<div class="empty">אין תרומות שממתינות לאישור</div>';
+    for (const a of pending) {
+      const div = document.createElement('div');
+      div.className = 'item';
+      const url = store.libraryAssetUrl(a);
+      div.innerHTML = `
+        ${a.kind === 'sticker' && url ? `<img src="${url}" alt="">` : '<span style="font-size:2rem">🧊</span>'}
+        <div class="meta">
+          <h3>${a.name}</h3>
+          <div class="small">${a.kind === '3d' ? 'אלמנט תלת-מימד (GLB)' : 'מדבקה / איור'}</div>
+          <div class="row-actions">
+            <button data-lib-approve="${a.id}">אישור</button>
+            <button class="danger" data-lib-reject="${a.id}">דחייה</button>
+          </div>
+        </div>`;
+      wrap.append(div);
+    }
+    wrap.querySelectorAll('[data-lib-approve]').forEach((b) => b.addEventListener('click', async () => {
+      await store.setLibraryStatus(b.dataset.libApprove, 'approved');
+      renderLibrary();
+    }));
+    wrap.querySelectorAll('[data-lib-reject]').forEach((b) => b.addEventListener('click', async () => {
+      await store.setLibraryStatus(b.dataset.libReject, 'rejected');
+      renderLibrary();
+    }));
+    window.__admin.libRendered = true;
+  } catch {
+    wrap.innerHTML = '<div class="empty">הספרייה המשותפת עוד לא הופעלה (מיגרציה 005)</div>';
   }
 }
 render();

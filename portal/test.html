@@ -104,6 +104,10 @@ $('startBtn').addEventListener('click', async () => {
       container: $('container'),
       imageTargetSrc: store.fileUrl(item, 'mind'),
       uiScanning: 'no', uiLoading: 'no', uiError: 'no',
+      filterMinCF: 0.0001,
+      filterBeta: 0.01,
+      warmupTolerance: 3,
+      missTolerance: 8,
     });
     const { renderer, scene, camera } = mindarThree;
     const anchor = mindarThree.addAnchor(0);

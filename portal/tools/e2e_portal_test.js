@@ -122,10 +122,12 @@ async function pickImage(page, file) {
     console.log('   ', await page.evaluate(() => document.getElementById('imgError').textContent.slice(0, 60)));
     await page.screenshot({ path: path.join(outDir, '1b-duplicate-blocked.png') });
 
-    console.log('8. admin approves');
+    console.log('8. admin approves — and exactly ONE pending (no double submit)');
     await page.goto(`http://localhost:${PORT}/portal/admin.html?backend=local`);
     await page.waitForFunction(() => window.__admin.rendered || window.__admin.error);
     await page.waitForSelector('[data-approve]');
+    const pendCount = await page.evaluate(() => document.querySelectorAll('[data-approve]').length);
+    if (pendCount !== 1) throw new Error(`expected exactly 1 pending, got ${pendCount} — double submit?`);
     await page.screenshot({ path: path.join(outDir, '2-admin.png') });
     await page.click('[data-approve]');
     await page.waitForSelector('.chip.approved');
@@ -143,6 +145,40 @@ async function pickImage(page, file) {
     await new Promise((r) => setTimeout(r, 2500));
     await page.screenshot({ path: path.join(outDir, '3-ar-elements.png') });
     console.log('   trigger detected, elements anchored');
+
+    console.log('9b. edit the approved creation — reloads into the form, resubmits as pending');
+    await page.goto(`http://localhost:${PORT}/portal/index.html?backend=local`);
+    await page.waitForSelector('[data-edit]');
+    await page.click('[data-edit]');
+    await page.waitForSelector('#cancelEditBtn', { state: 'visible' });
+    await page.waitForFunction(() => window.__portal.imageReady && window.__portal.qualityDone);
+    await page.fill('#titleInput', 'יצירה ערוכה');
+    await page.check('#rightsCheck');
+    await page.waitForSelector('#submitBtn:not([disabled])');
+    await page.evaluate(() => { window.__portal.submitted = false; });
+    await page.click('#submitBtn');
+    await page.waitForFunction(() => window.__portal.submitted);
+    await page.goto(`http://localhost:${PORT}/portal/admin.html?backend=local`);
+    await page.waitForSelector('[data-approve]');
+    const editPend = await page.evaluate(() => document.querySelectorAll('[data-approve]').length);
+    if (editPend !== 1) throw new Error('edit resubmit created ' + editPend + ' pending rows');
+    await page.click('[data-approve]');
+    await page.waitForFunction(() =>
+      document.getElementById('pendingList').textContent.includes('אין תמונות טריגר'));
+    console.log('   edited item went through moderation again, single row');
+
+    console.log('9c. community sticker: contribute -> admin approve -> in the shared picker');
+    await page.goto(`http://localhost:${PORT}/portal/index.html?backend=local`);
+    await page.setInputFiles('#libFile', path.join(assetsDir, 'flat.png'));
+    await page.waitForSelector('#libSubmitBtn:not([disabled])');
+    await page.click('#libSubmitBtn');
+    await page.waitForFunction(() => window.__portal.libSubmitted);
+    await page.goto(`http://localhost:${PORT}/portal/admin.html?backend=local`);
+    await page.waitForSelector('[data-lib-approve]');
+    await page.click('[data-lib-approve]');
+    await page.waitForFunction(() =>
+      document.getElementById('libPendingList').textContent.includes('אין תרומות'));
+    console.log('   sticker approved into the shared library');
 
     console.log('10. second creation (different trigger) for the multi-target exhibition');
     await page.goto(`http://localhost:${PORT}/portal/index.html?backend=local`);
@@ -172,6 +208,17 @@ async function pickImage(page, file) {
     await page.check('.el-card:nth-child(3) [data-role=bgOn]');
     await page.selectOption('.el-card:nth-child(3) [data-role=anim]', 'wave');
     await page.waitForFunction(() => window.__portal.previewCount === 3, null, { timeout: 60000 });
+
+    console.log('10b2. community sticker element from the shared library');
+    await page.click('#addElBtn');
+    await page.selectOption('.el-card:nth-child(4) [data-role=kind]', 'lib');
+    const assetVal = await page.evaluate(() => {
+      const opts = [...document.querySelectorAll('.el-card:nth-child(4) [data-role=libId] option')];
+      return opts.find((o) => o.value.startsWith('asset:'))?.value || null;
+    });
+    if (!assetVal) throw new Error('approved community asset missing from picker');
+    await page.selectOption('.el-card:nth-child(4) [data-role=libId]', assetVal);
+    await page.waitForFunction(() => window.__portal.previewCount === 4, null, { timeout: 60000 });
     await new Promise((r) => setTimeout(r, 1200));
     await page.locator('#previewWrap').screenshot({ path: path.join(outDir, '6-lib-text-preview.png') });
 
@@ -181,6 +228,12 @@ async function pickImage(page, file) {
       throw new Error('gizmo drag path broken: ' + JSON.stringify(nudge));
     }
     console.log('   moved to x=' + nudge.x + ', slider synced');
+
+    console.log('10d. locked element is skipped by selection');
+    await page.click('.el-card:nth-child(2) .el-lock');
+    const nudge2 = await page.evaluate(() => window.__portal.testNudge());
+    if (!nudge2) throw new Error('no unlocked element found after locking one');
+    console.log('   lock respected, another element selected');
 
     await page.fill('#titleInput', 'יצירה שנייה');
     await page.check('#rightsCheck');

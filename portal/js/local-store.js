@@ -4,7 +4,7 @@
 // a SupabaseStore will implement later — swap the implementation, keep the pages.
 
 const DB_NAME = 'peace-tech-portal';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 function openDB() {
   return new Promise((resolve, reject) => {
@@ -16,6 +16,9 @@ function openDB() {
       }
       if (!d.objectStoreNames.contains('profile')) {
         d.createObjectStore('profile', { keyPath: 'key' });
+      }
+      if (!d.objectStoreNames.contains('library')) {
+        d.createObjectStore('library', { keyPath: 'id' });
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -77,6 +80,27 @@ export const store = {
   async deleteItem(id) {
     return tx('items', 'readwrite', (s) => s.delete(id));
   },
+  // ---- community shared library (3D elements + stickers) ----
+  libraryAssetUrl(asset) {
+    return asset.blob ? URL.createObjectURL(asset.blob) : null;
+  },
+
+  async saveLibraryAsset(asset) {
+    return tx('library', 'readwrite', (s) => s.put({ ...asset, status: asset.status || 'pending', createdAt: Date.now() }));
+  },
+
+  async listLibraryAssets() {
+    const rows = await tx('library', 'readonly', (s) => s.getAll());
+    return rows.sort((a, b) => b.createdAt - a.createdAt);
+  },
+
+  async setLibraryStatus(id, status) {
+    const asset = await tx('library', 'readonly', (s) => s.get(id));
+    if (!asset) return;
+    asset.status = status;
+    return tx('library', 'readwrite', (s) => s.put(asset));
+  },
+
   async recordScan(id) {
     const item = await this.getItem(id);
     if (!item) return;

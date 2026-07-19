@@ -33,6 +33,17 @@ export const TEXT_ANIMATIONS = [
 // 3D text is built from bundled glyph outlines, so only the packaged fonts apply
 export const TEXT_FONTS = TEXT3D_FONTS;
 
+// auto-scale any object to fit a target size (in trigger units, where the printed
+// image is exactly 1 unit wide), and center it on its own origin
+export function normalizeToFit(THREE, obj, target = 0.8) {
+  const box = new THREE.Box3().setFromObject(obj);
+  const size = box.getSize(new THREE.Vector3()).length() || 1;
+  obj.scale.multiplyScalar(target / size);
+  box.setFromObject(obj);
+  obj.position.sub(box.getCenter(new THREE.Vector3()));
+  return obj;
+}
+
 export function elementLabel(kind) {
   return { video: 'וידאו', image: 'תמונה', model: 'מודל תלת-מימד', lib: 'אלמנט מהספרייה', text: 'טקסט' }[kind] || kind;
 }
@@ -44,14 +55,32 @@ export async function buildElement(THREE, el, url, triggerH) {
   if (el.kind === 'model') {
     const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
     gltf = await new GLTFLoader().loadAsync(url);
-    inner = gltf.scene;
-    const box = new THREE.Box3().setFromObject(inner);
-    const size = box.getSize(new THREE.Vector3()).length() || 1;
-    inner.scale.setScalar(0.8 / size);
-    box.setFromObject(inner);
-    inner.position.sub(box.getCenter(new THREE.Vector3()));
+    inner = normalizeToFit(THREE, gltf.scene, 0.8);
   } else if (el.kind === 'lib') {
-    inner = buildLibraryElement(THREE, el.libId, el.color);
+    if (el.libId?.startsWith('ph:')) {
+      // Poly Haven model: cached download, then bounding-box auto-scale to the trigger
+      const { fetchGlbCached } = await import('./polyhaven.js');
+      const blobUrl = await fetchGlbCached(el.phUrl);
+      const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
+      gltf = await new GLTFLoader().loadAsync(blobUrl);
+      inner = normalizeToFit(THREE, gltf.scene, 0.8);
+    } else if (el.libId?.startsWith('asset:')) {
+      // community-contributed shared asset (snapshot of its file at selection time)
+      if (el.assetKind === 'sticker') {
+        const tex = await new THREE.TextureLoader().loadAsync(url);
+        const aspect = tex.image.width / tex.image.height;
+        inner = new THREE.Mesh(
+          new THREE.PlaneGeometry(0.6, 0.6 / aspect),
+          new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide }),
+        );
+      } else {
+        const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
+        gltf = await new GLTFLoader().loadAsync(url);
+        inner = normalizeToFit(THREE, gltf.scene, 0.8);
+      }
+    } else {
+      inner = buildLibraryElement(THREE, el.libId, el.color);
+    }
   } else if (el.kind === 'text') {
     inner = await build3DText(THREE, el);
   } else {

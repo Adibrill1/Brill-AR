@@ -196,6 +196,12 @@ async function start() {
       imageTargetSrc: mindUrl,
       maxTrack: 1,
       uiScanning: 'no', uiLoading: 'no', uiError: 'no',
+      // heavy one-euro smoothing: rock-solid anchoring while holding the print,
+      // at the cost of slight follow lag on fast movement
+      filterMinCF: 0.0001,
+      filterBeta: 0.01,
+      warmupTolerance: 3,
+      missTolerance: 8,
     });
     const { renderer, scene, camera } = mindarThree;
 
@@ -223,11 +229,8 @@ async function start() {
       anchor.onTargetFound = () => {
         activeItem = item;
         window.__visit.foundId = item.id;
-        $('status').textContent = `נמצאה יצירה ✓`;
-        $('caption').style.display = 'block';
-        $('caption').querySelector('.t').textContent = item.title;
-        $('caption').querySelector('.a').textContent =
-          [item.artistName, item.artistCountry].filter(Boolean).join(', ');
+        // nothing on screen but the artwork itself — only the REC button remains
+        $('status').style.display = 'none';
         $('recBtn').style.display = 'block';
         if (audioCtx.state === 'suspended') audioCtx.resume();
         videos.forEach((v) => { wireAudio(v.muted ? null : v); v.play().catch(() => {}); });
@@ -238,7 +241,7 @@ async function start() {
       anchor.onTargetLost = () => {
         if (activeItem?.id === item.id) activeItem = null;
         $('status').textContent = 'מחפש יצירה…';
-        $('caption').style.display = 'none';
+        $('status').style.display = 'block';
         if (!recording) $('recBtn').style.display = 'none';
         videos.forEach((v) => v.pause());
         audio?.pause();

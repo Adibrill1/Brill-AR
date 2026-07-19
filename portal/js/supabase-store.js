@@ -89,6 +89,27 @@ export const store = {
     return rows[0] || null;
   },
 
+  // ---- community shared library (3D elements + stickers) ----
+  libraryAssetUrl(asset) {
+    return asset.path ? `${U}/storage/v1/object/public/trigger-assets/${asset.path}` : null;
+  },
+
+  async saveLibraryAsset(asset) {
+    const path = await uploadFile(`library/${asset.id}.${ext(asset.name, asset.kind === '3d' ? 'glb' : 'png')}`, asset.blob);
+    await rest('POST', 'library_assets', {
+      id: asset.id, artist_id: localStorage.getItem(ARTIST_KEY),
+      name: asset.name, kind: asset.kind, path, status: 'pending',
+    });
+  },
+
+  async listLibraryAssets() {
+    return rest('GET', 'library_assets?select=*&order=created_at.desc');
+  },
+
+  async setLibraryStatus(id, status) {
+    await rest('PATCH', `library_assets?id=eq.${id}`, { status });
+  },
+
   async saveItem(item) {
     const dir = item.id;
     const imagePath = await uploadFile(`${dir}/image.${ext(item.imageBlob.name, 'png')}`, item.imageBlob);
@@ -105,6 +126,7 @@ export const store = {
     const audioPath = item.audioBlob
       ? await uploadFile(`${dir}/audio.${ext(item.audioBlob.name, 'mp3')}`, item.audioBlob)
       : null;
+    // upsert: editing an existing creation overwrites its row (and resets status)
     await rest('POST', 'trigger_images', {
       id: item.id,
       artist_id: localStorage.getItem(ARTIST_KEY),
@@ -120,7 +142,7 @@ export const store = {
       image_path: imagePath,
       mind_path: mindPath,
       audio_path: audioPath,
-    });
+    }, { Prefer: 'resolution=merge-duplicates' });
   },
 
   async getItem(id) {

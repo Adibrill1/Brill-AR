@@ -75,8 +75,20 @@
   </label>
 
   <button id="submitBtn" disabled>שליחה לאישור</button>
+  <button id="cancelEditBtn" class="secondary" type="button" style="display:none">ביטול עריכה</button>
   <div class="hint" id="missingList"></div>
   <div class="field-error" id="submitError"></div>
+</section>
+
+<section class="card">
+  <h2>הספרייה המשותפת — תרומת אלמנטים / Shared library</h2>
+  <p class="hint">העלו אלמנטים תלת-מימדיים (GLB) או מדבקות ואיורים (PNG/JPG/WebP) לשיתוף כלל היוצרים.
+     כל תרומה עוברת אישור לפני שהיא מצטרפת לספרייה שכולם רואים.</p>
+  <label>קבצים <input type="file" id="libFile" accept=".glb,image/png,image/jpeg,image/webp" multiple></label>
+  <div id="libUploadList"></div>
+  <button id="libSubmitBtn" disabled>שליחת התרומות לאישור</button>
+  <div class="progress-note" id="libNote"></div>
+  <div id="myLibList"></div>
 </section>
 
 <section class="card">
@@ -96,6 +108,7 @@ import { analyzeTriggerImage } from './js/quality.js';
 import { buildElements, updateAnimations, DEFAULT_TRANSFORM, DEFAULT_ANIMATION, ANIMATIONS, TEXT_ANIMATIONS, TEXT_FONTS, elementLabel } from './js/elements.js';
 import { LIBRARY } from './js/library.js';
 import { dHash, hammingDistance, DUPLICATE_THRESHOLD } from './js/imagehash.js';
+import { listPolyModels, resolveModelUrl } from './js/polyhaven.js';
 
 window.__portal = { qualityDone: false, submitted: false, lastGrade: null, error: '',
                     imageReady: false, previewCount: 0, dupBlocked: false };
@@ -117,8 +130,17 @@ $('saveProfileBtn').addEventListener('click', async () => {
 // ---------- draft state ----------
 const draft = { imageBlob: null, imageEl: null, imageW: 0, imageH: 0, imageHash: null,
                 quality: null, mindBuffer: null, audioBlob: null };
-let elements = [];   // { uid, kind, file, name, fit, transform, valid, error }
+let elements = [];   // { uid, kind, file, name, fit, transform, valid, error, collapsed, locked }
 let elUid = 0;
+let editItemId = null;      // set while editing an existing creation
+let submitting = false;
+let communityAssets = [];   // approved shared-library assets
+let phModels = [];          // Poly Haven model list (loaded on demand)
+(async () => {
+  try {
+    communityAssets = (await store.listLibraryAssets()).filter((a) => a.status === 'approved');
+  } catch { /* library table may not exist yet */ }
+})();
 
 function refreshSubmit() {
   const missing = [];
@@ -350,9 +372,17 @@ function slider(label, key, min, max, step, value) {
 function kindBody(el) {
   if (el.kind === 'lib') {
     return `<label>בחירת אלמנט
-      <select data-role="libId">${LIBRARY.map((l) =>
-        `<option value="${l.id}" ${el.libId === l.id ? 'selected' : ''}>${l.name}</option>`).join('')}</select></label>
-      <label>צבע <input type="color" data-role="color" value="${el.color}"></label>`;
+      <select data-role="libId">
+        <optgroup label="מובנים">${LIBRARY.map((l) =>
+          `<option value="${l.id}" ${el.libId === l.id ? 'selected' : ''}>${l.name}</option>`).join('')}</optgroup>
+        ${communityAssets.length ? `<optgroup label="ספריית הקהילה">${communityAssets.map((a) =>
+          `<option value="asset:${a.id}" ${el.libId === 'asset:' + a.id ? 'selected' : ''}>${a.name} (${a.kind === '3d' ? 'תלת-מימד' : 'מדבקה'})</option>`).join('')}</optgroup>` : ''}
+        ${phModels.length ? `<optgroup label="Poly Haven">${phModels.map((m) =>
+          `<option value="ph:${m.id}" ${el.libId === 'ph:' + m.id ? 'selected' : ''}>${m.name}</option>`).join('')}</optgroup>` : ''}
+      </select></label>
+      <button type="button" class="secondary" data-role="phLoad" style="${phModels.length ? 'display:none' : ''}">טעינת מודלים מ-Poly Haven (דורש אינטרנט)</button>
+      <div class="progress-note" data-role="phNote"></div>
+      <label>צבע (לאלמנטים המובנים) <input type="color" data-role="color" value="${el.color}"></label>`;
   }
   if (el.kind === 'text') {
     return `<label>הטקסט <textarea data-role="text" placeholder="אפשר גם כמה שורות">${el.text || ''}</textarea></label>
@@ -385,13 +415,17 @@ function renderElements() {
     card.className = 'el-card';
     card.dataset.uid = el.uid;
     const hideTransform = el.fit === 'cover' && (el.kind === 'video' || el.kind === 'image');
+    const summary = elementLabel(el.kind) + (el.name ? ' · ' + el.name : '');
     card.innerHTML = `
       <div class="el-head">
-        <strong>אלמנט ${idx + 1}</strong>
-        <select data-role="kind">${KIND_NAMES.map(([v, n]) =>
+        <button type="button" class="el-fold" title="קיפול/פתיחה">${el.collapsed ? '▸' : '▾'}</button>
+        <strong>אלמנט ${idx + 1}${el.collapsed ? ` <span class="el-summary">${summary}</span>` : ''}</strong>
+        <select data-role="kind" style="${el.collapsed ? 'display:none' : ''}">${KIND_NAMES.map(([v, n]) =>
           `<option value="${v}" ${el.kind === v ? 'selected' : ''}>${n}</option>`).join('')}</select>
+        <button type="button" class="el-lock" title="${el.locked ? 'ביטול נעילה' : 'נעילה מפני תזוזה'}">${el.locked ? '🔒' : '🔓'}</button>
         <button type="button" class="danger el-del">הסרה</button>
       </div>
+      <div class="el-body" style="${el.collapsed ? 'display:none' : ''}">
       ${kindBody(el)}
       <div class="transform" style="${hideTransform ? 'display:none' : ''}">
         ${slider('ימינה־שמאלה', 'x', -1, 1, 0.02, el.transform.x)}
@@ -409,10 +443,20 @@ function renderElements() {
           <input type="range" data-role="speed" min="0.2" max="3" step="0.1" value="${el.animation.speed}"></label>
           <button type="button" class="sl-reset" data-role="speedReset" title="איפוס">↺</button>
         </div>
+      </div>
       </div>`;
 
     const on = (sel, ev, fn) => card.querySelector(sel)?.addEventListener(ev, fn);
 
+    card.querySelector('.el-fold').addEventListener('click', () => {
+      el.collapsed = !el.collapsed;
+      renderElements();
+    });
+    card.querySelector('.el-lock').addEventListener('click', () => {
+      el.locked = !el.locked;
+      if (selected?.el === el) deselectElement();
+      renderElements();
+    });
     on('[data-role=kind]', 'change', (ev) => {
       Object.assign(el, { kind: ev.target.value }, elDefaults(ev.target.value));
       renderElements(); schedulePreview(); refreshSubmit();
@@ -426,7 +470,35 @@ function renderElements() {
       el.fit = ev.target.checked ? 'cover' : 'free';
       renderElements(); schedulePreview();
     });
-    on('[data-role=libId]', 'change', (ev) => { el.libId = ev.target.value; schedulePreview(); });
+    on('[data-role=libId]', 'change', async (ev) => {
+      el.libId = ev.target.value;
+      el.assetKind = null; el.assetPath = null; el.assetBlob = null; el.phUrl = null;
+      if (el.libId.startsWith('asset:')) {
+        const a = communityAssets.find((x) => 'asset:' + x.id === el.libId);
+        if (a) { el.assetKind = a.kind; el.assetPath = a.path || null; el.assetBlob = a.blob || null; }
+      } else if (el.libId.startsWith('ph:')) {
+        const note = card.querySelector('[data-role=phNote]');
+        note.textContent = 'טוען את המודל…';
+        try {
+          el.phUrl = await resolveModelUrl(el.libId.slice(3));
+          note.textContent = '';
+        } catch (err) {
+          note.textContent = 'טעינת המודל נכשלה: ' + err.message;
+          el.libId = LIBRARY[0].id;
+        }
+      }
+      schedulePreview();
+    });
+    on('[data-role=phLoad]', 'click', async () => {
+      const note = card.querySelector('[data-role=phNote]');
+      note.textContent = 'טוען רשימת מודלים מ-Poly Haven…';
+      try {
+        phModels = await listPolyModels();
+        renderElements();
+      } catch (err) {
+        note.textContent = 'אין גישה ל-Poly Haven כרגע (' + err.message + ')';
+      }
+    });
     on('[data-role=color]', 'input', (ev) => { el.color = ev.target.value; schedulePreview(); });
     on('[data-role=bg]', 'input', (ev) => { el.bg = ev.target.value; schedulePreview(); });
     on('[data-role=text]', 'input', (ev) => {
@@ -531,6 +603,10 @@ function initPreview() {
   camera.up.set(0, 0, 1);
   const controls = new OrbitControls(camera, renderer.domElement);
   controls.enableDamping = true;
+  controls.dampingFactor = 0.08;
+  controls.rotateSpeed = 0.45;
+  controls.zoomSpeed = 0.55;
+  controls.panSpeed = 0.5;
   scene.add(new THREE.GridHelper(4, 20, 0x39525e, 0x2b3f48).rotateX(Math.PI / 2));
   const clock = new THREE.Clock();
   pv = { renderer, scene, camera, controls, triggerMesh: null, elGroup: null, mixers: [], anims: [], entries: [], clock, elapsed: 0 };
@@ -561,7 +637,11 @@ async function rebuildPreview() {
   pv.scene.add(pv.triggerMesh);
   if (pv.elGroup) { pv.scene.remove(pv.elGroup); pv.elGroup = null; pv.mixers = []; }
   try {
-    const { group, videos, mixers, anims, entries } = await buildElements(THREE, ready, (el) => el.file ? URL.createObjectURL(el.file) : null, triggerH);
+    const urlOf = (el) => el.file ? URL.createObjectURL(el.file)
+      : el.assetBlob ? URL.createObjectURL(el.assetBlob)
+      : el.assetPath ? store.libraryAssetUrl({ path: el.assetPath })
+      : null;
+    const { group, videos, mixers, anims, entries } = await buildElements(THREE, ready, urlOf, triggerH);
     pv.elGroup = group; pv.mixers = mixers; pv.anims = anims;
     pv.entries = entries.filter((en) =>
       !(en.el.fit === 'cover' && (en.el.kind === 'video' || en.el.kind === 'image')));
@@ -592,10 +672,10 @@ function makeGizmo() {
   const arrow = (axis, color, euler) => {
     const grp = new THREE.Group();
     const mat = new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.95 });
-    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.4, 10), mat);
-    shaft.position.y = 0.2;
-    const head = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.16, 12), mat);
-    head.position.y = 0.46;
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.011, 0.42, 10), mat);
+    shaft.position.y = 0.21;
+    const head = new THREE.Mesh(new THREE.ConeGeometry(0.042, 0.11, 12), mat);
+    head.position.y = 0.47;
     grp.add(shaft, head);
     grp.rotation.copy(euler);
     grp.traverse((o) => { o.userData.axis = axis; o.renderOrder = 999; });
@@ -604,7 +684,7 @@ function makeGizmo() {
   g.add(arrow('x', 0xc0392b, new THREE.Euler(0, 0, -Math.PI / 2)));
   g.add(arrow('y', 0x27ae60, new THREE.Euler(0, 0, 0)));
   g.add(arrow('z', 0x2e86c1, new THREE.Euler(Math.PI / 2, 0, 0)));
-  const orb = new THREE.Mesh(new THREE.SphereGeometry(0.07, 14, 12),
+  const orb = new THREE.Mesh(new THREE.SphereGeometry(0.05, 14, 12),
     new THREE.MeshBasicMaterial({ color: 0xd4ac0d, depthTest: false }));
   orb.position.set(-0.3, -0.3, 0);
   orb.userData.axis = 'scale';
@@ -691,7 +771,8 @@ function attachGizmoHandlers() {
         return;
       }
     }
-    const hits = raycaster.intersectObjects((pv.entries || []).map((en) => en.obj), true);
+    const selectable = (pv.entries || []).filter((en) => !en.el.locked);
+    const hits = raycaster.intersectObjects(selectable.map((en) => en.obj), true);
     if (hits.length) {
       let node = hits[0].object;
       let entry = null;
@@ -725,7 +806,7 @@ function attachGizmoHandlers() {
         }
       }
     } else if (drag.kind === 'scale') {
-      applyDragTransform(selected, 'scale', drag.startScale * (1 + (drag.startY - ev.clientY) / 160));
+      applyDragTransform(selected, 'scale', drag.startScale * (1 + (drag.startY - ev.clientY) / 280));
     }
   });
   const endDrag = () => { drag = null; if (pv) pv.controls.enabled = true; };
@@ -735,7 +816,7 @@ function attachGizmoHandlers() {
 
 // test hook: programmatically select the first element and nudge it via the drag path
 window.__portal.testNudge = () => {
-  const entry = pv?.entries?.[0];
+  const entry = pv?.entries?.find((en) => !en.el.locked);
   if (!entry) return null;
   selectElement(entry);
   applyDragTransform(entry, 'x', entry.el.transform.x + 0.15);
@@ -769,10 +850,14 @@ $('audioInput').addEventListener('change', async (ev) => {
 
 // ---------- submit ----------
 $('submitBtn').addEventListener('click', async () => {
+  if (submitting) return;
+  submitting = true;
+  $('submitBtn').disabled = true;
+  $('submitBtn').textContent = 'מעלה… נא להמתין';
   $('submitError').textContent = '';
   try {
     await store.saveItem({
-      id: crypto.randomUUID(),
+      id: editItemId || crypto.randomUUID(),
       title: $('titleInput').value.trim(),
       description: $('descInput').value.trim(),
       status: 'pending', reason: '',
@@ -788,13 +873,18 @@ $('submitBtn').addEventListener('click', async () => {
         if (e.kind === 'lib') Object.assign(entry, { libId: e.libId, color: e.color });
         if (e.kind === 'text') Object.assign(entry, { text: e.text, font: e.font, color: e.color,
           bold: e.bold, italic: e.italic, bgOn: e.bgOn, bg: e.bg });
+        if (e.kind === 'lib') Object.assign(entry, { libId: e.libId, color: e.color,
+          assetKind: e.assetKind || null, phUrl: e.phUrl || null });
         if (e.file) entry.blob = e.file;
+        else if (e.assetBlob) entry.blob = e.assetBlob;
+        else if (e.assetPath) entry.path = e.assetPath;
         return entry;
       }),
       audioBlob: draft.audioBlob,
       createdAt: Date.now(),
     });
     window.__portal.submitted = true;
+    exitEditMode();
     ['imgInput', 'audioInput', 'titleInput', 'descInput'].forEach((id) => { $(id).value = ''; });
     $('rightsCheck').checked = false;
     $('imgPreview').style.display = 'none'; $('resWarn').style.display = 'none';
@@ -808,8 +898,79 @@ $('submitBtn').addEventListener('click', async () => {
   } catch (e) {
     $('submitError').textContent = 'השליחה נכשלה: ' + e;
     window.__portal.error = String(e);
+  } finally {
+    submitting = false;
+    $('submitBtn').textContent = 'שליחה לאישור';
+    refreshSubmit();
   }
 });
+
+// ---------- edit an existing creation (any status; re-submits for moderation) ----------
+function exitEditMode() {
+  editItemId = null;
+  $('cancelEditBtn').style.display = 'none';
+}
+$('cancelEditBtn').addEventListener('click', () => {
+  exitEditMode();
+  location.reload();
+});
+
+async function fetchAsBlob(url) {
+  const res = await fetch(url);
+  if (!res.ok) throw new Error('fetch failed ' + res.status);
+  return res.blob();
+}
+
+async function loadItemForEdit(id) {
+  const it = await store.getItem(id);
+  if (!it) return;
+  // reuse the stored trigger image, compiled target and quality — no recompilation
+  const imgBlob = await fetchAsBlob(store.fileUrl(it, 'image'));
+  const img = new Image();
+  img.src = URL.createObjectURL(imgBlob);
+  await img.decode();
+  draft.imageBlob = imgBlob; draft.imageEl = img;
+  draft.imageW = it.imageW || img.width; draft.imageH = it.imageH || img.height;
+  draft.imageHash = it.imageHash || null;
+  draft.quality = it.quality;
+  draft.mindBuffer = await (await fetch(store.fileUrl(it, 'mind'))).arrayBuffer();
+  $('imgPreview').src = img.src; $('imgPreview').style.display = 'block';
+  $('qualityResult').innerHTML = `<div class="quality ${it.quality?.grade || 'medium'}">
+    ציון זיהוי שמור: ${it.quality?.score ?? '?'}/100 (התמונה לא השתנתה — אין צורך בבדיקה חוזרת)</div>`;
+  window.__portal.imageReady = true;
+  window.__portal.qualityDone = true;
+
+  elements = [];
+  for (const src of it.elements || []) {
+    const el = { uid: ++elUid, kind: src.kind, name: src.name || '', fit: src.fit || 'free',
+                 transform: { ...DEFAULT_TRANSFORM, ...(src.transform || {}) },
+                 animation: { ...DEFAULT_ANIMATION, ...(src.animation || {}) },
+                 valid: true, error: '', collapsed: true, locked: false,
+                 file: null, assetKind: src.assetKind || null, assetPath: src.path || null,
+                 assetBlob: src.blob || null, phUrl: src.phUrl || null,
+                 libId: src.libId, color: src.color || '#d4ac0d',
+                 text: src.text, font: src.font, bold: src.bold, italic: src.italic,
+                 bgOn: src.bgOn, bg: src.bg };
+    if (['video', 'image', 'model'].includes(src.kind)) {
+      const blob = src.blob || await fetchAsBlob(store.elementUrl(it, src));
+      el.file = new File([blob], src.name || 'element', { type: blob.type });
+    }
+    elements.push(el);
+  }
+  if (store.fileUrl(it, 'audio')) {
+    draft.audioBlob = await fetchAsBlob(store.fileUrl(it, 'audio'));
+    draft.audioBlob = new File([draft.audioBlob], 'soundtrack', { type: draft.audioBlob.type });
+    $('audioInfo').textContent = 'פס הקול הקיים נשמר (אפשר להחליף)';
+  }
+  $('titleInput').value = it.title;
+  $('descInput').value = it.description || '';
+  editItemId = id;
+  $('cancelEditBtn').style.display = 'inline-block';
+  renderElements();
+  schedulePreview();
+  refreshSubmit();
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+}
 
 // ---------- my items ----------
 const STATUS_LABEL = { pending: 'ממתין לאישור', approved: 'אושר ✓', rejected: 'נדחה' };
@@ -836,6 +997,7 @@ async function renderItems() {
       ${it.status === 'rejected' && it.reason ? `<div class="small">סיבה: ${it.reason}</div>` : ''}
       <div class="row-actions">
         <a class="btn secondary" href="./test.html?id=${it.id}">בדיקת AR</a>
+        <button class="secondary" data-edit="${it.id}">עריכה</button>
         <button class="danger" data-del="${it.id}">מחיקה</button>
       </div>`;
     div.append(img, meta);
@@ -844,8 +1006,75 @@ async function renderItems() {
   el.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', async () => {
     if (confirm('למחוק את היצירה הזו?')) { await store.deleteItem(b.dataset.del); renderItems(); }
   }));
+  el.querySelectorAll('[data-edit]').forEach((b) => b.addEventListener('click', async () => {
+    b.textContent = 'טוען…';
+    try { await loadItemForEdit(b.dataset.edit); } finally { b.textContent = 'עריכה'; }
+  }));
 }
 renderItems();
+
+// ---------- shared library contributions (3D elements + stickers) ----------
+let libContribs = [];   // { file, name, kind }
+const LIB_STATUS = { pending: 'ממתין לאישור', approved: 'אושר ✓', rejected: 'נדחה' };
+
+$('libFile').addEventListener('change', async (ev) => {
+  libContribs = [];
+  const wrap = $('libUploadList');
+  wrap.innerHTML = '';
+  for (const f of ev.target.files) {
+    const is3d = /\.glb$/i.test(f.name);
+    if (!is3d) {
+      const img = new Image();
+      img.src = URL.createObjectURL(f);
+      try { await img.decode(); } catch { continue; }
+    }
+    if (f.size > 15 * 1024 * 1024) continue;
+    const c = { file: f, name: f.name.replace(/\.[^.]+$/, ''), kind: is3d ? '3d' : 'sticker' };
+    libContribs.push(c);
+    const row = document.createElement('div');
+    row.className = 'fit-row';
+    row.innerHTML = `<span>${c.kind === '3d' ? '🧊' : '🖼️'}</span>
+      <input type="text" value="${c.name}" style="flex:1">`;
+    row.querySelector('input').addEventListener('input', (e2) => { c.name = e2.target.value; });
+    wrap.append(row);
+  }
+  $('libSubmitBtn').disabled = !libContribs.length;
+});
+
+$('libSubmitBtn').addEventListener('click', async () => {
+  $('libSubmitBtn').disabled = true;
+  $('libNote').textContent = 'מעלה…';
+  try {
+    for (const c of libContribs) {
+      await store.saveLibraryAsset({ id: crypto.randomUUID(), name: c.name.trim() || c.file.name,
+                                     kind: c.kind, blob: c.file });
+    }
+    $('libNote').textContent = `נשלחו ${libContribs.length} תרומות לאישור ✓`;
+    libContribs = [];
+    $('libFile').value = '';
+    $('libUploadList').innerHTML = '';
+    window.__portal.libSubmitted = true;
+    renderMyLib();
+  } catch (e) {
+    $('libNote').textContent = 'השליחה נכשלה: ' + e;
+  }
+});
+
+async function renderMyLib() {
+  try {
+    const assets = await store.listLibraryAssets();
+    const el = $('myLibList');
+    el.innerHTML = assets.length ? '' : '';
+    for (const a of assets) {
+      const div = document.createElement('div');
+      div.className = 'fit-row';
+      div.innerHTML = `<span>${a.kind === '3d' ? '🧊' : '🖼️'}</span><span>${a.name}</span>
+        <span class="chip ${a.status}">${LIB_STATUS[a.status]}</span>`;
+      el.append(div);
+    }
+  } catch { /* table not migrated yet */ }
+}
+renderMyLib();
 </script>
 </body>
 </html>
