@@ -40,8 +40,10 @@ async function pickImage(page, file) {
     page.on('pageerror', (e) => console.log('[pageerror]', e.message));
     page.on('console', (m) => { if (m.type() === 'error') console.log('[page-err]', m.text()); });
 
-    console.log('1. portal loads, profile saves');
+    console.log('1. portal loads, profile drawer opens + saves');
     await page.goto(`http://localhost:${PORT}/portal/index.html?backend=local`);
+    await page.click('#profileToggle');                       // profile now lives in a side drawer
+    await page.waitForSelector('#profileDrawer.open', { state: 'attached' });
     await page.fill('#pName', 'Test Artist');
     await page.fill('#pCountry', 'Israel');
     await page.click('#saveProfileBtn');
@@ -71,42 +73,26 @@ async function pickImage(page, file) {
       document.querySelector('.el-card:nth-child(1) [data-role=info]').textContent.includes('נטען בהצלחה'));
     await page.check('.el-card:nth-child(1) [data-role=fit]');
 
-    console.log('4b. cover element is still movable within the frame + resizable (req 5)');
+    console.log('4b. cover element is still movable within the frame in the preview');
     await page.waitForFunction(() => window.__portal.previewCount >= 1, null, { timeout: 60000 });
     const coverMoved = await page.evaluate(() => window.__portal.testNudge());
-    if (!coverMoved || Math.abs(coverMoved.x - coverMoved.slider) > 0.001) {
-      throw new Error('cover element not draggable/synced: ' + JSON.stringify(coverMoved));
+    if (!coverMoved || !coverMoved.moved) {
+      throw new Error('cover element not draggable in preview: ' + JSON.stringify(coverMoved));
     }
-    await page.evaluate(() => {
-      const x = document.querySelector('.el-card:nth-child(1) [data-t=x]');
-      x.value = '0'; x.dispatchEvent(new Event('input', { bubbles: true }));
-    });
 
-    console.log('5. element 2: upright floating image (imported via the green button)');
+    console.log('5. element 2: floating image (imported via the green button)');
     await page.setInputFiles('#importInput', path.join(assetsDir, 'flat.png'));
     await page.waitForFunction(() =>
       document.querySelector('.el-card:nth-child(2) [data-role=info]').textContent.includes('נטען בהצלחה'));
-    await page.check('.el-card:nth-child(2) [data-role=upright]');
-    await page.evaluate(() => {
-      const z = document.querySelector('.el-card:nth-child(2) [data-t=z]');
-      z.value = '0.9';
-      z.dispatchEvent(new Event('input', { bubbles: true }));
-    });
-
-    console.log('5b. slider reset restores the default');
-    await page.click('.el-card:nth-child(2) [data-reset=z]');
-    const zAfterReset = await page.evaluate(() =>
-      document.querySelector('.el-card:nth-child(2) [data-t=z]').value);
-    if (parseFloat(zAfterReset) !== 0.25) throw new Error('slider reset broken, z=' + zAfterReset);
-    await page.evaluate(() => {
-      const z = document.querySelector('.el-card:nth-child(2) [data-t=z]');
-      z.value = '0.5';
-      z.dispatchEvent(new Event('input', { bubbles: true }));
-    });
+    // no transform sliders anymore — all spatial editing is in the preview
+    const sliderCount = await page.$$eval('[data-t]', (els) => els.length);
+    if (sliderCount !== 0) throw new Error('transform sliders should be gone, found ' + sliderCount);
 
     console.log('6. live 3D preview builds both elements');
     await page.waitForFunction(() => window.__portal.previewCount === 2, null, { timeout: 60000 });
     await new Promise((r) => setTimeout(r, 1500));
+    // position element 2 via the preview drag path (in place of the removed sliders)
+    await page.evaluate(() => window.__portal.testRotate(1, 40, 'rotx'));
     await page.screenshot({ path: path.join(outDir, '1-editor-preview.png'), fullPage: true });
 
     console.log('7. soundtrack + submit');
@@ -221,29 +207,32 @@ async function pickImage(page, file) {
     await new Promise((r) => setTimeout(r, 1200));
     await page.locator('#previewWrap').screenshot({ path: path.join(outDir, '6-lib-text-preview.png') });
 
-    console.log('10c. direct-manipulation gizmo moves element and syncs slider');
+    console.log('10c. direct-manipulation gizmo moves the element in the preview');
     const nudge = await page.evaluate(() => window.__portal.testNudge());
-    if (!nudge || Math.abs(nudge.x - nudge.slider) > 0.001) {
-      throw new Error('gizmo drag path broken: ' + JSON.stringify(nudge));
-    }
-    console.log('   moved to x=' + nudge.x + ', slider synced');
+    if (!nudge || !nudge.moved) throw new Error('gizmo drag path broken: ' + JSON.stringify(nudge));
+    console.log('   moved to x=' + nudge.x);
 
-    console.log('10c2. rotation gizmo spins the element and syncs the rotz slider');
-    const rot = await page.evaluate(() => window.__portal.testRotate(0, 30));
-    const rotSlider = await page.evaluate(() => {
-      const s = document.querySelector('.el-card:nth-child(1) [data-t=rotz]');
-      return s ? parseFloat(s.value) : null;
-    });
-    if (!rot || rot.rotz === 0 || (rotSlider !== null && rotSlider !== rot.rotz)) {
-      throw new Error('rotation gizmo path broken: ' + JSON.stringify({ rot, rotSlider }));
-    }
-    console.log('   rotated to rotz=' + rot.rotz);
+    console.log('10c2. rotation gizmo spins in-plane (rotz) and out-of-plane (rotx)');
+    const rotZ = await page.evaluate(() => window.__portal.testRotate(0, 30, 'rotz'));
+    const rotX = await page.evaluate(() => window.__portal.testRotate(0, -45, 'rotx'));
+    if (!rotZ || rotZ.rotz !== 30) throw new Error('in-plane rotation broken: ' + JSON.stringify(rotZ));
+    if (!rotX || rotX.rotx !== -45) throw new Error('vertical rotation broken: ' + JSON.stringify(rotX));
+    console.log('   rotz=' + rotZ.rotz + ', rotx=' + rotX.rotx);
 
     console.log('10d. locked element (in-preview lock) is skipped by selection');
     await page.evaluate(() => window.__portal.testLock(1));
     const nudge2 = await page.evaluate(() => window.__portal.testNudge());
     if (!nudge2) throw new Error('no unlocked element found after locking one');
     console.log('   lock respected, another element selected');
+
+    console.log('10e. double-click deletes an element from the preview');
+    const beforeCount = await page.evaluate(() => document.querySelectorAll('.el-card').length);
+    const del = await page.evaluate(() => window.__portal.testDblDelete(3));
+    const afterCount = await page.evaluate(() => document.querySelectorAll('.el-card').length);
+    if (!del || !del.removed || afterCount !== beforeCount - 1) {
+      throw new Error('double-click delete broken: ' + JSON.stringify({ del, beforeCount, afterCount }));
+    }
+    console.log('   element deleted, cards ' + beforeCount + ' -> ' + afterCount);
 
     await page.fill('#titleInput', 'יצירה שנייה');
     await page.check('#rightsCheck');

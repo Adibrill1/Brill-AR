@@ -3,26 +3,36 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>שלום וטכנולוגיה — פורטל יוצרים</title>
+<title>פורטל יוצרים - Brill-AR</title>
 <link rel="stylesheet" href="./style.css">
 <link rel="stylesheet" href="./fonts/fonts.css">
 </head>
 <body>
 <header>
-  <h1>פורטל יוצרים — שלום וטכנולוגיה</h1>
-  <div class="sub">Peace &amp; Technology — Artist Portal</div>
+  <div class="header-row">
+    <div>
+      <h1>פורטל יוצרים - Brill-AR</h1>
+      <div class="sub">Brill-AR — Artist Portal</div>
+    </div>
+    <button id="profileToggle" class="profile-btn" type="button">☰ הפרופיל שלי</button>
+  </div>
 </header>
 <div class="demo-banner" id="modeBanner">מצב הדגמה: הנתונים נשמרים בדפדפן הזה בלבד (חיבור לשרת — בשלב הבא)</div>
-<main>
 
-<section class="card" id="profileCard">
-  <h2>הפרופיל שלי / My profile</h2>
+<div class="drawer-backdrop" id="profileBackdrop" hidden></div>
+<aside class="drawer" id="profileDrawer" aria-hidden="true">
+  <div class="drawer-head">
+    <h2>הפרופיל שלי / My profile</h2>
+    <button class="drawer-close" id="profileClose" type="button" title="סגירה">✕</button>
+  </div>
   <label>שם / Name <input type="text" id="pName"></label>
   <label>מדינה / Country <input type="text" id="pCountry"></label>
   <label>קצת עליי / Bio <textarea id="pBio"></textarea></label>
   <button id="saveProfileBtn">שמירת פרופיל</button>
   <span class="progress-note" id="profileNote"></span>
-</section>
+</aside>
+
+<main>
 
 <section class="card">
   <h2>יצירה חדשה / New trigger image</h2>
@@ -65,10 +75,11 @@
     </div>
   </div>
 
-  <label style="margin-top:22px">תצוגה מקדימה תלת-ממדית — עריכה ישירה
+  <label style="margin-top:22px">תצוגה מקדימה תלת-ממדית — כל העריכה כאן
     <span class="hint">הקישו על אלמנט כדי לבחור אותו: יופיעו חצים — אדום/ירוק להזזה על התמונה, כחול לקירוב וריחוק,
-    הטבעת הכתומה לסיבוב, והכדור הזהוב (גרירה מעלה־מטה) להקטנה והגדלה. גרירת האלמנט עצמו מזיזה אותו חופשי.
-    המנעול בפינת כל אלמנט נועל אותו מפני תזוזה. גרירת רקע מסובבת את המבט.</span>
+    הטבעת הכתומה לסיבוב בתוך המישור, הטבעת הסגולה לסיבוב במאונך, והכדור הזהוב (גרירה מעלה־מטה) להקטנה והגדלה.
+    גרירת האלמנט עצמו מזיזה אותו חופשי. לחיצה כפולה על אלמנט מוחקת אותו. המנעול בפינת כל אלמנט נועל אותו מפני תזוזה.
+    גרירת רקע מסובבת את המבט.</span>
   </label>
   <div id="previewWrap"><div class="empty" id="previewEmpty">בחרו תמונת טריגר ואלמנט אחד לפחות</div></div>
 
@@ -135,8 +146,24 @@ const LIMITS = { imageMB: 10, imageWarnPx: 1024, modelMB: 15, videoMB: 50, image
 $('saveProfileBtn').addEventListener('click', async () => {
   await store.saveProfile({ name: $('pName').value.trim(), country: $('pCountry').value.trim(), bio: $('pBio').value.trim() });
   $('profileNote').textContent = 'נשמר ✓';
-  setTimeout(() => { $('profileNote').textContent = ''; }, 2500);
+  setTimeout(() => { $('profileNote').textContent = ''; closeProfile(); }, 1200);
 });
+
+// profile lives in a side drawer, opened on demand instead of taking up the page
+function openProfile() {
+  $('profileDrawer').classList.add('open');
+  $('profileDrawer').setAttribute('aria-hidden', 'false');
+  $('profileBackdrop').hidden = false;
+}
+function closeProfile() {
+  $('profileDrawer').classList.remove('open');
+  $('profileDrawer').setAttribute('aria-hidden', 'true');
+  $('profileBackdrop').hidden = true;
+}
+$('profileToggle').addEventListener('click', openProfile);
+$('profileClose').addEventListener('click', closeProfile);
+$('profileBackdrop').addEventListener('click', closeProfile);
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeProfile(); });
 
 // ---------- draft state ----------
 const draft = { imageBlob: null, imageEl: null, imageW: 0, imageH: 0, imageHash: null,
@@ -372,11 +399,6 @@ function elDefaults(kind) {
   return { ...base, valid: false };
 }
 
-function slider(label, key, min, max, step, value) {
-  return `<div class="sl-row"><label class="sl">${label} <output>${value}</output>
-    <input type="range" data-t="${key}" min="${min}" max="${max}" step="${step}" value="${value}"></label>
-    <button type="button" class="sl-reset" data-reset="${key}" title="איפוס">↺</button></div>`;
-}
 
 function kindBody(el) {
   if (el.kind === 'lib') {
@@ -417,19 +439,11 @@ function renderElements() {
     card.className = 'el-card';
     card.dataset.uid = el.uid;
     const isCover = el.fit === 'cover' && (el.kind === 'video' || el.kind === 'image');
-    // cover elements pin onto the trigger image; only move-within-frame + resize apply
-    const transformInner = isCover
-      ? `<div class="hint">אפשר להזיז את האלמנט בתוך מסגרת התמונה ולשנות את גודלו — בגרירה בתצוגה או בסליידרים:</div>
-        ${slider('ימינה־שמאלה', 'x', -1, 1, 0.02, el.transform.x)}
-        ${slider('למעלה־למטה', 'y', -1, 1, 0.02, el.transform.y)}
-        ${slider('גודל', 'scale', 0.2, 3, 0.05, el.transform.scale)}`
-      : `${slider('ימינה־שמאלה', 'x', -1, 1, 0.02, el.transform.x)}
-        ${slider('למעלה־למטה', 'y', -1, 1, 0.02, el.transform.y)}
-        ${slider('מרחק מהתמונה', 'z', 0, 1.5, 0.05, el.transform.z)}
-        ${slider('גודל', 'scale', 0.2, 3, 0.05, el.transform.scale)}
-        ${slider('סיבוב', 'rotz', -180, 180, 5, el.transform.rotz)}
-        <label class="fit-row"><input type="checkbox" data-role="upright" ${el.transform.upright ? 'checked' : ''}>
-        העמדה במאונך לתמונת הטריגר</label>
+    // all spatial editing happens directly in the 3D preview — no sliders
+    const editHint = isCover
+      ? '<div class="hint edit-hint">✥ הזיזו את האלמנט בחלון התצוגה כדי למקם אותו על התמונה, גררו את הכדור הזהוב לשינוי הגודל, ולחיצה כפולה עליו מוחקת אותו.</div>'
+      : '<div class="hint edit-hint">✥ כל העריכה בחלון התצוגה: גררו להזזה, שתי הטבעות לסיבוב (אופקי ומאונך), הכדור הזהוב לשינוי גודל, ולחיצה כפולה מוחקת את האלמנט.</div>';
+    const animInner = isCover ? '' : `
         <label>אנימציה (בלופ)
           <select data-role="anim">${[...ANIMATIONS, ...(el.kind === 'text' ? TEXT_ANIMATIONS : [])].map((a) =>
             `<option value="${a.id}" ${el.animation.type === a.id ? 'selected' : ''}>${a.name}</option>`).join('')}</select></label>
@@ -438,6 +452,7 @@ function renderElements() {
           <input type="range" data-role="speed" min="0.2" max="3" step="0.1" value="${el.animation.speed}"></label>
           <button type="button" class="sl-reset" data-role="speedReset" title="איפוס">↺</button>
         </div>`;
+    const transformInner = editHint + animInner;
     card.innerHTML = `
       <div class="el-head">
         <button type="button" class="el-fold" title="קיפול/פתיחה">${el.collapsed ? '▸' : '▾'}</button>
@@ -457,10 +472,7 @@ function renderElements() {
       el.collapsed = !el.collapsed;
       renderElements();
     });
-    card.querySelector('.el-del').addEventListener('click', () => {
-      elements = elements.filter((e) => e.uid !== el.uid);
-      renderElements(); schedulePreview(); refreshSubmit();
-    });
+    card.querySelector('.el-del').addEventListener('click', () => removeElement(el.uid));
     on('[data-role=file]', 'change', (ev) => validateElementFile(el, ev.target.files[0], card));
     on('[data-role=fit]', 'change', (ev) => {
       el.fit = ev.target.checked ? 'cover' : 'free';
@@ -486,7 +498,6 @@ function renderElements() {
     for (const flag of ['bold', 'italic', 'bgOn']) {
       on(`[data-role=${flag}]`, 'change', (ev) => { el[flag] = ev.target.checked; schedulePreview(); });
     }
-    on('[data-role=upright]', 'change', (ev) => { el.transform.upright = ev.target.checked; schedulePreview(); });
     on('[data-role=anim]', 'change', (ev) => {
       el.animation.type = ev.target.value;
       card.querySelector('[data-role=speedRow]').style.display = el.animation.type === 'none' ? 'none' : '';
@@ -503,19 +514,6 @@ function renderElements() {
       inp.value = '1'; inp.previousElementSibling.textContent = '1';
       schedulePreview();
     });
-    card.querySelectorAll('[data-t]').forEach((inp) => inp.addEventListener('input', () => {
-      el.transform[inp.dataset.t] = parseFloat(inp.value);
-      inp.previousElementSibling.textContent = inp.value;
-      schedulePreview();
-    }));
-    card.querySelectorAll('[data-reset]').forEach((btn) => btn.addEventListener('click', () => {
-      const key = btn.dataset.reset;
-      el.transform[key] = DEFAULT_TRANSFORM[key];
-      const inp = card.querySelector(`[data-t=${key}]`);
-      inp.value = DEFAULT_TRANSFORM[key];
-      inp.previousElementSibling.textContent = String(DEFAULT_TRANSFORM[key]);
-      schedulePreview();
-    }));
     wrap.append(card);
   });
 }
@@ -748,13 +746,20 @@ function makeGizmo() {
   const zArrow = arrow('z', 0x2e86c1, new THREE.Euler(Math.PI / 2, 0, 0));
   zArrow.name = 'gizmo-z';
   g.add(zArrow);
-  // rotation ring in the trigger plane — drag it to spin the element (rotz)
-  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.012, 10, 48),
-    new THREE.MeshBasicMaterial({ color: 0xe67e22, depthTest: false, transparent: true, opacity: 0.95 }));
-  ring.userData.axis = 'rot';
-  ring.renderOrder = 999;
-  ring.name = 'gizmo-rot';
-  g.add(ring);
+  const ringMat = (color) => new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.95 });
+  // orange ring in the trigger plane — spin the element within the plane (rotz)
+  const ringZ = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.013, 10, 48), ringMat(0xe67e22));
+  ringZ.userData.axis = 'rotz';
+  ringZ.renderOrder = 999;
+  ringZ.name = 'gizmo-rotz';
+  g.add(ringZ);
+  // purple ring standing upright (around the X axis) — tilt the element out of the plane (rotx)
+  const ringX = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.013, 10, 48), ringMat(0x8e44ad));
+  ringX.rotation.y = Math.PI / 2;
+  ringX.userData.axis = 'rotx';
+  ringX.renderOrder = 999;
+  ringX.name = 'gizmo-rotx';
+  g.add(ringX);
   const orb = new THREE.Mesh(new THREE.SphereGeometry(0.05, 14, 12),
     new THREE.MeshBasicMaterial({ color: 0xd4ac0d, depthTest: false }));
   orb.position.set(-0.3, -0.3, 0);
@@ -767,9 +772,12 @@ function makeGizmo() {
 function selectElement(entry) {
   selected = entry;
   if (!gizmo) gizmo = makeGizmo();
+  // cover elements pin flat onto the image: only move-within-frame + resize, no depth/rotation
   const isCover = entry.el.fit === 'cover' && (entry.el.kind === 'video' || entry.el.kind === 'image');
-  const zArrow = gizmo.getObjectByName('gizmo-z');
-  if (zArrow) zArrow.visible = !isCover;   // cover pins to the image — depth move disabled
+  for (const name of ['gizmo-z', 'gizmo-rotz', 'gizmo-rotx']) {
+    const part = gizmo.getObjectByName(name);
+    if (part) part.visible = !isCover;
+  }
   gizmo.position.copy(entry.obj.position);
   if (!gizmo.parent) pv.scene.add(gizmo);
 }
@@ -796,38 +804,24 @@ function axisParam(origin, dir, ray) {
 const AXIS_VEC = { x: new THREE.Vector3(1, 0, 0), y: new THREE.Vector3(0, 1, 0), z: new THREE.Vector3(0, 0, 1) };
 const CLAMP = { x: [-1, 1], y: [-1, 1], z: [0, 1.5] };
 
-function syncSliders(el) {
-  const card = document.querySelector(`.el-card[data-uid="${el.uid}"]`);
-  if (!card) return;
-  for (const key of ['x', 'y', 'z', 'scale', 'rotz']) {
-    const inp = card.querySelector(`[data-t=${key}]`);
-    if (inp) {
-      inp.value = el.transform[key];
-      inp.previousElementSibling.textContent = String(Math.round(el.transform[key] * 100) / 100);
-    }
-  }
-}
-
 const DRAG_STEP = { x: 0.02, y: 0.02, z: 0.05, scale: 0.05 };
 function applyDragTransform(entry, key, value) {
-  if (key === 'rotz') {
+  if (key === 'rotz' || key === 'rotx') {
     let v = ((value % 360) + 540) % 360 - 180;   // wrap into (-180, 180]
     v = Math.round(v / 5) * 5;
     if (v <= -180) v = 180;
-    entry.el.transform.rotz = v;
-    entry.obj.rotation.z = THREE.MathUtils.degToRad(v);
-    syncSliders(entry.el);
+    entry.el.transform[key] = v;
+    entry.obj.rotation[key === 'rotz' ? 'z' : 'x'] = THREE.MathUtils.degToRad(v);
     return;
   }
   const [lo, hi] = key === 'scale' ? [0.2, 3] : CLAMP[key];
   value = Math.max(lo, Math.min(hi, value));
-  // snap to the matching slider's step grid so the two controls always agree
+  // snap to a consistent step grid so repeated drags stay stable
   const step = DRAG_STEP[key];
   entry.el.transform[key] = Math.round(Math.round(value / step) * step * 100) / 100;
   if (key === 'scale') entry.obj.scale.setScalar(entry.el.transform[key]);
   else entry.obj.position[key] = entry.el.transform[key];
   if (gizmo && selected === entry) gizmo.position.copy(entry.obj.position);
-  syncSliders(entry.el);
 }
 
 function attachGizmoHandlers() {
@@ -844,14 +838,17 @@ function attachGizmoHandlers() {
         dom.setPointerCapture(ev.pointerId);
         if (axis === 'scale') {
           drag = { kind: 'scale', startY: ev.clientY, startScale: selected.el.transform.scale };
-        } else if (axis === 'rot') {
+        } else if (axis === 'rotz') {
           const rct = dom.getBoundingClientRect();
           const c = selected.obj.position.clone().project(pv.camera);
           const cx = rct.left + (c.x * 0.5 + 0.5) * rct.width;
           const cy = rct.top + (-c.y * 0.5 + 0.5) * rct.height;
-          drag = { kind: 'rot', cx, cy,
+          drag = { kind: 'rotz', cx, cy,
                    startAngle: Math.atan2(ev.clientY - cy, ev.clientX - cx),
                    base: selected.el.transform.rotz || 0 };
+        } else if (axis === 'rotx') {
+          // vertical drag tilts the element out of the trigger plane
+          drag = { kind: 'rotx', startY: ev.clientY, base: selected.el.transform.rotx || 0 };
         } else {
           const dir = AXIS_VEC[axis];
           drag = { kind: 'axis', axis, dir,
@@ -898,25 +895,45 @@ function attachGizmoHandlers() {
       }
     } else if (drag.kind === 'scale') {
       applyDragTransform(selected, 'scale', drag.startScale * (1 + (drag.startY - ev.clientY) / 280));
-    } else if (drag.kind === 'rot') {
+    } else if (drag.kind === 'rotz') {
       const ang = Math.atan2(ev.clientY - drag.cy, ev.clientX - drag.cx);
       const deg = (ang - drag.startAngle) * 180 / Math.PI;
       applyDragTransform(selected, 'rotz', drag.base - deg);
+    } else if (drag.kind === 'rotx') {
+      applyDragTransform(selected, 'rotx', drag.base + (drag.startY - ev.clientY) * 0.7);
     }
   });
   const endDrag = () => { drag = null; if (pv) pv.controls.enabled = true; };
   dom.addEventListener('pointerup', endDrag);
   dom.addEventListener('pointercancel', endDrag);
+  // double-click an element in the preview to delete it
+  dom.addEventListener('dblclick', (ev) => {
+    if (!pv.entries?.length) return;
+    raycaster.ray.copy(rayFromEvent(ev));
+    const hits = raycaster.intersectObjects(pv.entries.map((en) => en.obj), true);
+    if (!hits.length) return;
+    let node = hits[0].object, entry = null;
+    while (node && !entry) { entry = pv.entries.find((en) => en.obj === node) || null; node = node.parent; }
+    if (!entry) return;
+    const label = elementLabel(entry.el.kind) + (entry.el.name ? ' · ' + entry.el.name : '');
+    if (confirm(`למחוק את האלמנט "${label}"?`)) removeElement(entry.el.uid);
+  });
 }
 
-// test hook: programmatically select the first element and nudge it via the drag path
+function removeElement(uid) {
+  if (selected && selected.el.uid === uid) deselectElement();
+  elements = elements.filter((e) => e.uid !== uid);
+  renderElements(); schedulePreview(); refreshSubmit();
+}
+
+// test hook: select the first unlocked element and move it via the drag path
 window.__portal.testNudge = () => {
   const entry = pv?.entries?.find((en) => !en.el.locked);
   if (!entry) return null;
   selectElement(entry);
-  applyDragTransform(entry, 'x', entry.el.transform.x + 0.15);
-  const card = document.querySelector(`.el-card[data-uid="${entry.el.uid}"] [data-t=x]`);
-  return { x: entry.el.transform.x, slider: card ? parseFloat(card.value) : null };
+  const before = entry.el.transform.x;
+  applyDragTransform(entry, 'x', before + 0.15);
+  return { x: entry.el.transform.x, moved: entry.el.transform.x !== before };
 };
 // test hook: toggle the lock on the i-th preview element (the in-preview lock button)
 window.__portal.testLock = (i = 1) => {
@@ -925,13 +942,21 @@ window.__portal.testLock = (i = 1) => {
   toggleLock(en);
   return { locked: en.el.locked };
 };
-// test hook: rotate the i-th element through the gizmo's rotation path
-window.__portal.testRotate = (i = 0, deg = 30) => {
+// test hook: rotate the i-th element in-plane (rotz) or out-of-plane (rotx)
+window.__portal.testRotate = (i = 0, deg = 30, axis = 'rotz') => {
   const en = pv?.entries?.[i];
   if (!en) return null;
   selectElement(en);
-  applyDragTransform(en, 'rotz', (en.el.transform.rotz || 0) + deg);
-  return { rotz: en.el.transform.rotz };
+  applyDragTransform(en, axis, (en.el.transform[axis] || 0) + deg);
+  return { rotz: en.el.transform.rotz, rotx: en.el.transform.rotx };
+};
+// test hook: delete the i-th preview element via the double-click path
+window.__portal.testDblDelete = (i = 0) => {
+  const en = pv?.entries?.[i];
+  if (!en) return null;
+  const uid = en.el.uid;
+  removeElement(uid);
+  return { removed: !elements.some((e) => e.uid === uid), count: elements.length };
 };
 
 // ---------- soundtrack ----------

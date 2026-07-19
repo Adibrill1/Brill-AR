@@ -7,7 +7,8 @@
 import { buildLibraryElement } from './library.js';
 import { build3DText, TEXT3D_FONTS } from './text3d.js';
 
-export const DEFAULT_TRANSFORM = { x: 0, y: 0, z: 0.25, scale: 1, upright: false, rotz: 0 };
+// rotz spins the element in the trigger plane; rotx tilts it out of the plane (pitch)
+export const DEFAULT_TRANSFORM = { x: 0, y: 0, z: 0.25, scale: 1, rotz: 0, rotx: 0 };
 export const DEFAULT_ANIMATION = { type: 'none', speed: 1 };
 
 // cover planes slightly oversized (+3%) so the printed trigger's edges stay hidden
@@ -126,12 +127,14 @@ export async function buildElement(THREE, el, url, triggerH) {
     wrap.position.set(t.x || 0, t.y || 0, 0.01);
     wrap.scale.setScalar(t.scale || 1);
   } else {
-    const t = { ...DEFAULT_TRANSFORM, ...(el.transform || {}) };
+    const raw = el.transform || {};
+    const t = { ...DEFAULT_TRANSFORM, ...raw };
     wrap.position.set(t.x, t.y, t.z);
     wrap.scale.setScalar(t.scale);
-    // upright stands the element perpendicular to the trigger image;
-    // rotz spins it (in-plane when flat, around itself when upright)
-    wrap.rotation.set(t.upright ? -Math.PI / 2 : 0, 0, THREE.MathUtils.degToRad(t.rotz || 0));
+    // rotx tilts the element out of the trigger plane, rotz spins it within/around itself.
+    // back-compat: items saved with the old `upright` flag map to a -90° pitch.
+    const rotx = raw.rotx != null ? raw.rotx : (raw.upright ? -90 : 0);
+    wrap.rotation.set(THREE.MathUtils.degToRad(rotx), 0, THREE.MathUtils.degToRad(t.rotz || 0));
   }
 
   const a = { ...DEFAULT_ANIMATION, ...(el.animation || {}) };

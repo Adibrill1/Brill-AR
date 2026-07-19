@@ -7,6 +7,24 @@ body { font-family: system-ui, sans-serif; background: var(--paper); color: var(
 header { background: var(--deep); color: var(--paper); padding: 18px 20px; }
 header h1 { font-size: 1.3rem; }
 header .sub { color: #cfe2ea; font-size: .9rem; margin-top: 4px; }
+.header-row { display: flex; align-items: center; justify-content: space-between; gap: 14px;
+  max-width: 720px; margin: 0 auto; }
+.profile-btn { margin: 0; background: rgba(255,255,255,.14); color: var(--paper);
+  border: 1.5px solid rgba(255,255,255,.4); padding: 9px 16px; font-size: .9rem;
+  border-radius: 22px; white-space: nowrap; }
+.profile-btn:hover { background: rgba(255,255,255,.24); }
+
+/* profile side drawer */
+.drawer-backdrop { position: fixed; inset: 0; background: rgba(15,30,36,.5); z-index: 40; }
+.drawer-backdrop[hidden] { display: none; }
+.drawer { position: fixed; top: 0; left: 0; height: 100%; width: min(360px, 88vw);
+  background: #fff; z-index: 50; padding: 20px; box-shadow: 4px 0 20px rgba(31,78,95,.2);
+  transform: translateX(-100%); transition: transform .25s ease; overflow-y: auto; }
+.drawer.open { transform: none; }
+.drawer-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.drawer-head h2 { color: var(--deep); font-size: 1.1rem; }
+.drawer-close { margin: 0; background: transparent; color: var(--mid); font-size: 1.2rem;
+  padding: 4px 10px; border-radius: 10px; }
 .demo-banner { background: var(--gold); color: var(--ink); padding: 8px 20px; font-size: .85rem; }
 main { max-width: 720px; margin: 0 auto; padding: 20px 16px 60px; }
 section.card { background: #fff; border-radius: 14px; padding: 20px; margin-top: 18px;
@@ -80,6 +98,8 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .add-shortcuts { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
 .add-shortcuts .shortcut { flex: 1; margin-top: 0; text-align: center; }
 .el-kind { font-weight: 700; color: var(--mid); font-size: .9rem; }
+.edit-hint { background: #eef4f6; border: 1px solid #d6e2e6; border-radius: 10px;
+  padding: 9px 11px; margin-top: 10px; color: #4a5b63; line-height: 1.6; }
 
 /* 3D preview */
 #previewWrap { position: relative; margin-top: 8px; border-radius: 12px; overflow: hidden;
