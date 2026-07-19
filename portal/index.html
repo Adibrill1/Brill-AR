@@ -10,11 +10,11 @@
 <body>
 <header>
   <div class="header-row">
-    <div>
-      <h1>פורטל יוצרים - Brill-AR</h1>
-      <div class="sub">Brill-AR — Artist Portal</div>
+    <div class="brand">
+      <h1 class="wordmark">Brill-AR</h1>
+      <div class="sub">פורטל יוצרים · Artist portal</div>
     </div>
-    <button id="profileToggle" class="profile-btn" type="button">☰ הפרופיל שלי</button>
+    <button id="profileToggle" class="avatar" type="button" title="הפרופיל שלי / My profile">ע</button>
   </div>
 </header>
 <div class="demo-banner" id="modeBanner">מצב הדגמה — הנתונים נשמרים בדפדפן זה בלבד</div>
@@ -203,9 +203,9 @@ function drawCrop() {
   cctx.fillRect(0, crop.y + crop.h, W, H - crop.y - crop.h);
   cctx.fillRect(0, crop.y, crop.x, crop.h);
   cctx.fillRect(crop.x + crop.w, crop.y, W - crop.x - crop.w, crop.h);
-  cctx.strokeStyle = '#d4ac0d'; cctx.lineWidth = 2;
+  cctx.strokeStyle = '#c96442'; cctx.lineWidth = 2;
   cctx.strokeRect(crop.x, crop.y, crop.w, crop.h);
-  cctx.fillStyle = '#d4ac0d';
+  cctx.fillStyle = '#c96442';
   for (const [hx, hy] of cropCorners()) cctx.fillRect(hx - 7, hy - 7, 14, 14);
 }
 function cropCorners() {
@@ -581,7 +581,7 @@ function initPreview() {
   const W = wrapEl.clientWidth, H = 340;
   const renderer = new THREE.WebGLRenderer({ antialias: true });
   renderer.setSize(W, H);
-  renderer.setClearColor(0x20313a);
+  renderer.setClearColor(0x141d22);
   wrapEl.append(renderer.domElement);
   const lockLayer = document.createElement('div');
   lockLayer.className = 'pv-lock-layer';

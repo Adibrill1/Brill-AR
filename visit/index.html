@@ -3,55 +3,93 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
-<title>שלום וטכנולוגיה — סיור בתערוכה</title>
+<title>Brill-AR — סיור בתערוכה</title>
 <link rel="stylesheet" href="../portal/fonts/fonts.css">
 <style>
+  /* Brill-AR visitor experience — "parchment / gallery" palette (direction 1a) */
   * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body { height: 100%; font-family: system-ui, sans-serif; background: #111; color: #eee; }
+  html, body { height: 100%; font-family: 'Rubik', system-ui, sans-serif; background: #141413; color: #f5f4ed;
+               -webkit-font-smoothing: antialiased; }
   #container { position: fixed; inset: 0; overflow: hidden; }
+
   .overlay { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center;
-             justify-content: center; gap: 14px; background: #1f4e5f; z-index: 20; text-align: center;
-             padding: 24px; overflow-y: auto; }
-  .overlay h1 { font-size: 1.7rem; }
-  .overlay .en { color: #9fc3d0; font-size: 1rem; }
-  .overlay p { color: #cfe2ea; max-width: 420px; line-height: 1.6; }
-  button, .btn { font-size: 1.05rem; padding: 13px 26px; border: 0; border-radius: 28px; background: #d4ac0d;
-           color: #1f2733; font-weight: 700; cursor: pointer; text-decoration: none; }
-  button.secondary, .btn.secondary { background: transparent; color: #d4ac0d; border: 2px solid #d4ac0d; }
+             justify-content: center; gap: 14px; background: #141413; z-index: 20; text-align: center;
+             padding: 28px 26px; overflow-y: auto; }
+  .overlay h1 { font-family: 'Frank Ruhl Libre', Georgia, serif; font-weight: 500; font-size: 2rem;
+                line-height: 1.2; color: #faf9f5; position: relative; }
+  .overlay .en { color: #87867f; font-size: .85rem; position: relative; }
+  .overlay p { color: #b8b6ad; max-width: 420px; line-height: 1.7; font-size: .92rem; position: relative; }
+  .kicker { position: relative; color: #c96442; font-size: .7rem; font-weight: 600; letter-spacing: .14em; }
+
+  /* start screen: hero anchored low over a soft terracotta glow */
+  #startOverlay { align-items: stretch; justify-content: flex-start; text-align: right; }
+  #startOverlay::before { content: ''; position: absolute; top: -40px; right: -40px; width: 230px; height: 230px;
+    border-radius: 50%; background: radial-gradient(circle, #c96442 0%, transparent 70%); opacity: .5; }
+  #startOverlay h1 { margin-top: auto; }
+  .start-actions { display: flex; flex-direction: column; gap: 10px; width: 100%; margin-top: 26px; }
+
+  button, .btn { font-family: 'Rubik', sans-serif; font-size: .95rem; padding: 14px 26px; border: 0;
+           border-radius: 14px; background: #c96442; color: #faf9f5; font-weight: 500; cursor: pointer;
+           text-decoration: none; position: relative; transition: background .15s; }
+  button:hover, .btn:hover { background: #b05836; }
+  button:disabled { opacity: .5; cursor: default; }
+  button.secondary, .btn.secondary { background: transparent; color: #e8e6dc; border: 1px solid #30302e; }
+  button.secondary:hover, .btn.secondary:hover { background: rgba(255,255,255,.05); }
+
   #hud { position: fixed; bottom: 0; left: 0; right: 0; z-index: 10; display: none;
-         flex-direction: column; align-items: center; gap: 8px; padding: 18px;
-         background: linear-gradient(transparent, rgba(0,0,0,.6)); }
-  #caption { display: none; background: rgba(31,78,95,.85); padding: 8px 18px; border-radius: 14px;
+         flex-direction: column; align-items: center; gap: 10px; padding: 20px;
+         background: linear-gradient(transparent, rgba(0,0,0,.55)); }
+  #caption { display: none; background: rgba(20,20,19,.82); border: 1px solid rgba(212,172,13,.4);
+             backdrop-filter: blur(4px); padding: 10px 20px; border-radius: 16px;
              text-align: center; max-width: 92vw; }
-  #caption .t { font-weight: 700; }
-  #caption .a { font-size: .85rem; color: #cfe2ea; }
-  #status { font-size: .95rem; background: rgba(0,0,0,.5); padding: 6px 14px; border-radius: 16px; }
-  #recBtn { background: #c0392b; color: #fff; border-radius: 50%; width: 72px; height: 72px;
-            font-size: .8rem; display: none; }
+  #caption .t { font-weight: 600; color: #faf9f5; }
+  #caption .a { font-size: .82rem; color: #9fc3d0; margin-top: 2px; }
+  #status { font-size: .9rem; color: #cfe2ea; background: rgba(0,0,0,.4); padding: 6px 16px; border-radius: 16px; }
+  #recBtn { background: #c0392b; color: #fff; border: 4px solid rgba(255,255,255,.85); border-radius: 50%;
+            width: 74px; height: 74px; font-size: .75rem; font-weight: 700; display: none;
+            box-shadow: 0 4px 16px rgba(0,0,0,.4); }
   #recBtn.recording { animation: pulse 1s infinite; }
-  @keyframes pulse { 50% { transform: scale(1.12); } }
-  #result { position: fixed; inset: 0; z-index: 30; background: rgba(10,14,18,.96); display: none;
-            flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 20px; }
-  #result video { max-width: 90vw; max-height: 55vh; border-radius: 12px; border: 2px solid #d4ac0d; }
+  @keyframes pulse { 50% { transform: scale(1.1); } }
+
+  /* keepsake result — parchment */
+  #result { position: fixed; inset: 0; z-index: 30; background: #f5f4ed; color: #141413; display: none;
+            flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 24px; }
+  #result h2 { font-family: 'Frank Ruhl Libre', serif; font-weight: 500; font-size: 1.6rem; color: #141413; }
+  #result video { max-width: 90vw; max-height: 52vh; border-radius: 16px; background: #141413;
+                  box-shadow: rgba(0,0,0,.05) 0 4px 24px; }
+  #result .btn.secondary { background: #faf9f5; color: #40403b; border: 1px solid #e8e6dc; }
+  #result .btn.secondary:hover { background: #f0eee6; }
+  #saveHint { color: #6e6d66 !important; }
   .row { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
-  #collectionOverlay { display: none; }
-  .col-item { display: flex; gap: 12px; align-items: center; background: rgba(255,255,255,.07);
-              border-radius: 12px; padding: 10px 14px; width: min(420px, 88vw); text-align: right; }
-  .col-item img { width: 52px; height: 72px; object-fit: cover; border-radius: 8px; }
-  .col-item .t { font-weight: 700; }
-  .col-item .a { font-size: .85rem; color: #cfe2ea; }
-  #loadNote { font-size: .9rem; color: #9fc3d0; }
-  .hint-small { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); z-index: 10;
-                font-size: .8rem; color: #cfe2ea; background: rgba(0,0,0,.4); padding: 4px 12px;
-                border-radius: 12px; display: none; }
+
+  /* collection — parchment */
+  #collectionOverlay { display: none; background: #f5f4ed; color: #141413; text-align: right; }
+  #collectionOverlay h1 { color: #141413; }
+  #collectionOverlay p { color: #6e6d66; }
+  #collectionOverlay .secondary { background: #faf9f5; color: #40403b; border: 1px solid #e8e6dc; }
+  .col-item { display: flex; gap: 12px; align-items: center; background: #faf9f5; border: 1px solid #f0eee6;
+              border-radius: 12px; padding: 10px 14px; width: min(420px, 90vw); text-align: right; }
+  .col-item img { width: 52px; height: 70px; object-fit: cover; border-radius: 8px; }
+  .col-item .t { font-weight: 500; color: #141413; }
+  .col-item .a { font-size: .82rem; color: #87867f; }
+
+  #loadNote { font-size: .85rem; color: #87867f; position: relative; text-align: center; }
+  .hint-small { position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 10;
+                font-size: .78rem; color: #cfe2ea; background: rgba(0,0,0,.4); padding: 5px 14px;
+                border-radius: 14px; display: none; }
 </style>
 </head>
 <body>
 <div class="overlay" id="startOverlay">
-  <h1>ברוכים הבאים לתערוכת מציאות רבודה מבית Brill-AR</h1>
+  <div class="kicker">BRILL-AR</div>
+  <h1>ברוכים הבאים לתערוכת<br>המציאות הרבודה</h1>
+  <p>כוונו את המצלמה אל יצירה בתערוכה — והיא תתעורר לחיים.</p>
+  <div class="en">An augmented-reality exhibition</div>
+  <div class="start-actions">
+    <button id="startBtn" disabled>התחלת סיור · Start</button>
+    <button class="secondary" id="collectionBtn">האוסף שלי · My collection (<span id="colCount">0</span>)</button>
+  </div>
   <div id="loadNote">טוען את התערוכה…</div>
-  <button id="startBtn" disabled>התחלת סיור / Start</button>
-  <button class="secondary" id="collectionBtn">האוסף שלי / My collection (<span id="colCount">0</span>)</button>
 </div>
 
 <div class="overlay" id="collectionOverlay">
