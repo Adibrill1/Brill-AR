@@ -18,7 +18,7 @@ export const backendMode = impl.mode;
 // update the banner on pages that have one
 const banner = document.getElementById('modeBanner');
 if (banner && backendMode === 'supabase') {
-  banner.textContent = 'מחובר לשרת — הנתונים והקבצים משותפים לכל היוצרים ולאדמין';
+  banner.textContent = 'מחובר לשרת — הנתונים משותפים לכל היוצרים';
   banner.style.background = '#27ae60';
   banner.style.color = '#fff';
 }

@@ -17,7 +17,7 @@
     <button id="profileToggle" class="profile-btn" type="button">☰ הפרופיל שלי</button>
   </div>
 </header>
-<div class="demo-banner" id="modeBanner">מצב הדגמה: הנתונים נשמרים בדפדפן הזה בלבד (חיבור לשרת — בשלב הבא)</div>
+<div class="demo-banner" id="modeBanner">מצב הדגמה — הנתונים נשמרים בדפדפן זה בלבד</div>
 
 <div class="drawer-backdrop" id="profileBackdrop" hidden></div>
 <aside class="drawer" id="profileDrawer" aria-hidden="true">
@@ -36,20 +36,18 @@
 
 <section class="card">
   <h2>יצירה חדשה / New trigger image</h2>
-  <p class="hint">תמונת טריגר היא כל תמונה מודפסת שהמערכת מזהה — קלף, מדבקה, פוסטר או הדפס.
-     המבקרים יכוונו אליה את המצלמה כדי לפתוח את חוויית ה-AR שלך.</p>
 
-  <label>1. תמונת הטריגר (אפשר גם לצלם עכשיו — יופיע עורך חיתוך וסיבוב)
+  <label>1. תמונת הטריגר
     <input type="file" id="imgInput" accept="image/*">
   </label>
 
   <div id="cropEditor" style="display:none">
     <div class="crop-tools">
       <button type="button" class="secondary" id="rotateBtn">סיבוב 90° ↻</button>
-      <span class="hint">גררו את הפינות כדי לחתוך, או את המרכז כדי להזיז</span>
+      <span class="hint">גררו פינות לחיתוך, מרכז להזזה</span>
     </div>
     <canvas id="cropCanvas"></canvas>
-    <button type="button" id="cropApply">אישור התמונה ✓</button>
+    <button type="button" id="cropApply">אישור התמונה</button>
   </div>
 
   <img id="imgPreview" class="preview-media" style="display:none">
@@ -58,32 +56,26 @@
   <div class="progress-note" id="qualityProgress"></div>
   <div id="qualityResult"></div>
 
-  <label style="margin-top:22px">2. אלמנטים ביצירה
-    <span class="hint">אפשר לשלב כמה אלמנטים: וידאו שמכסה את התמונה, מודל תלת-מימד שמרחף לידה, תמונות — ולכוון לכל אחד מיקום מדויק במרחב.</span>
-  </label>
+  <label style="margin-top:22px">2. אלמנטים ביצירה</label>
   <div id="elementsList"></div>
   <div class="add-el">
     <label class="import-btn" id="importBtnLabel">⬆ ייבוא אלמנט
       <input type="file" id="importInput"
              accept="image/*,video/*,audio/*,.glb,.gltf,.mp4,.mov,.webm,.m4v,.ogv,.mp3,.wav" multiple hidden>
     </label>
-    <div class="formats-note">אפשר לייבא: תמונות (PNG · JPG · WebP) · וידאו (MP4 · MOV · WebM) ·
-      שמע (MP3 · WAV) · תלת-מימד (GLB · GLTF)</div>
+    <div class="formats-note">תמונות · וידאו · שמע · תלת-מימד</div>
     <div class="add-shortcuts">
       <button type="button" class="secondary shortcut" id="addTextBtn">➤ טקסט</button>
       <button type="button" class="secondary shortcut" id="addLibBtn">➤ ספריית תלת-מימד</button>
     </div>
   </div>
 
-  <label style="margin-top:22px">תצוגה מקדימה תלת-ממדית — כל העריכה כאן
-    <span class="hint">הקישו על אלמנט כדי לבחור אותו: יופיעו חצים — אדום/ירוק להזזה על התמונה, כחול לקירוב וריחוק,
-    הטבעת הכתומה לסיבוב בתוך המישור, הטבעת הסגולה לסיבוב במאונך, והכדור הזהוב (גרירה מעלה־מטה) להקטנה והגדלה.
-    גרירת האלמנט עצמו מזיזה אותו חופשי. לחיצה כפולה על אלמנט מוחקת אותו. המנעול בפינת כל אלמנט נועל אותו מפני תזוזה.
-    גרירת רקע מסובבת את המבט.</span>
+  <label style="margin-top:22px">תצוגה מקדימה — העריכה כולה כאן
+    <span class="hint">הקישו על אלמנט לבחירה; גררו להזזה, טבעות לסיבוב, כדור לגודל. לחיצה כפולה מוחקת.</span>
   </label>
   <div id="previewWrap"><div class="empty" id="previewEmpty">בחרו תמונת טריגר ואלמנט אחד לפחות</div></div>
 
-  <label style="margin-top:22px">3. פס קול (אופציונלי — MP3/WAV, עד 30 שניות)
+  <label style="margin-top:22px">3. פס קול (אופציונלי, עד 30 שניות)
     <input type="file" id="audioInput" accept="audio/*,.mp3,.wav">
   </label>
   <div class="field-error" id="audioError"></div>
@@ -105,8 +97,7 @@
 
 <section class="card">
   <h2>הספרייה המשותפת — תרומת אלמנטים / Shared library</h2>
-  <p class="hint">העלו אלמנטים תלת-מימדיים (GLB) או מדבקות ואיורים (PNG/JPG/WebP) לשיתוף כלל היוצרים.
-     כל תרומה עוברת אישור לפני שהיא מצטרפת לספרייה שכולם רואים.</p>
+  <p class="hint">אלמנטים (GLB) או מדבקות (PNG/JPG/WebP) לשיתוף כל היוצרים — כל תרומה עוברת אישור.</p>
   <label>קבצים <input type="file" id="libFile" accept=".glb,image/png,image/jpeg,image/webp" multiple></label>
   <div id="libUploadList"></div>
   <button id="libSubmitBtn" disabled>שליחת התרומות לאישור</button>
@@ -284,6 +275,7 @@ $('imgInput').addEventListener('change', async (ev) => {
   img.src = URL.createObjectURL(f);
   try { await img.decode(); } catch { $('imgError').textContent = 'לא ניתן לקרוא את הקובץ כתמונה'; return; }
   editImg = img;
+  $('cropApply').textContent = 'אישור התמונה';   // reset — the ✓ only appears once approved
   $('cropEditor').style.display = 'block';
   fitCanvas();
   refreshSubmit();
@@ -304,6 +296,7 @@ $('rotateBtn').addEventListener('click', async () => {
 });
 
 $('cropApply').addEventListener('click', async () => {
+  $('cropApply').textContent = 'אישור התמונה ✓';
   const sx = editImg.width / cropCanvas.width;
   const sy = editImg.height / cropCanvas.height;
   const out = document.createElement('canvas');
@@ -385,11 +378,6 @@ const KIND_ACCEPT = {
   image: 'image/*',
   model: '.glb,.gltf,model/gltf-binary',
 };
-const KIND_HINT = {
-  video: 'כל פורמט שהדפדפן מנגן (MP4, MOV, WebM…). נבדק מיד עם הבחירה.',
-  image: 'תמונה (PNG/JPG) שתרחף או תכסה את תמונת הטריגר.',
-  model: 'מודל תלת-מימד GLB/GLTF, עד 15MB. כולל אנימציות.',
-};
 
 function elDefaults(kind) {
   const base = { file: null, name: '', error: '', fit: 'free' };
@@ -424,11 +412,10 @@ function kindBody(el) {
       </div>`;
   }
   return `<input type="file" data-role="file" accept="${KIND_ACCEPT[el.kind]}">
-    <div class="hint">${KIND_HINT[el.kind]}</div>
     <div class="progress-note" data-role="info">${el.name ? 'נטען: ' + el.name : ''}</div>
     <div class="field-error" data-role="err">${el.error || ''}</div>
     ${el.kind !== 'model' ? `<label class="fit-row"><input type="checkbox" data-role="fit" ${el.fit === 'cover' ? 'checked' : ''}>
-      הצמדה מלאה — מכסה את תמונת הטריגר בדיוק</label>` : ''}`;
+      הצמדה מלאה (כיסוי התמונה)</label>` : ''}`;
 }
 
 function renderElements() {
@@ -439,11 +426,8 @@ function renderElements() {
     card.className = 'el-card';
     card.dataset.uid = el.uid;
     const isCover = el.fit === 'cover' && (el.kind === 'video' || el.kind === 'image');
-    // all spatial editing happens directly in the 3D preview — no sliders
-    const editHint = isCover
-      ? '<div class="hint edit-hint">✥ הזיזו את האלמנט בחלון התצוגה כדי למקם אותו על התמונה, גררו את הכדור הזהוב לשינוי הגודל, ולחיצה כפולה עליו מוחקת אותו.</div>'
-      : '<div class="hint edit-hint">✥ כל העריכה בחלון התצוגה: גררו להזזה, שתי הטבעות לסיבוב (אופקי ומאונך), הכדור הזהוב לשינוי גודל, ולחיצה כפולה מוחקת את האלמנט.</div>';
-    const animInner = isCover ? '' : `
+    // no sliders — spatial editing is in the preview; only animation stays here (non-cover)
+    const transformInner = isCover ? '' : `
         <label>אנימציה (בלופ)
           <select data-role="anim">${[...ANIMATIONS, ...(el.kind === 'text' ? TEXT_ANIMATIONS : [])].map((a) =>
             `<option value="${a.id}" ${el.animation.type === a.id ? 'selected' : ''}>${a.name}</option>`).join('')}</select></label>
@@ -452,7 +436,6 @@ function renderElements() {
           <input type="range" data-role="speed" min="0.2" max="3" step="0.1" value="${el.animation.speed}"></label>
           <button type="button" class="sl-reset" data-role="speedReset" title="איפוס">↺</button>
         </div>`;
-    const transformInner = editHint + animInner;
     card.innerHTML = `
       <div class="el-head">
         <button type="button" class="el-fold" title="קיפול/פתיחה">${el.collapsed ? '▸' : '▾'}</button>
@@ -725,6 +708,7 @@ function updateLockButtons() {
 let selected = null;       // { el, obj }
 let gizmo = null;
 let drag = null;
+let lastTap = null;        // { uid, time } — for double-tap-to-delete detection
 const raycaster = new THREE.Raycaster();
 
 function makeGizmo() {
@@ -826,61 +810,78 @@ function applyDragTransform(entry, key, value) {
 
 function attachGizmoHandlers() {
   const dom = pv.renderer.domElement;
+  // nearest selectable element whose body the current ray hits (ignores the gizmo overlay)
+  function bodyEntryUnderRay() {
+    const selectable = (pv.entries || []).filter((en) => !en.el.locked);
+    const hits = raycaster.intersectObjects(selectable.map((en) => en.obj), true);
+    if (!hits.length) return null;
+    let node = hits[0].object, entry = null;
+    while (node && !entry) { entry = (pv.entries || []).find((en) => en.obj === node) || null; node = node.parent; }
+    return entry;
+  }
   dom.addEventListener('pointerdown', (ev) => {
     if (!pv.entries?.length && !selected) return;
     const ray = rayFromEvent(ev);
     raycaster.ray.copy(ray);
-    if (gizmo?.parent) {
-      const hit = raycaster.intersectObject(gizmo, true)[0];
-      if (hit) {
-        const axis = hit.object.userData.axis;
-        pv.controls.enabled = false;
-        dom.setPointerCapture(ev.pointerId);
-        if (axis === 'scale') {
-          drag = { kind: 'scale', startY: ev.clientY, startScale: selected.el.transform.scale };
-        } else if (axis === 'rotz') {
-          const rct = dom.getBoundingClientRect();
-          const c = selected.obj.position.clone().project(pv.camera);
-          const cx = rct.left + (c.x * 0.5 + 0.5) * rct.width;
-          const cy = rct.top + (-c.y * 0.5 + 0.5) * rct.height;
-          drag = { kind: 'rotz', cx, cy,
-                   startAngle: Math.atan2(ev.clientY - cy, ev.clientX - cx),
-                   base: selected.el.transform.rotz || 0 };
-        } else if (axis === 'rotx') {
-          // vertical drag tilts the element out of the trigger plane
-          drag = { kind: 'rotx', startY: ev.clientY, base: selected.el.transform.rotx || 0 };
-        } else {
-          const dir = AXIS_VEC[axis];
-          drag = { kind: 'axis', axis, dir,
-                   origin: selected.obj.position.clone(),
-                   start: axisParam(selected.obj.position, dir, ray),
-                   base: selected.el.transform[axis] };
-        }
-        return;
+    const now = Date.now();
+    const bodyEntry = bodyEntryUnderRay();
+    const gizmoHit = gizmo?.parent ? raycaster.intersectObject(gizmo, true)[0] : null;
+    // which element this tap concerns: its body, or (a handle of) the selected element
+    const tapUid = bodyEntry ? bodyEntry.el.uid : (gizmoHit && selected ? selected.el.uid : null);
+
+    // second tap on the same element within 400ms → delete it (works over the gizmo too)
+    if (tapUid && lastTap && lastTap.uid === tapUid && now - lastTap.time < 400) {
+      lastTap = null;
+      const el = (bodyEntry || selected).el;
+      if (confirm(`למחוק את האלמנט "${elementLabel(el.kind)}${el.name ? ' · ' + el.name : ''}"?`)) {
+        removeElement(el.uid); return;
       }
     }
-    const selectable = (pv.entries || []).filter((en) => !en.el.locked);
-    const hits = raycaster.intersectObjects(selectable.map((en) => en.obj), true);
-    if (hits.length) {
-      let node = hits[0].object;
-      let entry = null;
-      while (node && !entry) {
-        entry = (pv.entries || []).find((en) => en.obj === node) || null;
-        node = node.parent;
+
+    // gizmo handles (arrows / rings / scale orb) keep priority so they stay grabbable over the body
+    if (gizmoHit) {
+      const axis = gizmoHit.object.userData.axis;
+      lastTap = { uid: selected.el.uid, time: now };
+      pv.controls.enabled = false;
+      dom.setPointerCapture(ev.pointerId);
+      if (axis === 'scale') {
+        drag = { kind: 'scale', startY: ev.clientY, startScale: selected.el.transform.scale };
+      } else if (axis === 'rotz') {
+        const rct = dom.getBoundingClientRect();
+        const c = selected.obj.position.clone().project(pv.camera);
+        const cx = rct.left + (c.x * 0.5 + 0.5) * rct.width;
+        const cy = rct.top + (-c.y * 0.5 + 0.5) * rct.height;
+        drag = { kind: 'rotz', cx, cy,
+                 startAngle: Math.atan2(ev.clientY - cy, ev.clientX - cx),
+                 base: selected.el.transform.rotz || 0 };
+      } else if (axis === 'rotx') {
+        // vertical drag tilts the element out of the trigger plane
+        drag = { kind: 'rotx', startY: ev.clientY, base: selected.el.transform.rotx || 0 };
+      } else {
+        const dir = AXIS_VEC[axis];
+        drag = { kind: 'axis', axis, dir,
+                 origin: selected.obj.position.clone(),
+                 start: axisParam(selected.obj.position, dir, ray),
+                 base: selected.el.transform[axis] };
       }
-      if (entry) {
-        selectElement(entry);
-        pv.controls.enabled = false;
-        dom.setPointerCapture(ev.pointerId);
-        drag = { kind: 'plane', z: entry.obj.position.z };
-        return;
-      }
+      return;
     }
+    if (bodyEntry) {
+      lastTap = { uid: bodyEntry.el.uid, time: now };   // arm double-tap-to-delete
+      selectElement(bodyEntry);
+      pv.controls.enabled = false;
+      dom.setPointerCapture(ev.pointerId);
+      drag = { kind: 'plane', z: bodyEntry.obj.position.z };
+      return;
+    }
+    lastTap = null;
     deselectElement();
   });
   dom.addEventListener('pointermove', (ev) => {
     if (!drag || !selected) return;
     const ray = rayFromEvent(ev);
+    // moving a full-cover element in the preview drops its "full snap" mode
+    if (['plane', 'axis', 'scale'].includes(drag.kind) && detachCover(selected)) drag.detached = true;
     if (drag.kind === 'axis') {
       const s = axisParam(drag.origin, drag.dir, ray);
       applyDragTransform(selected, drag.axis, drag.base + (s - drag.start));
@@ -903,21 +904,25 @@ function attachGizmoHandlers() {
       applyDragTransform(selected, 'rotx', drag.base + (drag.startY - ev.clientY) * 0.7);
     }
   });
-  const endDrag = () => { drag = null; if (pv) pv.controls.enabled = true; };
+  const endDrag = () => {
+    const detached = drag && drag.detached;
+    drag = null;
+    if (pv) pv.controls.enabled = true;
+    // a detached cover element switched to 'free' — refresh its card + rebuild its geometry
+    if (detached) { renderElements(); schedulePreview(); }
+  };
   dom.addEventListener('pointerup', endDrag);
   dom.addEventListener('pointercancel', endDrag);
-  // double-click an element in the preview to delete it
-  dom.addEventListener('dblclick', (ev) => {
-    if (!pv.entries?.length) return;
-    raycaster.ray.copy(rayFromEvent(ev));
-    const hits = raycaster.intersectObjects(pv.entries.map((en) => en.obj), true);
-    if (!hits.length) return;
-    let node = hits[0].object, entry = null;
-    while (node && !entry) { entry = pv.entries.find((en) => en.obj === node) || null; node = node.parent; }
-    if (!entry) return;
-    const label = elementLabel(entry.el.kind) + (entry.el.name ? ' · ' + entry.el.name : '');
-    if (confirm(`למחוק את האלמנט "${label}"?`)) removeElement(entry.el.uid);
-  });
+}
+
+// full-cover element moved in the preview → drop "full snap", becoming a free element
+function detachCover(entry) {
+  if (!(entry.el.fit === 'cover' && (entry.el.kind === 'video' || entry.el.kind === 'image'))) return false;
+  entry.el.fit = 'free';
+  entry.el.transform.z = 0.02;   // keep it near the image where it was, now free to move
+  const cb = document.querySelector(`.el-card[data-uid="${entry.el.uid}"] [data-role=fit]`);
+  if (cb) cb.checked = false;
+  return true;
 }
 
 function removeElement(uid) {
@@ -958,6 +963,16 @@ window.__portal.testDblDelete = (i = 0) => {
   removeElement(uid);
   return { removed: !elements.some((e) => e.uid === uid), count: elements.length };
 };
+// test hook: client-space screen position of the i-th element (for real pointer-event tests)
+window.__portal.entryScreen = (i = 0) => {
+  const en = pv?.entries?.[i];
+  if (!en) return null;
+  const dom = pv.renderer.domElement;
+  const p = en.obj.position.clone().project(pv.camera);
+  const r = dom.getBoundingClientRect();
+  return { x: r.left + (p.x * 0.5 + 0.5) * r.width, y: r.top + (-p.y * 0.5 + 0.5) * r.height };
+};
+window.__portal.fitOf = (i = 0) => pv?.entries?.[i]?.el.fit ?? null;
 
 // ---------- soundtrack ----------
 async function handleAudioFile(f) {

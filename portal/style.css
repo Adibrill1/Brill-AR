@@ -98,8 +98,6 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .add-shortcuts { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
 .add-shortcuts .shortcut { flex: 1; margin-top: 0; text-align: center; }
 .el-kind { font-weight: 700; color: var(--mid); font-size: .9rem; }
-.edit-hint { background: #eef4f6; border: 1px solid #d6e2e6; border-radius: 10px;
-  padding: 9px 11px; margin-top: 10px; color: #4a5b63; line-height: 1.6; }
 
 /* 3D preview */
 #previewWrap { position: relative; margin-top: 8px; border-radius: 12px; overflow: hidden;

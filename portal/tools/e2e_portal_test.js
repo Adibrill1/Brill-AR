@@ -1,6 +1,6 @@
 // Full artist-portal flow test, headless:
 // profile -> crop/rotate editor -> weak image blocked by quality gate -> good image passes
-// -> two elements (cover video + upright floating image) -> live 3D preview builds
+// -> two elements (cover video + floating image) -> live 3D preview builds
 // -> soundtrack -> submit -> admin approve -> AR view detects the trigger (fake camera).
 // Usage: node e2e_portal_test.js <repoRoot> <assetsDir> <outDir>
 const { chromium } = require('playwright');
