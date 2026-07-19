@@ -1,13 +1,62 @@
 // Shared AR-element builder — used by both the portal's live 3D preview editor and
-// the AR view, so what the artist positions in the editor is exactly what visitors see.
+// the AR views, so what the artist positions in the editor is exactly what visitors see.
 //
-// Element: { kind: 'video'|'image'|'model', fit: 'cover'|'free', transform: {...} }
+// Element: { kind: 'video'|'image'|'model'|'lib'|'text', fit: 'cover'|'free',
+//            transform: {...}, animation: {type, speed}, ...kind-specific fields }
 // Anchor space (MindAR): trigger image is 1 unit wide, X right, Y up, Z toward viewer.
+import { buildLibraryElement } from './library.js';
 
 export const DEFAULT_TRANSFORM = { x: 0, y: 0, z: 0.25, scale: 1, upright: false, rotz: 0 };
+export const DEFAULT_ANIMATION = { type: 'none', speed: 1 };
+
+// cover planes are oversized so tracking jitter never exposes the printed trigger's edges
+const COVER_OVERSIZE = 1.14;
+
+export const ANIMATIONS = [
+  { id: 'none', name: 'ללא אנימציה' },
+  { id: 'spin', name: 'מסתובב סביב עצמו' },
+  { id: 'bob', name: 'עולה ויורד' },
+  { id: 'approach', name: 'מתקרב ומתרחק' },
+  { id: 'pulse', name: 'פעימה (גדל וקטן)' },
+  { id: 'orbit', name: 'מקיף במעגל' },
+];
+
+export const TEXT_FONTS = ['Arial', 'Verdana', 'Georgia', 'Times New Roman',
+  'Courier New', 'Impact', 'Trebuchet MS', 'Comic Sans MS'];
 
 export function elementLabel(kind) {
-  return { video: 'וידאו', image: 'תמונה', model: 'מודל תלת-מימד' }[kind] || kind;
+  return { video: 'וידאו', image: 'תמונה', model: 'מודל תלת-מימד', lib: 'אלמנט מהספרייה', text: 'טקסט' }[kind] || kind;
+}
+
+function buildTextMesh(THREE, el) {
+  const fontSize = 96, pad = 42, lineH = fontSize * 1.3;
+  const fontSpec = `${el.italic ? 'italic ' : ''}${el.bold ? 'bold ' : ''}${fontSize}px "${el.font || 'Arial'}"`;
+  const lines = String(el.text || '').split('\n');
+  const probe = document.createElement('canvas').getContext('2d');
+  probe.font = fontSpec;
+  const w = Math.max(60, ...lines.map((l) => probe.measureText(l).width)) + pad * 2;
+  const h = lines.length * lineH + pad * 2;
+  const c = document.createElement('canvas');
+  c.width = Math.ceil(w); c.height = Math.ceil(h);
+  const x = c.getContext('2d');
+  if (el.bgOn) {
+    x.fillStyle = el.bg || '#1f4e5f';
+    x.beginPath();
+    x.roundRect(0, 0, c.width, c.height, 28);
+    x.fill();
+  }
+  x.font = fontSpec;
+  x.fillStyle = el.color || '#ffffff';
+  x.textAlign = 'center';
+  x.textBaseline = 'middle';
+  x.direction = 'rtl';
+  lines.forEach((l, i) => x.fillText(l, c.width / 2, pad + lineH * (i + 0.5)));
+  const tex = new THREE.CanvasTexture(c);
+  const planeW = 0.75;
+  return new THREE.Mesh(
+    new THREE.PlaneGeometry(planeW, planeW * c.height / c.width),
+    new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide }),
+  );
 }
 
 // triggerH = image height / image width (trigger plane is 1 x triggerH)
@@ -23,6 +72,10 @@ export async function buildElement(THREE, el, url, triggerH) {
     inner.scale.setScalar(0.8 / size);
     box.setFromObject(inner);
     inner.position.sub(box.getCenter(new THREE.Vector3()));
+  } else if (el.kind === 'lib') {
+    inner = buildLibraryElement(THREE, el.libId, el.color);
+  } else if (el.kind === 'text') {
+    inner = buildTextMesh(THREE, el);
   } else {
     let tex, aspect;
     if (el.kind === 'video') {
@@ -42,9 +95,9 @@ export async function buildElement(THREE, el, url, triggerH) {
     }
     let w, h;
     if (el.fit === 'cover') {
-      // exactly overlay (and hide) the trigger image; crop overflow like CSS cover
-      w = 1; h = triggerH;
-      const planeAspect = w / h;
+      // exactly overlay the trigger, slightly oversized so jitter never reveals it
+      w = COVER_OVERSIZE; h = triggerH * COVER_OVERSIZE;
+      const planeAspect = 1 / triggerH;
       if (aspect > planeAspect) {
         const r = planeAspect / aspect;
         tex.repeat.set(r, 1); tex.offset.set((1 - r) / 2, 0);
@@ -61,10 +114,15 @@ export async function buildElement(THREE, el, url, triggerH) {
     );
   }
 
+  // wrap (artist transform) > animGroup (looping animation offsets) > inner
+  const animGroup = new THREE.Group();
+  animGroup.add(inner);
   const wrap = new THREE.Group();
-  wrap.add(inner);
-  if (el.fit === 'cover' && el.kind !== 'model') {
-    wrap.position.set(0, 0, 0.01);  // just above the trigger so it fully hides it
+  wrap.add(animGroup);
+
+  const isCover = el.fit === 'cover' && (el.kind === 'video' || el.kind === 'image');
+  if (isCover) {
+    wrap.position.set(0, 0, 0.01);
   } else {
     const t = { ...DEFAULT_TRANSFORM, ...(el.transform || {}) };
     wrap.position.set(t.x, t.y, t.z);
@@ -73,11 +131,43 @@ export async function buildElement(THREE, el, url, triggerH) {
     // rotz spins it (in-plane when flat, around itself when upright)
     wrap.rotation.set(t.upright ? -Math.PI / 2 : 0, 0, THREE.MathUtils.degToRad(t.rotz || 0));
   }
-  return { obj: wrap, video, gltf };
+
+  const a = { ...DEFAULT_ANIMATION, ...(el.animation || {}) };
+  const anim = (!isCover && a.type !== 'none') ? { group: animGroup, type: a.type, speed: a.speed || 1 } : null;
+
+  return { obj: wrap, video, gltf, anim };
 }
 
-// builds all elements of an item; returns { group, videos, mixers } — caller drives
-// play/pause on target found/lost and mixer updates in the render loop
+// advance all looping animations; elapsed is total seconds (e.g. clock.getElapsedTime())
+export function updateAnimations(anims, elapsed) {
+  for (const a of anims) {
+    const t = elapsed * a.speed;
+    const g = a.group;
+    switch (a.type) {
+      case 'spin':
+        g.rotation.y = t * 1.2;
+        break;
+      case 'bob':
+        g.position.y = 0.12 * Math.sin(t * 2);
+        break;
+      case 'approach':
+        g.position.z = 0.14 * Math.sin(t * 1.6);
+        break;
+      case 'pulse': {
+        const s = 1 + 0.16 * Math.sin(t * 2.6);
+        g.scale.setScalar(s);
+        break;
+      }
+      case 'orbit':
+        g.position.x = 0.22 * Math.cos(t * 1.1);
+        g.position.y = 0.22 * Math.sin(t * 1.1);
+        break;
+    }
+  }
+}
+
+// builds all elements of an item; returns { group, videos, mixers, anims } — caller drives
+// play/pause on target found/lost, mixer updates and updateAnimations in the render loop
 export async function buildElements(THREE, elements, urlOf, triggerH) {
   const group = new THREE.Group();
   group.add(new THREE.AmbientLight(0xffffff, 0.9));
@@ -85,16 +175,17 @@ export async function buildElements(THREE, elements, urlOf, triggerH) {
   dir.position.set(0.5, 1, 1);
   group.add(dir);
 
-  const videos = [], mixers = [];
+  const videos = [], mixers = [], anims = [];
   for (const el of elements) {
-    const { obj, video, gltf } = await buildElement(THREE, el, urlOf(el), triggerH);
+    const { obj, video, gltf, anim } = await buildElement(THREE, el, urlOf(el), triggerH);
     group.add(obj);
     if (video) videos.push(video);
+    if (anim) anims.push(anim);
     if (gltf?.animations?.length) {
       const mixer = new THREE.AnimationMixer(gltf.scene);
       gltf.animations.forEach((clip) => mixer.clipAction(clip).play());
       mixers.push(mixer);
     }
   }
-  return { group, videos, mixers };
+  return { group, videos, mixers, anims };
 }

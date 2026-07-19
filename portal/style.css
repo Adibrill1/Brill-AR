@@ -79,3 +79,9 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .sl-reset { margin: 0 0 4px; padding: 4px 10px; font-size: 1rem; border-radius: 8px;
             background: transparent; border: 1.5px solid #ccd4d8; color: var(--mid); cursor: pointer; }
 #missingList { margin-top: 10px; line-height: 1.7; }
+
+/* text element styling controls */
+.text-style { display: flex; flex-wrap: wrap; gap: 4px 18px; align-items: center; }
+.text-style label { margin: 8px 0 0; }
+input[type=color] { border: 1.5px solid #ccd4d8; border-radius: 8px; width: 52px; height: 32px;
+                    padding: 2px; background: #fbfaf7; vertical-align: middle; }

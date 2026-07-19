@@ -95,10 +95,12 @@ export const store = {
     const mindPath = await uploadFile(`${dir}/target.mind`, item.mindBlob);
     const elements = [];
     for (let i = 0; i < item.elements.length; i++) {
-      const el = item.elements[i];
-      const fallback = { video: 'mp4', image: 'png', model: 'glb' }[el.kind];
-      const path = await uploadFile(`${dir}/el${i}.${ext(el.name, fallback)}`, el.blob);
-      elements.push({ kind: el.kind, name: el.name, path, fit: el.fit, transform: el.transform });
+      const { blob, ...entry } = item.elements[i];
+      if (blob) {
+        const fallback = { video: 'mp4', image: 'png', model: 'glb' }[entry.kind];
+        entry.path = await uploadFile(`${dir}/el${i}.${ext(entry.name, fallback)}`, blob);
+      }
+      elements.push(entry);
     }
     const audioPath = item.audioBlob
       ? await uploadFile(`${dir}/audio.${ext(item.audioBlob.name, 'mp3')}`, item.audioBlob)

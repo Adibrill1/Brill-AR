@@ -91,7 +91,8 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { store } from './js/store.js';
 import { analyzeTriggerImage } from './js/quality.js';
-import { buildElements, DEFAULT_TRANSFORM, elementLabel } from './js/elements.js';
+import { buildElements, updateAnimations, DEFAULT_TRANSFORM, DEFAULT_ANIMATION, ANIMATIONS, TEXT_FONTS, elementLabel } from './js/elements.js';
+import { LIBRARY } from './js/library.js';
 import { dHash, hammingDistance, DUPLICATE_THRESHOLD } from './js/imagehash.js';
 
 window.__portal = { qualityDone: false, submitted: false, lastGrade: null, error: '',
@@ -328,13 +329,51 @@ const KIND_HINT = {
   image: 'תמונה (PNG/JPG) שתרחף או תכסה את תמונת הטריגר.',
   model: 'מודל תלת-מימד GLB/GLTF, עד 15MB. כולל אנימציות.',
 };
+const FILE_KINDS = ['video', 'image', 'model'];
 
-function slider(label, key, min, max, step, el) {
-  const v = el.transform[key];
-  return `<div class="sl-row"><label class="sl">${label} <output>${v}</output>
-    <input type="range" data-t="${key}" min="${min}" max="${max}" step="${step}" value="${v}"></label>
+function elDefaults(kind) {
+  const base = { file: null, name: '', error: '', fit: 'free' };
+  if (kind === 'lib') return { ...base, libId: LIBRARY[0].id, color: '#d4ac0d', valid: true };
+  if (kind === 'text') return { ...base, text: '', font: TEXT_FONTS[0], color: '#ffffff',
+                                bold: false, italic: false, bgOn: false, bg: '#1f4e5f', valid: false };
+  return { ...base, valid: false };
+}
+
+function slider(label, key, min, max, step, value) {
+  return `<div class="sl-row"><label class="sl">${label} <output>${value}</output>
+    <input type="range" data-t="${key}" min="${min}" max="${max}" step="${step}" value="${value}"></label>
     <button type="button" class="sl-reset" data-reset="${key}" title="איפוס">↺</button></div>`;
 }
+
+function kindBody(el) {
+  if (el.kind === 'lib') {
+    return `<label>בחירת אלמנט
+      <select data-role="libId">${LIBRARY.map((l) =>
+        `<option value="${l.id}" ${el.libId === l.id ? 'selected' : ''}>${l.name}</option>`).join('')}</select></label>
+      <label>צבע <input type="color" data-role="color" value="${el.color}"></label>`;
+  }
+  if (el.kind === 'text') {
+    return `<label>הטקסט <textarea data-role="text" placeholder="אפשר גם כמה שורות">${el.text || ''}</textarea></label>
+      <label>פונט <select data-role="font">${TEXT_FONTS.map((f) =>
+        `<option value="${f}" ${el.font === f ? 'selected' : ''}>${f}</option>`).join('')}</select></label>
+      <div class="text-style">
+        <label>צבע הטקסט <input type="color" data-role="color" value="${el.color}"></label>
+        <label class="fit-row"><input type="checkbox" data-role="bold" ${el.bold ? 'checked' : ''}> מודגש</label>
+        <label class="fit-row"><input type="checkbox" data-role="italic" ${el.italic ? 'checked' : ''}> נטוי</label>
+        <label class="fit-row"><input type="checkbox" data-role="bgOn" ${el.bgOn ? 'checked' : ''}> רקע מאחורי הטקסט</label>
+        <label>צבע הרקע <input type="color" data-role="bg" value="${el.bg}"></label>
+      </div>`;
+  }
+  return `<input type="file" data-role="file" accept="${KIND_ACCEPT[el.kind]}">
+    <div class="hint">${KIND_HINT[el.kind]}</div>
+    <div class="progress-note" data-role="info">${el.name ? 'נטען: ' + el.name : ''}</div>
+    <div class="field-error" data-role="err">${el.error || ''}</div>
+    ${el.kind !== 'model' ? `<label class="fit-row"><input type="checkbox" data-role="fit" ${el.fit === 'cover' ? 'checked' : ''}>
+      הצמדה מלאה — מכסה את תמונת הטריגר בדיוק</label>` : ''}`;
+}
+
+const KIND_NAMES = [['video', 'וידאו'], ['image', 'תמונה'], ['model', 'מודל תלת-מימד'],
+                    ['lib', 'מהספרייה המובנית'], ['text', 'טקסט']];
 
 function renderElements() {
   const wrap = $('elementsList');
@@ -343,45 +382,75 @@ function renderElements() {
     const card = document.createElement('div');
     card.className = 'el-card';
     card.dataset.uid = el.uid;
-    const isMedia = el.kind !== 'model';
+    const hideTransform = el.fit === 'cover' && (el.kind === 'video' || el.kind === 'image');
     card.innerHTML = `
       <div class="el-head">
         <strong>אלמנט ${idx + 1}</strong>
-        <select data-role="kind">
-          <option value="video" ${el.kind === 'video' ? 'selected' : ''}>וידאו</option>
-          <option value="image" ${el.kind === 'image' ? 'selected' : ''}>תמונה</option>
-          <option value="model" ${el.kind === 'model' ? 'selected' : ''}>מודל תלת-מימד</option>
-        </select>
+        <select data-role="kind">${KIND_NAMES.map(([v, n]) =>
+          `<option value="${v}" ${el.kind === v ? 'selected' : ''}>${n}</option>`).join('')}</select>
         <button type="button" class="danger el-del">הסרה</button>
       </div>
-      <input type="file" data-role="file" accept="${KIND_ACCEPT[el.kind]}">
-      <div class="hint">${KIND_HINT[el.kind]}</div>
-      <div class="progress-note" data-role="info">${el.name ? 'נטען: ' + el.name : ''}</div>
-      <div class="field-error" data-role="err">${el.error || ''}</div>
-      ${isMedia ? `<label class="fit-row"><input type="checkbox" data-role="fit" ${el.fit === 'cover' ? 'checked' : ''}>
-        הצמדה מלאה — מכסה את תמונת הטריגר בדיוק</label>` : ''}
-      <div class="transform" style="${isMedia && el.fit === 'cover' ? 'display:none' : ''}">
-        ${slider('ימינה־שמאלה', 'x', -1, 1, 0.02, el)}
-        ${slider('למעלה־למטה', 'y', -1, 1, 0.02, el)}
-        ${slider('מרחק מהתמונה', 'z', 0, 1.5, 0.05, el)}
-        ${slider('גודל', 'scale', 0.2, 3, 0.05, el)}
-        ${slider('סיבוב', 'rotz', -180, 180, 5, el)}
+      ${kindBody(el)}
+      <div class="transform" style="${hideTransform ? 'display:none' : ''}">
+        ${slider('ימינה־שמאלה', 'x', -1, 1, 0.02, el.transform.x)}
+        ${slider('למעלה־למטה', 'y', -1, 1, 0.02, el.transform.y)}
+        ${slider('מרחק מהתמונה', 'z', 0, 1.5, 0.05, el.transform.z)}
+        ${slider('גודל', 'scale', 0.2, 3, 0.05, el.transform.scale)}
+        ${slider('סיבוב', 'rotz', -180, 180, 5, el.transform.rotz)}
         <label class="fit-row"><input type="checkbox" data-role="upright" ${el.transform.upright ? 'checked' : ''}>
         העמדה במאונך לתמונת הטריגר</label>
+        <label>אנימציה (בלופ)
+          <select data-role="anim">${ANIMATIONS.map((a) =>
+            `<option value="${a.id}" ${el.animation.type === a.id ? 'selected' : ''}>${a.name}</option>`).join('')}</select></label>
+        <div class="sl-row" data-role="speedRow" style="${el.animation.type === 'none' ? 'display:none' : ''}">
+          <label class="sl">קצב האנימציה <output>${el.animation.speed}</output>
+          <input type="range" data-role="speed" min="0.2" max="3" step="0.1" value="${el.animation.speed}"></label>
+          <button type="button" class="sl-reset" data-role="speedReset" title="איפוס">↺</button>
+        </div>
       </div>`;
 
-    card.querySelector('[data-role=kind]').addEventListener('change', (ev) => {
-      el.kind = ev.target.value; el.file = null; el.name = ''; el.valid = false; el.error = '';
+    const on = (sel, ev, fn) => card.querySelector(sel)?.addEventListener(ev, fn);
+
+    on('[data-role=kind]', 'change', (ev) => {
+      Object.assign(el, { kind: ev.target.value }, elDefaults(ev.target.value));
       renderElements(); schedulePreview(); refreshSubmit();
     });
     card.querySelector('.el-del').addEventListener('click', () => {
       elements = elements.filter((e) => e.uid !== el.uid);
       renderElements(); schedulePreview(); refreshSubmit();
     });
-    card.querySelector('[data-role=file]').addEventListener('change', (ev) => validateElementFile(el, ev.target.files[0], card));
-    card.querySelector('[data-role=fit]')?.addEventListener('change', (ev) => {
+    on('[data-role=file]', 'change', (ev) => validateElementFile(el, ev.target.files[0], card));
+    on('[data-role=fit]', 'change', (ev) => {
       el.fit = ev.target.checked ? 'cover' : 'free';
-      card.querySelector('.transform').style.display = el.fit === 'cover' ? 'none' : '';
+      renderElements(); schedulePreview();
+    });
+    on('[data-role=libId]', 'change', (ev) => { el.libId = ev.target.value; schedulePreview(); });
+    on('[data-role=color]', 'input', (ev) => { el.color = ev.target.value; schedulePreview(); });
+    on('[data-role=bg]', 'input', (ev) => { el.bg = ev.target.value; schedulePreview(); });
+    on('[data-role=text]', 'input', (ev) => {
+      el.text = ev.target.value;
+      el.valid = !!el.text.trim();
+      schedulePreview(); refreshSubmit();
+    });
+    on('[data-role=font]', 'change', (ev) => { el.font = ev.target.value; schedulePreview(); });
+    for (const flag of ['bold', 'italic', 'bgOn']) {
+      on(`[data-role=${flag}]`, 'change', (ev) => { el[flag] = ev.target.checked; schedulePreview(); });
+    }
+    on('[data-role=upright]', 'change', (ev) => { el.transform.upright = ev.target.checked; schedulePreview(); });
+    on('[data-role=anim]', 'change', (ev) => {
+      el.animation.type = ev.target.value;
+      card.querySelector('[data-role=speedRow]').style.display = el.animation.type === 'none' ? 'none' : '';
+      schedulePreview();
+    });
+    on('[data-role=speed]', 'input', (ev) => {
+      el.animation.speed = parseFloat(ev.target.value);
+      ev.target.previousElementSibling.textContent = ev.target.value;
+      schedulePreview();
+    });
+    on('[data-role=speedReset]', 'click', () => {
+      el.animation.speed = 1;
+      const inp = card.querySelector('[data-role=speed]');
+      inp.value = '1'; inp.previousElementSibling.textContent = '1';
       schedulePreview();
     });
     card.querySelectorAll('[data-t]').forEach((inp) => inp.addEventListener('input', () => {
@@ -389,7 +458,7 @@ function renderElements() {
       inp.previousElementSibling.textContent = inp.value;
       schedulePreview();
     }));
-    card.querySelectorAll('.sl-reset').forEach((btn) => btn.addEventListener('click', () => {
+    card.querySelectorAll('[data-reset]').forEach((btn) => btn.addEventListener('click', () => {
       const key = btn.dataset.reset;
       el.transform[key] = DEFAULT_TRANSFORM[key];
       const inp = card.querySelector(`[data-t=${key}]`);
@@ -397,10 +466,6 @@ function renderElements() {
       inp.previousElementSibling.textContent = String(DEFAULT_TRANSFORM[key]);
       schedulePreview();
     }));
-    card.querySelector('[data-role=upright]')?.addEventListener('change', (ev) => {
-      el.transform.upright = ev.target.checked;
-      schedulePreview();
-    });
     wrap.append(card);
   });
 }
@@ -441,8 +506,9 @@ async function validateElementFile(el, f, card) {
 }
 
 $('addElBtn').addEventListener('click', () => {
-  elements.push({ uid: ++elUid, kind: 'video', file: null, name: '', fit: 'free',
-                  transform: { ...DEFAULT_TRANSFORM }, valid: false, error: '' });
+  elements.push({ uid: ++elUid, kind: 'video',
+                  transform: { ...DEFAULT_TRANSFORM }, animation: { ...DEFAULT_ANIMATION },
+                  ...elDefaults('video') });
   renderElements();
   refreshSubmit();
 });
@@ -465,10 +531,13 @@ function initPreview() {
   controls.enableDamping = true;
   scene.add(new THREE.GridHelper(4, 20, 0x39525e, 0x2b3f48).rotateX(Math.PI / 2));
   const clock = new THREE.Clock();
-  pv = { renderer, scene, camera, controls, triggerMesh: null, elGroup: null, mixers: [], clock };
+  pv = { renderer, scene, camera, controls, triggerMesh: null, elGroup: null, mixers: [], anims: [], clock, elapsed: 0 };
   renderer.setAnimationLoop(() => {
     controls.update();
-    pv.mixers.forEach((m) => m.update(clock.getDelta()));
+    const dt = clock.getDelta();
+    pv.elapsed += dt;
+    pv.mixers.forEach((m) => m.update(dt));
+    updateAnimations(pv.anims, pv.elapsed);
     renderer.render(scene, camera);
   });
 }
@@ -489,8 +558,8 @@ async function rebuildPreview() {
   pv.scene.add(pv.triggerMesh);
   if (pv.elGroup) { pv.scene.remove(pv.elGroup); pv.elGroup = null; pv.mixers = []; }
   try {
-    const { group, videos, mixers } = await buildElements(THREE, ready, (el) => URL.createObjectURL(el.file), triggerH);
-    pv.elGroup = group; pv.mixers = mixers;
+    const { group, videos, mixers, anims } = await buildElements(THREE, ready, (el) => el.file ? URL.createObjectURL(el.file) : null, triggerH);
+    pv.elGroup = group; pv.mixers = mixers; pv.anims = anims;
     pv.scene.add(group);
     videos.forEach((v) => v.play().catch(() => {}));
     window.__portal.previewCount = ready.length;
@@ -543,10 +612,16 @@ $('submitBtn').addEventListener('click', async () => {
       imageHash: draft.imageHash,
       imageW: draft.imageW, imageH: draft.imageH,
       mindBlob: new Blob([draft.mindBuffer]),
-      elements: elements.filter((e) => e.valid).map((e) => ({
-        kind: e.kind, name: e.name, blob: e.file, fit: e.kind === 'model' ? 'free' : e.fit,
-        transform: { ...e.transform },
-      })),
+      elements: elements.filter((e) => e.valid).map((e) => {
+        const entry = { kind: e.kind, name: e.name || '',
+          fit: (e.kind === 'video' || e.kind === 'image') ? e.fit : 'free',
+          transform: { ...e.transform }, animation: { ...e.animation } };
+        if (e.kind === 'lib') Object.assign(entry, { libId: e.libId, color: e.color });
+        if (e.kind === 'text') Object.assign(entry, { text: e.text, font: e.font, color: e.color,
+          bold: e.bold, italic: e.italic, bgOn: e.bgOn, bg: e.bg });
+        if (e.file) entry.blob = e.file;
+        return entry;
+      }),
       audioBlob: draft.audioBlob,
       createdAt: Date.now(),
     });

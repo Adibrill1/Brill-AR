@@ -153,6 +153,28 @@ async function pickImage(page, file) {
     await page.setInputFiles('.el-card:nth-child(1) [data-role=file]', path.join(assetsDir, 'testvideo.webm'));
     await page.waitForFunction(() =>
       document.querySelector('.el-card:nth-child(1) [data-role=info]').textContent.includes('נטען בהצלחה'));
+
+    console.log('10b. library element (spinning star, custom speed) + styled text element');
+    await page.click('#addElBtn');
+    await page.selectOption('.el-card:nth-child(2) [data-role=kind]', 'lib');
+    await page.selectOption('.el-card:nth-child(2) [data-role=libId]', 'star');
+    await page.selectOption('.el-card:nth-child(2) [data-role=anim]', 'spin');
+    await page.evaluate(() => {
+      const s = document.querySelector('.el-card:nth-child(2) [data-role=speed]');
+      s.value = '2';
+      s.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    await page.click('#addElBtn');
+    await page.selectOption('.el-card:nth-child(3) [data-role=kind]', 'text');
+    await page.fill('.el-card:nth-child(3) [data-role=text]', 'שלום עולם\nPEACE');
+    await page.selectOption('.el-card:nth-child(3) [data-role=font]', 'Georgia');
+    await page.check('.el-card:nth-child(3) [data-role=bold]');
+    await page.check('.el-card:nth-child(3) [data-role=bgOn]');
+    await page.selectOption('.el-card:nth-child(3) [data-role=anim]', 'bob');
+    await page.waitForFunction(() => window.__portal.previewCount === 3, null, { timeout: 60000 });
+    await new Promise((r) => setTimeout(r, 1200));
+    await page.locator('#previewWrap').screenshot({ path: path.join(outDir, '6-lib-text-preview.png') });
+
     await page.fill('#titleInput', 'יצירה שנייה');
     await page.check('#rightsCheck');
     await page.waitForSelector('#submitBtn:not([disabled])');

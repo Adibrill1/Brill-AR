@@ -94,7 +94,7 @@ import * as THREE from 'three';
 import { MindARThree } from '../spike/vendor/mindar-image-three.prod.js';
 import { Compiler } from '../spike/vendor/mindar-image.prod.js';
 import { store } from '../portal/js/store.js';
-import { buildElements } from '../portal/js/elements.js';
+import { buildElements, updateAnimations } from '../portal/js/elements.js';
 
 window.__visit = { itemCount: 0, started: false, foundId: null, blobSize: 0, collected: 0, error: '' };
 
@@ -203,7 +203,7 @@ async function start() {
       $('startBtn').textContent = `טוען יצירות… ${i + 1}/${items.length}`;
       const anchor = mindarThree.addAnchor(i);
       const triggerH = item.imageH && item.imageW ? item.imageH / item.imageW : 1.4;
-      const { group, videos, mixers } = await buildElements(
+      const { group, videos, mixers, anims } = await buildElements(
         THREE, item.elements, (el) => store.elementUrl(item, el), triggerH,
       );
       anchor.group.add(group);
@@ -217,7 +217,7 @@ async function start() {
       } else if (videos[0]) {
         videos[0].muted = false;   // no soundtrack: the first video carries its own sound
       }
-      perItem.set(item.id, { videos, audio, mixers });
+      perItem.set(item.id, { videos, audio, mixers, anims });
 
       anchor.onTargetFound = () => {
         activeItem = item;
@@ -252,9 +252,14 @@ async function start() {
     window.__visit.started = true;
 
     const clock = new THREE.Clock();
+    let elapsed = 0;
     renderer.setAnimationLoop(() => {
       const dt = clock.getDelta();
-      perItem.forEach(({ mixers }) => mixers.forEach((m) => m.update(dt)));
+      elapsed += dt;
+      perItem.forEach(({ mixers, anims }) => {
+        mixers.forEach((m) => m.update(dt));
+        updateAnimations(anims || [], elapsed);
+      });
       renderer.render(scene, camera);
       if (recording) compositeFrame(mindarThree.video, renderer.domElement);
     });

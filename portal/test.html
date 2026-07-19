@@ -37,7 +37,7 @@
 import * as THREE from 'three';
 import { MindARThree } from '../spike/vendor/mindar-image-three.prod.js';
 import { store } from './js/store.js';
-import { buildElements, elementLabel } from './js/elements.js';
+import { buildElements, updateAnimations, elementLabel } from './js/elements.js';
 
 window.__test = { loaded: false, started: false, targetFound: false, error: '' };
 const $ = (id) => document.getElementById(id);
@@ -66,9 +66,10 @@ async function buildContent(anchor) {
     triggerH = probe.height && probe.width ? probe.height / probe.width : 1.4;
   }
 
-  const { group, videos, mixers } = await buildElements(
+  const { group, videos, mixers, anims } = await buildElements(
     THREE, item.elements, (el) => store.elementUrl(item, el), triggerH,
   );
+  group.userData.anims = anims;
 
   let audio;
   const audioUrl = store.fileUrl(item, 'audio');
@@ -117,9 +118,12 @@ $('startBtn').addEventListener('click', async () => {
     await mindarThree.start();
     window.__test.started = true;
     const clock = new THREE.Clock();
+    let elapsed = 0;
     renderer.setAnimationLoop(() => {
       const dt = clock.getDelta();
+      elapsed += dt;
       group.userData.mixers?.forEach((m) => m.update(dt));
+      updateAnimations(group.userData.anims || [], elapsed);
       renderer.render(scene, camera);
     });
   } catch (e) {
