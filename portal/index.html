@@ -24,33 +24,42 @@
 </section>
 
 <section class="card">
-  <h2>העלאת תמונת טריגר חדשה / New trigger image</h2>
+  <h2>יצירה חדשה / New trigger image</h2>
   <p class="hint">תמונת טריגר היא כל תמונה מודפסת שהמערכת מזהה — קלף, מדבקה, פוסטר או הדפס.
      המבקרים יכוונו אליה את המצלמה כדי לפתוח את חוויית ה-AR שלך.</p>
 
-  <label>1. תמונת הטריגר (JPG/PNG, צלע ארוכה ≥ 1024px, עד 10MB)
-    <input type="file" id="imgInput" accept="image/jpeg,image/png">
+  <label>1. תמונת הטריגר (אפשר גם לצלם עכשיו — יופיע עורך חיתוך וסיבוב)
+    <input type="file" id="imgInput" accept="image/*">
   </label>
+
+  <div id="cropEditor" style="display:none">
+    <div class="crop-tools">
+      <button type="button" class="secondary" id="rotateBtn">סיבוב 90° ↻</button>
+      <span class="hint">גררו את הפינות כדי לחתוך, או את המרכז כדי להזיז</span>
+    </div>
+    <canvas id="cropCanvas"></canvas>
+    <button type="button" id="cropApply">אישור התמונה ✓</button>
+  </div>
+
   <img id="imgPreview" class="preview-media" style="display:none">
   <div class="field-error" id="imgError"></div>
+  <div class="quality medium" id="resWarn" style="display:none"></div>
   <button id="qualityBtn" class="secondary" disabled>בדיקת איכות זיהוי</button>
   <div class="progress-note" id="qualityProgress"></div>
   <div id="qualityResult"></div>
 
-  <label>2. תוכן ה-AR שיקפוץ מהתמונה
-    <select id="contentKind">
-      <option value="video">וידאו / אנימציה (MP4, MOV, WebM, M4V…)</option>
-      <option value="model">מודל תלת-מימד (GLB / GLTF, עד 15MB)</option>
-    </select>
+  <label style="margin-top:22px">2. אלמנטים ביצירה
+    <span class="hint">אפשר לשלב כמה אלמנטים: וידאו שמכסה את התמונה, מודל תלת-מימד שמרחף לידה, תמונות — ולכוון לכל אחד מיקום מדויק במרחב.</span>
   </label>
-  <input type="file" id="contentInput" accept="video/*,.mp4,.mov,.webm,.m4v,.ogv">
-  <p class="hint" id="contentHint">הווידאו ינוגן על גבי תמונת הטריגר. כל פורמט שהדפדפן מנגן יתקבל —
-     המערכת בודקת את הקובץ מיד עם ההעלאה.</p>
-  <video id="videoPreview" class="preview-media" style="display:none" controls muted playsinline></video>
-  <div class="field-error" id="contentError"></div>
-  <div class="progress-note" id="contentInfo"></div>
+  <div id="elementsList"></div>
+  <button type="button" class="secondary" id="addElBtn">+ הוספת אלמנט</button>
 
-  <label>3. פס קול (אופציונלי — MP3/WAV, עד 30 שניות)
+  <label style="margin-top:22px">תצוגה מקדימה תלת-ממדית
+    <span class="hint">גררו לסיבוב, גלגלת/צביטה לזום — כך המבקרים יראו את היצירה על תמונת הטריגר.</span>
+  </label>
+  <div id="previewWrap"><div class="empty" id="previewEmpty">בחרו תמונת טריגר ואלמנט אחד לפחות</div></div>
+
+  <label style="margin-top:22px">3. פס קול (אופציונלי — MP3/WAV, עד 30 שניות)
     <input type="file" id="audioInput" accept="audio/*,.mp3,.wav">
   </label>
   <div class="field-error" id="audioError"></div>
@@ -61,7 +70,7 @@
 
   <label style="font-weight:400; display:flex; gap:8px; align-items:flex-start;">
     <input type="checkbox" id="rightsCheck" style="margin-top:3px">
-    <span>אני מצהיר/ה שהיצירה, הווידאו/המודל ופס הקול הם ביצירתי או ברישיון המתיר לי להשתמש בהם.</span>
+    <span>אני מצהיר/ה שהיצירה, האלמנטים ופס הקול הם ביצירתי או ברישיון המתיר לי להשתמש בהם.</span>
   </label>
 
   <button id="submitBtn" disabled>שליחה לאישור</button>
@@ -70,7 +79,7 @@
 
 <section class="card">
   <h2>היצירות שלי / My trigger images</h2>
-  <div id="itemsList"><div class="empty">עוד אין תמונות טריגר — ההעלאה הראשונה שלך תופיע כאן</div></div>
+  <div id="itemsList"><div class="empty">עוד אין יצירות — ההעלאה הראשונה שלך תופיע כאן</div></div>
 </section>
 
 </main>
@@ -78,13 +87,17 @@
 { "imports": { "three": "../spike/vendor/three.module.js", "three/addons/": "../spike/vendor/three/addons/" } }
 </script>
 <script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { store } from './js/store.js';
 import { analyzeTriggerImage } from './js/quality.js';
+import { buildElements, DEFAULT_TRANSFORM, elementLabel } from './js/elements.js';
 
-window.__portal = { qualityDone: false, submitted: false, lastGrade: null, error: '' };
+window.__portal = { qualityDone: false, submitted: false, lastGrade: null, error: '',
+                    imageReady: false, previewCount: 0 };
 
 const $ = (id) => document.getElementById(id);
-const LIMITS = { imageMB: 10, imageMinPx: 1024, modelMB: 15, videoMB: 50, audioSec: 30, audioMB: 5 };
+const LIMITS = { imageMB: 10, imageWarnPx: 1024, modelMB: 15, videoMB: 50, imageElMB: 10, audioSec: 30, audioMB: 5 };
 
 // ---------- profile ----------
 (async () => {
@@ -97,23 +110,99 @@ $('saveProfileBtn').addEventListener('click', async () => {
   setTimeout(() => { $('profileNote').textContent = ''; }, 2500);
 });
 
-// ---------- upload state ----------
-const draft = { imageBlob: null, imageEl: null, quality: null, mindBuffer: null,
-                contentBlob: null, contentName: '', contentKind: 'video', audioBlob: null };
+// ---------- draft state ----------
+const draft = { imageBlob: null, imageEl: null, imageW: 0, imageH: 0, quality: null, mindBuffer: null, audioBlob: null };
+let elements = [];   // { uid, kind, file, name, fit, transform, valid, error }
+let elUid = 0;
 
 function refreshSubmit() {
+  const elsOk = elements.length > 0 && elements.every((e) => e.valid);
   $('submitBtn').disabled = !(draft.imageBlob && draft.quality && draft.quality.grade !== 'poor'
-    && draft.contentBlob && $('titleInput').value.trim() && $('rightsCheck').checked);
+    && elsOk && $('titleInput').value.trim() && $('rightsCheck').checked);
 }
-['titleInput'].forEach((id) => $(id).addEventListener('input', refreshSubmit));
+$('titleInput').addEventListener('input', refreshSubmit);
 $('rightsCheck').addEventListener('change', refreshSubmit);
 
-// ---------- 1. trigger image ----------
+// ---------- 1. trigger image: crop & rotate editor ----------
+const cropCanvas = $('cropCanvas');
+const cctx = cropCanvas.getContext('2d');
+let editImg = null;          // upright working image (rotation is baked in on each rotate)
+let crop = null;             // {x,y,w,h} in canvas coords
+const HANDLE = 22;
+
+function drawCrop() {
+  const { width: W, height: H } = cropCanvas;
+  cctx.clearRect(0, 0, W, H);
+  cctx.drawImage(editImg, 0, 0, W, H);
+  cctx.fillStyle = 'rgba(0,0,0,.55)';
+  cctx.fillRect(0, 0, W, crop.y);
+  cctx.fillRect(0, crop.y + crop.h, W, H - crop.y - crop.h);
+  cctx.fillRect(0, crop.y, crop.x, crop.h);
+  cctx.fillRect(crop.x + crop.w, crop.y, W - crop.x - crop.w, crop.h);
+  cctx.strokeStyle = '#d4ac0d'; cctx.lineWidth = 2;
+  cctx.strokeRect(crop.x, crop.y, crop.w, crop.h);
+  cctx.fillStyle = '#d4ac0d';
+  for (const [hx, hy] of cropCorners()) cctx.fillRect(hx - 7, hy - 7, 14, 14);
+}
+function cropCorners() {
+  return [[crop.x, crop.y], [crop.x + crop.w, crop.y], [crop.x, crop.y + crop.h], [crop.x + crop.w, crop.y + crop.h]];
+}
+function fitCanvas() {
+  const maxW = Math.min(500, cropCanvas.parentElement.clientWidth - 4);
+  const scale = Math.min(maxW / editImg.width, 420 / editImg.height);
+  cropCanvas.width = Math.round(editImg.width * scale);
+  cropCanvas.height = Math.round(editImg.height * scale);
+  crop = { x: 0, y: 0, w: cropCanvas.width, h: cropCanvas.height };
+  drawCrop();
+}
+
+let dragMode = null, dragStart = null;
+function canvasPos(ev) {
+  const r = cropCanvas.getBoundingClientRect();
+  return { x: (ev.clientX - r.left) * (cropCanvas.width / r.width),
+           y: (ev.clientY - r.top) * (cropCanvas.height / r.height) };
+}
+cropCanvas.addEventListener('pointerdown', (ev) => {
+  ev.preventDefault();
+  cropCanvas.setPointerCapture(ev.pointerId);
+  const p = canvasPos(ev);
+  const corners = cropCorners();
+  dragMode = null;
+  for (let i = 0; i < 4; i++) {
+    if (Math.abs(p.x - corners[i][0]) < HANDLE && Math.abs(p.y - corners[i][1]) < HANDLE) { dragMode = 'corner' + i; break; }
+  }
+  if (!dragMode && p.x > crop.x && p.x < crop.x + crop.w && p.y > crop.y && p.y < crop.y + crop.h) dragMode = 'move';
+  dragStart = { p, crop: { ...crop } };
+});
+cropCanvas.addEventListener('pointermove', (ev) => {
+  if (!dragMode) return;
+  const p = canvasPos(ev);
+  const dx = p.x - dragStart.p.x, dy = p.y - dragStart.p.y;
+  const c0 = dragStart.crop, W = cropCanvas.width, H = cropCanvas.height, MIN = 40;
+  let { x, y, w, h } = c0;
+  if (dragMode === 'move') {
+    x = Math.max(0, Math.min(W - w, c0.x + dx));
+    y = Math.max(0, Math.min(H - h, c0.y + dy));
+  } else {
+    const i = +dragMode.slice(6);
+    let x1 = c0.x, y1 = c0.y, x2 = c0.x + c0.w, y2 = c0.y + c0.h;
+    if (i === 0) { x1 += dx; y1 += dy; } else if (i === 1) { x2 += dx; y1 += dy; }
+    else if (i === 2) { x1 += dx; y2 += dy; } else { x2 += dx; y2 += dy; }
+    x1 = Math.max(0, Math.min(x1, x2 - MIN)); y1 = Math.max(0, Math.min(y1, y2 - MIN));
+    x2 = Math.min(W, Math.max(x2, x1 + MIN)); y2 = Math.min(H, Math.max(y2, y1 + MIN));
+    x = x1; y = y1; w = x2 - x1; h = y2 - y1;
+  }
+  crop = { x, y, w, h };
+  drawCrop();
+});
+cropCanvas.addEventListener('pointerup', () => { dragMode = null; });
+
 $('imgInput').addEventListener('change', async (ev) => {
   const f = ev.target.files[0];
   $('imgError').textContent = ''; $('qualityResult').innerHTML = '';
+  $('imgPreview').style.display = 'none'; $('resWarn').style.display = 'none';
   draft.imageBlob = null; draft.quality = null; draft.mindBuffer = null;
-  window.__portal.qualityDone = false;
+  window.__portal.qualityDone = false; window.__portal.imageReady = false;
   $('qualityBtn').disabled = true;
   if (!f) return;
   if (f.size > LIMITS.imageMB * 1024 * 1024) {
@@ -122,13 +211,48 @@ $('imgInput').addEventListener('change', async (ev) => {
   const img = new Image();
   img.src = URL.createObjectURL(f);
   try { await img.decode(); } catch { $('imgError').textContent = 'לא ניתן לקרוא את הקובץ כתמונה'; return; }
-  if (Math.max(img.width, img.height) < LIMITS.imageMinPx) {
-    $('imgError').textContent = `הרזולוציה נמוכה מדי (${img.width}×${img.height}) — נדרשת צלע ארוכה של לפחות ${LIMITS.imageMinPx}px כדי שההדפסה תזוהה היטב`;
-    return;
-  }
-  draft.imageBlob = f; draft.imageEl = img;
+  editImg = img;
+  $('cropEditor').style.display = 'block';
+  fitCanvas();
+  refreshSubmit();
+});
+
+$('rotateBtn').addEventListener('click', async () => {
+  const c = document.createElement('canvas');
+  c.width = editImg.height; c.height = editImg.width;
+  const x = c.getContext('2d');
+  x.translate(c.width / 2, c.height / 2);
+  x.rotate(Math.PI / 2);
+  x.drawImage(editImg, -editImg.width / 2, -editImg.height / 2);
+  const img = new Image();
+  img.src = c.toDataURL('image/png');
+  await img.decode();
+  editImg = img;
+  fitCanvas();
+});
+
+$('cropApply').addEventListener('click', async () => {
+  const sx = editImg.width / cropCanvas.width;
+  const sy = editImg.height / cropCanvas.height;
+  const out = document.createElement('canvas');
+  out.width = Math.round(crop.w * sx);
+  out.height = Math.round(crop.h * sy);
+  out.getContext('2d').drawImage(editImg, crop.x * sx, crop.y * sy, out.width, out.height, 0, 0, out.width, out.height);
+  const blob = await new Promise((res) => out.toBlob(res, 'image/png'));
+  const img = new Image();
+  img.src = URL.createObjectURL(blob);
+  await img.decode();
+  draft.imageBlob = blob; draft.imageEl = img;
+  draft.imageW = img.width; draft.imageH = img.height;
+  $('cropEditor').style.display = 'none';
   $('imgPreview').src = img.src; $('imgPreview').style.display = 'block';
+  if (Math.max(img.width, img.height) < LIMITS.imageWarnPx) {
+    $('resWarn').style.display = 'block';
+    $('resWarn').textContent = `שימו לב: רזולוציה נמוכה (${img.width}×${img.height}) — התמונה תתקבל, אבל הדפסה גדולה עלולה לצאת מטושטשת ולפגוע בזיהוי. מומלץ ${LIMITS.imageWarnPx}px ומעלה בצלע הארוכה.`;
+  }
   $('qualityBtn').disabled = false;
+  window.__portal.imageReady = true;
+  schedulePreview();
   refreshSubmit();
 });
 
@@ -163,65 +287,186 @@ $('qualityBtn').addEventListener('click', async () => {
   refreshSubmit();
 });
 
-// ---------- 2. AR content ----------
-$('contentKind').addEventListener('change', () => {
-  draft.contentKind = $('contentKind').value;
-  draft.contentBlob = null;
-  $('contentInput').value = ''; $('contentError').textContent = ''; $('contentInfo').textContent = '';
-  $('videoPreview').style.display = 'none';
-  if (draft.contentKind === 'video') {
-    $('contentInput').accept = 'video/*,.mp4,.mov,.webm,.m4v,.ogv';
-    $('contentHint').textContent = 'הווידאו ינוגן על גבי תמונת הטריגר. כל פורמט שהדפדפן מנגן יתקבל — המערכת בודקת את הקובץ מיד עם ההעלאה.';
-  } else {
-    $('contentInput').accept = '.glb,.gltf,model/gltf-binary';
-    $('contentHint').textContent = 'מודל תלת-מימד בפורמט GLB/GLTF, עד 15MB.';
-  }
-  refreshSubmit();
-});
+// ---------- 2. elements ----------
+const KIND_ACCEPT = {
+  video: 'video/*,.mp4,.mov,.webm,.m4v,.ogv',
+  image: 'image/*',
+  model: '.glb,.gltf,model/gltf-binary',
+};
+const KIND_HINT = {
+  video: 'כל פורמט שהדפדפן מנגן (MP4, MOV, WebM…). נבדק מיד עם הבחירה.',
+  image: 'תמונה (PNG/JPG) שתרחף או תכסה את תמונת הטריגר.',
+  model: 'מודל תלת-מימד GLB/GLTF, עד 15MB. כולל אנימציות.',
+};
 
-$('contentInput').addEventListener('change', async (ev) => {
-  const f = ev.target.files[0];
-  $('contentError').textContent = ''; $('contentInfo').textContent = '';
-  $('videoPreview').style.display = 'none';
-  draft.contentBlob = null;
+function slider(label, key, min, max, step, el) {
+  const v = el.transform[key];
+  return `<label class="sl">${label} <output>${v}</output>
+    <input type="range" data-t="${key}" min="${min}" max="${max}" step="${step}" value="${v}"></label>`;
+}
+
+function renderElements() {
+  const wrap = $('elementsList');
+  wrap.innerHTML = '';
+  elements.forEach((el, idx) => {
+    const card = document.createElement('div');
+    card.className = 'el-card';
+    card.dataset.uid = el.uid;
+    const isMedia = el.kind !== 'model';
+    card.innerHTML = `
+      <div class="el-head">
+        <strong>אלמנט ${idx + 1}</strong>
+        <select data-role="kind">
+          <option value="video" ${el.kind === 'video' ? 'selected' : ''}>וידאו</option>
+          <option value="image" ${el.kind === 'image' ? 'selected' : ''}>תמונה</option>
+          <option value="model" ${el.kind === 'model' ? 'selected' : ''}>מודל תלת-מימד</option>
+        </select>
+        <button type="button" class="danger el-del">הסרה</button>
+      </div>
+      <input type="file" data-role="file" accept="${KIND_ACCEPT[el.kind]}">
+      <div class="hint">${KIND_HINT[el.kind]}</div>
+      <div class="progress-note" data-role="info">${el.name ? 'נטען: ' + el.name : ''}</div>
+      <div class="field-error" data-role="err">${el.error || ''}</div>
+      ${isMedia ? `<label class="fit-row"><input type="checkbox" data-role="fit" ${el.fit === 'cover' ? 'checked' : ''}>
+        הצמדה מלאה — מכסה את תמונת הטריגר בדיוק</label>` : ''}
+      <div class="transform" style="${isMedia && el.fit === 'cover' ? 'display:none' : ''}">
+        ${slider('ימינה־שמאלה', 'x', -1, 1, 0.02, el)}
+        ${slider('למעלה־למטה', 'y', -1, 1, 0.02, el)}
+        ${slider('מרחק מהתמונה', 'z', 0, 1.5, 0.02, el)}
+        ${slider('גודל', 'scale', 0.2, 3, 0.05, el)}
+        ${slider('סיבוב', 'rotz', -180, 180, 5, el)}
+        <label class="fit-row"><input type="checkbox" data-role="upright" ${el.transform.upright ? 'checked' : ''}>
+        העמדה במאונך לתמונת הטריגר</label>
+      </div>`;
+
+    card.querySelector('[data-role=kind]').addEventListener('change', (ev) => {
+      el.kind = ev.target.value; el.file = null; el.name = ''; el.valid = false; el.error = '';
+      renderElements(); schedulePreview(); refreshSubmit();
+    });
+    card.querySelector('.el-del').addEventListener('click', () => {
+      elements = elements.filter((e) => e.uid !== el.uid);
+      renderElements(); schedulePreview(); refreshSubmit();
+    });
+    card.querySelector('[data-role=file]').addEventListener('change', (ev) => validateElementFile(el, ev.target.files[0], card));
+    card.querySelector('[data-role=fit]')?.addEventListener('change', (ev) => {
+      el.fit = ev.target.checked ? 'cover' : 'free';
+      card.querySelector('.transform').style.display = el.fit === 'cover' ? 'none' : '';
+      schedulePreview();
+    });
+    card.querySelectorAll('[data-t]').forEach((inp) => inp.addEventListener('input', () => {
+      el.transform[inp.dataset.t] = parseFloat(inp.value);
+      inp.previousElementSibling.textContent = inp.value;
+      schedulePreview();
+    }));
+    card.querySelector('[data-role=upright]')?.addEventListener('change', (ev) => {
+      el.transform.upright = ev.target.checked;
+      schedulePreview();
+    });
+    wrap.append(card);
+  });
+}
+
+async function validateElementFile(el, f, card) {
+  const info = card.querySelector('[data-role=info]');
+  const err = card.querySelector('[data-role=err]');
+  info.textContent = ''; err.textContent = ''; el.valid = false; el.file = null;
   if (!f) { refreshSubmit(); return; }
-
-  if (draft.contentKind === 'video') {
-    if (f.size > LIMITS.videoMB * 1024 * 1024) {
-      $('contentError').textContent = `הווידאו גדול מדי (מקסימום ${LIMITS.videoMB}MB)`; refreshSubmit(); return;
-    }
-    // playability check: if this browser can decode it, the AR viewer can too
-    const v = $('videoPreview');
-    v.src = URL.createObjectURL(f);
-    try {
+  try {
+    if (el.kind === 'video') {
+      if (f.size > LIMITS.videoMB * 1024 * 1024) throw new Error(`הווידאו גדול מדי (מקסימום ${LIMITS.videoMB}MB)`);
+      const v = document.createElement('video');
+      v.src = URL.createObjectURL(f);
       await new Promise((res, rej) => {
         v.onloadedmetadata = res;
-        v.onerror = () => rej(new Error('decode'));
-        setTimeout(() => rej(new Error('timeout')), 15000);
+        v.onerror = () => rej(new Error(`הדפדפן לא מנגן את הפורמט הזה (${f.name}) — נסו לייצא כ-MP4 (H.264)`));
+        setTimeout(() => rej(new Error('הקובץ לא נטען (timeout)')), 15000);
       });
-    } catch {
-      $('contentError').textContent =
-        `הדפדפן לא מצליח לנגן את הפורמט הזה (${f.name}). נסו לייצא כ-MP4 (H.264) — הפורמט הנתמך ביותר.`;
-      refreshSubmit(); return;
+      info.textContent = `נטען בהצלחה: ${v.videoWidth}×${v.videoHeight}, ${v.duration.toFixed(1)} שניות`;
+    } else if (el.kind === 'image') {
+      if (f.size > LIMITS.imageElMB * 1024 * 1024) throw new Error(`התמונה גדולה מדי (מקסימום ${LIMITS.imageElMB}MB)`);
+      const img = new Image();
+      img.src = URL.createObjectURL(f);
+      await img.decode().catch(() => { throw new Error('לא ניתן לקרוא את הקובץ כתמונה'); });
+      info.textContent = `נטען בהצלחה: ${img.width}×${img.height}`;
+    } else {
+      if (f.size > LIMITS.modelMB * 1024 * 1024) throw new Error(`המודל גדול מדי (מקסימום ${LIMITS.modelMB}MB)`);
+      if (!/\.(glb|gltf)$/i.test(f.name)) throw new Error('נדרש קובץ GLB או GLTF');
+      info.textContent = `נטען: ${f.name} (${(f.size / 1024 / 1024).toFixed(1)}MB)`;
     }
-    v.style.display = 'block';
-    $('contentInfo').textContent =
-      `נטען בהצלחה: ${v.videoWidth}×${v.videoHeight}, ${v.duration.toFixed(1)} שניות`;
-    draft.contentBlob = f; draft.contentName = f.name;
-  } else {
-    if (f.size > LIMITS.modelMB * 1024 * 1024) {
-      $('contentError').textContent = `המודל גדול מדי (מקסימום ${LIMITS.modelMB}MB)`; refreshSubmit(); return;
-    }
-    if (!/\.(glb|gltf)$/i.test(f.name)) {
-      $('contentError').textContent = 'נדרש קובץ GLB או GLTF'; refreshSubmit(); return;
-    }
-    $('contentInfo').textContent = `נטען: ${f.name} (${(f.size / 1024 / 1024).toFixed(1)}MB)`;
-    draft.contentBlob = f; draft.contentName = f.name;
+    el.file = f; el.name = f.name; el.valid = true;
+  } catch (e) {
+    err.textContent = e.message;
   }
+  schedulePreview();
+  refreshSubmit();
+}
+
+$('addElBtn').addEventListener('click', () => {
+  elements.push({ uid: ++elUid, kind: 'video', file: null, name: '', fit: 'free',
+                  transform: { ...DEFAULT_TRANSFORM }, valid: false, error: '' });
+  renderElements();
   refreshSubmit();
 });
 
-// ---------- 3. soundtrack ----------
+// ---------- 3D preview ----------
+let pv = null;   // { renderer, scene, camera, controls, triggerMesh, elGroup, mixers, clock }
+function initPreview() {
+  const wrapEl = $('previewWrap');
+  $('previewEmpty').style.display = 'none';
+  const W = wrapEl.clientWidth, H = 340;
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(W, H);
+  renderer.setClearColor(0x20313a);
+  wrapEl.append(renderer.domElement);
+  const scene = new THREE.Scene();
+  const camera = new THREE.PerspectiveCamera(50, W / H, 0.01, 50);
+  camera.position.set(0, -1.4, 1.4);
+  camera.up.set(0, 0, 1);
+  const controls = new OrbitControls(camera, renderer.domElement);
+  controls.enableDamping = true;
+  scene.add(new THREE.GridHelper(4, 20, 0x39525e, 0x2b3f48).rotateX(Math.PI / 2));
+  const clock = new THREE.Clock();
+  pv = { renderer, scene, camera, controls, triggerMesh: null, elGroup: null, mixers: [], clock };
+  renderer.setAnimationLoop(() => {
+    controls.update();
+    pv.mixers.forEach((m) => m.update(clock.getDelta()));
+    renderer.render(scene, camera);
+  });
+}
+
+let previewTimer = null;
+function schedulePreview() { clearTimeout(previewTimer); previewTimer = setTimeout(rebuildPreview, 350); }
+
+async function rebuildPreview() {
+  const ready = elements.filter((e) => e.valid);
+  if (!draft.imageEl && !ready.length) return;
+  if (!pv) initPreview();
+  const triggerH = draft.imageEl ? draft.imageH / draft.imageW : 1.4;
+  if (pv.triggerMesh) { pv.scene.remove(pv.triggerMesh); }
+  const mat = draft.imageEl
+    ? new THREE.MeshBasicMaterial({ map: new THREE.CanvasTexture(imgToCanvas(draft.imageEl)), side: THREE.DoubleSide })
+    : new THREE.MeshBasicMaterial({ color: 0x777777, side: THREE.DoubleSide });
+  pv.triggerMesh = new THREE.Mesh(new THREE.PlaneGeometry(1, triggerH), mat);
+  pv.scene.add(pv.triggerMesh);
+  if (pv.elGroup) { pv.scene.remove(pv.elGroup); pv.elGroup = null; pv.mixers = []; }
+  try {
+    const { group, videos, mixers } = await buildElements(THREE, ready, (el) => URL.createObjectURL(el.file), triggerH);
+    pv.elGroup = group; pv.mixers = mixers;
+    pv.scene.add(group);
+    videos.forEach((v) => v.play().catch(() => {}));
+    window.__portal.previewCount = ready.length;
+  } catch (e) {
+    window.__portal.error = 'preview: ' + e;
+  }
+}
+function imgToCanvas(img) {
+  const c = document.createElement('canvas');
+  c.width = img.width; c.height = img.height;
+  c.getContext('2d').drawImage(img, 0, 0);
+  return c;
+}
+
+// ---------- soundtrack ----------
 $('audioInput').addEventListener('change', async (ev) => {
   const f = ev.target.files[0];
   $('audioError').textContent = ''; $('audioInfo').textContent = '';
@@ -256,19 +501,23 @@ $('submitBtn').addEventListener('click', async () => {
       status: 'pending', reason: '',
       quality: draft.quality,
       imageBlob: draft.imageBlob,
+      imageW: draft.imageW, imageH: draft.imageH,
       mindBlob: new Blob([draft.mindBuffer]),
-      contentKind: draft.contentKind,
-      contentBlob: draft.contentBlob,
-      contentName: draft.contentName,
+      elements: elements.filter((e) => e.valid).map((e) => ({
+        kind: e.kind, name: e.name, blob: e.file, fit: e.kind === 'model' ? 'free' : e.fit,
+        transform: { ...e.transform },
+      })),
       audioBlob: draft.audioBlob,
       createdAt: Date.now(),
     });
     window.__portal.submitted = true;
-    ['imgInput', 'contentInput', 'audioInput', 'titleInput', 'descInput'].forEach((id) => { $(id).value = ''; });
+    ['imgInput', 'audioInput', 'titleInput', 'descInput'].forEach((id) => { $(id).value = ''; });
     $('rightsCheck').checked = false;
-    $('imgPreview').style.display = 'none'; $('videoPreview').style.display = 'none';
-    $('qualityResult').innerHTML = ''; $('contentInfo').textContent = ''; $('audioInfo').textContent = '';
-    Object.assign(draft, { imageBlob: null, quality: null, mindBuffer: null, contentBlob: null, audioBlob: null });
+    $('imgPreview').style.display = 'none'; $('resWarn').style.display = 'none';
+    $('qualityResult').innerHTML = ''; $('audioInfo').textContent = '';
+    Object.assign(draft, { imageBlob: null, imageEl: null, quality: null, mindBuffer: null, audioBlob: null });
+    elements = [];
+    renderElements();
     refreshSubmit();
     await renderItems();
     document.querySelector('main').lastElementChild.scrollIntoView({ behavior: 'smooth' });
@@ -284,7 +533,7 @@ async function renderItems() {
   const items = await store.listItems();
   const el = $('itemsList');
   if (!items.length) {
-    el.innerHTML = '<div class="empty">עוד אין תמונות טריגר — ההעלאה הראשונה שלך תופיע כאן</div>';
+    el.innerHTML = '<div class="empty">עוד אין יצירות — ההעלאה הראשונה שלך תופיע כאן</div>';
     return;
   }
   el.innerHTML = '';
@@ -295,9 +544,10 @@ async function renderItems() {
     img.src = store.fileUrl(it, 'image');
     const meta = document.createElement('div');
     meta.className = 'meta';
+    const kinds = (it.elements || []).map((e) => elementLabel(e.kind)).join(' + ') || '—';
     meta.innerHTML = `
       <h3>${it.title}</h3>
-      <div class="small">${it.contentKind === 'video' ? 'וידאו' : 'מודל תלת-מימד'} · ציון זיהוי ${it.quality?.score ?? '?'}/100</div>
+      <div class="small">${kinds} · ציון זיהוי ${it.quality?.score ?? '?'}/100</div>
       <span class="chip ${it.status}">${STATUS_LABEL[it.status]}</span>
       ${it.status === 'rejected' && it.reason ? `<div class="small">סיבה: ${it.reason}</div>` : ''}
       <div class="row-actions">
@@ -308,7 +558,7 @@ async function renderItems() {
     el.append(div);
   }
   el.querySelectorAll('[data-del]').forEach((b) => b.addEventListener('click', async () => {
-    if (confirm('למחוק את תמונת הטריגר הזו?')) { await store.deleteItem(b.dataset.del); renderItems(); }
+    if (confirm('למחוק את היצירה הזו?')) { await store.deleteItem(b.dataset.del); renderItems(); }
   }));
 }
 renderItems();

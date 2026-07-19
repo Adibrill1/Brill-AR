@@ -41,13 +41,19 @@ function ext(name, fallback) {
 }
 
 function rowToItem(r) {
+  let elements = Array.isArray(r.elements) ? r.elements : [];
+  if (!elements.length && r.content_path) {
+    // legacy rows from before multi-element support
+    elements = [{ kind: r.content_kind, name: r.content_name, path: r.content_path, fit: 'free', transform: {} }];
+  }
   return {
     id: r.id, title: r.title, description: r.description,
     status: r.status, reason: r.reason, quality: r.quality,
-    contentKind: r.content_kind, contentName: r.content_name,
+    elements,
+    imageW: r.image_w, imageH: r.image_h,
     createdAt: new Date(r.created_at).getTime(),
     scanCount: r.scan_count,
-    _paths: { image: r.image_path, mind: r.mind_path, content: r.content_path, audio: r.audio_path },
+    _paths: { image: r.image_path, mind: r.mind_path, audio: r.audio_path },
   };
 }
 
@@ -57,6 +63,10 @@ export const store = {
   fileUrl(item, kind) {
     const p = item._paths?.[kind];
     return p ? `${U}/storage/v1/object/public/trigger-assets/${p}` : null;
+  },
+
+  elementUrl(_item, el) {
+    return el.path ? `${U}/storage/v1/object/public/trigger-assets/${el.path}` : null;
   },
 
   async saveProfile(profile) {
@@ -81,7 +91,13 @@ export const store = {
     const dir = item.id;
     const imagePath = await uploadFile(`${dir}/image.${ext(item.imageBlob.name, 'png')}`, item.imageBlob);
     const mindPath = await uploadFile(`${dir}/target.mind`, item.mindBlob);
-    const contentPath = await uploadFile(`${dir}/content.${ext(item.contentName, item.contentKind === 'video' ? 'mp4' : 'glb')}`, item.contentBlob);
+    const elements = [];
+    for (let i = 0; i < item.elements.length; i++) {
+      const el = item.elements[i];
+      const fallback = { video: 'mp4', image: 'png', model: 'glb' }[el.kind];
+      const path = await uploadFile(`${dir}/el${i}.${ext(el.name, fallback)}`, el.blob);
+      elements.push({ kind: el.kind, name: el.name, path, fit: el.fit, transform: el.transform });
+    }
     const audioPath = item.audioBlob
       ? await uploadFile(`${dir}/audio.${ext(item.audioBlob.name, 'mp3')}`, item.audioBlob)
       : null;
@@ -93,11 +109,11 @@ export const store = {
       status: item.status,
       reason: item.reason || '',
       quality: item.quality,
-      content_kind: item.contentKind,
-      content_name: item.contentName,
+      elements,
+      image_w: item.imageW || null,
+      image_h: item.imageH || null,
       image_path: imagePath,
       mind_path: mindPath,
-      content_path: contentPath,
       audio_path: audioPath,
     });
   },
@@ -115,7 +131,8 @@ export const store = {
   async deleteItem(id) {
     const item = await this.getItem(id);
     if (item) {
-      await Promise.all(Object.values(item._paths).map(deleteFile));
+      const paths = [...Object.values(item._paths), ...item.elements.map((e) => e.path)];
+      await Promise.all(paths.map(deleteFile));
     }
     await rest('DELETE', `trigger_images?id=eq.${id}`);
   },

@@ -37,6 +37,7 @@
 import * as THREE from 'three';
 import { MindARThree } from '../spike/vendor/mindar-image-three.prod.js';
 import { store } from './js/store.js';
+import { buildElements, elementLabel } from './js/elements.js';
 
 window.__test = { loaded: false, started: false, targetFound: false, error: '' };
 const $ = (id) => document.getElementById(id);
@@ -48,66 +49,47 @@ if (!item) {
   $('startBtn').style.display = 'none';
   window.__test.error = 'item not found';
 } else {
-  $('itemTitle').textContent = `"${item.title}" — ${item.contentKind === 'video' ? 'וידאו' : 'מודל תלת-מימד'}`;
+  const kinds = (item.elements || []).map((e) => elementLabel(e.kind)).join(' + ');
+  $('itemTitle').textContent = `"${item.title}" — ${kinds}`;
   $('triggerThumb').src = store.fileUrl(item, 'image');
   window.__test.loaded = true;
 }
 
 async function buildContent(anchor) {
-  const group = new THREE.Group();
-  group.add(new THREE.AmbientLight(0xffffff, 0.9));
-  const dir = new THREE.DirectionalLight(0xffffff, 1.1);
-  dir.position.set(0.5, 1, 1);
-  group.add(dir);
-
-  let onFound = () => {}, onLost = () => {};
-
-  if (item.contentKind === 'video') {
-    const video = document.createElement('video');
-    video.src = store.fileUrl(item, 'content');
-    video.crossOrigin = 'anonymous';
-    video.loop = true; video.playsInline = true; video.muted = !!store.fileUrl(item, 'audio');
-    await new Promise((res, rej) => { video.onloadedmetadata = res; video.onerror = rej; });
-    const tex = new THREE.VideoTexture(video);
-    const aspect = video.videoWidth / video.videoHeight;
-    // plane spans the trigger image width (anchor plane width is 1 in MindAR units)
-    const plane = new THREE.Mesh(
-      new THREE.PlaneGeometry(1, 1 / aspect),
-      new THREE.MeshBasicMaterial({ map: tex }),
-    );
-    plane.position.set(0, 0, 0.05);
-    group.add(plane);
-    onFound = () => video.play().catch(() => {});
-    onLost = () => video.pause();
-  } else {
-    const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
-    const gltf = await new GLTFLoader().loadAsync(store.fileUrl(item, 'content'));
-    const model = gltf.scene;
-    // normalize model to a sensible size relative to the trigger image
-    const box = new THREE.Box3().setFromObject(model);
-    const size = box.getSize(new THREE.Vector3()).length() || 1;
-    model.scale.setScalar(0.8 / size);
-    box.setFromObject(model);
-    const center = box.getCenter(new THREE.Vector3());
-    model.position.sub(center).add(new THREE.Vector3(0, 0, 0.25));
-    group.add(model);
-    if (gltf.animations?.length) {
-      const mixer = new THREE.AnimationMixer(model);
-      gltf.animations.forEach((clip) => mixer.clipAction(clip).play());
-      group.userData.mixer = mixer;
-    }
+  // trigger aspect: stored at upload time; fall back to measuring the image itself
+  let triggerH = item.imageH && item.imageW ? item.imageH / item.imageW : null;
+  if (!triggerH) {
+    const probe = new Image();
+    probe.crossOrigin = 'anonymous';
+    probe.src = store.fileUrl(item, 'image');
+    await probe.decode().catch(() => {});
+    triggerH = probe.height && probe.width ? probe.height / probe.width : 1.4;
   }
+
+  const { group, videos, mixers } = await buildElements(
+    THREE, item.elements, (el) => store.elementUrl(item, el), triggerH,
+  );
 
   let audio;
   const audioUrl = store.fileUrl(item, 'audio');
   if (audioUrl) {
     audio = new Audio(audioUrl);
     audio.loop = true;
-    const prevFound = onFound, prevLost = onLost;
-    onFound = () => { prevFound(); audio.play().catch(() => {}); };
-    onLost = () => { prevLost(); audio.pause(); };
+  } else {
+    // no dedicated soundtrack: let the first video carry its own sound
+    if (videos[0]) videos[0].muted = false;
   }
 
+  const onFound = () => {
+    videos.forEach((v) => v.play().catch(() => {}));
+    audio?.play().catch(() => {});
+  };
+  const onLost = () => {
+    videos.forEach((v) => v.pause());
+    audio?.pause();
+  };
+
+  group.userData.mixers = mixers;
   anchor.group.add(group);
   return { group, onFound, onLost };
 }
@@ -136,7 +118,8 @@ $('startBtn').addEventListener('click', async () => {
     window.__test.started = true;
     const clock = new THREE.Clock();
     renderer.setAnimationLoop(() => {
-      group.userData.mixer?.update(clock.getDelta());
+      const dt = clock.getDelta();
+      group.userData.mixers?.forEach((m) => m.update(dt));
       renderer.render(scene, camera);
     });
   } catch (e) {

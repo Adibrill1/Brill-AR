@@ -2,8 +2,11 @@
 // Pages import { store } from here and never care which backend is active.
 import { config } from './config.js';
 
+// ?backend=local forces demo mode (used by automated tests and offline development)
+const forceLocal = new URLSearchParams(location.search).get('backend') === 'local';
+
 let impl;
-if (config.supabaseUrl && config.supabaseAnonKey) {
+if (!forceLocal && config.supabaseUrl && config.supabaseAnonKey) {
   ({ store: impl } = await import('./supabase-store.js'));
 } else {
   ({ store: impl } = await import('./local-store.js'));

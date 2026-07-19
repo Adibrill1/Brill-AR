@@ -24,6 +24,7 @@
 </main>
 <script type="module">
 import { store } from './js/store.js';
+import { elementLabel } from './js/elements.js';
 
 window.__admin = { rendered: false, error: '' };
 const STATUS_LABEL = { pending: 'ממתין לאישור', approved: 'אושר ✓', rejected: 'נדחה' };
@@ -38,7 +39,7 @@ function itemRow(it, withActions) {
   meta.innerHTML = `
     <h3>${it.title}</h3>
     <div class="small">${it.description || ''}</div>
-    <div class="small">${it.contentKind === 'video' ? `וידאו (${it.contentName})` : 'מודל תלת-מימד'}
+    <div class="small">${(it.elements || []).map((e) => elementLabel(e.kind)).join(' + ') || '—'}
       · ציון זיהוי ${it.quality?.score ?? '?'}/100
       · ${new Date(it.createdAt).toLocaleDateString('he-IL')}</div>
     <span class="chip ${it.status}">${STATUS_LABEL[it.status]}</span>
@@ -48,9 +49,10 @@ function itemRow(it, withActions) {
       ${withActions ? `<button data-approve="${it.id}">אישור</button>
                        <button class="danger" data-reject="${it.id}">דחייה</button>` : ''}
     </div>`;
-  if (it.contentKind === 'video') {
+  const firstVideo = (it.elements || []).find((e) => e.kind === 'video');
+  if (firstVideo) {
     const v = document.createElement('video');
-    v.src = store.fileUrl(it, 'content');
+    v.src = store.elementUrl(it, firstVideo);
     v.controls = true; v.muted = true; v.className = 'preview-media';
     meta.append(v);
   }

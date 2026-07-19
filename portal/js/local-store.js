@@ -45,6 +45,10 @@ export const store = {
     return blob ? URL.createObjectURL(blob) : null;
   },
 
+  elementUrl(_item, el) {
+    return el.blob ? URL.createObjectURL(el.blob) : null;
+  },
+
   async saveProfile(profile) {
     return tx('profile', 'readwrite', (s) => s.put({ key: 'me', ...profile }));
   },

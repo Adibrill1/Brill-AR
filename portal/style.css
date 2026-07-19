@@ -52,3 +52,23 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .row-actions .btn, .row-actions button { margin-top: 8px; padding: 8px 16px; font-size: .85rem; }
 .progress-note { font-size: .85rem; color: var(--mid); margin-top: 8px; }
 .empty { color: #778; text-align: center; padding: 24px 0; }
+
+/* crop editor */
+#cropCanvas { display: block; margin-top: 10px; border-radius: 10px; touch-action: none;
+              max-width: 100%; cursor: crosshair; }
+.crop-tools { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+
+/* element cards */
+.el-card { border: 1.5px solid #ccd4d8; border-radius: 12px; padding: 14px; margin-top: 12px; background: #fbfaf7; }
+.el-head { display: flex; gap: 10px; align-items: center; }
+.el-head select { flex: 0 1 auto; width: auto; }
+.el-head .el-del { margin-top: 0; margin-inline-start: auto; padding: 6px 14px; font-size: .82rem; }
+.fit-row { font-weight: 400; display: flex; gap: 8px; align-items: center; margin-top: 10px; }
+.transform { margin-top: 6px; }
+.sl { font-weight: 400; font-size: .88rem; margin: 8px 0 2px; }
+.sl output { color: var(--mid); font-weight: 700; margin-inline-start: 6px; }
+.sl input[type=range] { width: 100%; accent-color: var(--gold); }
+
+/* 3D preview */
+#previewWrap { margin-top: 8px; border-radius: 12px; overflow: hidden; background: #20313a; min-height: 60px; }
+#previewWrap canvas { display: block; width: 100%; touch-action: none; }
