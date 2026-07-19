@@ -5,6 +5,7 @@
 //            transform: {...}, animation: {type, speed}, ...kind-specific fields }
 // Anchor space (MindAR): trigger image is 1 unit wide, X right, Y up, Z toward viewer.
 import { buildLibraryElement } from './library.js';
+import { build3DText, TEXT3D_FONTS } from './text3d.js';
 
 export const DEFAULT_TRANSFORM = { x: 0, y: 0, z: 0.25, scale: 1, upright: false, rotz: 0 };
 export const DEFAULT_ANIMATION = { type: 'none', speed: 1 };
@@ -22,45 +23,18 @@ export const ANIMATIONS = [
   { id: 'orbit', name: 'מקיף במעגל' },
 ];
 
-// Hebrew webfonts first (bundled in portal/fonts), then universal system fonts
-export const TEXT_FONTS = ['Rubik', 'Heebo', 'Frank Ruhl Libre', 'Secular One', 'Amatic SC',
-  'Arial', 'Verdana', 'Georgia', 'Times New Roman', 'Courier New', 'Impact', 'Trebuchet MS'];
+// letter-level animations, offered only for text elements
+export const TEXT_ANIMATIONS = [
+  { id: 'wave', name: 'גל אותיות' },
+  { id: 'jump', name: 'אותיות מקפצות' },
+  { id: 'shimmer', name: 'ריצוד עדין' },
+];
+
+// 3D text is built from bundled glyph outlines, so only the packaged fonts apply
+export const TEXT_FONTS = TEXT3D_FONTS;
 
 export function elementLabel(kind) {
   return { video: 'וידאו', image: 'תמונה', model: 'מודל תלת-מימד', lib: 'אלמנט מהספרייה', text: 'טקסט' }[kind] || kind;
-}
-
-async function buildTextMesh(THREE, el) {
-  const fontSize = 96, pad = 42, lineH = fontSize * 1.3;
-  const fontSpec = `${el.italic ? 'italic ' : ''}${el.bold ? 'bold ' : ''}${fontSize}px "${el.font || 'Rubik'}"`;
-  // webfonts must be loaded before canvas rendering, or the browser falls back silently
-  try { await document.fonts.load(fontSpec, 'אב Ag'); } catch { /* system font fallback */ }
-  const lines = String(el.text || '').split('\n');
-  const probe = document.createElement('canvas').getContext('2d');
-  probe.font = fontSpec;
-  const w = Math.max(60, ...lines.map((l) => probe.measureText(l).width)) + pad * 2;
-  const h = lines.length * lineH + pad * 2;
-  const c = document.createElement('canvas');
-  c.width = Math.ceil(w); c.height = Math.ceil(h);
-  const x = c.getContext('2d');
-  if (el.bgOn) {
-    x.fillStyle = el.bg || '#1f4e5f';
-    x.beginPath();
-    x.roundRect(0, 0, c.width, c.height, 28);
-    x.fill();
-  }
-  x.font = fontSpec;
-  x.fillStyle = el.color || '#ffffff';
-  x.textAlign = 'center';
-  x.textBaseline = 'middle';
-  x.direction = 'rtl';
-  lines.forEach((l, i) => x.fillText(l, c.width / 2, pad + lineH * (i + 0.5)));
-  const tex = new THREE.CanvasTexture(c);
-  const planeW = 0.75;
-  return new THREE.Mesh(
-    new THREE.PlaneGeometry(planeW, planeW * c.height / c.width),
-    new THREE.MeshBasicMaterial({ map: tex, transparent: true, side: THREE.DoubleSide }),
-  );
 }
 
 // triggerH = image height / image width (trigger plane is 1 x triggerH)
@@ -79,7 +53,7 @@ export async function buildElement(THREE, el, url, triggerH) {
   } else if (el.kind === 'lib') {
     inner = buildLibraryElement(THREE, el.libId, el.color);
   } else if (el.kind === 'text') {
-    inner = await buildTextMesh(THREE, el);
+    inner = await build3DText(THREE, el);
   } else {
     let tex, aspect;
     if (el.kind === 'video') {
@@ -137,7 +111,9 @@ export async function buildElement(THREE, el, url, triggerH) {
   }
 
   const a = { ...DEFAULT_ANIMATION, ...(el.animation || {}) };
-  const anim = (!isCover && a.type !== 'none') ? { group: animGroup, type: a.type, speed: a.speed || 1 } : null;
+  const anim = (!isCover && a.type !== 'none')
+    ? { group: animGroup, type: a.type, speed: a.speed || 1, letters: inner.userData?.letters || [] }
+    : null;
 
   return { obj: wrap, video, gltf, anim };
 }
@@ -166,6 +142,20 @@ export function updateAnimations(anims, elapsed) {
         g.position.x = 0.22 * Math.cos(t * 1.1);
         g.position.y = 0.22 * Math.sin(t * 1.1);
         break;
+      case 'wave':
+        a.letters.forEach((l, i) => { l.position.y = l.userData.baseY + 0.09 * Math.sin(t * 2.4 + i * 0.55); });
+        break;
+      case 'jump':
+        a.letters.forEach((l, i) => {
+          l.position.y = l.userData.baseY + Math.max(0, 0.16 * Math.sin(t * 2.2 - i * 0.5));
+        });
+        break;
+      case 'shimmer':
+        a.letters.forEach((l, i) => {
+          l.rotation.y = 0.16 * Math.sin(t * 2 + i * 0.8);
+          l.position.y = l.userData.baseY + 0.02 * Math.sin(t * 3.1 + i * 1.1);
+        });
+        break;
     }
   }
 }
@@ -179,10 +169,11 @@ export async function buildElements(THREE, elements, urlOf, triggerH) {
   dir.position.set(0.5, 1, 1);
   group.add(dir);
 
-  const videos = [], mixers = [], anims = [];
+  const videos = [], mixers = [], anims = [], entries = [];
   for (const el of elements) {
     const { obj, video, gltf, anim } = await buildElement(THREE, el, urlOf(el), triggerH);
     group.add(obj);
+    entries.push({ el, obj });
     if (video) videos.push(video);
     if (anim) anims.push(anim);
     if (gltf?.animations?.length) {
@@ -191,5 +182,5 @@ export async function buildElements(THREE, elements, urlOf, triggerH) {
       mixers.push(mixer);
     }
   }
-  return { group, videos, mixers, anims };
+  return { group, videos, mixers, anims, entries };
 }

@@ -54,8 +54,9 @@
   <div id="elementsList"></div>
   <button type="button" class="secondary" id="addElBtn">+ הוספת אלמנט</button>
 
-  <label style="margin-top:22px">תצוגה מקדימה תלת-ממדית
-    <span class="hint">גררו לסיבוב, גלגלת/צביטה לזום — כך המבקרים יראו את היצירה על תמונת הטריגר.</span>
+  <label style="margin-top:22px">תצוגה מקדימה תלת-ממדית — עריכה ישירה
+    <span class="hint">הקישו על אלמנט כדי לבחור אותו: יופיעו חצים — אדום/ירוק להזזה על התמונה, כחול לקירוב וריחוק,
+    והכדור הזהוב (גרירה מעלה־מטה) להקטנה והגדלה. גרירת האלמנט עצמו מזיזה אותו חופשי. גרירת רקע מסובבת את המבט.</span>
   </label>
   <div id="previewWrap"><div class="empty" id="previewEmpty">בחרו תמונת טריגר ואלמנט אחד לפחות</div></div>
 
@@ -92,7 +93,7 @@ import * as THREE from 'three';
 import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { store } from './js/store.js';
 import { analyzeTriggerImage } from './js/quality.js';
-import { buildElements, updateAnimations, DEFAULT_TRANSFORM, DEFAULT_ANIMATION, ANIMATIONS, TEXT_FONTS, elementLabel } from './js/elements.js';
+import { buildElements, updateAnimations, DEFAULT_TRANSFORM, DEFAULT_ANIMATION, ANIMATIONS, TEXT_ANIMATIONS, TEXT_FONTS, elementLabel } from './js/elements.js';
 import { LIBRARY } from './js/library.js';
 import { dHash, hammingDistance, DUPLICATE_THRESHOLD } from './js/imagehash.js';
 
@@ -401,7 +402,7 @@ function renderElements() {
         <label class="fit-row"><input type="checkbox" data-role="upright" ${el.transform.upright ? 'checked' : ''}>
         העמדה במאונך לתמונת הטריגר</label>
         <label>אנימציה (בלופ)
-          <select data-role="anim">${ANIMATIONS.map((a) =>
+          <select data-role="anim">${[...ANIMATIONS, ...(el.kind === 'text' ? TEXT_ANIMATIONS : [])].map((a) =>
             `<option value="${a.id}" ${el.animation.type === a.id ? 'selected' : ''}>${a.name}</option>`).join('')}</select></label>
         <div class="sl-row" data-role="speedRow" style="${el.animation.type === 'none' ? 'display:none' : ''}">
           <label class="sl">קצב האנימציה <output>${el.animation.speed}</output>
@@ -532,7 +533,8 @@ function initPreview() {
   controls.enableDamping = true;
   scene.add(new THREE.GridHelper(4, 20, 0x39525e, 0x2b3f48).rotateX(Math.PI / 2));
   const clock = new THREE.Clock();
-  pv = { renderer, scene, camera, controls, triggerMesh: null, elGroup: null, mixers: [], anims: [], clock, elapsed: 0 };
+  pv = { renderer, scene, camera, controls, triggerMesh: null, elGroup: null, mixers: [], anims: [], entries: [], clock, elapsed: 0 };
+  attachGizmoHandlers();
   renderer.setAnimationLoop(() => {
     controls.update();
     const dt = clock.getDelta();
@@ -559,8 +561,11 @@ async function rebuildPreview() {
   pv.scene.add(pv.triggerMesh);
   if (pv.elGroup) { pv.scene.remove(pv.elGroup); pv.elGroup = null; pv.mixers = []; }
   try {
-    const { group, videos, mixers, anims } = await buildElements(THREE, ready, (el) => el.file ? URL.createObjectURL(el.file) : null, triggerH);
+    const { group, videos, mixers, anims, entries } = await buildElements(THREE, ready, (el) => el.file ? URL.createObjectURL(el.file) : null, triggerH);
     pv.elGroup = group; pv.mixers = mixers; pv.anims = anims;
+    pv.entries = entries.filter((en) =>
+      !(en.el.fit === 'cover' && (en.el.kind === 'video' || en.el.kind === 'image')));
+    deselectElement();
     pv.scene.add(group);
     videos.forEach((v) => v.play().catch(() => {}));
     window.__portal.previewCount = ready.length;
@@ -574,6 +579,169 @@ function imgToCanvas(img) {
   c.getContext('2d').drawImage(img, 0, 0);
   return c;
 }
+
+
+// ---------- direct manipulation: tap to select, drag arrows / element / scale orb ----------
+let selected = null;       // { el, obj }
+let gizmo = null;
+let drag = null;
+const raycaster = new THREE.Raycaster();
+
+function makeGizmo() {
+  const g = new THREE.Group();
+  const arrow = (axis, color, euler) => {
+    const grp = new THREE.Group();
+    const mat = new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.95 });
+    const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.022, 0.022, 0.4, 10), mat);
+    shaft.position.y = 0.2;
+    const head = new THREE.Mesh(new THREE.ConeGeometry(0.07, 0.16, 12), mat);
+    head.position.y = 0.46;
+    grp.add(shaft, head);
+    grp.rotation.copy(euler);
+    grp.traverse((o) => { o.userData.axis = axis; o.renderOrder = 999; });
+    return grp;
+  };
+  g.add(arrow('x', 0xc0392b, new THREE.Euler(0, 0, -Math.PI / 2)));
+  g.add(arrow('y', 0x27ae60, new THREE.Euler(0, 0, 0)));
+  g.add(arrow('z', 0x2e86c1, new THREE.Euler(Math.PI / 2, 0, 0)));
+  const orb = new THREE.Mesh(new THREE.SphereGeometry(0.07, 14, 12),
+    new THREE.MeshBasicMaterial({ color: 0xd4ac0d, depthTest: false }));
+  orb.position.set(-0.3, -0.3, 0);
+  orb.userData.axis = 'scale';
+  orb.renderOrder = 999;
+  g.add(orb);
+  return g;
+}
+
+function selectElement(entry) {
+  selected = entry;
+  if (!gizmo) gizmo = makeGizmo();
+  gizmo.position.copy(entry.obj.position);
+  if (!gizmo.parent) pv.scene.add(gizmo);
+}
+function deselectElement() {
+  selected = null;
+  if (gizmo?.parent) gizmo.parent.remove(gizmo);
+}
+
+function rayFromEvent(ev) {
+  const r = pv.renderer.domElement.getBoundingClientRect();
+  const nd = new THREE.Vector2(((ev.clientX - r.left) / r.width) * 2 - 1,
+                               -((ev.clientY - r.top) / r.height) * 2 + 1);
+  raycaster.setFromCamera(nd, pv.camera);
+  return raycaster.ray.clone();
+}
+// parameter of the closest point on the axis line to the given ray
+function axisParam(origin, dir, ray) {
+  const w0 = origin.clone().sub(ray.origin);
+  const b = dir.dot(ray.direction);
+  const d = dir.dot(w0), e = ray.direction.dot(w0);
+  const denom = 1 - b * b;
+  return Math.abs(denom) < 1e-6 ? 0 : (b * e - d) / denom;
+}
+const AXIS_VEC = { x: new THREE.Vector3(1, 0, 0), y: new THREE.Vector3(0, 1, 0), z: new THREE.Vector3(0, 0, 1) };
+const CLAMP = { x: [-1, 1], y: [-1, 1], z: [0, 1.5] };
+
+function syncSliders(el) {
+  const card = document.querySelector(`.el-card[data-uid="${el.uid}"]`);
+  if (!card) return;
+  for (const key of ['x', 'y', 'z', 'scale']) {
+    const inp = card.querySelector(`[data-t=${key}]`);
+    if (inp) {
+      inp.value = el.transform[key];
+      inp.previousElementSibling.textContent = String(Math.round(el.transform[key] * 100) / 100);
+    }
+  }
+}
+
+const DRAG_STEP = { x: 0.02, y: 0.02, z: 0.05, scale: 0.05 };
+function applyDragTransform(entry, key, value) {
+  const [lo, hi] = key === 'scale' ? [0.2, 3] : CLAMP[key];
+  value = Math.max(lo, Math.min(hi, value));
+  // snap to the matching slider's step grid so the two controls always agree
+  const step = DRAG_STEP[key];
+  entry.el.transform[key] = Math.round(Math.round(value / step) * step * 100) / 100;
+  if (key === 'scale') entry.obj.scale.setScalar(entry.el.transform[key]);
+  else entry.obj.position[key] = entry.el.transform[key];
+  if (gizmo && selected === entry) gizmo.position.copy(entry.obj.position);
+  syncSliders(entry.el);
+}
+
+function attachGizmoHandlers() {
+  const dom = pv.renderer.domElement;
+  dom.addEventListener('pointerdown', (ev) => {
+    if (!pv.entries?.length && !selected) return;
+    const ray = rayFromEvent(ev);
+    raycaster.ray.copy(ray);
+    if (gizmo?.parent) {
+      const hit = raycaster.intersectObject(gizmo, true)[0];
+      if (hit) {
+        const axis = hit.object.userData.axis;
+        pv.controls.enabled = false;
+        dom.setPointerCapture(ev.pointerId);
+        if (axis === 'scale') {
+          drag = { kind: 'scale', startY: ev.clientY, startScale: selected.el.transform.scale };
+        } else {
+          const dir = AXIS_VEC[axis];
+          drag = { kind: 'axis', axis, dir,
+                   origin: selected.obj.position.clone(),
+                   start: axisParam(selected.obj.position, dir, ray),
+                   base: selected.el.transform[axis] };
+        }
+        return;
+      }
+    }
+    const hits = raycaster.intersectObjects((pv.entries || []).map((en) => en.obj), true);
+    if (hits.length) {
+      let node = hits[0].object;
+      let entry = null;
+      while (node && !entry) {
+        entry = (pv.entries || []).find((en) => en.obj === node) || null;
+        node = node.parent;
+      }
+      if (entry) {
+        selectElement(entry);
+        pv.controls.enabled = false;
+        dom.setPointerCapture(ev.pointerId);
+        drag = { kind: 'plane', z: entry.obj.position.z };
+        return;
+      }
+    }
+    deselectElement();
+  });
+  dom.addEventListener('pointermove', (ev) => {
+    if (!drag || !selected) return;
+    const ray = rayFromEvent(ev);
+    if (drag.kind === 'axis') {
+      const s = axisParam(drag.origin, drag.dir, ray);
+      applyDragTransform(selected, drag.axis, drag.base + (s - drag.start));
+    } else if (drag.kind === 'plane') {
+      if (Math.abs(ray.direction.z) > 1e-6) {
+        const t = (drag.z - ray.origin.z) / ray.direction.z;
+        if (t > 0) {
+          const p = ray.origin.clone().addScaledVector(ray.direction, t);
+          applyDragTransform(selected, 'x', p.x);
+          applyDragTransform(selected, 'y', p.y);
+        }
+      }
+    } else if (drag.kind === 'scale') {
+      applyDragTransform(selected, 'scale', drag.startScale * (1 + (drag.startY - ev.clientY) / 160));
+    }
+  });
+  const endDrag = () => { drag = null; if (pv) pv.controls.enabled = true; };
+  dom.addEventListener('pointerup', endDrag);
+  dom.addEventListener('pointercancel', endDrag);
+}
+
+// test hook: programmatically select the first element and nudge it via the drag path
+window.__portal.testNudge = () => {
+  const entry = pv?.entries?.[0];
+  if (!entry) return null;
+  selectElement(entry);
+  applyDragTransform(entry, 'x', entry.el.transform.x + 0.15);
+  const card = document.querySelector(`.el-card[data-uid="${entry.el.uid}"] [data-t=x]`);
+  return { x: entry.el.transform.x, slider: card ? parseFloat(card.value) : null };
+};
 
 // ---------- soundtrack ----------
 $('audioInput').addEventListener('change', async (ev) => {

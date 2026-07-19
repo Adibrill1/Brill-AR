@@ -109,7 +109,7 @@ let audioCtx, recorderDest;
 const wiredAudio = new WeakSet();
 let activeItem = null;          // currently tracked item
 const perItem = new Map();      // id -> { videos, audio, mixers }
-let recording = false, mediaRecorder = null, recordedBlob = null;
+let recording = false, mediaRecorder = null, recordedBlob = null, posterUrl = '';
 let compositeCanvas, compositeCtx;
 
 // ---------- collection (anonymous, this device only) ----------
@@ -321,6 +321,8 @@ function startRecording() {
 function stopRecording() {
   if (!recording) return;
   recording = false;
+  // grab the last composited frame as the result-screen thumbnail
+  try { posterUrl = compositeCanvas.toDataURL('image/jpeg', 0.85); } catch { posterUrl = ''; }
   $('recBtn').classList.remove('recording');
   $('recBtn').textContent = 'REC';
   if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
@@ -330,6 +332,7 @@ $('recBtn').addEventListener('click', () => (recording ? stopRecording() : start
 function showResult(mime) {
   const url = URL.createObjectURL(recordedBlob);
   const ext = (mime || 'video/webm').includes('mp4') ? 'mp4' : 'webm';
+  if (posterUrl) $('playback').poster = posterUrl;
   $('playback').src = url;
   const dl = $('downloadBtn');
   dl.href = url;

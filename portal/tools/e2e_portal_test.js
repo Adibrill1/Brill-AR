@@ -170,10 +170,17 @@ async function pickImage(page, file) {
     await page.selectOption('.el-card:nth-child(3) [data-role=font]', 'Rubik');
     await page.check('.el-card:nth-child(3) [data-role=bold]');
     await page.check('.el-card:nth-child(3) [data-role=bgOn]');
-    await page.selectOption('.el-card:nth-child(3) [data-role=anim]', 'bob');
+    await page.selectOption('.el-card:nth-child(3) [data-role=anim]', 'wave');
     await page.waitForFunction(() => window.__portal.previewCount === 3, null, { timeout: 60000 });
     await new Promise((r) => setTimeout(r, 1200));
     await page.locator('#previewWrap').screenshot({ path: path.join(outDir, '6-lib-text-preview.png') });
+
+    console.log('10c. direct-manipulation gizmo moves element and syncs slider');
+    const nudge = await page.evaluate(() => window.__portal.testNudge());
+    if (!nudge || Math.abs(nudge.x - nudge.slider) > 0.001) {
+      throw new Error('gizmo drag path broken: ' + JSON.stringify(nudge));
+    }
+    console.log('   moved to x=' + nudge.x + ', slider synced');
 
     await page.fill('#titleInput', 'יצירה שנייה');
     await page.check('#rightsCheck');
@@ -204,9 +211,11 @@ async function pickImage(page, file) {
     console.log('12. keepsake recording + collection');
     await page.click('#recBtn');
     await page.waitForFunction(() => window.__visit.blobSize > 0, null, { timeout: 30000 });
-    const rec = await page.evaluate(() => ({ size: window.__visit.blobSize, collected: window.__visit.collected }));
-    console.log(`   recording: ${rec.size} bytes, collected works: ${rec.collected}`);
+    const rec = await page.evaluate(() => ({ size: window.__visit.blobSize, collected: window.__visit.collected,
+      posterLen: document.getElementById('playback').poster.length }));
+    console.log(`   recording: ${rec.size} bytes, collected: ${rec.collected}, poster: ${rec.posterLen} chars`);
     if (!rec.collected) throw new Error('collection not updated');
+    if (rec.posterLen < 100) throw new Error('result poster missing — thumbnail would be black');
     await page.screenshot({ path: path.join(outDir, '5-visit-result.png') });
 
     console.log('\nFULL LOOP PASSED: artist upload -> moderation -> exhibition scan -> AR -> keepsake -> collection');
