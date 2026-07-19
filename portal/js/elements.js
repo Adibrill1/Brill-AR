@@ -121,7 +121,10 @@ export async function buildElement(THREE, el, url, triggerH) {
 
   const isCover = el.fit === 'cover' && (el.kind === 'video' || el.kind === 'image');
   if (isCover) {
-    wrap.position.set(0, 0, 0.01);
+    // pinned onto the trigger image, but movable within its frame and resizable
+    const t = { ...DEFAULT_TRANSFORM, ...(el.transform || {}) };
+    wrap.position.set(t.x || 0, t.y || 0, 0.01);
+    wrap.scale.setScalar(t.scale || 1);
   } else {
     const t = { ...DEFAULT_TRANSFORM, ...(el.transform || {}) };
     wrap.position.set(t.x, t.y, t.z);

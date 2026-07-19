@@ -69,9 +69,30 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 .sl output { color: var(--mid); font-weight: 700; margin-inline-start: 6px; }
 .sl input[type=range] { width: 100%; accent-color: var(--gold); }
 
+/* add-element area: one big green import button + format note + shortcut buttons */
+.add-el { margin-top: 14px; }
+.import-btn { display: flex; align-items: center; justify-content: center; gap: 8px;
+  background: var(--ok); color: #fff; font-weight: 800; font-size: 1.05rem;
+  padding: 16px 24px; border-radius: 14px; cursor: pointer; text-align: center;
+  box-shadow: 0 2px 8px rgba(39,174,96,.28); margin: 0; transition: filter .15s; }
+.import-btn:hover { filter: brightness(1.06); }
+.formats-note { color: #667; font-size: .82rem; margin-top: 8px; line-height: 1.6; text-align: center; }
+.add-shortcuts { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
+.add-shortcuts .shortcut { flex: 1; margin-top: 0; text-align: center; }
+.el-kind { font-weight: 700; color: var(--mid); font-size: .9rem; }
+
 /* 3D preview */
-#previewWrap { margin-top: 8px; border-radius: 12px; overflow: hidden; background: #20313a; min-height: 60px; }
+#previewWrap { position: relative; margin-top: 8px; border-radius: 12px; overflow: hidden;
+  background: #20313a; min-height: 60px; }
 #previewWrap canvas { display: block; width: 100%; touch-action: none; }
+/* per-element lock overlay, positioned over the canvas */
+.pv-lock-layer { position: absolute; inset: 0; pointer-events: none; }
+.pv-lock { position: absolute; transform: translate(-50%, -50%); pointer-events: auto;
+  display: none; align-items: center; justify-content: center; width: 30px; height: 30px;
+  padding: 0; margin: 0; border-radius: 50%; font-size: .95rem; line-height: 1;
+  background: rgba(255,255,255,.92); border: 1.5px solid rgba(31,78,95,.35);
+  box-shadow: 0 1px 4px rgba(0,0,0,.3); cursor: pointer; }
+.pv-lock.locked { background: var(--gold); border-color: var(--gold); }
 
 /* slider reset */
 .sl-row { display: flex; align-items: flex-end; gap: 8px; }

@@ -65,17 +65,25 @@ async function pickImage(page, file) {
     console.log('   marker grade:', grade);
     if (grade === 'poor') throw new Error('marker graded poor — scoring broken');
 
-    console.log('4. element 1: video with full-cover fit');
-    await page.click('#addElBtn');
-    await page.setInputFiles('.el-card:nth-child(1) [data-role=file]', path.join(assetsDir, 'testvideo.webm'));
+    console.log('4. element 1: video imported via the green button, full-cover fit');
+    await page.setInputFiles('#importInput', path.join(assetsDir, 'testvideo.webm'));
     await page.waitForFunction(() =>
       document.querySelector('.el-card:nth-child(1) [data-role=info]').textContent.includes('נטען בהצלחה'));
     await page.check('.el-card:nth-child(1) [data-role=fit]');
 
-    console.log('5. element 2: upright floating image beside the trigger');
-    await page.click('#addElBtn');
-    await page.selectOption('.el-card:nth-child(2) [data-role=kind]', 'image');
-    await page.setInputFiles('.el-card:nth-child(2) [data-role=file]', path.join(assetsDir, 'flat.png'));
+    console.log('4b. cover element is still movable within the frame + resizable (req 5)');
+    await page.waitForFunction(() => window.__portal.previewCount >= 1, null, { timeout: 60000 });
+    const coverMoved = await page.evaluate(() => window.__portal.testNudge());
+    if (!coverMoved || Math.abs(coverMoved.x - coverMoved.slider) > 0.001) {
+      throw new Error('cover element not draggable/synced: ' + JSON.stringify(coverMoved));
+    }
+    await page.evaluate(() => {
+      const x = document.querySelector('.el-card:nth-child(1) [data-t=x]');
+      x.value = '0'; x.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    console.log('5. element 2: upright floating image (imported via the green button)');
+    await page.setInputFiles('#importInput', path.join(assetsDir, 'flat.png'));
     await page.waitForFunction(() =>
       document.querySelector('.el-card:nth-child(2) [data-role=info]').textContent.includes('נטען בהצלחה'));
     await page.check('.el-card:nth-child(2) [data-role=upright]');
@@ -180,14 +188,12 @@ async function pickImage(page, file) {
     await page.evaluate(() => { window.__portal.qualityDone = false; });
     await pickImage(page, path.join(assetsDir, 'marker2_hd.png'));
     await page.waitForFunction(() => window.__portal.qualityDone || window.__portal.error, null, { timeout: 300000 });
-    await page.click('#addElBtn');
-    await page.setInputFiles('.el-card:nth-child(1) [data-role=file]', path.join(assetsDir, 'testvideo.webm'));
+    await page.setInputFiles('#importInput', path.join(assetsDir, 'testvideo.webm'));
     await page.waitForFunction(() =>
       document.querySelector('.el-card:nth-child(1) [data-role=info]').textContent.includes('נטען בהצלחה'));
 
     console.log('10b. library element (spinning star, custom speed) + styled text element');
-    await page.click('#addElBtn');
-    await page.selectOption('.el-card:nth-child(2) [data-role=kind]', 'lib');
+    await page.click('#addLibBtn');
     await page.selectOption('.el-card:nth-child(2) [data-role=libId]', 'star');
     await page.selectOption('.el-card:nth-child(2) [data-role=anim]', 'spin');
     await page.evaluate(() => {
@@ -195,8 +201,7 @@ async function pickImage(page, file) {
       s.value = '2';
       s.dispatchEvent(new Event('input', { bubbles: true }));
     });
-    await page.click('#addElBtn');
-    await page.selectOption('.el-card:nth-child(3) [data-role=kind]', 'text');
+    await page.click('#addTextBtn');
     await page.fill('.el-card:nth-child(3) [data-role=text]', 'שלום עולם\nPEACE');
     await page.selectOption('.el-card:nth-child(3) [data-role=font]', 'Rubik');
     await page.check('.el-card:nth-child(3) [data-role=bold]');
@@ -205,8 +210,7 @@ async function pickImage(page, file) {
     await page.waitForFunction(() => window.__portal.previewCount === 3, null, { timeout: 60000 });
 
     console.log('10b2. community sticker element from the shared library');
-    await page.click('#addElBtn');
-    await page.selectOption('.el-card:nth-child(4) [data-role=kind]', 'lib');
+    await page.click('#addLibBtn');
     const assetVal = await page.evaluate(() => {
       const opts = [...document.querySelectorAll('.el-card:nth-child(4) [data-role=libId] option')];
       return opts.find((o) => o.value.startsWith('asset:'))?.value || null;
@@ -224,8 +228,19 @@ async function pickImage(page, file) {
     }
     console.log('   moved to x=' + nudge.x + ', slider synced');
 
-    console.log('10d. locked element is skipped by selection');
-    await page.click('.el-card:nth-child(2) .el-lock');
+    console.log('10c2. rotation gizmo spins the element and syncs the rotz slider');
+    const rot = await page.evaluate(() => window.__portal.testRotate(0, 30));
+    const rotSlider = await page.evaluate(() => {
+      const s = document.querySelector('.el-card:nth-child(1) [data-t=rotz]');
+      return s ? parseFloat(s.value) : null;
+    });
+    if (!rot || rot.rotz === 0 || (rotSlider !== null && rotSlider !== rot.rotz)) {
+      throw new Error('rotation gizmo path broken: ' + JSON.stringify({ rot, rotSlider }));
+    }
+    console.log('   rotated to rotz=' + rot.rotz);
+
+    console.log('10d. locked element (in-preview lock) is skipped by selection');
+    await page.evaluate(() => window.__portal.testLock(1));
     const nudge2 = await page.evaluate(() => window.__portal.testNudge());
     if (!nudge2) throw new Error('no unlocked element found after locking one');
     console.log('   lock respected, another element selected');

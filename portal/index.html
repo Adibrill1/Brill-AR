@@ -52,11 +52,23 @@
     <span class="hint">אפשר לשלב כמה אלמנטים: וידאו שמכסה את התמונה, מודל תלת-מימד שמרחף לידה, תמונות — ולכוון לכל אחד מיקום מדויק במרחב.</span>
   </label>
   <div id="elementsList"></div>
-  <button type="button" class="secondary" id="addElBtn">+ הוספת אלמנט</button>
+  <div class="add-el">
+    <label class="import-btn" id="importBtnLabel">⬆ ייבוא אלמנט
+      <input type="file" id="importInput"
+             accept="image/*,video/*,audio/*,.glb,.gltf,.mp4,.mov,.webm,.m4v,.ogv,.mp3,.wav" multiple hidden>
+    </label>
+    <div class="formats-note">אפשר לייבא: תמונות (PNG · JPG · WebP) · וידאו (MP4 · MOV · WebM) ·
+      שמע (MP3 · WAV) · תלת-מימד (GLB · GLTF)</div>
+    <div class="add-shortcuts">
+      <button type="button" class="secondary shortcut" id="addTextBtn">➤ טקסט</button>
+      <button type="button" class="secondary shortcut" id="addLibBtn">➤ ספריית תלת-מימד</button>
+    </div>
+  </div>
 
   <label style="margin-top:22px">תצוגה מקדימה תלת-ממדית — עריכה ישירה
     <span class="hint">הקישו על אלמנט כדי לבחור אותו: יופיעו חצים — אדום/ירוק להזזה על התמונה, כחול לקירוב וריחוק,
-    והכדור הזהוב (גרירה מעלה־מטה) להקטנה והגדלה. גרירת האלמנט עצמו מזיזה אותו חופשי. גרירת רקע מסובבת את המבט.</span>
+    הטבעת הכתומה לסיבוב, והכדור הזהוב (גרירה מעלה־מטה) להקטנה והגדלה. גרירת האלמנט עצמו מזיזה אותו חופשי.
+    המנעול בפינת כל אלמנט נועל אותו מפני תזוזה. גרירת רקע מסובבת את המבט.</span>
   </label>
   <div id="previewWrap"><div class="empty" id="previewEmpty">בחרו תמונת טריגר ואלמנט אחד לפחות</div></div>
 
@@ -351,7 +363,6 @@ const KIND_HINT = {
   image: 'תמונה (PNG/JPG) שתרחף או תכסה את תמונת הטריגר.',
   model: 'מודל תלת-מימד GLB/GLTF, עד 15MB. כולל אנימציות.',
 };
-const FILE_KINDS = ['video', 'image', 'model'];
 
 function elDefaults(kind) {
   const base = { file: null, name: '', error: '', fit: 'free' };
@@ -398,9 +409,6 @@ function kindBody(el) {
       הצמדה מלאה — מכסה את תמונת הטריגר בדיוק</label>` : ''}`;
 }
 
-const KIND_NAMES = [['video', 'וידאו'], ['image', 'תמונה'], ['model', 'מודל תלת-מימד'],
-                    ['lib', 'מהספרייה המובנית'], ['text', 'טקסט']];
-
 function renderElements() {
   const wrap = $('elementsList');
   wrap.innerHTML = '';
@@ -408,21 +416,14 @@ function renderElements() {
     const card = document.createElement('div');
     card.className = 'el-card';
     card.dataset.uid = el.uid;
-    const hideTransform = el.fit === 'cover' && (el.kind === 'video' || el.kind === 'image');
-    const summary = elementLabel(el.kind) + (el.name ? ' · ' + el.name : '');
-    card.innerHTML = `
-      <div class="el-head">
-        <button type="button" class="el-fold" title="קיפול/פתיחה">${el.collapsed ? '▸' : '▾'}</button>
-        <strong>אלמנט ${idx + 1}${el.collapsed ? ` <span class="el-summary">${summary}</span>` : ''}</strong>
-        <select data-role="kind" style="${el.collapsed ? 'display:none' : ''}">${KIND_NAMES.map(([v, n]) =>
-          `<option value="${v}" ${el.kind === v ? 'selected' : ''}>${n}</option>`).join('')}</select>
-        <button type="button" class="el-lock" title="${el.locked ? 'ביטול נעילה' : 'נעילה מפני תזוזה'}">${el.locked ? '🔒' : '🔓'}</button>
-        <button type="button" class="danger el-del">הסרה</button>
-      </div>
-      <div class="el-body" style="${el.collapsed ? 'display:none' : ''}">
-      ${kindBody(el)}
-      <div class="transform" style="${hideTransform ? 'display:none' : ''}">
+    const isCover = el.fit === 'cover' && (el.kind === 'video' || el.kind === 'image');
+    // cover elements pin onto the trigger image; only move-within-frame + resize apply
+    const transformInner = isCover
+      ? `<div class="hint">אפשר להזיז את האלמנט בתוך מסגרת התמונה ולשנות את גודלו — בגרירה בתצוגה או בסליידרים:</div>
         ${slider('ימינה־שמאלה', 'x', -1, 1, 0.02, el.transform.x)}
+        ${slider('למעלה־למטה', 'y', -1, 1, 0.02, el.transform.y)}
+        ${slider('גודל', 'scale', 0.2, 3, 0.05, el.transform.scale)}`
+      : `${slider('ימינה־שמאלה', 'x', -1, 1, 0.02, el.transform.x)}
         ${slider('למעלה־למטה', 'y', -1, 1, 0.02, el.transform.y)}
         ${slider('מרחק מהתמונה', 'z', 0, 1.5, 0.05, el.transform.z)}
         ${slider('גודל', 'scale', 0.2, 3, 0.05, el.transform.scale)}
@@ -436,7 +437,17 @@ function renderElements() {
           <label class="sl">קצב האנימציה <output>${el.animation.speed}</output>
           <input type="range" data-role="speed" min="0.2" max="3" step="0.1" value="${el.animation.speed}"></label>
           <button type="button" class="sl-reset" data-role="speedReset" title="איפוס">↺</button>
-        </div>
+        </div>`;
+    card.innerHTML = `
+      <div class="el-head">
+        <button type="button" class="el-fold" title="קיפול/פתיחה">${el.collapsed ? '▸' : '▾'}</button>
+        <strong>אלמנט ${idx + 1} <span class="el-kind">${elementLabel(el.kind)}</span>${el.name ? ` <span class="el-summary">· ${el.name}</span>` : ''}</strong>
+        <button type="button" class="danger el-del">הסרה</button>
+      </div>
+      <div class="el-body" style="${el.collapsed ? 'display:none' : ''}">
+      ${kindBody(el)}
+      <div class="transform">
+        ${transformInner}
       </div>
       </div>`;
 
@@ -445,15 +456,6 @@ function renderElements() {
     card.querySelector('.el-fold').addEventListener('click', () => {
       el.collapsed = !el.collapsed;
       renderElements();
-    });
-    card.querySelector('.el-lock').addEventListener('click', () => {
-      el.locked = !el.locked;
-      if (selected?.el === el) deselectElement();
-      renderElements();
-    });
-    on('[data-role=kind]', 'change', (ev) => {
-      Object.assign(el, { kind: ev.target.value }, elDefaults(ev.target.value));
-      renderElements(); schedulePreview(); refreshSubmit();
     });
     card.querySelector('.el-del').addEventListener('click', () => {
       elements = elements.filter((e) => e.uid !== el.uid);
@@ -553,13 +555,42 @@ async function validateElementFile(el, f, card) {
   refreshSubmit();
 }
 
-$('addElBtn').addEventListener('click', () => {
-  elements.push({ uid: ++elUid, kind: 'video',
-                  transform: { ...DEFAULT_TRANSFORM }, animation: { ...DEFAULT_ANIMATION },
-                  ...elDefaults('video') });
+function addElement(kind) {
+  const el = { uid: ++elUid, kind,
+               transform: { ...DEFAULT_TRANSFORM }, animation: { ...DEFAULT_ANIMATION },
+               ...elDefaults(kind) };
+  elements.push(el);
   renderElements();
+  schedulePreview();   // library elements are valid immediately, so rebuild right away
+  refreshSubmit();
+  return el;
+}
+
+// green import button: one entry point for every media kind — the file itself decides
+function detectKind(f) {
+  const name = f.name || '';
+  if (/^image\//.test(f.type) || /\.(png|jpe?g|webp|gif|bmp)$/i.test(name)) return 'image';
+  if (/^video\//.test(f.type) || /\.(mp4|mov|webm|m4v|ogv|avi)$/i.test(name)) return 'video';
+  if (/^audio\//.test(f.type) || /\.(mp3|wav|ogg|m4a|aac)$/i.test(name)) return 'audio';
+  if (/\.(glb|gltf)$/i.test(name)) return 'model';
+  return null;
+}
+
+$('importInput').addEventListener('change', async (ev) => {
+  for (const f of [...ev.target.files]) {
+    const kind = detectKind(f);
+    if (kind === 'audio') { await handleAudioFile(f); continue; }   // routed to the soundtrack slot
+    if (!kind) continue;
+    const el = addElement(kind);
+    const card = document.querySelector(`.el-card[data-uid="${el.uid}"]`);
+    if (card) await validateElementFile(el, f, card);
+  }
+  ev.target.value = '';
   refreshSubmit();
 });
+
+$('addTextBtn').addEventListener('click', () => addElement('text'));
+$('addLibBtn').addEventListener('click', () => addElement('lib'));
 
 // ---------- 3D preview ----------
 let pv = null;   // { renderer, scene, camera, controls, triggerMesh, elGroup, mixers, clock }
@@ -571,6 +602,9 @@ function initPreview() {
   renderer.setSize(W, H);
   renderer.setClearColor(0x20313a);
   wrapEl.append(renderer.domElement);
+  const lockLayer = document.createElement('div');
+  lockLayer.className = 'pv-lock-layer';
+  wrapEl.append(lockLayer);
   const scene = new THREE.Scene();
   const camera = new THREE.PerspectiveCamera(50, W / H, 0.01, 50);
   camera.position.set(0, -1.4, 1.4);
@@ -583,7 +617,7 @@ function initPreview() {
   controls.panSpeed = 0.5;
   scene.add(new THREE.GridHelper(4, 20, 0x39525e, 0x2b3f48).rotateX(Math.PI / 2));
   const clock = new THREE.Clock();
-  pv = { renderer, scene, camera, controls, triggerMesh: null, elGroup: null, mixers: [], anims: [], entries: [], clock, elapsed: 0 };
+  pv = { renderer, scene, camera, controls, triggerMesh: null, elGroup: null, mixers: [], anims: [], entries: [], clock, elapsed: 0, lockLayer };
   attachGizmoHandlers();
   renderer.setAnimationLoop(() => {
     controls.update();
@@ -591,6 +625,7 @@ function initPreview() {
     pv.elapsed += dt;
     pv.mixers.forEach((m) => m.update(dt));
     updateAnimations(pv.anims, pv.elapsed);
+    updateLockButtons();
     renderer.render(scene, camera);
   });
 }
@@ -617,10 +652,12 @@ async function rebuildPreview() {
       : null;
     const { group, videos, mixers, anims, entries } = await buildElements(THREE, ready, urlOf, triggerH);
     pv.elGroup = group; pv.mixers = mixers; pv.anims = anims;
-    pv.entries = entries.filter((en) =>
-      !(en.el.fit === 'cover' && (en.el.kind === 'video' || en.el.kind === 'image')));
+    // every element is selectable/draggable — including cover ones (move within frame + resize)
+    pv.entries = entries;
     deselectElement();
     pv.scene.add(group);
+    pv.scene.updateMatrixWorld(true);
+    buildLockButtons();
     videos.forEach((v) => v.play().catch(() => {}));
     window.__portal.previewCount = ready.length;
   } catch (e) {
@@ -634,6 +671,57 @@ function imgToCanvas(img) {
   return c;
 }
 
+// ---------- per-element lock, overlaid at each element's top-right corner in the preview ----------
+function toggleLock(en) {
+  en.el.locked = !en.el.locked;
+  const b = en.lockBtn;
+  if (b) {
+    b.textContent = en.el.locked ? '🔒' : '🔓';
+    b.classList.toggle('locked', en.el.locked);
+    b.title = en.el.locked ? 'האלמנט נעול — הקישו לביטול הנעילה' : 'נעילת האלמנט מפני תזוזה';
+  }
+  if (en.el.locked && selected === en) deselectElement();
+}
+function buildLockButtons() {
+  const layer = pv?.lockLayer;
+  if (!layer) return;
+  layer.innerHTML = '';
+  (pv.entries || []).forEach((en, i) => {
+    const box = new THREE.Box3().setFromObject(en.obj);
+    en.cornerOffset = box.isEmpty()
+      ? new THREE.Vector3()
+      : new THREE.Vector3(box.max.x, box.max.y, box.max.z).sub(en.obj.position);
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'pv-lock' + (en.el.locked ? ' locked' : '');
+    b.dataset.idx = i;
+    b.textContent = en.el.locked ? '🔒' : '🔓';
+    b.title = en.el.locked ? 'האלמנט נעול — הקישו לביטול הנעילה' : 'נעילת האלמנט מפני תזוזה';
+    b.addEventListener('pointerdown', (e) => e.stopPropagation());
+    b.addEventListener('click', (e) => { e.stopPropagation(); toggleLock(en); });
+    en.lockBtn = b;
+    layer.append(b);
+  });
+  updateLockButtons();
+}
+function updateLockButtons() {
+  const layer = pv?.lockLayer;
+  if (!layer) return;
+  const dom = pv.renderer.domElement;
+  const W = dom.clientWidth, H = dom.clientHeight;
+  for (const en of pv.entries || []) {
+    const b = en.lockBtn;
+    if (!b) continue;
+    const p = en.obj.position.clone().add(en.cornerOffset || new THREE.Vector3());
+    p.project(pv.camera);
+    const onScreen = p.z < 1;
+    b.style.display = onScreen ? 'flex' : 'none';
+    if (onScreen) {
+      b.style.left = Math.max(2, Math.min(W - 2, (p.x * 0.5 + 0.5) * W)) + 'px';
+      b.style.top = Math.max(2, Math.min(H - 2, (-p.y * 0.5 + 0.5) * H)) + 'px';
+    }
+  }
+}
 
 // ---------- direct manipulation: tap to select, drag arrows / element / scale orb ----------
 let selected = null;       // { el, obj }
@@ -657,7 +745,16 @@ function makeGizmo() {
   };
   g.add(arrow('x', 0xc0392b, new THREE.Euler(0, 0, -Math.PI / 2)));
   g.add(arrow('y', 0x27ae60, new THREE.Euler(0, 0, 0)));
-  g.add(arrow('z', 0x2e86c1, new THREE.Euler(Math.PI / 2, 0, 0)));
+  const zArrow = arrow('z', 0x2e86c1, new THREE.Euler(Math.PI / 2, 0, 0));
+  zArrow.name = 'gizmo-z';
+  g.add(zArrow);
+  // rotation ring in the trigger plane — drag it to spin the element (rotz)
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.34, 0.012, 10, 48),
+    new THREE.MeshBasicMaterial({ color: 0xe67e22, depthTest: false, transparent: true, opacity: 0.95 }));
+  ring.userData.axis = 'rot';
+  ring.renderOrder = 999;
+  ring.name = 'gizmo-rot';
+  g.add(ring);
   const orb = new THREE.Mesh(new THREE.SphereGeometry(0.05, 14, 12),
     new THREE.MeshBasicMaterial({ color: 0xd4ac0d, depthTest: false }));
   orb.position.set(-0.3, -0.3, 0);
@@ -670,6 +767,9 @@ function makeGizmo() {
 function selectElement(entry) {
   selected = entry;
   if (!gizmo) gizmo = makeGizmo();
+  const isCover = entry.el.fit === 'cover' && (entry.el.kind === 'video' || entry.el.kind === 'image');
+  const zArrow = gizmo.getObjectByName('gizmo-z');
+  if (zArrow) zArrow.visible = !isCover;   // cover pins to the image — depth move disabled
   gizmo.position.copy(entry.obj.position);
   if (!gizmo.parent) pv.scene.add(gizmo);
 }
@@ -699,7 +799,7 @@ const CLAMP = { x: [-1, 1], y: [-1, 1], z: [0, 1.5] };
 function syncSliders(el) {
   const card = document.querySelector(`.el-card[data-uid="${el.uid}"]`);
   if (!card) return;
-  for (const key of ['x', 'y', 'z', 'scale']) {
+  for (const key of ['x', 'y', 'z', 'scale', 'rotz']) {
     const inp = card.querySelector(`[data-t=${key}]`);
     if (inp) {
       inp.value = el.transform[key];
@@ -710,6 +810,15 @@ function syncSliders(el) {
 
 const DRAG_STEP = { x: 0.02, y: 0.02, z: 0.05, scale: 0.05 };
 function applyDragTransform(entry, key, value) {
+  if (key === 'rotz') {
+    let v = ((value % 360) + 540) % 360 - 180;   // wrap into (-180, 180]
+    v = Math.round(v / 5) * 5;
+    if (v <= -180) v = 180;
+    entry.el.transform.rotz = v;
+    entry.obj.rotation.z = THREE.MathUtils.degToRad(v);
+    syncSliders(entry.el);
+    return;
+  }
   const [lo, hi] = key === 'scale' ? [0.2, 3] : CLAMP[key];
   value = Math.max(lo, Math.min(hi, value));
   // snap to the matching slider's step grid so the two controls always agree
@@ -735,6 +844,14 @@ function attachGizmoHandlers() {
         dom.setPointerCapture(ev.pointerId);
         if (axis === 'scale') {
           drag = { kind: 'scale', startY: ev.clientY, startScale: selected.el.transform.scale };
+        } else if (axis === 'rot') {
+          const rct = dom.getBoundingClientRect();
+          const c = selected.obj.position.clone().project(pv.camera);
+          const cx = rct.left + (c.x * 0.5 + 0.5) * rct.width;
+          const cy = rct.top + (-c.y * 0.5 + 0.5) * rct.height;
+          drag = { kind: 'rot', cx, cy,
+                   startAngle: Math.atan2(ev.clientY - cy, ev.clientX - cx),
+                   base: selected.el.transform.rotz || 0 };
         } else {
           const dir = AXIS_VEC[axis];
           drag = { kind: 'axis', axis, dir,
@@ -781,6 +898,10 @@ function attachGizmoHandlers() {
       }
     } else if (drag.kind === 'scale') {
       applyDragTransform(selected, 'scale', drag.startScale * (1 + (drag.startY - ev.clientY) / 280));
+    } else if (drag.kind === 'rot') {
+      const ang = Math.atan2(ev.clientY - drag.cy, ev.clientX - drag.cx);
+      const deg = (ang - drag.startAngle) * 180 / Math.PI;
+      applyDragTransform(selected, 'rotz', drag.base - deg);
     }
   });
   const endDrag = () => { drag = null; if (pv) pv.controls.enabled = true; };
@@ -797,10 +918,24 @@ window.__portal.testNudge = () => {
   const card = document.querySelector(`.el-card[data-uid="${entry.el.uid}"] [data-t=x]`);
   return { x: entry.el.transform.x, slider: card ? parseFloat(card.value) : null };
 };
+// test hook: toggle the lock on the i-th preview element (the in-preview lock button)
+window.__portal.testLock = (i = 1) => {
+  const en = pv?.entries?.[i];
+  if (!en) return null;
+  toggleLock(en);
+  return { locked: en.el.locked };
+};
+// test hook: rotate the i-th element through the gizmo's rotation path
+window.__portal.testRotate = (i = 0, deg = 30) => {
+  const en = pv?.entries?.[i];
+  if (!en) return null;
+  selectElement(en);
+  applyDragTransform(en, 'rotz', (en.el.transform.rotz || 0) + deg);
+  return { rotz: en.el.transform.rotz };
+};
 
 // ---------- soundtrack ----------
-$('audioInput').addEventListener('change', async (ev) => {
-  const f = ev.target.files[0];
+async function handleAudioFile(f) {
   $('audioError').textContent = ''; $('audioInfo').textContent = '';
   draft.audioBlob = null;
   if (!f) return;
@@ -820,7 +955,8 @@ $('audioInput').addEventListener('change', async (ev) => {
   } catch {
     $('audioError').textContent = 'לא ניתן לקרוא את קובץ השמע — נסו MP3 או WAV';
   }
-});
+}
+$('audioInput').addEventListener('change', (ev) => handleAudioFile(ev.target.files[0]));
 
 // ---------- submit ----------
 $('submitBtn').addEventListener('click', async () => {
