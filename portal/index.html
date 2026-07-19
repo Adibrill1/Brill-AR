@@ -74,7 +74,7 @@
     <span>אני מצהיר/ה שהיצירה, האלמנטים ופס הקול הם ביצירתי או ברישיון המתיר לי להשתמש בהם.</span>
   </label>
 
-  <button id="submitBtn" disabled>שליחה לאישור</button>
+  <button id="submitBtn" disabled>פרסום היצירה</button>
   <button id="cancelEditBtn" class="secondary" type="button" style="display:none">ביטול עריכה</button>
   <div class="hint" id="missingList"></div>
   <div class="field-error" id="submitError"></div>
@@ -108,7 +108,6 @@ import { analyzeTriggerImage } from './js/quality.js';
 import { buildElements, updateAnimations, DEFAULT_TRANSFORM, DEFAULT_ANIMATION, ANIMATIONS, TEXT_ANIMATIONS, TEXT_FONTS, elementLabel } from './js/elements.js';
 import { LIBRARY } from './js/library.js';
 import { dHash, hammingDistance, DUPLICATE_THRESHOLD } from './js/imagehash.js';
-import { listPolyModels, resolveModelUrl } from './js/polyhaven.js';
 
 window.__portal = { qualityDone: false, submitted: false, lastGrade: null, error: '',
                     imageReady: false, previewCount: 0, dupBlocked: false };
@@ -135,7 +134,6 @@ let elUid = 0;
 let editItemId = null;      // set while editing an existing creation
 let submitting = false;
 let communityAssets = [];   // approved shared-library assets
-let phModels = [];          // Poly Haven model list (loaded on demand)
 (async () => {
   try {
     communityAssets = (await store.listLibraryAssets()).filter((a) => a.status === 'approved');
@@ -153,7 +151,7 @@ function refreshSubmit() {
   if (!$('rightsCheck').checked) missing.push('אישור הצהרת הזכויות');
   $('submitBtn').disabled = missing.length > 0;
   $('missingList').innerHTML = missing.length
-    ? 'כדי לשלוח נשאר: ' + missing.map((m) => `<br>• ${m}`).join('')
+    ? 'כדי לפרסם נשאר: ' + missing.map((m) => `<br>• ${m}`).join('')
     : '';
 }
 $('titleInput').addEventListener('input', refreshSubmit);
@@ -377,11 +375,7 @@ function kindBody(el) {
           `<option value="${l.id}" ${el.libId === l.id ? 'selected' : ''}>${l.name}</option>`).join('')}</optgroup>
         ${communityAssets.length ? `<optgroup label="ספריית הקהילה">${communityAssets.map((a) =>
           `<option value="asset:${a.id}" ${el.libId === 'asset:' + a.id ? 'selected' : ''}>${a.name} (${a.kind === '3d' ? 'תלת-מימד' : 'מדבקה'})</option>`).join('')}</optgroup>` : ''}
-        ${phModels.length ? `<optgroup label="Poly Haven">${phModels.map((m) =>
-          `<option value="ph:${m.id}" ${el.libId === 'ph:' + m.id ? 'selected' : ''}>${m.name}</option>`).join('')}</optgroup>` : ''}
       </select></label>
-      <button type="button" class="secondary" data-role="phLoad" style="${phModels.length ? 'display:none' : ''}">טעינת מודלים מ-Poly Haven (דורש אינטרנט)</button>
-      <div class="progress-note" data-role="phNote"></div>
       <label>צבע (לאלמנטים המובנים) <input type="color" data-role="color" value="${el.color}"></label>`;
   }
   if (el.kind === 'text') {
@@ -470,34 +464,14 @@ function renderElements() {
       el.fit = ev.target.checked ? 'cover' : 'free';
       renderElements(); schedulePreview();
     });
-    on('[data-role=libId]', 'change', async (ev) => {
+    on('[data-role=libId]', 'change', (ev) => {
       el.libId = ev.target.value;
-      el.assetKind = null; el.assetPath = null; el.assetBlob = null; el.phUrl = null;
+      el.assetKind = null; el.assetPath = null; el.assetBlob = null;
       if (el.libId.startsWith('asset:')) {
         const a = communityAssets.find((x) => 'asset:' + x.id === el.libId);
         if (a) { el.assetKind = a.kind; el.assetPath = a.path || null; el.assetBlob = a.blob || null; }
-      } else if (el.libId.startsWith('ph:')) {
-        const note = card.querySelector('[data-role=phNote]');
-        note.textContent = 'טוען את המודל…';
-        try {
-          el.phUrl = await resolveModelUrl(el.libId.slice(3));
-          note.textContent = '';
-        } catch (err) {
-          note.textContent = 'טעינת המודל נכשלה: ' + err.message;
-          el.libId = LIBRARY[0].id;
-        }
       }
       schedulePreview();
-    });
-    on('[data-role=phLoad]', 'click', async () => {
-      const note = card.querySelector('[data-role=phNote]');
-      note.textContent = 'טוען רשימת מודלים מ-Poly Haven…';
-      try {
-        phModels = await listPolyModels();
-        renderElements();
-      } catch (err) {
-        note.textContent = 'אין גישה ל-Poly Haven כרגע (' + err.message + ')';
-      }
     });
     on('[data-role=color]', 'input', (ev) => { el.color = ev.target.value; schedulePreview(); });
     on('[data-role=bg]', 'input', (ev) => { el.bg = ev.target.value; schedulePreview(); });
@@ -853,14 +827,14 @@ $('submitBtn').addEventListener('click', async () => {
   if (submitting) return;
   submitting = true;
   $('submitBtn').disabled = true;
-  $('submitBtn').textContent = 'מעלה… נא להמתין';
+  $('submitBtn').textContent = 'מפרסם… נא להמתין';
   $('submitError').textContent = '';
   try {
     await store.saveItem({
       id: editItemId || crypto.randomUUID(),
       title: $('titleInput').value.trim(),
       description: $('descInput').value.trim(),
-      status: 'pending', reason: '',
+      status: 'approved', reason: '',
       quality: draft.quality,
       imageBlob: draft.imageBlob,
       imageHash: draft.imageHash,
@@ -874,7 +848,7 @@ $('submitBtn').addEventListener('click', async () => {
         if (e.kind === 'text') Object.assign(entry, { text: e.text, font: e.font, color: e.color,
           bold: e.bold, italic: e.italic, bgOn: e.bgOn, bg: e.bg });
         if (e.kind === 'lib') Object.assign(entry, { libId: e.libId, color: e.color,
-          assetKind: e.assetKind || null, phUrl: e.phUrl || null });
+          assetKind: e.assetKind || null });
         if (e.file) entry.blob = e.file;
         else if (e.assetBlob) entry.blob = e.assetBlob;
         else if (e.assetPath) entry.path = e.assetPath;
@@ -900,7 +874,7 @@ $('submitBtn').addEventListener('click', async () => {
     window.__portal.error = String(e);
   } finally {
     submitting = false;
-    $('submitBtn').textContent = 'שליחה לאישור';
+    $('submitBtn').textContent = 'פרסום היצירה';
     refreshSubmit();
   }
 });
@@ -947,7 +921,7 @@ async function loadItemForEdit(id) {
                  animation: { ...DEFAULT_ANIMATION, ...(src.animation || {}) },
                  valid: true, error: '', collapsed: true, locked: false,
                  file: null, assetKind: src.assetKind || null, assetPath: src.path || null,
-                 assetBlob: src.blob || null, phUrl: src.phUrl || null,
+                 assetBlob: src.blob || null,
                  libId: src.libId, color: src.color || '#d4ac0d',
                  text: src.text, font: src.font, bold: src.bold, italic: src.italic,
                  bgOn: src.bgOn, bg: src.bg };
@@ -973,7 +947,7 @@ async function loadItemForEdit(id) {
 }
 
 // ---------- my items ----------
-const STATUS_LABEL = { pending: 'ממתין לאישור', approved: 'אושר ✓', rejected: 'נדחה' };
+const STATUS_LABEL = { pending: 'ממתין לאישור', approved: 'פורסם ✓', rejected: 'הוסר' };
 async function renderItems() {
   const items = await store.listItems();
   const el = $('itemsList');

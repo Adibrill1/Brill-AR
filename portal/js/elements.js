@@ -10,9 +10,8 @@ import { build3DText, TEXT3D_FONTS } from './text3d.js';
 export const DEFAULT_TRANSFORM = { x: 0, y: 0, z: 0.25, scale: 1, upright: false, rotz: 0 };
 export const DEFAULT_ANIMATION = { type: 'none', speed: 1 };
 
-// cover planes match the trigger exactly (1.0); raise slightly (e.g. 1.14) to mask
-// tracking jitter at the cost of the content extending past the print's edges
-const COVER_OVERSIZE = 1.0;
+// cover planes slightly oversized (+3%) so the printed trigger's edges stay hidden
+const COVER_OVERSIZE = 1.03;
 
 export const ANIMATIONS = [
   { id: 'none', name: 'ללא אנימציה' },
@@ -57,14 +56,7 @@ export async function buildElement(THREE, el, url, triggerH) {
     gltf = await new GLTFLoader().loadAsync(url);
     inner = normalizeToFit(THREE, gltf.scene, 0.8);
   } else if (el.kind === 'lib') {
-    if (el.libId?.startsWith('ph:')) {
-      // Poly Haven model: cached download, then bounding-box auto-scale to the trigger
-      const { fetchGlbCached } = await import('./polyhaven.js');
-      const blobUrl = await fetchGlbCached(el.phUrl);
-      const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
-      gltf = await new GLTFLoader().loadAsync(blobUrl);
-      inner = normalizeToFit(THREE, gltf.scene, 0.8);
-    } else if (el.libId?.startsWith('asset:')) {
+    if (el.libId?.startsWith('asset:')) {
       // community-contributed shared asset (snapshot of its file at selection time)
       if (el.assetKind === 'sticker') {
         const tex = await new THREE.TextureLoader().loadAsync(url);

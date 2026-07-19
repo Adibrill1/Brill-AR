@@ -110,7 +110,7 @@ async function pickImage(page, file) {
     await page.waitForSelector('#submitBtn:not([disabled])');
     await page.click('#submitBtn');
     await page.waitForFunction(() => window.__portal.submitted);
-    await page.waitForSelector('.chip.pending');
+    await page.waitForSelector('.chip.approved');
 
     console.log('7b. duplicate trigger image is blocked');
     await page.setInputFiles('#imgInput', path.join(assetsDir, 'marker_hd.png'));
@@ -122,15 +122,14 @@ async function pickImage(page, file) {
     console.log('   ', await page.evaluate(() => document.getElementById('imgError').textContent.slice(0, 60)));
     await page.screenshot({ path: path.join(outDir, '1b-duplicate-blocked.png') });
 
-    console.log('8. admin approves — and exactly ONE pending (no double submit)');
+    console.log('8. published directly — exactly ONE item exists (no double submit, no moderation)');
+    const itemCount1 = await page.evaluate(() => document.querySelectorAll('#itemsList .item').length);
+    if (itemCount1 !== 1) throw new Error(`expected exactly 1 item, got ${itemCount1} — double submit?`);
     await page.goto(`http://localhost:${PORT}/portal/admin.html?backend=local`);
     await page.waitForFunction(() => window.__admin.rendered || window.__admin.error);
-    await page.waitForSelector('[data-approve]');
-    const pendCount = await page.evaluate(() => document.querySelectorAll('[data-approve]').length);
-    if (pendCount !== 1) throw new Error(`expected exactly 1 pending, got ${pendCount} — double submit?`);
+    await page.waitForFunction(() =>
+      document.getElementById('pendingList').textContent.includes('אין תמונות טריגר'));
     await page.screenshot({ path: path.join(outDir, '2-admin.png') });
-    await page.click('[data-approve]');
-    await page.waitForSelector('.chip.approved');
 
     console.log('9. AR view: trigger detected, both elements anchored');
     await page.goto(`http://localhost:${PORT}/portal/index.html?backend=local`);
@@ -146,7 +145,7 @@ async function pickImage(page, file) {
     await page.screenshot({ path: path.join(outDir, '3-ar-elements.png') });
     console.log('   trigger detected, elements anchored');
 
-    console.log('9b. edit the approved creation — reloads into the form, resubmits as pending');
+    console.log('9b. edit the published creation — republishes in place, single row');
     await page.goto(`http://localhost:${PORT}/portal/index.html?backend=local`);
     await page.waitForSelector('[data-edit]');
     await page.click('[data-edit]');
@@ -158,14 +157,10 @@ async function pickImage(page, file) {
     await page.evaluate(() => { window.__portal.submitted = false; });
     await page.click('#submitBtn');
     await page.waitForFunction(() => window.__portal.submitted);
-    await page.goto(`http://localhost:${PORT}/portal/admin.html?backend=local`);
-    await page.waitForSelector('[data-approve]');
-    const editPend = await page.evaluate(() => document.querySelectorAll('[data-approve]').length);
-    if (editPend !== 1) throw new Error('edit resubmit created ' + editPend + ' pending rows');
-    await page.click('[data-approve]');
-    await page.waitForFunction(() =>
-      document.getElementById('pendingList').textContent.includes('אין תמונות טריגר'));
-    console.log('   edited item went through moderation again, single row');
+    await page.waitForSelector('.chip.approved');
+    const afterEdit = await page.evaluate(() => document.querySelectorAll('#itemsList .item').length);
+    if (afterEdit !== 1) throw new Error('edit created ' + afterEdit + ' rows instead of updating in place');
+    console.log('   edited item republished in place');
 
     console.log('9c. community sticker: contribute -> admin approve -> in the shared picker');
     await page.goto(`http://localhost:${PORT}/portal/index.html?backend=local`);
@@ -240,11 +235,7 @@ async function pickImage(page, file) {
     await page.waitForSelector('#submitBtn:not([disabled])');
     await page.click('#submitBtn');
     await page.waitForFunction(() => window.__portal.submitted);
-    await page.goto(`http://localhost:${PORT}/portal/admin.html?backend=local`);
-    await page.waitForSelector('[data-approve]');
-    await page.click('[data-approve]');
-    await page.waitForFunction(() =>
-      document.getElementById('pendingList').textContent.includes('אין תמונות טריגר'));
+    await page.waitForSelector('.chip.approved');
 
     console.log('11. exhibition scan page: loads all approved works, merges targets, detects');
     await page.goto(`http://localhost:${PORT}/visit/index.html?backend=local`);
