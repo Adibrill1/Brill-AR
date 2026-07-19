@@ -72,3 +72,10 @@ button:disabled { opacity: .45; cursor: not-allowed; }
 /* 3D preview */
 #previewWrap { margin-top: 8px; border-radius: 12px; overflow: hidden; background: #20313a; min-height: 60px; }
 #previewWrap canvas { display: block; width: 100%; touch-action: none; }
+
+/* slider reset */
+.sl-row { display: flex; align-items: flex-end; gap: 8px; }
+.sl-row .sl { flex: 1; }
+.sl-reset { margin: 0 0 4px; padding: 4px 10px; font-size: 1rem; border-radius: 8px;
+            background: transparent; border: 1.5px solid #ccd4d8; color: var(--mid); cursor: pointer; }
+#missingList { margin-top: 10px; line-height: 1.7; }

@@ -44,7 +44,6 @@
   <img id="imgPreview" class="preview-media" style="display:none">
   <div class="field-error" id="imgError"></div>
   <div class="quality medium" id="resWarn" style="display:none"></div>
-  <button id="qualityBtn" class="secondary" disabled>בדיקת איכות זיהוי</button>
   <div class="progress-note" id="qualityProgress"></div>
   <div id="qualityResult"></div>
 
@@ -74,6 +73,7 @@
   </label>
 
   <button id="submitBtn" disabled>שליחה לאישור</button>
+  <div class="hint" id="missingList"></div>
   <div class="field-error" id="submitError"></div>
 </section>
 
@@ -92,9 +92,10 @@ import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 import { store } from './js/store.js';
 import { analyzeTriggerImage } from './js/quality.js';
 import { buildElements, DEFAULT_TRANSFORM, elementLabel } from './js/elements.js';
+import { dHash, hammingDistance, DUPLICATE_THRESHOLD } from './js/imagehash.js';
 
 window.__portal = { qualityDone: false, submitted: false, lastGrade: null, error: '',
-                    imageReady: false, previewCount: 0 };
+                    imageReady: false, previewCount: 0, dupBlocked: false };
 
 const $ = (id) => document.getElementById(id);
 const LIMITS = { imageMB: 10, imageWarnPx: 1024, modelMB: 15, videoMB: 50, imageElMB: 10, audioSec: 30, audioMB: 5 };
@@ -111,14 +112,24 @@ $('saveProfileBtn').addEventListener('click', async () => {
 });
 
 // ---------- draft state ----------
-const draft = { imageBlob: null, imageEl: null, imageW: 0, imageH: 0, quality: null, mindBuffer: null, audioBlob: null };
+const draft = { imageBlob: null, imageEl: null, imageW: 0, imageH: 0, imageHash: null,
+                quality: null, mindBuffer: null, audioBlob: null };
 let elements = [];   // { uid, kind, file, name, fit, transform, valid, error }
 let elUid = 0;
 
 function refreshSubmit() {
-  const elsOk = elements.length > 0 && elements.every((e) => e.valid);
-  $('submitBtn').disabled = !(draft.imageBlob && draft.quality && draft.quality.grade !== 'poor'
-    && elsOk && $('titleInput').value.trim() && $('rightsCheck').checked);
+  const missing = [];
+  if (!draft.imageBlob) missing.push('תמונת טריגר מאושרת (בחירה + "אישור התמונה ✓")');
+  else if (!draft.quality) missing.push('בדיקת איכות הזיהוי עדיין רצה — רגע…');
+  else if (draft.quality.grade === 'poor') missing.push('ציון הזיהוי נמוך מדי — העלו תמונה עשירה יותר');
+  if (!elements.length) missing.push('לפחות אלמנט אחד (+ הוספת אלמנט)');
+  else if (!elements.every((e) => e.valid)) missing.push('יש אלמנט בלי קובץ תקין — השלימו או הסירו אותו');
+  if (!$('titleInput').value.trim()) missing.push('שם היצירה');
+  if (!$('rightsCheck').checked) missing.push('אישור הצהרת הזכויות');
+  $('submitBtn').disabled = missing.length > 0;
+  $('missingList').innerHTML = missing.length
+    ? 'כדי לשלוח נשאר: ' + missing.map((m) => `<br>• ${m}`).join('')
+    : '';
 }
 $('titleInput').addEventListener('input', refreshSubmit);
 $('rightsCheck').addEventListener('change', refreshSubmit);
@@ -201,10 +212,9 @@ $('imgInput').addEventListener('change', async (ev) => {
   const f = ev.target.files[0];
   $('imgError').textContent = ''; $('qualityResult').innerHTML = '';
   $('imgPreview').style.display = 'none'; $('resWarn').style.display = 'none';
-  draft.imageBlob = null; draft.quality = null; draft.mindBuffer = null;
-  window.__portal.qualityDone = false; window.__portal.imageReady = false;
-  $('qualityBtn').disabled = true;
-  if (!f) return;
+  draft.imageBlob = null; draft.quality = null; draft.mindBuffer = null; draft.imageHash = null;
+  window.__portal.qualityDone = false; window.__portal.imageReady = false; window.__portal.dupBlocked = false;
+  if (!f) { refreshSubmit(); return; }
   if (f.size > LIMITS.imageMB * 1024 * 1024) {
     $('imgError').textContent = `הקובץ גדול מדי (מקסימום ${LIMITS.imageMB}MB)`; return;
   }
@@ -242,22 +252,43 @@ $('cropApply').addEventListener('click', async () => {
   const img = new Image();
   img.src = URL.createObjectURL(blob);
   await img.decode();
+
+  // duplicate check: the recognition engine can't tell two identical prints apart,
+  // so each trigger image may exist only once — first uploader wins
+  const hash = dHash(img);
+  try {
+    const existing = await store.listHashes();
+    const dup = existing.find((r) => hammingDistance(r.image_hash, hash) <= DUPLICATE_THRESHOLD);
+    if (dup) {
+      $('cropEditor').style.display = 'none';
+      $('imgError').textContent =
+        `תמונה זו (או דומה לה מאוד) כבר קיימת במערכת ביצירה "${dup.title}". ` +
+        'כל תמונת טריגר יכולה לשמש יצירה אחת בלבד — בחרו תמונה אחרת.';
+      window.__portal.dupBlocked = true;
+      refreshSubmit();
+      return;
+    }
+  } catch (e) {
+    // if the duplicate lookup itself fails we continue — moderation still reviews
+    console.warn('duplicate check failed', e);
+  }
+
   draft.imageBlob = blob; draft.imageEl = img;
   draft.imageW = img.width; draft.imageH = img.height;
+  draft.imageHash = hash;
   $('cropEditor').style.display = 'none';
   $('imgPreview').src = img.src; $('imgPreview').style.display = 'block';
   if (Math.max(img.width, img.height) < LIMITS.imageWarnPx) {
     $('resWarn').style.display = 'block';
     $('resWarn').textContent = `שימו לב: רזולוציה נמוכה (${img.width}×${img.height}) — התמונה תתקבל, אבל הדפסה גדולה עלולה לצאת מטושטשת ולפגוע בזיהוי. מומלץ ${LIMITS.imageWarnPx}px ומעלה בצלע הארוכה.`;
   }
-  $('qualityBtn').disabled = false;
   window.__portal.imageReady = true;
   schedulePreview();
   refreshSubmit();
+  runQuality();   // automatic — no extra button to forget
 });
 
-$('qualityBtn').addEventListener('click', async () => {
-  $('qualityBtn').disabled = true;
+async function runQuality() {
   $('qualityProgress').textContent = 'מנתח את התמונה…';
   try {
     const res = await analyzeTriggerImage(draft.imageEl, (p) => {
@@ -283,9 +314,8 @@ $('qualityBtn').addEventListener('click', async () => {
     window.__portal.error = String(e);
   }
   $('qualityProgress').textContent = '';
-  $('qualityBtn').disabled = false;
   refreshSubmit();
-});
+}
 
 // ---------- 2. elements ----------
 const KIND_ACCEPT = {
@@ -301,8 +331,9 @@ const KIND_HINT = {
 
 function slider(label, key, min, max, step, el) {
   const v = el.transform[key];
-  return `<label class="sl">${label} <output>${v}</output>
-    <input type="range" data-t="${key}" min="${min}" max="${max}" step="${step}" value="${v}"></label>`;
+  return `<div class="sl-row"><label class="sl">${label} <output>${v}</output>
+    <input type="range" data-t="${key}" min="${min}" max="${max}" step="${step}" value="${v}"></label>
+    <button type="button" class="sl-reset" data-reset="${key}" title="איפוס">↺</button></div>`;
 }
 
 function renderElements() {
@@ -332,7 +363,7 @@ function renderElements() {
       <div class="transform" style="${isMedia && el.fit === 'cover' ? 'display:none' : ''}">
         ${slider('ימינה־שמאלה', 'x', -1, 1, 0.02, el)}
         ${slider('למעלה־למטה', 'y', -1, 1, 0.02, el)}
-        ${slider('מרחק מהתמונה', 'z', 0, 1.5, 0.02, el)}
+        ${slider('מרחק מהתמונה', 'z', 0, 1.5, 0.05, el)}
         ${slider('גודל', 'scale', 0.2, 3, 0.05, el)}
         ${slider('סיבוב', 'rotz', -180, 180, 5, el)}
         <label class="fit-row"><input type="checkbox" data-role="upright" ${el.transform.upright ? 'checked' : ''}>
@@ -356,6 +387,14 @@ function renderElements() {
     card.querySelectorAll('[data-t]').forEach((inp) => inp.addEventListener('input', () => {
       el.transform[inp.dataset.t] = parseFloat(inp.value);
       inp.previousElementSibling.textContent = inp.value;
+      schedulePreview();
+    }));
+    card.querySelectorAll('.sl-reset').forEach((btn) => btn.addEventListener('click', () => {
+      const key = btn.dataset.reset;
+      el.transform[key] = DEFAULT_TRANSFORM[key];
+      const inp = card.querySelector(`[data-t=${key}]`);
+      inp.value = DEFAULT_TRANSFORM[key];
+      inp.previousElementSibling.textContent = String(DEFAULT_TRANSFORM[key]);
       schedulePreview();
     }));
     card.querySelector('[data-role=upright]')?.addEventListener('change', (ev) => {
@@ -501,6 +540,7 @@ $('submitBtn').addEventListener('click', async () => {
       status: 'pending', reason: '',
       quality: draft.quality,
       imageBlob: draft.imageBlob,
+      imageHash: draft.imageHash,
       imageW: draft.imageW, imageH: draft.imageH,
       mindBlob: new Blob([draft.mindBuffer]),
       elements: elements.filter((e) => e.valid).map((e) => ({
@@ -515,7 +555,7 @@ $('submitBtn').addEventListener('click', async () => {
     $('rightsCheck').checked = false;
     $('imgPreview').style.display = 'none'; $('resWarn').style.display = 'none';
     $('qualityResult').innerHTML = ''; $('audioInfo').textContent = '';
-    Object.assign(draft, { imageBlob: null, imageEl: null, quality: null, mindBuffer: null, audioBlob: null });
+    Object.assign(draft, { imageBlob: null, imageEl: null, imageHash: null, quality: null, mindBuffer: null, audioBlob: null });
     elements = [];
     renderElements();
     refreshSubmit();

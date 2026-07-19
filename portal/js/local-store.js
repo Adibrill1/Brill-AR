@@ -68,6 +68,12 @@ export const store = {
     const items = await tx('items', 'readonly', (s) => s.getAll());
     return items.sort((a, b) => b.createdAt - a.createdAt);
   },
+
+  async listHashes() {
+    const items = await tx('items', 'readonly', (s) => s.getAll());
+    return items.filter((i) => i.imageHash)
+      .map((i) => ({ id: i.id, title: i.title, image_hash: i.imageHash }));
+  },
   async deleteItem(id) {
     return tx('items', 'readwrite', (s) => s.delete(id));
   },

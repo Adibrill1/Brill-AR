@@ -110,6 +110,7 @@ export const store = {
       reason: item.reason || '',
       quality: item.quality,
       elements,
+      image_hash: item.imageHash || null,
       image_w: item.imageW || null,
       image_h: item.imageH || null,
       image_path: imagePath,
@@ -126,6 +127,11 @@ export const store = {
   async listItems() {
     const rows = await rest('GET', 'trigger_images?select=*&order=created_at.desc');
     return rows.map(rowToItem);
+  },
+
+  async listHashes() {
+    const rows = await rest('GET', 'trigger_images?select=id,title,image_hash');
+    return rows.filter((r) => r.image_hash);
   },
 
   async deleteItem(id) {

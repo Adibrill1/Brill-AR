@@ -47,22 +47,19 @@ async function pickImage(page, file) {
     await page.click('#saveProfileBtn');
     await page.waitForFunction(() => document.getElementById('profileNote').textContent.includes('✓'));
 
-    console.log('2. crop editor: rotate 4x (full circle) + apply; weak image graded poor');
+    console.log('2. crop editor: rotate 4x (full circle) + apply; auto quality grades weak image poor');
     await page.setInputFiles('#imgInput', path.join(assetsDir, 'flat.png'));
     await page.waitForSelector('#cropEditor', { state: 'visible' });
     for (let i = 0; i < 4; i++) await page.click('#rotateBtn');
     await page.click('#cropApply');
-    await page.waitForFunction(() => window.__portal.imageReady);
-    await page.click('#qualityBtn');
     await page.waitForFunction(() => window.__portal.qualityDone || window.__portal.error, null, { timeout: 300000 });
     let grade = await page.evaluate(() => window.__portal.lastGrade);
     console.log('   flat image grade:', grade);
     if (grade === 'good') throw new Error('flat image unexpectedly graded good — scoring broken');
 
-    console.log('3. rich image passes quality');
+    console.log('3. rich image passes quality (auto-run)');
     await page.evaluate(() => { window.__portal.qualityDone = false; window.__portal.imageReady = false; });
     await pickImage(page, path.join(assetsDir, 'marker_hd.png'));
-    await page.click('#qualityBtn');
     await page.waitForFunction(() => window.__portal.qualityDone || window.__portal.error, null, { timeout: 300000 });
     grade = await page.evaluate(() => window.__portal.lastGrade);
     console.log('   marker grade:', grade);
@@ -84,6 +81,17 @@ async function pickImage(page, file) {
     await page.check('.el-card:nth-child(2) [data-role=upright]');
     await page.evaluate(() => {
       const z = document.querySelector('.el-card:nth-child(2) [data-t=z]');
+      z.value = '0.9';
+      z.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    console.log('5b. slider reset restores the default');
+    await page.click('.el-card:nth-child(2) [data-reset=z]');
+    const zAfterReset = await page.evaluate(() =>
+      document.querySelector('.el-card:nth-child(2) [data-t=z]').value);
+    if (parseFloat(zAfterReset) !== 0.25) throw new Error('slider reset broken, z=' + zAfterReset);
+    await page.evaluate(() => {
+      const z = document.querySelector('.el-card:nth-child(2) [data-t=z]');
       z.value = '0.5';
       z.dispatchEvent(new Event('input', { bubbles: true }));
     });
@@ -103,6 +111,16 @@ async function pickImage(page, file) {
     await page.click('#submitBtn');
     await page.waitForFunction(() => window.__portal.submitted);
     await page.waitForSelector('.chip.pending');
+
+    console.log('7b. duplicate trigger image is blocked');
+    await page.setInputFiles('#imgInput', path.join(assetsDir, 'marker_hd.png'));
+    await page.waitForSelector('#cropEditor', { state: 'visible' });
+    await page.click('#cropApply');
+    await page.waitForFunction(() => window.__portal.dupBlocked || window.__portal.imageReady, null, { timeout: 60000 });
+    const dupBlocked = await page.evaluate(() => window.__portal.dupBlocked);
+    if (!dupBlocked) throw new Error('duplicate image was NOT blocked');
+    console.log('   ', await page.evaluate(() => document.getElementById('imgError').textContent.slice(0, 60)));
+    await page.screenshot({ path: path.join(outDir, '1b-duplicate-blocked.png') });
 
     console.log('8. admin approves');
     await page.goto(`http://localhost:${PORT}/portal/admin.html?backend=local`);
