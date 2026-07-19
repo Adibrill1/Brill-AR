@@ -1,0 +1,343 @@
+<!DOCTYPE html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>שלום וטכנולוגיה — סיור בתערוכה</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; font-family: system-ui, sans-serif; background: #111; color: #eee; }
+  #container { position: fixed; inset: 0; overflow: hidden; }
+  .overlay { position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center;
+             justify-content: center; gap: 14px; background: #1f4e5f; z-index: 20; text-align: center;
+             padding: 24px; overflow-y: auto; }
+  .overlay h1 { font-size: 1.7rem; }
+  .overlay .en { color: #9fc3d0; font-size: 1rem; }
+  .overlay p { color: #cfe2ea; max-width: 420px; line-height: 1.6; }
+  button, .btn { font-size: 1.05rem; padding: 13px 26px; border: 0; border-radius: 28px; background: #d4ac0d;
+           color: #1f2733; font-weight: 700; cursor: pointer; text-decoration: none; }
+  button.secondary, .btn.secondary { background: transparent; color: #d4ac0d; border: 2px solid #d4ac0d; }
+  #hud { position: fixed; bottom: 0; left: 0; right: 0; z-index: 10; display: none;
+         flex-direction: column; align-items: center; gap: 8px; padding: 18px;
+         background: linear-gradient(transparent, rgba(0,0,0,.6)); }
+  #caption { display: none; background: rgba(31,78,95,.85); padding: 8px 18px; border-radius: 14px;
+             text-align: center; max-width: 92vw; }
+  #caption .t { font-weight: 700; }
+  #caption .a { font-size: .85rem; color: #cfe2ea; }
+  #status { font-size: .95rem; background: rgba(0,0,0,.5); padding: 6px 14px; border-radius: 16px; }
+  #recBtn { background: #c0392b; color: #fff; border-radius: 50%; width: 72px; height: 72px;
+            font-size: .8rem; display: none; }
+  #recBtn.recording { animation: pulse 1s infinite; }
+  @keyframes pulse { 50% { transform: scale(1.12); } }
+  #result { position: fixed; inset: 0; z-index: 30; background: rgba(10,14,18,.96); display: none;
+            flex-direction: column; align-items: center; justify-content: center; gap: 14px; padding: 20px; }
+  #result video { max-width: 90vw; max-height: 55vh; border-radius: 12px; border: 2px solid #d4ac0d; }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; justify-content: center; }
+  #collectionOverlay { display: none; }
+  .col-item { display: flex; gap: 12px; align-items: center; background: rgba(255,255,255,.07);
+              border-radius: 12px; padding: 10px 14px; width: min(420px, 88vw); text-align: right; }
+  .col-item img { width: 52px; height: 72px; object-fit: cover; border-radius: 8px; }
+  .col-item .t { font-weight: 700; }
+  .col-item .a { font-size: .85rem; color: #cfe2ea; }
+  #loadNote { font-size: .9rem; color: #9fc3d0; }
+  .hint-small { position: fixed; top: 10px; left: 50%; transform: translateX(-50%); z-index: 10;
+                font-size: .8rem; color: #cfe2ea; background: rgba(0,0,0,.4); padding: 4px 12px;
+                border-radius: 12px; display: none; }
+</style>
+</head>
+<body>
+<div class="overlay" id="startOverlay">
+  <h1>שלום וטכנולוגיה</h1>
+  <div class="en">PEACE &amp; TECHNOLOGY — Interactive AR Exhibition</div>
+  <p>כוונו את המצלמה אל אחת מיצירות התערוכה — היא תתעורר לחיים.
+     אפשר להקליט מזכרת של 10 שניות ולשמור אותה לטלפון.</p>
+  <p class="en">Point your camera at any artwork in the exhibition and watch it come alive.
+     Record a 10-second keepsake, saved to your phone only.</p>
+  <div id="loadNote">טוען את התערוכה…</div>
+  <button id="startBtn" disabled>התחלת סיור / Start</button>
+  <button class="secondary" id="collectionBtn">האוסף שלי / My collection (<span id="colCount">0</span>)</button>
+</div>
+
+<div class="overlay" id="collectionOverlay">
+  <h1>האוסף שלי</h1>
+  <p>היצירות שפגשת בתערוכה</p>
+  <div id="collectionList"></div>
+  <button class="secondary" id="colBack">חזרה</button>
+</div>
+
+<div id="container"></div>
+<div class="hint-small" id="scanHint">חפשו יצירה וכוונו אליה את המצלמה</div>
+
+<div id="hud">
+  <div id="caption"><div class="t"></div><div class="a"></div></div>
+  <div id="status">מחפש יצירה…</div>
+  <button id="recBtn">REC</button>
+</div>
+
+<div id="result">
+  <h2>המזכרת שלך / Your keepsake</h2>
+  <video id="playback" controls playsinline></video>
+  <div class="row">
+    <a class="btn" id="saveBtn" style="display:none">שמירה לגלריה / Save to gallery</a>
+    <a class="btn secondary" id="downloadBtn" download>הורדה / Download</a>
+    <a class="btn secondary" id="againBtn">המשך סיור / Continue</a>
+  </div>
+  <p id="saveHint" style="display:none; color:#cfe2ea; font-size:.85rem; max-width:320px; text-align:center;">
+    בתפריט שייפתח בחרו "שמור וידאו" / In the menu that opens, tap "Save Video"</p>
+</div>
+
+<script type="importmap">
+{ "imports": { "three": "../spike/vendor/three.module.js", "three/addons/": "../spike/vendor/three/addons/" } }
+</script>
+<script type="module">
+import * as THREE from 'three';
+import { MindARThree } from '../spike/vendor/mindar-image-three.prod.js';
+import { Compiler } from '../spike/vendor/mindar-image.prod.js';
+import { store } from '../portal/js/store.js';
+import { buildElements } from '../portal/js/elements.js';
+
+window.__visit = { itemCount: 0, started: false, foundId: null, blobSize: 0, collected: 0, error: '' };
+
+const $ = (id) => document.getElementById(id);
+const MAX_RECORD_MS = 10000;
+const COLLECTION_KEY = 'pt_visitor_collection';
+
+let items = [];                 // approved items, index == anchor index
+let mindarThree = null;
+let audioCtx, recorderDest;
+const wiredAudio = new WeakSet();
+let activeItem = null;          // currently tracked item
+const perItem = new Map();      // id -> { videos, audio, mixers }
+let recording = false, mediaRecorder = null, recordedBlob = null;
+let compositeCanvas, compositeCtx;
+
+// ---------- collection (anonymous, this device only) ----------
+const collection = JSON.parse(localStorage.getItem(COLLECTION_KEY) || '[]');
+function renderCollectionCount() {
+  $('colCount').textContent = collection.length;
+  window.__visit.collected = collection.length;
+}
+function addToCollection(item) {
+  if (collection.some((c) => c.id === item.id)) return;
+  collection.push({ id: item.id, title: item.title, artist: item.artistName || '',
+                    country: item.artistCountry || '', ts: Date.now() });
+  localStorage.setItem(COLLECTION_KEY, JSON.stringify(collection));
+  renderCollectionCount();
+}
+function renderCollection() {
+  const list = $('collectionList');
+  list.innerHTML = collection.length ? '' : '<p>עוד לא אספת יצירות — כוונו את המצלמה אל יצירה בתערוכה</p>';
+  for (const c of [...collection].reverse()) {
+    const item = items.find((i) => i.id === c.id);
+    const div = document.createElement('div');
+    div.className = 'col-item';
+    div.innerHTML = `
+      ${item ? `<img src="${store.fileUrl(item, 'image')}" alt="">` : ''}
+      <div><div class="t">${c.title}</div>
+      <div class="a">${[c.artist, c.country].filter(Boolean).join(', ') || ''}</div>
+      <div class="a">${new Date(c.ts).toLocaleDateString('he-IL')}</div></div>`;
+    list.append(div);
+  }
+}
+$('collectionBtn').addEventListener('click', () => { renderCollection(); $('collectionOverlay').style.display = 'flex'; });
+$('colBack').addEventListener('click', () => { $('collectionOverlay').style.display = 'none'; });
+renderCollectionCount();
+
+// ---------- load exhibition ----------
+(async () => {
+  try {
+    items = (await store.listItems()).filter((i) => i.status === 'approved');
+    window.__visit.itemCount = items.length;
+    if (!items.length) {
+      $('loadNote').textContent = 'התערוכה עוד לא פתוחה — אין יצירות מאושרות כרגע';
+      return;
+    }
+    $('loadNote').textContent = `${items.length} יצירות בתערוכה`;
+    $('startBtn').disabled = false;
+  } catch (e) {
+    $('loadNote').textContent = 'שגיאה בטעינת התערוכה: ' + e;
+    window.__visit.error = String(e);
+  }
+})();
+
+// merge the per-item .mind files into one multi-target file (client-side, no recompile)
+async function mergedMindUrl() {
+  const compiler = new Compiler();
+  const merged = [];
+  for (const it of items) {
+    const buf = await (await fetch(store.fileUrl(it, 'mind'))).arrayBuffer();
+    compiler.importData(buf);
+    merged.push(...compiler.data);
+  }
+  compiler.data = merged;
+  return URL.createObjectURL(new Blob([compiler.exportData()]));
+}
+
+// route media element audio through WebAudio so it reaches both speakers and the recording
+function wireAudio(el) {
+  if (!el || wiredAudio.has(el)) return;
+  wiredAudio.add(el);
+  const src = audioCtx.createMediaElementSource(el);
+  src.connect(audioCtx.destination);
+  src.connect(recorderDest);
+}
+
+async function start() {
+  $('startBtn').disabled = true;
+  $('startBtn').textContent = 'טוען…';
+  try {
+    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    recorderDest = audioCtx.createMediaStreamDestination();
+
+    const mindUrl = await mergedMindUrl();
+    mindarThree = new MindARThree({
+      container: $('container'),
+      imageTargetSrc: mindUrl,
+      maxTrack: 1,
+      uiScanning: 'no', uiLoading: 'no', uiError: 'no',
+    });
+    const { renderer, scene, camera } = mindarThree;
+
+    for (let i = 0; i < items.length; i++) {
+      const item = items[i];
+      $('startBtn').textContent = `טוען יצירות… ${i + 1}/${items.length}`;
+      const anchor = mindarThree.addAnchor(i);
+      const triggerH = item.imageH && item.imageW ? item.imageH / item.imageW : 1.4;
+      const { group, videos, mixers } = await buildElements(
+        THREE, item.elements, (el) => store.elementUrl(item, el), triggerH,
+      );
+      anchor.group.add(group);
+
+      let audio = null;
+      const audioUrl = store.fileUrl(item, 'audio');
+      if (audioUrl) {
+        audio = new Audio(audioUrl);
+        audio.crossOrigin = 'anonymous';
+        audio.loop = true;
+      } else if (videos[0]) {
+        videos[0].muted = false;   // no soundtrack: the first video carries its own sound
+      }
+      perItem.set(item.id, { videos, audio, mixers });
+
+      anchor.onTargetFound = () => {
+        activeItem = item;
+        window.__visit.foundId = item.id;
+        $('status').textContent = `נמצאה יצירה ✓`;
+        $('caption').style.display = 'block';
+        $('caption').querySelector('.t').textContent = item.title;
+        $('caption').querySelector('.a').textContent =
+          [item.artistName, item.artistCountry].filter(Boolean).join(', ');
+        $('recBtn').style.display = 'block';
+        if (audioCtx.state === 'suspended') audioCtx.resume();
+        videos.forEach((v) => { wireAudio(v.muted ? null : v); v.play().catch(() => {}); });
+        if (audio) { wireAudio(audio); audio.play().catch(() => {}); }
+        addToCollection(item);
+        store.recordScan(item.id);
+      };
+      anchor.onTargetLost = () => {
+        if (activeItem?.id === item.id) activeItem = null;
+        $('status').textContent = 'מחפש יצירה…';
+        $('caption').style.display = 'none';
+        if (!recording) $('recBtn').style.display = 'none';
+        videos.forEach((v) => v.pause());
+        audio?.pause();
+      };
+    }
+
+    await mindarThree.start();
+    $('startOverlay').style.display = 'none';
+    $('hud').style.display = 'flex';
+    $('scanHint').style.display = 'block';
+    setTimeout(() => { $('scanHint').style.display = 'none'; }, 6000);
+    window.__visit.started = true;
+
+    const clock = new THREE.Clock();
+    renderer.setAnimationLoop(() => {
+      const dt = clock.getDelta();
+      perItem.forEach(({ mixers }) => mixers.forEach((m) => m.update(dt)));
+      renderer.render(scene, camera);
+      if (recording) compositeFrame(mindarThree.video, renderer.domElement);
+    });
+  } catch (e) {
+    window.__visit.error = String(e.stack || e);
+    $('startOverlay').style.display = 'flex';
+    $('loadNote').textContent = 'שגיאה: ' + e;
+    $('startBtn').textContent = 'ניסיון נוסף';
+    $('startBtn').disabled = false;
+  }
+}
+$('startBtn').addEventListener('click', start);
+
+// ---------- recording (camera + AR + audio mix) ----------
+function compositeFrame(video, glCanvas) {
+  const cw = compositeCanvas.width, ch = compositeCanvas.height;
+  const vw = video.videoWidth, vh = video.videoHeight;
+  if (vw && vh) {
+    const s = Math.max(cw / vw, ch / vh);
+    compositeCtx.drawImage(video, (cw - vw * s) / 2, (ch - vh * s) / 2, vw * s, vh * s);
+  }
+  compositeCtx.drawImage(glCanvas, 0, 0, cw, ch);
+}
+function pickMime() {
+  const candidates = ['video/mp4', 'video/webm;codecs=vp9', 'video/webm;codecs=vp8', 'video/webm'];
+  return candidates.find((m) => MediaRecorder.isTypeSupported(m)) || '';
+}
+function startRecording() {
+  if (recording) return;
+  recording = true;
+  $('recBtn').classList.add('recording');
+  const rect = $('container').getBoundingClientRect();
+  compositeCanvas = document.createElement('canvas');
+  compositeCanvas.width = Math.round(rect.width);
+  compositeCanvas.height = Math.round(rect.height);
+  compositeCtx = compositeCanvas.getContext('2d');
+  const stream = compositeCanvas.captureStream(30);
+  recorderDest.stream.getAudioTracks().forEach((t) => stream.addTrack(t));
+  const mime = pickMime();
+  mediaRecorder = new MediaRecorder(stream, mime ? { mimeType: mime } : undefined);
+  const chunks = [];
+  mediaRecorder.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+  mediaRecorder.onstop = () => {
+    recordedBlob = new Blob(chunks, { type: mime || 'video/webm' });
+    window.__visit.blobSize = recordedBlob.size;
+    showResult(mime);
+  };
+  mediaRecorder.start(250);
+  let remaining = MAX_RECORD_MS / 1000;
+  $('recBtn').textContent = remaining;
+  const tick = setInterval(() => {
+    remaining -= 1;
+    $('recBtn').textContent = remaining > 0 ? remaining : 'REC';
+    if (remaining <= 0) clearInterval(tick);
+  }, 1000);
+  setTimeout(stopRecording, MAX_RECORD_MS);
+}
+function stopRecording() {
+  if (!recording) return;
+  recording = false;
+  $('recBtn').classList.remove('recording');
+  $('recBtn').textContent = 'REC';
+  if (mediaRecorder && mediaRecorder.state !== 'inactive') mediaRecorder.stop();
+}
+$('recBtn').addEventListener('click', () => (recording ? stopRecording() : startRecording()));
+
+function showResult(mime) {
+  const url = URL.createObjectURL(recordedBlob);
+  const ext = (mime || 'video/webm').includes('mp4') ? 'mp4' : 'webm';
+  $('playback').src = url;
+  const dl = $('downloadBtn');
+  dl.href = url;
+  dl.download = `peace-tech-keepsake.${ext}`;
+  const saveBtn = $('saveBtn');
+  const file = new File([recordedBlob], dl.download, { type: recordedBlob.type });
+  if (navigator.canShare && navigator.canShare({ files: [file] })) {
+    saveBtn.style.display = 'inline-block';
+    $('saveHint').style.display = 'block';
+    saveBtn.onclick = (e) => { e.preventDefault(); navigator.share({ files: [file] }).catch(() => {}); };
+  }
+  $('result').style.display = 'flex';
+}
+$('againBtn').addEventListener('click', () => { $('result').style.display = 'none'; });
+</script>
+</body>
+</html>

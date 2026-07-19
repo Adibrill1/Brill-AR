@@ -53,6 +53,8 @@ function rowToItem(r) {
     imageW: r.image_w, imageH: r.image_h,
     createdAt: new Date(r.created_at).getTime(),
     scanCount: r.scan_count,
+    artistName: r.artists?.name || '',
+    artistCountry: r.artists?.country || '',
     _paths: { image: r.image_path, mind: r.mind_path, audio: r.audio_path },
   };
 }
@@ -125,8 +127,12 @@ export const store = {
   },
 
   async listItems() {
-    const rows = await rest('GET', 'trigger_images?select=*&order=created_at.desc');
+    const rows = await rest('GET', 'trigger_images?select=*,artists(name,country)&order=created_at.desc');
     return rows.map(rowToItem);
+  },
+
+  async recordScan(id) {
+    await rest('POST', 'rpc/increment_scan', { trigger_id: id }).catch(() => {});
   },
 
   async listHashes() {

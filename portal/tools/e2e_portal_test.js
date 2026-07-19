@@ -144,7 +144,50 @@ async function pickImage(page, file) {
     await page.screenshot({ path: path.join(outDir, '3-ar-elements.png') });
     console.log('   trigger detected, elements anchored');
 
-    console.log('\nPORTAL FLOW PASSED: crop/rotate -> quality gate -> multi-element editor -> preview -> submit -> approve -> AR');
+    console.log('10. second creation (different trigger) for the multi-target exhibition');
+    await page.goto(`http://localhost:${PORT}/portal/index.html?backend=local`);
+    await page.evaluate(() => { window.__portal.qualityDone = false; });
+    await pickImage(page, path.join(assetsDir, 'marker2_hd.png'));
+    await page.waitForFunction(() => window.__portal.qualityDone || window.__portal.error, null, { timeout: 300000 });
+    await page.click('#addElBtn');
+    await page.setInputFiles('.el-card:nth-child(1) [data-role=file]', path.join(assetsDir, 'testvideo.webm'));
+    await page.waitForFunction(() =>
+      document.querySelector('.el-card:nth-child(1) [data-role=info]').textContent.includes('נטען בהצלחה'));
+    await page.fill('#titleInput', 'יצירה שנייה');
+    await page.check('#rightsCheck');
+    await page.waitForSelector('#submitBtn:not([disabled])');
+    await page.click('#submitBtn');
+    await page.waitForFunction(() => window.__portal.submitted);
+    await page.goto(`http://localhost:${PORT}/portal/admin.html?backend=local`);
+    await page.waitForSelector('[data-approve]');
+    await page.click('[data-approve]');
+    await page.waitForFunction(() =>
+      document.getElementById('pendingList').textContent.includes('אין תמונות טריגר'));
+
+    console.log('11. exhibition scan page: loads all approved works, merges targets, detects');
+    await page.goto(`http://localhost:${PORT}/visit/index.html?backend=local`);
+    await page.waitForFunction(() => window.__visit.itemCount > 0 || window.__visit.error, null, { timeout: 60000 });
+    const count = await page.evaluate(() => window.__visit.itemCount);
+    console.log(`   approved works in exhibition: ${count}`);
+    if (count < 2) throw new Error('expected 2 approved works, got ' + count);
+    await page.click('#startBtn');
+    await page.waitForFunction(() => window.__visit.started || window.__visit.error, null, { timeout: 180000 });
+    const verr = await page.evaluate(() => window.__visit.error);
+    if (verr) throw new Error('visit page failed: ' + verr);
+    await page.waitForFunction(() => window.__visit.foundId, null, { timeout: 180000 });
+    await new Promise((r) => setTimeout(r, 2000));
+    await page.screenshot({ path: path.join(outDir, '4-visit-found.png') });
+    console.log('   artwork detected in multi-target exhibition, caption shown');
+
+    console.log('12. keepsake recording + collection');
+    await page.click('#recBtn');
+    await page.waitForFunction(() => window.__visit.blobSize > 0, null, { timeout: 30000 });
+    const rec = await page.evaluate(() => ({ size: window.__visit.blobSize, collected: window.__visit.collected }));
+    console.log(`   recording: ${rec.size} bytes, collected works: ${rec.collected}`);
+    if (!rec.collected) throw new Error('collection not updated');
+    await page.screenshot({ path: path.join(outDir, '5-visit-result.png') });
+
+    console.log('\nFULL LOOP PASSED: artist upload -> moderation -> exhibition scan -> AR -> keepsake -> collection');
   } finally {
     await browser.close();
     server.kill();

@@ -77,6 +77,13 @@ export const store = {
   async deleteItem(id) {
     return tx('items', 'readwrite', (s) => s.delete(id));
   },
+  async recordScan(id) {
+    const item = await this.getItem(id);
+    if (!item) return;
+    item.scanCount = (item.scanCount || 0) + 1;
+    return this.saveItem(item);
+  },
+
   async setStatus(id, status, reason = '') {
     const item = await this.getItem(id);
     if (!item) throw new Error('item not found: ' + id);
