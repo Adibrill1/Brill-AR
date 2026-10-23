@@ -40,6 +40,19 @@ Legend:
 | Cloud-hosted projects, accounts, asset library | Local browser storage per device (export/import JSON to move) | 🖥️ server |
 | Buyer flow (stable per-artwork link/QR for collectors) | Scoped, needs a server + owner approval before any publication | 🖥️ server |
 
+## Verification provenance (round B gap-closures, 2026-10-23)
+- Timeline t=0: player starts motion on xrimagefound, freezes on xrimagelost, resumes where it
+  stopped (scene-level events; verified with synthetic dispatches + driver state asserts).
+  Preview keeps scene-start t=0 by design (no camera there). Sequence switch resets timelines.
+- Hidden-state sounds pause and resume on return - deterministic stub test of the transition
+  logic; real audio remains a device check.
+- Scale keyframes editable in the editor (per-key scale input).
+- Editor canvas plays timelines live while editing (same sampler as the runtime driver) -
+  two-frame screenshot evidence. No time ruler/scrub yet: creators get live playback + numeric
+  key entry, not drag-on-timeline. Retained gap, judged acceptable for this round.
+- Headless-cloud caveat: rAF runs ~3fps in 3D scenes there, so tight timing asserts mislead;
+  2D canvas decodes mp4 while the WebGL video path stalls (environment, handled by watchdog).
+
 ## Verification provenance (round B part 2 - timeline, 2026-10-23)
 - Cloud browser: keyframed text element moves/rotates/fades over a 2s loop (sampled object3D
   transforms at two times, loop wrap observed), editor panel adds/lists/deletes keys, loop
