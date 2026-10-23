@@ -864,6 +864,7 @@
       } else if (el.type === "image" && m) {
         ctx.rotate(extraRot);
         ctx.drawImage(m, -wpx / 2, -hpx / 2, wpx, hpx);
+        if (m.tagName === "CANVAS") needsAnim = true; // animated gif canvas updates itself; keep repainting
       } else if (el.type === "text") {
         const tb = textBitmap(el);
         ctx.drawImage(tb.canvas, -wpx / 2, -hpx / 2, wpx, hpx);
