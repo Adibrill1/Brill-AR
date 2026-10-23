@@ -44,3 +44,6 @@ button.small { font-size: 13px; padding: 6px 10px; }
 #seq-tabs .seq-tab, #seq-tabs .seq-add, #seq-tabs .seq-del { border: 1px solid #d7d3e8; background: #fff; border-radius: 999px; padding: 6px 14px; font-size: 14px; cursor: pointer; }
 #seq-tabs .seq-tab.sel { background: #7c5cff; border-color: #7c5cff; color: #fff; font-weight: 700; }
 #seq-tabs .seq-add, #seq-tabs .seq-del { color: #6b6780; }
+
+/* the hidden attribute must beat .row display:flex */
+.row[hidden], [hidden].row { display: none; }
