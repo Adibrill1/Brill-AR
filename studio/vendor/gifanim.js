@@ -9,48 +9,63 @@
 (function () {
   function parseGif(buf) {
     const d = new Uint8Array(buf);
+    if (d.length < 14 || d.length > 20 * 1024 * 1024) throw new Error("gif size limit");
     let p = 0;
-    const u16 = () => { const v = d[p] | (d[p + 1] << 8); p += 2; return v; };
-    const str = (n) => { let s = ""; for (let i = 0; i < n; i++) s += String.fromCharCode(d[p++]); return s; };
+    const need = (n) => { if (n < 0 || p + n > d.length) throw new Error("truncated gif"); };
+    const blocks = () => {
+      const chunks = []; let total = 0;
+      for (;;) {
+        need(1); const n = d[p++]; if (!n) break;
+        need(n); chunks.push(d.subarray(p, p + n)); total += n; p += n;
+      }
+      const out = new Uint8Array(total); let o = 0;
+      for (const c of chunks) { out.set(c, o); o += c.length; }
+      return out;
+    };
+    const u16 = () => { need(2); const v = d[p] | (d[p + 1] << 8); p += 2; return v; };
+    const str = (n) => { need(n); let s = ""; for (let i = 0; i < n; i++) s += String.fromCharCode(d[p++]); return s; };
     if (str(6).slice(0, 3) !== "GIF") throw new Error("not a gif");
     const width = u16(), height = u16();
+    if (!width || !height || width * height > 4194304) throw new Error("gif dimensions limit");
+    let decodedBytes = 0;
     const packed = d[p++]; p++; p++; // bg, aspect
     const gctFlag = packed & 0x80, gctSize = 3 * (1 << ((packed & 7) + 1));
     let gct = null;
-    if (gctFlag) { gct = d.slice(p, p + gctSize); p += gctSize; }
+    if (gctFlag) { need(gctSize); gct = d.slice(p, p + gctSize); p += gctSize; }
     let gce = { disposal: 0, delayMs: 100, transparent: -1 };
     const frames = [];
     while (p < d.length) {
       const tag = d[p++];
       if (tag === 0x3B) break; // trailer
       if (tag === 0x21) { // extension
-        const label = d[p++];
+        need(1); const label = d[p++];
         if (label === 0xF9) {
-          p++; // block size (4)
+          need(6); if (d[p++] !== 4) throw new Error("bad gce");
           const pk = d[p++];
           const delay = u16();
           const tIdx = d[p++]; p++; // terminator
           gce = { disposal: (pk >> 2) & 7, delayMs: Math.max(20, delay * 10), transparent: (pk & 1) ? tIdx : -1 };
         } else {
-          let n; while ((n = d[p++]) !== 0) p += n; // skip sub-blocks
+          blocks(); // bounded sub-blocks
         }
       } else if (tag === 0x2C) { // image descriptor
         const left = u16(), top = u16(), w = u16(), h = u16();
-        const ip = d[p++];
+        need(1); const ip = d[p++];
+        decodedBytes += w * h * 4;
+        if (!w || !h || left + w > width || top + h > height || frames.length >= 500 || decodedBytes > 64 * 1024 * 1024) throw new Error("gif frame limit");
         const lctFlag = ip & 0x80, interlaced = ip & 0x40;
         let ct = gct;
-        if (lctFlag) { const sz = 3 * (1 << ((ip & 7) + 1)); ct = d.slice(p, p + sz); p += sz; }
+        if (lctFlag) { const sz = 3 * (1 << ((ip & 7) + 1)); need(sz); ct = d.slice(p, p + sz); p += sz; }
         if (!ct) throw new Error("no color table");
         if (interlaced) throw new Error("interlaced");
-        const minCode = d[p++];
-        let dataLen = 0; const start = p;
-        { let n; while ((n = d[p++]) !== 0) { dataLen += n; p += n; } }
-        const packed2 = new Uint8Array(dataLen);
-        { let q = start, o = 0, n; while ((n = d[q++]) !== 0) { packed2.set(d.subarray(q, q + n), o); o += n; q += n; } }
+        need(1); const minCode = d[p++];
+        if (minCode < 2 || minCode > 8) throw new Error("bad lzw size");
+        const packed2 = blocks();
         const idx = lzwDecode(packed2, minCode, w * h);
         const px = new Uint8ClampedArray(w * h * 4);
         for (let i = 0; i < w * h; i++) {
           const c = idx[i] * 3;
+          if (c + 2 >= ct.length) throw new Error("bad palette index");
           px[i * 4] = ct[c]; px[i * 4 + 1] = ct[c + 1]; px[i * 4 + 2] = ct[c + 2];
           px[i * 4 + 3] = idx[i] === gce.transparent ? 0 : 255;
         }
@@ -86,9 +101,10 @@
       else if (code === next && prev) entry = prev.concat(prev[0]);
       else break;
       for (let i = 0; i < entry.length && o < expected; i++) out[o++] = entry[i];
-      if (prev) { dict[next++] = prev.concat(entry[0]); if (next === (1 << codeSize) && codeSize < 12) codeSize++; }
+      if (prev && next < 4096) { dict[next++] = prev.concat(entry[0]); if (next === (1 << codeSize) && codeSize < 12) codeSize++; }
       prev = entry;
     }
+    if (o !== expected) throw new Error("truncated lzw");
     return out;
   }
   function startPump(canvas, gif, getEntity) {
@@ -105,8 +121,8 @@
       // texture incomplete (invisible) on WebGL1. Force linear+clamp; idempotent per frame.
       t.generateMipmaps = false;
       if (t.minFilter !== 1006) t.minFilter = 1006; // LinearFilter
-      if (t.wrapS !== 1000) t.wrapS = 1000; // ClampToEdgeWrapping
-      if (t.wrapT !== 1000) t.wrapT = 1000;
+      if (t.wrapS !== 1001) t.wrapS = 1001; // ClampToEdgeWrapping
+      if (t.wrapT !== 1001) t.wrapT = 1001;
       t.needsUpdate = true;
     };
     const draw = () => {
