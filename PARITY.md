@@ -28,9 +28,9 @@ Legend:
 | Preview without the camera | 3D preview page (orbit + zoom, same scene graph) | 🆕 round-A |
 | Timeline (keyframed motion over time) | Per-element keyframes (t, position/rotation/opacity), loop, linear interpolation | 🆕 round-B (cloud-verified) |
 | Sequences (multi-state artworks, tap to switch) | States per artwork, per-element state assignment, tap-to-advance action, state dots | 🆕 round-B (cloud-verified) |
-| 3D models (glTF/GLB) | Not built | 🔜 planned (round C) |
+| 3D models (glTF/GLB) | Upload .glb/.gltf as an element; auto-fit + center on load; works with opacity/anim/timeline/sequences/tap | 🆕 round-C (cloud-verified) |
 | Particle effects | Not built | 🔜 planned (round C) |
-| Chroma-key (green screen) video | Not built | 🔜 planned (round C) |
+| Chroma-key (green screen) video | Key color + sensitivity per video element; custom discard shader on the video texture | 🆕 round-C (pipeline cloud-verified; visual keying needs a decodable browser/device) |
 | Spatial/positional audio | Not built | 🔜 planned (round D) |
 | Recognition-quality feedback on target upload | Not built | 🔜 planned (round D) |
 | Share link / QR per artwork | play.html?r=N#id link exists; polished per-artwork share page + QR planned | 🔜 planned (round E) |
@@ -39,6 +39,17 @@ Legend:
 | Save video to camera roll automatically | iOS blocks programmatic Photos writes; Share > Save Video is the route | ⛔ limit |
 | Cloud-hosted projects, accounts, asset library | Local browser storage per device (export/import JSON to move) | 🖥️ server |
 | Buyer flow (stable per-artwork link/QR for collectors) | Scoped, needs a server + owner approval before any publication | 🖥️ server |
+
+## Verification provenance (round C part 1 - 3D models + chroma key, 2026-10-23)
+- glTF: minimal GLB built in-page, added as an element, model-loaded fired, mesh present,
+  auto-fit normalization (inner scale 0.3 for w=0.4) and target-space placement asserted in
+  BOTH preview and player; editor shows a dashed 3D placeholder on the 2D canvas. Textures/
+  animations inside complex GLBs untested (needs real device + real model files).
+- Chroma: editor row persists key color + threshold; player entity builds with the
+  chroma-video component, ShaderMaterial with a live VideoTexture. Actual keying of green
+  pixels can't be judged in the cloud (video doesn't decode there) - device check pending.
+- Regression note: a missing function definition briefly broke shared.js on deploy rc2;
+  caught by cloud boot check, fixed in rc3, re-verified editor + player boot clean.
 
 ## Verification provenance (round B gap-closures, 2026-10-23)
 - Timeline t=0: player starts motion on xrimagefound, freezes on xrimagelost, resumes where it

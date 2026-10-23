@@ -115,6 +115,26 @@ const Studio = (() => {
   }
 
 
+  // Chroma-key video: samples the video texture with a key-color discard shader.
+  // Works in both preview and AR modes (replaces the plain/fade video path when enabled).
+  function ensureChromaComponent() {
+    if (!window.AFRAME || AFRAME.components["chroma-video"]) return;
+    AFRAME.registerComponent("chroma-video", {
+      schema: { src: { type: "selector" }, color: { default: "#00ff00" }, threshold: { default: 0.35 }, width: { default: 1 }, height: { default: 1 } },
+      init() {
+        const tex = new THREE.VideoTexture(this.data.src);
+        const mat = new THREE.ShaderMaterial({
+          uniforms: { map: { value: tex }, keyColor: { value: new THREE.Color(this.data.color) }, thresh: { value: this.data.threshold } },
+          transparent: true,
+          vertexShader: "varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
+          fragmentShader: "uniform sampler2D map; uniform vec3 keyColor; uniform float thresh; varying vec2 vUv;" +
+            "void main(){ vec4 c = texture2D(map, vUv); float d = distance(c.rgb, keyColor); if (d < thresh) discard; gl_FragColor = c; }"
+        });
+        this.el.object3D.add(new THREE.Mesh(new THREE.PlaneGeometry(this.data.width, this.data.height), mat));
+      }
+    });
+  }
+
   // ---------- round A: element defaults + text textures ----------
   // Backward-compatible normalization: records saved before round A lack these fields.
   function normEl(el) {
@@ -163,7 +183,11 @@ const Studio = (() => {
     const rot = `0 0 ${el.rot || 0}`;
     let e = null;
     if (el.type === "video") {
-      if (mode === "ar") {
+      if (el.chroma && el.chroma.enabled) {
+        ensureChromaComponent();
+        e = document.createElement("a-entity");
+        e.setAttribute("chroma-video", `src: #m-${el.id}; color: ${el.chroma.color || "#00ff00"}; threshold: ${el.chroma.threshold == null ? 0.35 : el.chroma.threshold}; width: ${ts.w}; height: ${ts.h}`);
+      } else if (mode === "ar") {
         e = document.createElement("a-entity");
         e.setAttribute("xrextras-target-video-fade", `video: #m-${el.id}; width: ${ts.w}; height: ${ts.h}`);
       } else {
@@ -175,6 +199,27 @@ const Studio = (() => {
       e = document.createElement("a-image");
       e.setAttribute("src", `#m-${el.id}`);
       e.setAttribute("width", ts.w); e.setAttribute("height", ts.h);
+    } else if (el.type === "model") {
+      // glTF/GLB: wrapper carries placement (timeline/tap target); inner child carries the
+      // normalized model scale so timeline scale keys don't fight the fit-to-size normalization.
+      e = document.createElement("a-entity");
+      const blob = rec.assets && rec.assets[el.assetId];
+      if (blob) {
+        const inner = document.createElement("a-entity");
+        inner.setAttribute("gltf-model", URL.createObjectURL(blob));
+        inner.addEventListener("model-loaded", () => {
+          const mesh = inner.getObject3D("mesh");
+          if (!mesh) return;
+          const box = new THREE.Box3().setFromObject(mesh);
+          const size = box.getSize(new THREE.Vector3());
+          const center = box.getCenter(new THREE.Vector3());
+          const maxDim = Math.max(size.x, size.y, size.z) || 1;
+          const k = ts.w / maxDim; // fit the model's largest side to the chosen width
+          inner.object3D.scale.set(k, k, k);
+          inner.object3D.position.set(-center.x * k, -center.y * k, -center.z * k);
+        });
+        e.appendChild(inner);
+      }
     } else if (el.type === "text") {
       e = document.createElement("a-plane");
       const tb = drawTextCanvas(el, 128);
@@ -199,14 +244,14 @@ const Studio = (() => {
   // Opacity: set on the mesh material once it exists (components like the video fade create it async).
   function applyOpacity(entity, value) {
     let tries = 0;
+    const paint = (root) => {
+      let done = false;
+      root.traverse((n) => { if (n.material) { n.material.transparent = true; n.material.opacity = value; done = true; } });
+      return done;
+    };
     const attempt = () => {
       const mesh = entity.getObject3D("mesh");
-      if (mesh && mesh.material) {
-        mesh.material.transparent = true;
-        mesh.material.opacity = value;
-        mesh.material.needsUpdate = true;
-        return;
-      }
+      if (mesh && paint(mesh)) return;
       if (++tries < 20) setTimeout(attempt, 300);
     };
     attempt();
@@ -414,6 +459,6 @@ const Studio = (() => {
   }
 
   return { TARGET_W, TARGET_H, newId, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
-           geom, toTargetSpace, blankExperience, save, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, seqList, elVisibleIn, nextSequence, applySequence, renderSeqDots, sampleTimeline, timelineDur, startTimelineDriver,
+           geom, toTargetSpace, blankExperience, save, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, seqList, elVisibleIn, nextSequence, applySequence, renderSeqDots, sampleTimeline, timelineDur, startTimelineDriver,
            load: idbGet, all: idbAll, del: idbDel };
 })();

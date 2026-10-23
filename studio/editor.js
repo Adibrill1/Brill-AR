@@ -15,7 +15,7 @@
   let artworkImg = null;       // HTMLImageElement of artwork
   let drag = null;
 
-  const ICONS = { video: "🎬 ", image: "🖼️ ", sound: "🎵 ", text: "🔤 " };
+  const ICONS = { video: "🎬 ", image: "🖼️ ", sound: "🎵 ", text: "🔤 ", model: "🧊 " };
 
   // ---------- boot ----------
   async function boot() {
@@ -149,9 +149,10 @@
       const assetId = Studio.newId();
       rec.assets[assetId] = f;
       const artRatio = rec.target.artRect.w / rec.target.artRect.h;
-      const el = Studio.normEl({ id: Studio.newId(), type: kind, name: { video: "סרטון", image: "תמונה", sound: "צליל" }[kind] + " " + (rec.elements.filter((x) => x.type === kind).length + 1),
+      const el = Studio.normEl({ id: Studio.newId(), type: kind, name: { video: "סרטון", image: "תמונה", sound: "צליל", model: "מודל 3D" }[kind] + " " + (rec.elements.filter((x) => x.type === kind).length + 1),
                    assetId, x: 0, y: 0, w: kind === "video" ? 1.0 : 0.3, h: null, rot: 0, z: kind === "image" ? 0.1 : 0.01, seq: curSeq });
       if (kind === "video" || kind === "sound") { el.volume = kind === "sound" ? 0.8 : 1; el.loop = true; }
+      if (kind === "model") { el.w = 0.4; el.z = 0.2; el.aspect = 1; }
       const durl = await Studio.blobToDataURL(f);
       if (kind === "image") {
         const im = await Studio.loadImage(durl);
@@ -178,6 +179,7 @@
     $("file-video").onchange = addFile("video");
     $("file-image").onchange = addFile("image");
     $("file-sound").onchange = addFile("sound");
+    $("file-model").onchange = addFile("model");
 
     $("btn-text").onclick = async () => {
       const el = Studio.normEl({ id: Studio.newId(), type: "text", name: "טקסט " + (rec.elements.filter((x) => x.type === "text").length + 1),
@@ -277,6 +279,9 @@
       const scale = Math.max(0.1, Math.min(5, parseFloat($("num-tl-scale").value) || 1));
       el.timeline.keys.push({ t, x: el.x, y: el.y, z: el.z || 0, rot: el.rot || 0, opacity: el.opacity == null ? 1 : el.opacity, scale });
     });
+    $("ck-chroma").onchange = (e) => upd((el) => { el.chroma = Object.assign({}, el.chroma, { enabled: e.target.checked }); });
+    $("in-chroma-color").onchange = (e) => upd((el) => { el.chroma = Object.assign({}, el.chroma, { color: e.target.value }); });
+    $("sl-chroma").onchange = (e) => upd((el) => { el.chroma = Object.assign({}, el.chroma, { threshold: parseFloat(e.target.value) }); });
     $("ck-tl-loop").onchange = (e) => upd((el) => {
       el.timeline = el.timeline && Array.isArray(el.timeline.keys) ? el.timeline : { loop: false, keys: [] };
       el.timeline.loop = e.target.checked;
@@ -338,9 +343,15 @@
     $("sl-rot").value = el.rot || 0;
     $("sl-z").value = el.z || 0;
     $("sl-opacity").value = el.opacity == null ? 1 : el.opacity;
-    $("row-volume").hidden = el.type === "image" || el.type === "text";
+    $("row-volume").hidden = el.type !== "video" && el.type !== "sound";
     $("sl-vol").value = el.volume == null ? 1 : el.volume;
-    $("row-loop").hidden = el.type === "image" || el.type === "text";
+    $("row-loop").hidden = el.type !== "video" && el.type !== "sound";
+    $("row-chroma").hidden = el.type !== "video";
+    if (el.type === "video") {
+      $("ck-chroma").checked = !!(el.chroma && el.chroma.enabled);
+      $("in-chroma-color").value = (el.chroma && el.chroma.color) || "#00ff00";
+      $("sl-chroma").value = el.chroma && el.chroma.threshold != null ? el.chroma.threshold : 0.35;
+    }
     $("ck-loop").checked = el.loop !== false;
     $("sel-anim").value = Studio.normEl(el).anim;
     $("sel-tap").value = el.onTap || "none";
@@ -445,6 +456,12 @@
       } else if (el.type === "text") {
         const tb = textBitmap(el);
         ctx.drawImage(tb.canvas, -wpx / 2, -hpx / 2, wpx, hpx);
+      } else if (el.type === "model") {
+        ctx.beginPath(); ctx.rect(-wpx / 2, -hpx / 2, wpx, hpx);
+        ctx.fillStyle = "rgba(70,40,140,0.55)"; ctx.fill();
+        ctx.strokeStyle = "rgba(255,255,255,0.8)"; ctx.setLineDash([5, 4]); ctx.stroke(); ctx.setLineDash([]);
+        ctx.fillStyle = "#fff"; ctx.font = Math.round(Math.min(wpx, hpx) / 3.2) + "px sans-serif";
+        ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("3D", 0, 2);
       } else if (el.type === "sound") {
         ctx.beginPath(); ctx.arc(0, 0, Math.min(wpx, hpx) / 2, 0, 7);
         ctx.fillStyle = "rgba(30,60,120,0.85)"; ctx.fill();
