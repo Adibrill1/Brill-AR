@@ -150,3 +150,6 @@ Supersedes X's open sparse-easing/own-group-key gaps: exact affine sampled-outpu
 
 ## Round Z follow-through
 Creator2D canvas actual pointer move/corner-scale regression passes with inspected selection screenshot. Camera group reset now restores affine timeline map as well as geometry; reset→save roundtrip fixture added. Actual WAV currentTime advances and actual parent timeline Show/Hide pauses/resumes playback. Live-camera drag, device audio/capture and complex transparent-model ordering still unverified.
+
+## Round AB
+Tilted-target group drag and track-only full-player found/lost startup gate fixtures pass synthetically. AutoStart tracks now wait for first target-found. Creator selected group bounds enclose rotated children. Physical camera/phone still unverified.

@@ -913,8 +913,10 @@
         let minx = 1e9, miny = 1e9, maxx = -1e9, maxy = -1e9;
         for (const k of kids) {
           const b = boxes[k.id];
-          minx = Math.min(minx, b.cx - b.w / 2); maxx = Math.max(maxx, b.cx + b.w / 2);
-          miny = Math.min(miny, b.cy - b.h / 2); maxy = Math.max(maxy, b.cy + b.h / 2);
+          const ex=(Math.abs(b.w*Math.cos(b.rot))+Math.abs(b.h*Math.sin(b.rot)))/2;
+          const ey=(Math.abs(b.w*Math.sin(b.rot))+Math.abs(b.h*Math.cos(b.rot)))/2;
+          minx = Math.min(minx, b.cx-ex); maxx = Math.max(maxx, b.cx+ex);
+          miny = Math.min(miny, b.cy-ey); maxy = Math.max(maxy, b.cy+ey);
         }
         boxes[selEl.id] = { cx: (minx + maxx) / 2, cy: (miny + maxy) / 2, w: maxx - minx, h: maxy - miny, rot: 0 };
         ctx.save();

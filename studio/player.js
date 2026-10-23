@@ -130,7 +130,7 @@
     const el = rec.elements.find((x) => x.id === n.dataset.elId);
     if (el && !editMode) Studio.bindTap(n, el, { onMuteToggle, onNextSequence, onSequence, onTrackToggle });
   });
-  if (!editMode) trackRunner.autoStart();
+  if (!editMode) { trackRunner.autoStart(); trackRunner.pauseAll(); }
   refreshVisibility();
   if (curSeq) { refreshVisibility(); Studio.renderSeqDots(rec, curSeq); }
   scene.appendChild(target);
