@@ -145,9 +145,9 @@
   if (!editMode) runner.enter(curSeq);
   window.__tlDrv = tlDrv; // test/debug handle
   if (editMode && tlDrv) tlDrv.pause();
-  if (tlDrv && !editMode) {
-    scene.addEventListener("xrimagefound", () => { tlDrv.play(); trackRunner.resumeAll(); });
-    scene.addEventListener("xrimagelost", () => { tlDrv.pause(); trackRunner.pauseAll(); });
+  if (!editMode) {
+    scene.addEventListener("xrimagefound", () => { if (tlDrv) tlDrv.play(); trackRunner.resumeAll(); });
+    scene.addEventListener("xrimagelost", () => { if (tlDrv) tlDrv.pause(); trackRunner.pauseAll(); });
   }
   document.body.appendChild(scene);
 
