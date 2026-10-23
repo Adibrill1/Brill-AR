@@ -27,7 +27,7 @@ Legend:
 | Text layer | Content, size, color, bold | 🆕 round-A |
 | Animation presets | none / spin / float / pulse | 🆕 round-A |
 | Timeline: Move/Rotate/Scale/Transform actions | Keyframes capture x/y/z/rot/opacity/scale per element | 🆕 round-B |
-| Timeline: Speed Curve (linear/ease/elastic) | Per-element easing: linear / easeIn / easeOut / easeInOut (no elastic) | 🆕 round-G ⚠️ partial (elastic missing) |
+| Timeline: Speed Curve (linear/ease/elastic) | Per-element easing: linear / easeIn / easeOut / easeInOut / elastic (overshoot verified: f=0.5 -> 1.0156) | 🆕 round-G |
 | Timeline: explicit Duration (loop length independent of last key) | Optional duration field; default = last key time | 🆕 round-G |
 | Timeline: Show/Hide action at set times | Via opacity 0/1 keyframes (functionally equivalent, less discoverable) | ⚠️ partial |
 | Timeline: animate groups of layers | No group concept | ❌ not built |
@@ -39,13 +39,13 @@ Legend:
 | Preview Mode (simulate viewer, sequence notifications) | 3D preview page + live timeline playback on the editor canvas + ruler/scrub; no sequence start/stop notifications | 🆕 rounds A/F ⚠️ partial (no notifications) |
 | Timeline editor: ruler with drag scrub | Ruler with second ticks, keyframe markers, draggable playhead seeking the canvas | 🆕 round-F |
 | 3D models: auto-fit, multi-mesh, textures | Auto-fit + center, multi-mesh opacity, textures/MeshStandardMaterial verified | 🆕 round-C |
-| Particle effects: presets + speed/direction/size/density, custom assets | Sparkle/confetti presets, count (10-500) + color; no direction/size controls, no custom sprites | 🆕 round-C ⚠️ partial |
+| Particle effects: presets + speed/direction/size/density, custom assets | Sparkle/confetti presets (direction), count/density 10-500, size 2-60, speed 0.2-3x, color; no custom sprite upload | 🆕 round-C+G ⚠️ partial (custom sprites missing) |
 | 3D Sound: logarithmic mode (never fully muted) | PositionalAudio exponential rolloff, adjustable inner radius | 🆕 round-G |
 | 3D Sound: linear mode (silent beyond outer sphere) | PositionalAudio linear model, inner + outer radii | 🆕 round-G |
 | Chroma-key (green screen) video: color pick + threshold | Key color + threshold per video; custom discard shader, pixel-verified | 🆕 round-C |
 | Transparent GIF upload | Not supported | ❌ not built |
 | Tap interactions: open link | Tap -> https URL (validated) | 🆕 round-A |
-| Tap interactions: emails/phone links | https only | ⚠️ partial (mailto/tel not wired) |
+| Tap interactions: emails/phone links | https + mailto: + tel: (server-validated; javascript: and other schemes rejected) | 🆕 round-G |
 | Publish artwork + stable link, QR for WebAR | Publish server written + secured (token auth, validation, limits); editor publish button + client-side QR; NOT deployed | 🆕 round-E 🖥️ needs host + domain + token (owner decision) |
 | Update published artwork, QR unchanged | Same id re-publish overwrites; link stable | 🆕 round-E (code-verified, undeployed) |
 | Recording the AR experience | 10s in-player recording with tone | ✅ device |

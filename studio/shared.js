@@ -119,7 +119,7 @@ const Studio = (() => {
   function ensureParticlesComponent() {
     if (!window.AFRAME || AFRAME.components["particles"]) return;
     AFRAME.registerComponent("particles", {
-      schema: { preset: { default: "sparkle" }, count: { default: 120 }, color: { default: "#ffd94d" }, width: { default: 0.5 }, height: { default: 0.5 } },
+      schema: { preset: { default: "sparkle" }, count: { default: 120 }, color: { default: "#ffd94d" }, width: { default: 0.5 }, height: { default: 0.5 }, size: { default: 12 }, speed: { default: 1 } },
       init() {
         const n = Math.min(500, Math.max(10, this.data.count | 0));
         const pos = new Float32Array(n * 3);
@@ -128,12 +128,13 @@ const Studio = (() => {
           pos[i * 3] = (Math.random() - 0.5) * this.data.width;
           pos[i * 3 + 1] = (Math.random() - 0.5) * this.data.height;
           pos[i * 3 + 2] = (Math.random() - 0.5) * 0.05;
-          this.vel[i * 3] = (Math.random() - 0.5) * 0.05;
-          this.vel[i * 3 + 1] = this.data.preset === "confetti" ? -0.1 - Math.random() * 0.15 : 0.05 + Math.random() * 0.12;
+          const sp = this.data.speed > 0 ? this.data.speed : 1;
+          this.vel[i * 3] = (Math.random() - 0.5) * 0.05 * sp;
+          this.vel[i * 3 + 1] = (this.data.preset === "confetti" ? -0.1 - Math.random() * 0.15 : 0.05 + Math.random() * 0.12) * sp;
         }
         const geo = new THREE.BufferGeometry();
         geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-        this.points = new THREE.Points(geo, new THREE.PointsMaterial({ color: new THREE.Color(this.data.color), size: 0.012, transparent: true, opacity: 0.9, depthWrite: false }));
+        this.points = new THREE.Points(geo, new THREE.PointsMaterial({ color: new THREE.Color(this.data.color), size: Math.min(0.06, Math.max(0.002, this.data.size / 1000)), transparent: true, opacity: 0.9, depthWrite: false }));
         this.el.object3D.add(this.points);
       },
       tick(time, dt) {
@@ -243,7 +244,7 @@ const Studio = (() => {
       ensureParticlesComponent();
       const pc = el.particles || {};
       e = document.createElement("a-entity");
-      e.setAttribute("particles", `preset: ${pc.preset || "sparkle"}; count: ${pc.count || 120}; color: ${pc.color || "#ffd94d"}; width: ${ts.w}; height: ${ts.h}`);
+      e.setAttribute("particles", `preset: ${pc.preset || "sparkle"}; count: ${pc.count || 120}; color: ${pc.color || "#ffd94d"}; size: ${pc.size || 12}; speed: ${pc.speed || 1}; width: ${ts.w}; height: ${ts.h}`);
     } else if (el.type === "model") {
       // glTF/GLB: wrapper carries placement (timeline/tap target); inner child carries the
       // normalized model scale so timeline scale keys don't fight the fit-to-size normalization.
@@ -309,7 +310,8 @@ const Studio = (() => {
     if (!el.onTap || el.onTap === "none") return;
     entity.addEventListener("click", () => {
       if (el.onTap === "link" && el.tapUrl) {
-        window.open(el.tapUrl, "_blank", "noopener");
+        if (/^https:/.test(el.tapUrl)) window.open(el.tapUrl, "_blank", "noopener");
+        else window.location.href = el.tapUrl; // mailto: / tel:
       } else if (el.onTap === "mute" && hooks && hooks.onMuteToggle) {
         hooks.onMuteToggle();
       } else if (el.onTap === "sequence" && hooks && hooks.onNextSequence) {
@@ -370,6 +372,7 @@ const Studio = (() => {
       if (ease === "easeIn") f = f * f;
       else if (ease === "easeOut") f = 1 - (1 - f) * (1 - f);
       else if (ease === "easeInOut") f = f < 0.5 ? 2 * f * f : 1 - 2 * (1 - f) * (1 - f);
+      else if (ease === "elastic") f = f <= 0 ? 0 : f >= 1 ? 1 : Math.pow(2, -10 * f) * Math.sin((f * 10 - 0.75) * (2 * Math.PI / 3)) + 1;
       return a[prop] + (b[prop] - a[prop]) * f;
     };
     return { x: pick("x"), y: pick("y"), z: pick("z"), rot: pick("rot"), opacity: pick("opacity"), scale: pick("scale") };

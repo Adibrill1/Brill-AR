@@ -71,8 +71,12 @@ function validateExport(o) {
     if (!EL_TYPES.has(el.type)) return "element " + i + ": unsupported type " + JSON.stringify(el.type);
     for (const f of NUM_FIELDS) if (el[f] != null && typeof el[f] !== "number") return "element " + i + ": bad " + f;
     if (el.text != null && String(el.text).length > 2000) return "element " + i + ": text too long";
-    if (el.onTap === "url" && el.tapUrl && !/^https:\/\//.test(el.tapUrl)) return "element " + i + ": tap link must be https";
+    if ((el.onTap === "url" || el.onTap === "link") && el.tapUrl && !/^(https:\/\/|mailto:|tel:)/.test(el.tapUrl)) return "element " + i + ": tap link must be https/mailto/tel";
     if (el.name != null) el.name = String(el.name).slice(0, 120);
+  }
+  if (o.sequences != null) {
+    if (!Array.isArray(o.sequences) || o.sequences.length > 24) return "bad sequences";
+    for (const q of o.sequences) { if (!q || typeof q !== "object" || typeof q.id !== "string" || q.id.length > 64) return "bad sequence entry"; if (q.name != null) q.name = String(q.name).slice(0, 120); }
   }
   const assets = o.assets || {};
   for (const [k, v] of Object.entries(assets)) {

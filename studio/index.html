@@ -99,7 +99,7 @@
             <option value="sequence">מעבר למצב הבא</option>
           </select>
         </label>
-        <label id="row-tapurl">קישור (כתובת מלאה, למשל https://...) <input type="url" id="in-tapurl" dir="ltr" placeholder="https://"></label>
+        <label id="row-tapurl">קישור (כתובת מלאה: https://, mailto: או tel:) <input type="url" id="in-tapurl" dir="ltr" placeholder="https://"></label>
         <label id="row-seq" hidden>מצב תצוגה <select id="sel-seq"></select></label>
         <div id="row-timeline" hidden>
           <strong>תנועה מתוזמנת</strong>
@@ -108,8 +108,8 @@
             <input type="number" id="num-tl-scale" min="0.1" max="5" step="0.1" value="1" style="width:64px" title="גודל יחסי בנקודה הזו"> גודל
             <button id="btn-tl-add" class="ghost">הוספת נקודה מהמצב הנוכחי</button>
             <label class="check"><input type="checkbox" id="ck-tl-loop"> לולאה</label>
-            <select id="sel-tl-ease" title="עקומת תנועה"><option value="linear">תנועה קבועה</option><option value="easeIn">האצה מהתחלה</option><option value="easeOut">האטה לסוף</option><option value="easeInOut">רך בשני הצדדים</option></select>
-            <input type="number" id="num-tl-dur" min="0" max="120" step="0.5" style="width:64px" title="אורך הלולאה בשניות (ריק = עד הנקודה האחרונה)">
+            <select id="sel-tl-ease" title="עקומת תנועה"><option value="linear">תנועה קבועה</option><option value="easeIn">האצה מהתחלה</option><option value="easeOut">האטה לסוף</option><option value="easeInOut">רך בשני הצדדים</option><option value="elastic">קפיצית (אלסטית)</option></select>
+            <label title="אורך הלולאה בשניות (ריק = עד הנקודה האחרונה)">אורך <input type="number" id="num-tl-dur" min="0" max="120" step="0.5" style="width:60px" placeholder="שניות"></label>
           </div>
           <canvas id="tl-ruler" style="width:100%;height:34px;touch-action:none;cursor:ew-resize"></canvas>
           <div class="row"><span id="tl-time" class="hint"></span><button id="btn-tl-live" class="ghost" hidden>חזרה לניגון חי</button></div>
@@ -128,6 +128,8 @@
         <div id="row-particles" hidden>
           <label>סגנון <select id="sel-preset"><option value="sparkle">נצנוצים עולים</option><option value="confetti">קונפטי יורד</option></select></label>
           <label>כמות <input type="number" id="num-pcount" min="10" max="500" step="10" value="120"></label>
+          <label>גודל <input type="number" id="num-psize" min="2" max="60" step="1" value="12"></label>
+          <label>מהירות <input type="number" id="num-pspeed" min="0.2" max="3" step="0.1" value="1"></label>
           <label>צבע <input type="color" id="in-pcolor" value="#ffd94d"></label>
         </div>
         <div id="row-chroma" hidden>
@@ -164,8 +166,8 @@
   <p id="msg" role="status"></p>
 </main>
 
-<script src="shared.js?v=rc10"></script>
+<script src="shared.js?v=rc11"></script>
 <script src="external/qrcode.js"></script>
-<script src="editor.js?v=rc10"></script>
+<script src="editor.js?v=rc11"></script>
 </body>
 </html>

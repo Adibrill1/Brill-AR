@@ -341,6 +341,8 @@
     $("num-spatial-out").onchange = (e) => upd((el) => { el.spatialOuter = Math.max(0.1, parseFloat(e.target.value) || 1.4); });
     $("sel-preset").onchange = (e) => upd((el) => { el.particles = Object.assign({}, el.particles, { preset: e.target.value }); });
     $("num-pcount").onchange = (e) => upd((el) => { el.particles = Object.assign({}, el.particles, { count: Math.max(10, Math.min(500, parseInt(e.target.value) || 120)) }); });
+    $("num-psize").onchange = (e) => upd((el) => { el.particles = Object.assign({}, el.particles, { size: Math.max(2, Math.min(60, parseInt(e.target.value) || 12)) }); });
+    $("num-pspeed").onchange = (e) => upd((el) => { el.particles = Object.assign({}, el.particles, { speed: Math.max(0.2, Math.min(3, parseFloat(e.target.value) || 1)) }); });
     $("in-pcolor").onchange = (e) => upd((el) => { el.particles = Object.assign({}, el.particles, { color: e.target.value }); });
     $("ck-chroma").onchange = (e) => upd((el) => { el.chroma = Object.assign({}, el.chroma, { enabled: e.target.checked }); });
     $("in-chroma-color").onchange = (e) => upd((el) => { el.chroma = Object.assign({}, el.chroma, { color: e.target.value }); });
@@ -425,6 +427,8 @@
       const pc = el.particles || {};
       $("sel-preset").value = pc.preset || "sparkle";
       $("num-pcount").value = pc.count || 120;
+      $("num-psize").value = pc.size || 12;
+      $("num-pspeed").value = pc.speed || 1;
       $("in-pcolor").value = pc.color || "#ffd94d";
     }
     if (el.type === "video") {
@@ -486,7 +490,7 @@
     for (let sec = 0; sec <= span; sec++) {
       const x = (sec / span) * W;
       g.beginPath(); g.moveTo(x, 18); g.lineTo(x, 28); g.stroke();
-      g.fillText(sec + "s", x, 10);
+      g.fillText(sec + "s", Math.max(10, Math.min(W - 10, x)), 10); // keep edge labels readable
     }
     g.fillStyle = "#7c5cff";
     for (const k of tl.keys) {
