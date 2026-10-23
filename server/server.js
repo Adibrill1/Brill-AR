@@ -68,8 +68,15 @@ function validateExport(o) {
   if (o.elements.length > MAX_ELEMENTS) return "too many elements";
   for (const [i, el] of o.elements.entries()) {
     if (!el || typeof el !== "object") return "element " + i + " not an object";
+    if (typeof el.id!=="string"||!/^[a-zA-Z0-9_-]{1,128}$/.test(el.id)||o.elements.slice(0,i).some(e=>e.id===el.id))return "bad or duplicate element id";
     if (!EL_TYPES.has(el.type)) return "element " + i + ": unsupported type " + JSON.stringify(el.type);
-    for (const f of NUM_FIELDS) if (el[f] != null && typeof el[f] !== "number") return "element " + i + ": bad " + f;
+    for (const f of NUM_FIELDS) if (el[f] != null && (typeof el[f] !== "number" || !Number.isFinite(el[f]))) return "element " + i + ": bad " + f;
+    if (el.timeline != null) {
+      const tl=el.timeline;
+      if(!Array.isArray(tl.keys)||tl.keys.length>1000)return "bad timeline keys";
+      for(const k of tl.keys){if(!k||!Number.isFinite(k.t)||k.t<0||k.t>3600)return "bad key time";for(const f of ["x","y","z","rot","opacity","scale"])if(k[f]!=null&&!Number.isFinite(k[f]))return "bad key value";}
+      if(tl.xyMap){const m=tl.xyMap;if(!Number.isFinite(m.baseX)||!Number.isFinite(m.baseY)||!Array.isArray(m.matrix)||m.matrix.length!==6||!m.matrix.every(Number.isFinite)||Math.abs(m.matrix[0]*m.matrix[3]-m.matrix[1]*m.matrix[2])<1e-12)return "bad timeline curve map";}
+    }
     if (el.track != null && typeof el.track !== "string") return "element " + i + ": bad track";
     if (el.text != null && String(el.text).length > 2000) return "element " + i + ": text too long";
     if ((el.onTap === "url" || el.onTap === "link") && el.tapUrl && !/^(https:\/\/|mailto:|tel:)/.test(el.tapUrl)) return "element " + i + ": tap link must be https/mailto/tel";

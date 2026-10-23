@@ -696,6 +696,40 @@ const Studio = (() => {
   async function importJSON(text) {
     const o = JSON.parse(text);
     if (!o || o.format !== "ar-studio/1") throw new Error("bad format");
+    if (!Array.isArray(o.elements) || o.elements.length > 60) throw new Error("bad elements (maximum60)");
+    const ids = new Set();
+    for (const el of o.elements) {
+      if (!el || !["video","image","sound","text","model","particles","group"].includes(el.type)) throw new Error("bad element type");
+      if (typeof el.id !== "string" || !/^[a-zA-Z0-9_-]{1,128}$/.test(el.id) || ids.has(el.id)) throw new Error("bad or duplicate element id");
+      ids.add(el.id);
+      for (const key of ["x","y","z","w","h","rot","opacity","aspect","volume"]) if (el[key] != null && (typeof el[key] !== "number" || !Number.isFinite(el[key]))) throw new Error("bad numeric field");
+      if (el.timeline != null) {
+        const tl = el.timeline;
+        if (!Array.isArray(tl.keys) || tl.keys.length > 1000) throw new Error("bad timeline keys");
+        for (const k of tl.keys) {
+          if (!k || !Number.isFinite(k.t) || k.t < 0 || k.t > 3600) throw new Error("bad key time");
+          for (const key of ["x","y","z","rot","scale","opacity"]) if (k[key] != null && !Number.isFinite(k[key])) throw new Error("bad key value");
+        }
+        if (tl.xyMap) {
+          const m=tl.xyMap;
+          if (!Number.isFinite(m.baseX)||!Number.isFinite(m.baseY)||!Array.isArray(m.matrix)||m.matrix.length!==6||!m.matrix.every(Number.isFinite)||Math.abs(m.matrix[0]*m.matrix[3]-m.matrix[1]*m.matrix[2])<1e-12) throw new Error("bad timeline curve map");
+        }
+      }
+    }
+    const member = new Set();
+    for (const el of o.elements.filter(e=>e.type === "group")) {
+      if (!Array.isArray(el.children)||!el.children.length) throw new Error("bad group children");
+      for(const id of el.children) { const child=o.elements.find(e=>e.id===id);if(!child||child.type==='group'||member.has(id))throw new Error("bad group membership");member.add(id); }
+    }
+    // JSON imports are self-contained. Never fetch an arbitrary URL from a file.
+    const entries=Object.entries(o.assets || {});
+    if(entries.length>121)throw new Error("too many assets");
+    let total=0;
+    for(const [key,value]of entries) {
+      if(typeof value!=="string"||!/^data:(image\/(png|jpeg|webp|gif)|video\/(mp4|webm)|audio\/(mpeg|wav|x-wav|mp4|x-m4a|ogg)|model\/gltf-binary|application\/octet-stream);base64,[A-Za-z0-9+/]*={0,2}$/.test(value))throw new Error("asset must be embedded supported media");
+      const size=Math.floor(value.slice(value.indexOf(',')+1).length*.75);total+=size;
+      if(size>20*1024*1024||total>60*1024*1024)throw new Error("import media too large");
+    }
     const rec = blankExperience(o.name || "מיובא");
     rec.target = o.target; rec.elements = o.elements || []; rec.createdAt = o.createdAt || Date.now();
     rec.sequences = Array.isArray(o.sequences) ? o.sequences : [];

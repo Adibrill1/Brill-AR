@@ -153,3 +153,6 @@ Creator2D canvas actual pointer move/corner-scale regression passes with inspect
 
 ## Round AB
 Tilted-target group drag and track-only full-player found/lost startup gate fixtures pass synthetically. AutoStart tracks now wait for first target-found. Creator selected group bounds enclose rotated children. Physical camera/phone still unverified.
+
+## Round AC import integrity
+JSON import rejects nonembedded asset URLs before fetch, unsafe/duplicate ids, malformed timeline keys/maps and group references; supported embedded media bounded20MB each/60MB total. Six malformed fixtures rejected by import and authenticated server, external fetch count0. All14browser and importer/conversion/stable-publish regressions green. Server remains undeployed.
