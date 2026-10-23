@@ -28,7 +28,7 @@ const rateLog = new Map();
 fs.mkdirSync(DATA, { recursive: true });
 
 const EL_TYPES = new Set(["video", "image", "sound", "text", "model", "particles", "group"]);
-const ASSET_MIME = /^data:(image\/png|image\/jpeg|image\/webp|image\/gif|video\/mp4|audio\/mpeg|audio\/wav|audio\/x-wav|audio\/mp4|audio\/x-m4a|model\/gltf-binary|application\/octet-stream);base64,/;
+const ASSET_MIME = /^data:(image\/png|image\/jpeg|image\/webp|image\/gif|video\/mp4|video\/webm|audio\/mpeg|audio\/wav|audio\/x-wav|audio\/mp4|audio\/x-m4a|audio\/ogg|model\/gltf-binary|application\/octet-stream);base64,/;
 const NUM_FIELDS = ["x", "y", "w", "h", "rot", "z", "volume", "opacity", "aspect", "size"];
 
 function send(res, code, body, type) {

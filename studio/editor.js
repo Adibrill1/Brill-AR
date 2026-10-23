@@ -388,6 +388,17 @@
     $("num-spatial-in").onchange = (e) => upd((el) => { el.spatialInner = Math.max(0.05, parseFloat(e.target.value) || 0.35); });
     $("num-spatial-out").onchange = (e) => upd((el) => { el.spatialOuter = Math.max(0.1, parseFloat(e.target.value) || 1.4); });
     $("sel-preset").onchange = (e) => upd((el) => { el.particles = Object.assign({}, el.particles, { preset: e.target.value }); });
+    $("btn-psprite").onclick = () => $("file-psprite").click();
+    $("file-psprite").onchange = async (e) => {
+      const f = e.target.files[0]; e.target.value = "";
+      if (!f) return;
+      const el = rec.elements.find((x) => x.id === selectedId);
+      if (!el || el.type !== "particles") return;
+      const assetId = Studio.newId();
+      rec.assets[assetId] = f;
+      el.particles = Object.assign({}, el.particles, { spriteAssetId: assetId });
+      await Studio.save(rec); renderPanel();
+    };
     $("num-pcount").onchange = (e) => upd((el) => { el.particles = Object.assign({}, el.particles, { count: Math.max(10, Math.min(500, parseInt(e.target.value) || 120)) }); });
     $("num-psize").onchange = (e) => upd((el) => { el.particles = Object.assign({}, el.particles, { size: Math.max(2, Math.min(60, parseInt(e.target.value) || 12)) }); });
     $("num-pspeed").onchange = (e) => upd((el) => { el.particles = Object.assign({}, el.particles, { speed: Math.max(0.2, Math.min(3, parseFloat(e.target.value) || 1)) }); });
@@ -546,6 +557,8 @@
       $("num-psize").value = pc.size || 12;
       $("num-pspeed").value = pc.speed || 1;
       $("in-pcolor").value = pc.color || "#ffd94d";
+      $("row-psprite").hidden = (pc.preset || "sparkle") !== "custom";
+      $("psprite-name").textContent = pc.spriteAssetId && rec.assets[pc.spriteAssetId] ? "✓ נבחרה תמונה" : "(עדיין לא נבחרה)";
     }
     if (el.type === "video") {
       $("ck-chroma").checked = !!(el.chroma && el.chroma.enabled);
