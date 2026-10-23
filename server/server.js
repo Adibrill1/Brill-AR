@@ -134,7 +134,7 @@ const server = http.createServer(async (req, res) => {
       const err = validateExport(o);
       if (err) return send(res, 400, { error: err });
       if (fs.readdirSync(DATA).length >= MAX_EXPERIENCES) return send(res, 507, { error: "store full" });
-      const id = safeId(o.slug) || crypto.randomBytes(5).toString("hex");
+      const id = safeId(o.id) || safeId(o.slug) || crypto.randomBytes(5).toString("hex");
       fs.writeFileSync(path.join(DATA, id + ".json"), JSON.stringify(o));
       return send(res, 200, { id, url: "/e/" + id });
     }

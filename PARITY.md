@@ -5,6 +5,8 @@ pages, fetched 2026-10-23). Artivive's editor was never used hands-on — the li
 documented capabilities, not an exhaustive audit. Statuses reflect what is in this repo
 and how it was verified, not marketing claims.
 
+Current-table statuses take precedence over historical round notes below. Historical notes retain earlier limitations for provenance, not the present feature set.
+
 Legend:
 - ✅ device  — exists, verified on a real phone
 - ✅ cloud   — exists, verified in a cloud browser (recognition/audio/capture need a device)
@@ -17,7 +19,7 @@ Legend:
 |---|---|---|
 | Image target recognition (upload photo, detect in camera) | 8th Wall engine, per-experience target | ✅ device |
 | Trackability feedback on target (0-5 stars in Artivive) | Resolution + gradient-energy heuristic, plain Hebrew hint (non-blocking) | 🆕 round-D (binary-ish hint, not a 5-star scale; thresholds calibrated, not Artivive's algorithm) |
-| Multiple layers per artwork (video/image/sound) | Unlimited elements, drag + sliders + numeric panel, element list | ✅ device/cloud |
+| Multiple layers per artwork (video/image/sound) | Multiple elements, drag + sliders + numeric panel, element list (local UI has no count cap, publish server caps at60) | ✅ device/cloud |
 | Layer types: video, image, audio, 3D (glTF/GLB), text, particles | All six built | 🆕 rounds A/C |
 | File types: jpg/png/gif images; mp4/mov/gif video; glTF/GLB (+zip, .obj/.fbx) models | jpg/png/webp images + animated non-interlaced GIF image layers; mp4/webm video; mpeg/mp4/wav/m4a/ogg audio; single-file .glb models, plus model ZIP: one .glb, or one .gltf with relative buffer/image dependencies embedded into a self-contained GLB at import, with bounded decompression (20MB entry cap, 100-entry cap, no nested-zip recursion, in-memory only) - browser-verified (uploaded ZIP lands in IDB with glTF magic; bad ZIPs get clear Hebrew errors) | ⚠️ partial: ZIP glTF + external .bin/PNG texture is now browser-verified (real file-input import, stored GLB, 3-vertex mesh, 2px texture, red triangle in actual rendered scene). Core glTF document/materials/meshes preserved, external URIs in extensions rejected rather than fetched; unsupported runtime extensions and complex animated archives remain unverified. MOV conversion is implemented as an optional authenticated ffmpeg server route plus explicit fidelity/upload consent; local integration QA converts ProRes+PCM MOV to H264+AAC MP4 and verifies decoded pixels/duration. Not operational on static staging: needs a configured backend with ffmpeg/ffprobe. FBX static conversion is now experimental via local worker AssimpJS (20MB source/result,30s timeout,256MB WASM heap cap); original triangle positions/normals/purple diffuse material verified in GLB and actual rendered preview. Skin/animation and external texture URIs rejected after conversion, unknown importer losses remain possible; complex/embedded-texture/binary FBX fidelity and phone tests remain open. Not full FBX parity. GIF animation is built and cloud pixel-verified in the camera-free 3D preview (red/blue frames); interlaced GIFs use a tested frozen first-frame fallback with Hebrew notice, not animation parity. AR-on-device GIF testing remains open. .obj IS supported via editor-side transcode to GLB - PARTIAL FIDELITY: geometry only, materials/textures/UVs/normals are LOST on conversion; the editor detects mtllib/usemtl/vt/vn and shows a styled in-page warning before converting, recommending native glb export instead (cloud-verified both branches: cancel aborts with no import, accept imports geometry-only; plain cube.obj imports with no dialog). Zip extraction bounds: per-entry 20MB, 100 entries, 60MB total uncompressed, no nested-zip recursion; one model only, duplicate canonical names and unsafe/missing/network paths rejected, final self-contained GLB capped at 20MB. Bare .gltf with external files still needs ZIP packaging or native GLB export |
 | Transform layers (handles + numeric panel) | Drag + sliders + numeric x/y/w/rot/depth panel | 🆕 round-A |
@@ -38,7 +40,7 @@ Legend:
 | Sequences: loop/reset per sequence | Per-state loop setting: when on, the state's one-shot timelines replay together on completion (timeline driver); editor checkbox per state | ✅ round H |
 | Preview Mode (simulate viewer, sequence notifications) | 3D preview page + live timeline playback on the editor canvas + ruler/scrub + state-switch toast notifications on tap and chained switches (previewer) | 🆕 rounds A/F/H ✅ |
 | Timeline editor: ruler with drag scrub | Ruler with second ticks, keyframe markers, draggable playhead seeking the canvas | 🆕 round-F |
-| 3D models: auto-fit, multi-mesh, textures | Auto-fit + center, multi-mesh opacity, textures/MeshStandardMaterial verified | 🆕 round-C |
+| 3D models: auto-fit, multi-mesh, textures + embedded clips | Auto-fit + center, multi-mesh opacity, textures/MeshStandardMaterial verified; first embedded glTF clip loops via AnimationMixer, hidden/target-lost freeze | ⚠️ round R: original authored translation clip rendered at two positions (pixel centroids562→685), mixer advances and freezes when hidden; phone/skeletal/morph/multi-clip choice still unverified |
 | Particle effects: presets + speed/direction/size/density, custom assets | Sparkle/confetti presets, count/density 10-500, size 2-60, speed 0.2-3x, color, custom PNG/WebP sprite upload (verified: textured round points), arbitrary direction 0-359deg overriding the preset direction (verified: dir=90 -> purely horizontal velocities) | ✅ round C+G+I |
 | 3D Sound: logarithmic mode (never fully muted) | PositionalAudio exponential rolloff, adjustable inner radius | 🆕 round-G |
 | 3D Sound: linear mode (silent beyond outer sphere) | PositionalAudio linear model, inner + outer radii | 🆕 round-G |
@@ -47,16 +49,16 @@ Legend:
 | Tap interactions: open link | Tap -> https URL (validated) | 🆕 round-A |
 | Tap interactions: emails/phone links | https + mailto: + tel: (server-validated; javascript: and other schemes rejected) | 🆕 round-G |
 | Publish artwork + stable link, QR for WebAR | Publish server written + secured (token auth, validation, limits); editor publish button + client-side QR; NOT deployed | 🆕 round-E 🖥️ needs host + domain + token (owner decision) |
-| Update published artwork, QR unchanged | Same id re-publish overwrites; link stable | 🆕 round-E (code-verified, undeployed) |
+| Update published artwork, QR unchanged | Exported experience id now reused on publish; same-id re-publish overwrites, link stable | ⚠️ round R regression fix: prior server used only slug and generated a fresh id for editor exports; now local API test proves stable URL + updated content. Still undeployed. |
 | Recording the AR experience | 10s in-player recording with tone | ✅ device |
 | Headphone-only playback toggle | Cannot force output routing from a browser | ⛔ limit |
 | Save video to camera roll automatically | iOS blocks programmatic Photos writes; Share > Save Video | ⛔ limit |
-| AR Mode editing on device | Web editor is 2D canvas + 3D preview | ⛔ limit (native-app territory) |
+| AR Mode editing on device | Web editor is 2D canvas + 3D preview; no live-camera manipulation UI | ❌ code/product gap, not an established web-platform impossibility. Needs camera-mode editor design/implementation/device QA. |
 | Element Library (pre-made assets) | Small original starter catalog: transparent star/ring PNGs, animated ring GIF, synthesized bell WAV, orbital MP4 video, purple gem GLB; mobile dialog, one-tap copy into local experience, editable/exportable | ⚠️ starter scope only: all six imported through real UI on live staging in sandbox Chrome, binary assets stored and exported (6 elements/7 assets incl artwork); GLB 24 vertices/color and rendered scene verified; WAV decoded 1.2s peak .213, ready4 (not phone/audio-listening proof). Mobile 390px thumbnails, scrolling and add controls visually inspected. Not Artivive catalog size/variety parity; video starter imported/exported, decoded2s at256x256, two sought frames differ; WebGL-video/phone playback still separate checks. |
 | Cloud accounts, asset library, multi-device sync | Local IndexedDB per browser + export/import JSON (roundtrip verified for every element type + states) | 🖥️ server (publish server is a first step) |
 | Buyer flow: per-artwork link/QR for collectors | Round-E server covers the technical half; commerce/rights need owner decisions | 🖥️ server + owner decision |
 
-## Verification provenance (round C part 1 - 3D models + chroma key, 2026-10-23)
+## Historical verification provenance (round C part 1 - 3D models + chroma key, 2026-10-23)
 - glTF: minimal GLB built in-page, added as an element, model-loaded fired, mesh present,
   auto-fit normalization (inner scale 0.3 for w=0.4) and target-space placement asserted in
   BOTH preview and player; editor shows a dashed 3D placeholder on the 2D canvas. Textures/
@@ -103,14 +105,14 @@ Legend:
 - Headless-cloud caveat: rAF runs ~3fps in 3D scenes there, so tight timing asserts mislead;
   2D canvas decodes mp4 while the WebGL video path stalls (environment, handled by watchdog).
 
-## Verification provenance (round B part 2 - timeline, 2026-10-23)
+## Historical verification provenance (round B part 2 - timeline, 2026-10-23)
 - Cloud browser: keyframed text element moves/rotates/fades over a 2s loop (sampled object3D
   transforms at two times, loop wrap observed), editor panel adds/lists/deletes keys, loop
   persists, base animation preset is disabled while a timeline exists, player boots clean.
 - scale keyframes supported in the runtime but not yet exposed in the editor UI.
 - Timeline t=0 is scene start in both preview and player (not target-found); device pass pending.
 
-## Verification provenance (round B part 1 - sequences, 2026-10-23)
+## Historical verification provenance (round B part 1 - sequences, 2026-10-23)
 - Cloud browser: enabled multi-state from the editor UI, per-element state dropdown, list/canvas
   filter by edited state, add/delete states, preview toggles entity visibility on tap of a
   sequence-wired element, state dots track position, player boots with states honored, 0 console errors.
@@ -124,3 +126,9 @@ Legend:
 - Device-verified from earlier rounds: recognition, muted autoplay, tap-to-unmute, 10s
   recording with tone. New round-A features still need one iPhone pass.
 - Image detection, microphone, camera, and real audio cannot be exercised in the cloud.
+
+## Round R reconciliation (current, 2026-10-23)
+- Fixed two gaps found by tracing current code, not trusting earlier parity labels: parallel-track definitions were missing from JSON export/import; server ignored exported id and generated a new publish URL. Track roundtrip2definitions/element binding and stable republish API now tested. Earlier publish-stability assertion was inaccurate.
+- AR-mode editing is an unbuilt product/code gap, not automatically native-only. No architectural exclusion accepted without evidence.
+- First embedded GLB clip now plays; one original translation fixture only. AnimationMixer is separate from wrapper placement. Hidden ancestor pauses; camera found/lost listeners in shared component. Device/skeletal/morph and clip selection still open.
+- Full-table review retains unresolved scope: heuristic vs Artivive target stars; Show/Hide discoverability; format/fidelity limitations described above; phone visual/audio/performance tests; account/sync/cloud library; production publish/conversion host isolation and backups; buyer rights/commercial decisions; catalog content depth; AR editing. Artivive editor never hands-on due access challenge, so this is not an exhaustive equivalence audit.

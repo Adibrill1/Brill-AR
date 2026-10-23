@@ -115,6 +115,43 @@ const Studio = (() => {
   }
 
 
+  // Embedded glTF clips: run the first authored clip. Freeze when hidden or the
+  // image target is lost; wrapper timeline/group transforms remain independent.
+  function ensureModelAnimationComponent() {
+    if (!window.AFRAME || AFRAME.components["model-clips"]) return;
+    AFRAME.registerComponent("model-clips", {
+      init() {
+        this.tracked = !this.el.sceneEl.hasAttribute("xrweb");
+        this.onFound = () => { this.tracked = true; };
+        this.onLost = () => { this.tracked = false; };
+        this.loaded = () => {
+          if (this.mixer) this.mixer.stopAllAction();
+          const mesh = this.el.getObject3D("mesh");
+          const clips = mesh && mesh.animations;
+          if (!clips || !clips.length) return;
+          this.mixer = new THREE.AnimationMixer(mesh);
+          this.action = this.mixer.clipAction(clips[0]); this.action.play();
+          this.el.dataset.clipCount = String(clips.length);
+        };
+        this.el.addEventListener("model-loaded", this.loaded);
+        this.el.sceneEl.addEventListener("xrimagefound", this.onFound);
+        this.el.sceneEl.addEventListener("xrimagelost", this.onLost);
+        if (this.el.getObject3D("mesh")) this.loaded();
+      },
+      tick(t, dt) {
+        if (!this.mixer || !this.tracked) return;
+        for (let o = this.el.object3D; o; o = o.parent) if (!o.visible) return;
+        this.mixer.update(Math.min(0.25, (dt || 0) / 1000));
+      },
+      remove() {
+        this.el.removeEventListener("model-loaded", this.loaded);
+        this.el.sceneEl.removeEventListener("xrimagefound", this.onFound);
+        this.el.sceneEl.removeEventListener("xrimagelost", this.onLost);
+        if (this.mixer) { this.mixer.stopAllAction(); this.mixer.uncacheRoot(this.el.getObject3D("mesh")); }
+      }
+    });
+  }
+
   // Particles: lightweight THREE.Points emitter (sparkle rises, confetti falls).
   function ensureParticlesComponent() {
     if (!window.AFRAME || AFRAME.components["particles"]) return;
@@ -284,6 +321,8 @@ const Studio = (() => {
       const blob = rec.assets && rec.assets[el.assetId];
       if (blob) {
         const inner = document.createElement("a-entity");
+        ensureModelAnimationComponent();
+        inner.setAttribute("model-clips", "");
         inner.setAttribute("gltf-model", URL.createObjectURL(blob));
         inner.addEventListener("model-loaded", () => {
           const mesh = inner.getObject3D("mesh");
@@ -547,7 +586,7 @@ const Studio = (() => {
   }
   async function save(rec) { rec.updatedAt = Date.now(); await idbPut(rec.id, rec); }
   async function exportJSON(rec) {
-    const out = { format: "ar-studio/1", id: rec.id, name: rec.name, createdAt: rec.createdAt, target: rec.target, elements: rec.elements.map((e) => ({ ...e })), sequences: (rec.sequences || []).map((q) => ({ ...q })) };
+    const out = { format: "ar-studio/1", id: rec.id, name: rec.name, createdAt: rec.createdAt, target: rec.target, elements: rec.elements.map((e) => ({ ...e })), sequences: (rec.sequences || []).map((q) => ({ ...q })), tracks: (rec.tracks || []).map((t) => ({ ...t })) };
     out.assets = {};
     for (const el of rec.elements) {
       if (el.assetId && rec.assets[el.assetId]) out.assets[el.assetId] = await blobToDataURL(rec.assets[el.assetId]);
@@ -561,6 +600,7 @@ const Studio = (() => {
     const rec = blankExperience(o.name || "מיובא");
     rec.target = o.target; rec.elements = o.elements || []; rec.createdAt = o.createdAt || Date.now();
     rec.sequences = Array.isArray(o.sequences) ? o.sequences : [];
+    rec.tracks = Array.isArray(o.tracks) ? o.tracks : [];
     rec.assets = {};
     for (const [k, durl] of Object.entries(o.assets || {})) rec.assets[k] = await dataURLtoBlob(durl);
     await save(rec);
