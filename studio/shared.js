@@ -177,8 +177,9 @@ const Studio = (() => {
     } else if (el.type === "text") {
       e = document.createElement("a-plane");
       const tb = drawTextCanvas(el, 128);
+      const tts = toTargetSpace(rec, el, tb.aspect); // plane must match the canvas aspect or glyphs distort
       e.setAttribute("material", { src: tb.canvas.toDataURL("image/png"), transparent: true, shader: "flat" });
-      e.setAttribute("width", ts.w); e.setAttribute("height", ts.h);
+      e.setAttribute("width", tts.w); e.setAttribute("height", tts.h);
     } else {
       return null; // sound: no visual node
     }
