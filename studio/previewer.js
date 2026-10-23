@@ -130,7 +130,11 @@
   trackRunner.autoStart();
   refreshVisibility();
   if (curSeq) { refreshVisibility(); Studio.renderSeqDots(rec, curSeq); }
-  tlDrv = Studio.startTimelineDriver(rec, [...rig.querySelectorAll("[data-el-id]")]);
+  // the state driver drives only state-model elements; tracked elements run on their track's own driver
+  tlDrv = Studio.startTimelineDriver(rec, [...rig.querySelectorAll("[data-el-id]")].filter((n) => {
+    const el = rec.elements.find((x) => x.id === n.dataset.elId);
+    return el && !el.track;
+  }));
   if (tlDrv) tlDrv.stateLoop = !!(Studio.seqList(rec).find((x) => x.id === curSeq) || {}).loop;
   runner.enter(curSeq);
   window.__tlDrv = tlDrv; // test/debug handle

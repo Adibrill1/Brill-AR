@@ -132,7 +132,11 @@
   scene.appendChild(target);
   // Timeline motion starts when the artwork is found (not during permission/scan screens)
   // and freezes while tracking is lost, resuming where it stopped.
-  tlDrv = Studio.startTimelineDriver(rec, [...target.querySelectorAll("[data-el-id]")], { autostart: false });
+  // the state driver drives only state-model elements; tracked elements run on their track's own driver
+  tlDrv = Studio.startTimelineDriver(rec, [...target.querySelectorAll("[data-el-id]")].filter((n) => {
+    const el = rec.elements.find((x) => x.id === n.dataset.elId);
+    return el && !el.track;
+  }), { autostart: false });
   if (tlDrv) tlDrv.stateLoop = !!(Studio.seqList(rec).find((x) => x.id === curSeq) || {}).loop;
   runner.enter(curSeq);
   window.__tlDrv = tlDrv; // test/debug handle
