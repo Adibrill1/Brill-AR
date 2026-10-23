@@ -115,6 +115,42 @@ const Studio = (() => {
   }
 
 
+  // Particles: lightweight THREE.Points emitter (sparkle rises, confetti falls).
+  function ensureParticlesComponent() {
+    if (!window.AFRAME || AFRAME.components["particles"]) return;
+    AFRAME.registerComponent("particles", {
+      schema: { preset: { default: "sparkle" }, count: { default: 120 }, color: { default: "#ffd94d" }, width: { default: 0.5 }, height: { default: 0.5 } },
+      init() {
+        const n = Math.min(500, Math.max(10, this.data.count | 0));
+        const pos = new Float32Array(n * 3);
+        this.vel = new Float32Array(n * 3);
+        for (let i = 0; i < n; i++) {
+          pos[i * 3] = (Math.random() - 0.5) * this.data.width;
+          pos[i * 3 + 1] = (Math.random() - 0.5) * this.data.height;
+          pos[i * 3 + 2] = (Math.random() - 0.5) * 0.05;
+          this.vel[i * 3] = (Math.random() - 0.5) * 0.05;
+          this.vel[i * 3 + 1] = this.data.preset === "confetti" ? -0.1 - Math.random() * 0.15 : 0.05 + Math.random() * 0.12;
+        }
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+        this.points = new THREE.Points(geo, new THREE.PointsMaterial({ color: new THREE.Color(this.data.color), size: 0.012, transparent: true, opacity: 0.9, depthWrite: false }));
+        this.el.object3D.add(this.points);
+      },
+      tick(time, dt) {
+        const dtS = Math.min(0.1, (dt || 16) / 1000);
+        const arr = this.points.geometry.attributes.position.array;
+        const half = this.data.height / 2;
+        for (let i = 0; i < arr.length; i += 3) {
+          arr[i] += this.vel[i] * dtS;
+          arr[i + 1] += this.vel[i + 1] * dtS;
+          if (this.vel[i + 1] > 0 && arr[i + 1] > half) arr[i + 1] = -half;
+          if (this.vel[i + 1] < 0 && arr[i + 1] < -half) arr[i + 1] = half;
+        }
+        this.points.geometry.attributes.position.needsUpdate = true;
+      }
+    });
+  }
+
   // Chroma-key video: samples the video texture with a key-color discard shader.
   // Works in both preview and AR modes (replaces the plain/fade video path when enabled).
   // The keying shader, standalone so it can be driven by any texture (video or test canvas).
@@ -203,6 +239,11 @@ const Studio = (() => {
       e = document.createElement("a-image");
       e.setAttribute("src", `#m-${el.id}`);
       e.setAttribute("width", ts.w); e.setAttribute("height", ts.h);
+    } else if (el.type === "particles") {
+      ensureParticlesComponent();
+      const pc = el.particles || {};
+      e = document.createElement("a-entity");
+      e.setAttribute("particles", `preset: ${pc.preset || "sparkle"}; count: ${pc.count || 120}; color: ${pc.color || "#ffd94d"}; width: ${ts.w}; height: ${ts.h}`);
     } else if (el.type === "model") {
       // glTF/GLB: wrapper carries placement (timeline/tap target); inner child carries the
       // normalized model scale so timeline scale keys don't fight the fit-to-size normalization.
@@ -463,6 +504,6 @@ const Studio = (() => {
   }
 
   return { TARGET_W, TARGET_H, newId, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
-           geom, toTargetSpace, blankExperience, save, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, makeChromaMaterial, seqList, elVisibleIn, nextSequence, applySequence, renderSeqDots, sampleTimeline, timelineDur, startTimelineDriver,
+           geom, toTargetSpace, blankExperience, save, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, makeChromaMaterial, ensureParticlesComponent, seqList, elVisibleIn, nextSequence, applySequence, renderSeqDots, sampleTimeline, timelineDur, startTimelineDriver,
            load: idbGet, all: idbAll, del: idbDel };
 })();

@@ -15,7 +15,7 @@
   let artworkImg = null;       // HTMLImageElement of artwork
   let drag = null;
 
-  const ICONS = { video: "🎬 ", image: "🖼️ ", sound: "🎵 ", text: "🔤 ", model: "🧊 " };
+  const ICONS = { video: "🎬 ", image: "🖼️ ", sound: "🎵 ", text: "🔤 ", model: "🧊 ", particles: "✨ " };
 
   // ---------- boot ----------
   async function boot() {
@@ -195,6 +195,16 @@
     $("file-sound").onchange = addFile("sound");
     $("file-model").onchange = addFile("model");
 
+    $("btn-particles").onclick = async () => {
+      const el = Studio.normEl({ id: Studio.newId(), type: "particles", name: "חלקיקים " + (rec.elements.filter((x) => x.type === "particles").length + 1),
+                   x: 0, y: 0, w: 0.6, h: 0.6, rot: 0, z: 0.12, seq: curSeq, particles: { preset: "sparkle", count: 120, color: "#ffd94d" } });
+      rec.elements.push(el);
+      selectedId = el.id;
+      await Studio.save(rec);
+      msg("נוספו חלקיקים. בחרי סגנון בלוח למטה.");
+      render();
+    };
+
     $("btn-text").onclick = async () => {
       const el = Studio.normEl({ id: Studio.newId(), type: "text", name: "טקסט " + (rec.elements.filter((x) => x.type === "text").length + 1),
                    text: "כותרת חדשה", color: "#ffffff", bold: true, x: 0, y: 0.35, w: 0.5, h: null, rot: 0, z: 0.15, seq: curSeq });
@@ -293,6 +303,9 @@
       const scale = Math.max(0.1, Math.min(5, parseFloat($("num-tl-scale").value) || 1));
       el.timeline.keys.push({ t, x: el.x, y: el.y, z: el.z || 0, rot: el.rot || 0, opacity: el.opacity == null ? 1 : el.opacity, scale });
     });
+    $("sel-preset").onchange = (e) => upd((el) => { el.particles = Object.assign({}, el.particles, { preset: e.target.value }); });
+    $("num-pcount").onchange = (e) => upd((el) => { el.particles = Object.assign({}, el.particles, { count: Math.max(10, Math.min(500, parseInt(e.target.value) || 120)) }); });
+    $("in-pcolor").onchange = (e) => upd((el) => { el.particles = Object.assign({}, el.particles, { color: e.target.value }); });
     $("ck-chroma").onchange = (e) => upd((el) => { el.chroma = Object.assign({}, el.chroma, { enabled: e.target.checked }); });
     $("in-chroma-color").onchange = (e) => upd((el) => { el.chroma = Object.assign({}, el.chroma, { color: e.target.value }); });
     $("sl-chroma").onchange = (e) => upd((el) => { el.chroma = Object.assign({}, el.chroma, { threshold: parseFloat(e.target.value) }); });
@@ -361,6 +374,13 @@
     $("sl-vol").value = el.volume == null ? 1 : el.volume;
     $("row-loop").hidden = el.type !== "video" && el.type !== "sound";
     $("row-chroma").hidden = el.type !== "video";
+    $("row-particles").hidden = el.type !== "particles";
+    if (el.type === "particles") {
+      const pc = el.particles || {};
+      $("sel-preset").value = pc.preset || "sparkle";
+      $("num-pcount").value = pc.count || 120;
+      $("in-pcolor").value = pc.color || "#ffd94d";
+    }
     if (el.type === "video") {
       $("ck-chroma").checked = !!(el.chroma && el.chroma.enabled);
       $("in-chroma-color").value = (el.chroma && el.chroma.color) || "#00ff00";
@@ -470,6 +490,12 @@
       } else if (el.type === "text") {
         const tb = textBitmap(el);
         ctx.drawImage(tb.canvas, -wpx / 2, -hpx / 2, wpx, hpx);
+      } else if (el.type === "particles") {
+        ctx.beginPath(); ctx.arc(0, 0, Math.min(wpx, hpx) / 2, 0, 7);
+        ctx.fillStyle = "rgba(200,150,30,0.35)"; ctx.fill();
+        ctx.strokeStyle = "rgba(255,255,255,0.8)"; ctx.setLineDash([3, 5]); ctx.stroke(); ctx.setLineDash([]);
+        ctx.fillStyle = "#fff"; ctx.font = Math.round(Math.min(wpx, hpx) / 3) + "px sans-serif";
+        ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("✨", 0, 2);
       } else if (el.type === "model") {
         ctx.beginPath(); ctx.rect(-wpx / 2, -hpx / 2, wpx, hpx);
         ctx.fillStyle = "rgba(70,40,140,0.55)"; ctx.fill();

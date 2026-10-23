@@ -31,6 +31,7 @@ Legend:
 | 3D models (glTF/GLB) | Upload .glb/.gltf as an element; auto-fit + center on load; works with opacity/anim/timeline/sequences/tap | 🆕 round-C (cloud-verified) |
 | Particle effects | Not built | 🔜 planned (round C) |
 | Chroma-key (green screen) video | Key color + sensitivity per video element; custom discard shader on the video texture | 🆕 round-C (keying pixel-verified; real footage + performance device-pending) |
+| Particle effects | Built-in emitter: rising-sparkle / falling-confetti presets, count (10-500) + color per element | 🆕 round-C (motion verified in cloud; device visuals pending) |
 | Spatial/positional audio | Not built | 🔜 planned (round D) |
 | Recognition-quality feedback on target upload | Not built | 🔜 planned (round D) |
 | Share link / QR per artwork | play.html?r=N#id link exists; polished per-artwork share page + QR planned | 🔜 planned (round E) |
@@ -56,6 +57,12 @@ Legend:
   Hebrew message (export as single .glb); non-GLB files rejected. No false format support.
 - Precision note: in the cloud browser the 2D canvas decodes mp4 fine; the WebGL video
   texture path is what stalls. Claims about 'the environment can't decode' were wrong.
+- Particles: editor button creates a particle element (no asset); panel edits preset/count/color;
+  runtime is a THREE.Points emitter component. Verified: 120 points, positions advance over a
+  3s window (sparkle rises), visible as sparkles in preview screenshot 140730.
+- Visual readability fixture: 256px 2x2 checker texture + bright standard materials render
+  crisp and lit in preview (screenshot 140730, top of frame). The earlier blurry-band quad in
+  that shot is the old 2px test texture - kept as contrast, not a defect.
 - Regression note: a missing function definition briefly broke shared.js on deploy rc2;
   caught by cloud boot check, fixed in rc3, re-verified editor + player boot clean.
 
