@@ -119,7 +119,7 @@ const Studio = (() => {
   function ensureParticlesComponent() {
     if (!window.AFRAME || AFRAME.components["particles"]) return;
     AFRAME.registerComponent("particles", {
-      schema: { preset: { default: "sparkle" }, count: { default: 120 }, color: { default: "#ffd94d" }, width: { default: 0.5 }, height: { default: 0.5 } },
+      schema: { preset: { default: "sparkle" }, count: { default: 120 }, color: { default: "#ffd94d" }, width: { default: 0.5 }, height: { default: 0.5 }, size: { default: 12 }, speed: { default: 1 }, sprite: { default: "" }, direction: { default: -1 } }, // direction: degrees (0=up,90=right,180=down,270=left); -1 = preset's fixed direction
       init() {
         const n = Math.min(500, Math.max(10, this.data.count | 0));
         const pos = new Float32Array(n * 3);
@@ -128,12 +128,22 @@ const Studio = (() => {
           pos[i * 3] = (Math.random() - 0.5) * this.data.width;
           pos[i * 3 + 1] = (Math.random() - 0.5) * this.data.height;
           pos[i * 3 + 2] = (Math.random() - 0.5) * 0.05;
-          this.vel[i * 3] = (Math.random() - 0.5) * 0.05;
-          this.vel[i * 3 + 1] = this.data.preset === "confetti" ? -0.1 - Math.random() * 0.15 : 0.05 + Math.random() * 0.12;
+          const sp = this.data.speed > 0 ? this.data.speed : 1;
+          const m = (0.05 + Math.random() * 0.12) * sp;
+          if (this.data.direction >= 0) { // arbitrary direction control (round I)
+            const a = this.data.direction * Math.PI / 180;
+            this.vel[i * 3] = Math.sin(a) * m;
+            this.vel[i * 3 + 1] = Math.cos(a) * m;
+          } else {
+            this.vel[i * 3] = (Math.random() - 0.5) * 0.05 * sp;
+            this.vel[i * 3 + 1] = (this.data.preset === "confetti" ? -0.1 - Math.random() * 0.15 : 0.05 + Math.random() * 0.12) * sp;
+          }
         }
         const geo = new THREE.BufferGeometry();
         geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-        this.points = new THREE.Points(geo, new THREE.PointsMaterial({ color: new THREE.Color(this.data.color), size: 0.012, transparent: true, opacity: 0.9, depthWrite: false }));
+        const matOpts = { color: new THREE.Color(this.data.color), size: Math.min(0.06, Math.max(0.002, this.data.size / 1000)), transparent: true, opacity: 0.9, depthWrite: false };
+        if (this.data.sprite) { matOpts.map = new THREE.TextureLoader().load(this.data.sprite); matOpts.alphaTest = 0.05; } // custom sprite texture (PNG with alpha)
+        this.points = new THREE.Points(geo, new THREE.PointsMaterial(matOpts));
         this.el.object3D.add(this.points);
       },
       tick(time, dt) {
@@ -143,6 +153,9 @@ const Studio = (() => {
         for (let i = 0; i < arr.length; i += 3) {
           arr[i] += this.vel[i] * dtS;
           arr[i + 1] += this.vel[i + 1] * dtS;
+          const halfW = this.data.width / 2;
+          if (this.vel[i] > 0 && arr[i] > halfW) arr[i] = -halfW;
+          if (this.vel[i] < 0 && arr[i] < -halfW) arr[i] = halfW;
           if (this.vel[i + 1] > 0 && arr[i + 1] > half) arr[i + 1] = -half;
           if (this.vel[i + 1] < 0 && arr[i + 1] < -half) arr[i + 1] = half;
         }
@@ -182,6 +195,10 @@ const Studio = (() => {
     if (el.seq === undefined) el.seq = null; // null = visible in every sequence state
     if (el.anim == null) el.anim = el.spin ? "spin" : "none";
     if (el.onTap == null) el.onTap = "none";
+    if (el.track === undefined) el.track = null; // null = shared state model; id = a parallel overlay track
+    if (el.type === "group") {
+      if (!Array.isArray(el.children)) el.children = [];
+    }
     if (el.type === "text") {
       if (el.text == null) el.text = "כותרת";
       if (!el.color) el.color = "#ffffff";
@@ -215,15 +232,29 @@ const Studio = (() => {
 
   // ---------- round A: shared entity factory for player + preview ----------
   // mode 'ar': video uses the device-proven xrextras-target-video-fade; 'preview': plain a-video.
-  function buildElementEntity(rec, el, idx, mode) {
+  function buildElementEntity(rec, el, idx, mode, opts) {
+    opts = opts || {};
     normEl(el);
     const ts = toTargetSpace(rec, el, el.aspect || 1);
+    const ox = opts.origin ? opts.origin.x : 0, oy = opts.origin ? opts.origin.y : 0, oz = opts.origin ? opts.origin.z : 0;
     const z = (ts.z || 0) + idx * 0.001; // array order breaks z ties, matching the editor's paint order
-    const pos = `${ts.x} ${ts.y} ${z}`;
+    const pos = `${ts.x - ox} ${ts.y - oy} ${z - oz}`;
     const rot = `0 0 ${el.rot || 0}`;
     let e = null;
-    if (el.type === "video") {
-      if (el.chroma && el.chroma.enabled) {
+    if (el.type === "group") {
+      // wrapper entity: timeline/anim presets/opacity act on the whole group; children sit inside, relative to it
+      e = document.createElement("a-entity");
+      groupChildren(rec, el).forEach((ch, ci) => {
+        if (ch.type === "group") return; // no nesting in v1
+        const ce = buildElementEntity(rec, ch, ci, mode, { origin: { x: ts.x, y: ts.y, z: ts.z || 0 }, videoFallback: opts.videoFallback });
+        if (ce) { e.appendChild(ce); if (ce.dataset.opacity) applyOpacity(ce, parseFloat(ce.dataset.opacity)); }
+      });
+    } else if (el.type === "video") {
+      if (opts.videoFallback && opts.videoFallback(el)) {
+        e = document.createElement("a-plane");
+        e.setAttribute("material", { color: "#333333", opacity: 0.85, transparent: true, shader: "flat" });
+        e.setAttribute("width", ts.w); e.setAttribute("height", ts.h);
+      } else if (el.chroma && el.chroma.enabled) {
         ensureChromaComponent();
         e = document.createElement("a-entity");
         e.setAttribute("chroma-video", `src: #m-${el.id}; color: ${el.chroma.color || "#00ff00"}; threshold: ${el.chroma.threshold == null ? 0.35 : el.chroma.threshold}; width: ${ts.w}; height: ${ts.h}`);
@@ -243,7 +274,9 @@ const Studio = (() => {
       ensureParticlesComponent();
       const pc = el.particles || {};
       e = document.createElement("a-entity");
-      e.setAttribute("particles", `preset: ${pc.preset || "sparkle"}; count: ${pc.count || 120}; color: ${pc.color || "#ffd94d"}; width: ${ts.w}; height: ${ts.h}`);
+      let spriteAttr = "";
+      if (pc.preset === "custom" && pc.spriteAssetId && rec.assets && rec.assets[pc.spriteAssetId]) spriteAttr = `; sprite: ${URL.createObjectURL(rec.assets[pc.spriteAssetId])}`;
+      e.setAttribute("particles", `preset: ${pc.preset || "sparkle"}; count: ${pc.count || 120}; color: ${pc.color || "#ffd94d"}; size: ${pc.size || 12}; speed: ${pc.speed || 1}; width: ${ts.w}; height: ${ts.h}${spriteAttr}${pc.direction != null && pc.direction >= 0 ? "; direction: " + (pc.direction | 0) : ""}`);
     } else if (el.type === "model") {
       // glTF/GLB: wrapper carries placement (timeline/tap target); inner child carries the
       // normalized model scale so timeline scale keys don't fight the fit-to-size normalization.
@@ -271,6 +304,8 @@ const Studio = (() => {
       const tts = toTargetSpace(rec, el, tb.aspect); // plane must match the canvas aspect or glyphs distort
       e.setAttribute("material", { src: tb.canvas.toDataURL("image/png"), transparent: true, shader: "flat" });
       e.setAttribute("width", tts.w); e.setAttribute("height", tts.h);
+    } else if (el.type === "sound" && el.spatial) {
+      e = document.createElement("a-entity"); // invisible carrier for PositionalAudio
     } else {
       return null; // sound: no visual node
     }
@@ -279,7 +314,7 @@ const Studio = (() => {
     e.dataset.elId = el.id;
     const hasTl = el.timeline && Array.isArray(el.timeline.keys) && el.timeline.keys.length;
     if (el.anim === "spin" && !hasTl) e.setAttribute("animation__spin", `property: rotation; to: 0 0 ${(el.rot || 0) + 360}; loop: true; dur: 14000; easing: linear`);
-    else if (el.anim === "float" && !hasTl) e.setAttribute("animation__float", `property: position; from: ${pos}; to: ${ts.x} ${ts.y + 0.03} ${z}; dir: alternate; loop: true; dur: 2600; easing: easeInOutSine`);
+    else if (el.anim === "float" && !hasTl) e.setAttribute("animation__float", `property: position; from: ${pos}; to: ${ts.x - ox} ${ts.y - oy + 0.03} ${z - oz}; dir: alternate; loop: true; dur: 2600; easing: easeInOutSine`);
     else if (el.anim === "pulse" && !hasTl) e.setAttribute("animation__pulse", `property: scale; to: 1.08 1.08 1; dir: alternate; loop: true; dur: 1600; easing: easeInOutSine`);
     if (el.onTap && el.onTap !== "none") e.classList.add("cantap");
     if (el.opacity != null && el.opacity < 1) e.dataset.opacity = String(el.opacity);
@@ -304,19 +339,41 @@ const Studio = (() => {
 
   // Tap behavior shared by AR player and preview. hooks.onMuteToggle handles 'mute'.
   function bindTap(entity, el, hooks) {
-    if (!el.onTap || el.onTap === "none") return;
+    const hasKeyedTap = el.timeline && Array.isArray(el.timeline.keys) && el.timeline.keys.some((k) => k.tap != null && k.tap !== "none");
+    if ((!el.onTap || el.onTap === "none") && !hasKeyedTap) return;
     entity.addEventListener("click", () => {
-      if (el.onTap === "link" && el.tapUrl) {
-        window.open(el.tapUrl, "_blank", "noopener");
-      } else if (el.onTap === "mute" && hooks && hooks.onMuteToggle) {
+      const tap = entity._tapOverride != null ? entity._tapOverride : el.onTap;
+      if (tap === "link" && el.tapUrl) {
+        if (/^https:/.test(el.tapUrl)) window.open(el.tapUrl, "_blank", "noopener");
+        else window.location.href = el.tapUrl; // mailto: / tel:
+      } else if (tap === "mute" && hooks && hooks.onMuteToggle) {
         hooks.onMuteToggle();
-      } else if (el.onTap === "sequence" && hooks && hooks.onNextSequence) {
+      } else if (tap === "sequence" && hooks && hooks.onNextSequence) {
         hooks.onNextSequence();
+      } else if (tap && tap.indexOf("seq:") === 0 && hooks && hooks.onSequence) {
+        hooks.onSequence(tap.slice(4));
+      } else if (tap && tap.indexOf("track:") === 0 && hooks && hooks.onTrackToggle) {
+        hooks.onTrackToggle(tap.slice(6));
       }
     });
   }
 
   // ---------- sequences (multi-state artworks) ----------
+  // ---------- layer groups ----------
+  // A group is an element (type "group") whose children are ids of other elements.
+  // Children stay normal elements in rec.elements; topLevelElements hides them from
+  // top-level iteration. v1: no nested groups.
+  function topLevelElements(rec) {
+    const inGroup = new Set();
+    for (const el of rec.elements) if (el.type === "group" && Array.isArray(el.children)) for (const id of el.children) inGroup.add(id);
+    return rec.elements.filter((el) => !inGroup.has(el.id));
+  }
+  function groupChildren(rec, groupEl) {
+    const ids = Array.isArray(groupEl.children) ? groupEl.children : [];
+    const byId = new Map(rec.elements.map((el) => [el.id, el]));
+    return ids.map((id) => byId.get(id)).filter(Boolean);
+  }
+
   function seqList(rec) { return Array.isArray(rec.sequences) ? rec.sequences : []; }
   function elVisibleIn(el, seqId) { return !el.seq || !seqId || el.seq === seqId; }
   function nextSequence(rec, cur) {
@@ -326,15 +383,14 @@ const Studio = (() => {
     return s[(i + 1) % s.length].id;
   }
   // Toggles built entity visibility for the active state; hidden sounds pause.
-  function applySequence(container, rec, seqId, mediaEls) {
-    for (const child of [...container.children]) {
-      const id = child.dataset && child.dataset.elId;
-      if (!id) continue;
-      const el = rec.elements.find((x) => x.id === id);
-      if (el) child.setAttribute("visible", elVisibleIn(el, seqId));
+  function applySequence(container, rec, seqId, mediaEls, isTrackPlaying) {
+    const vis = (el) => elVisibleIn(el, seqId) && (!el.track || (isTrackPlaying ? !!isTrackPlaying(el.track) : true));
+    for (const child of container.querySelectorAll("[data-el-id]")) {
+      const el = rec.elements.find((x) => x.id === child.dataset.elId);
+      if (el) child.setAttribute("visible", vis(el));
     }
     if (mediaEls) for (const m of mediaEls) {
-      if (!elVisibleIn(m.el, seqId)) {
+      if (!vis(m.el)) {
         if (!m.node.paused) { m.resumeOnVisible = true; m.node.pause(); }
       } else if (m.resumeOnVisible) {
         m.resumeOnVisible = false;
@@ -346,11 +402,11 @@ const Studio = (() => {
   // Pure sampler: el.timeline.keys [{t, x?, y?, z?, rot?, opacity?, scale?}] at time tSec.
   // Missing props hold their last keyed value; before the first key they hold base props.
   function sampleTimeline(el, tSec) {
-    const base = { x: el.x || 0, y: el.y || 0, z: el.z || 0, rot: el.rot || 0, opacity: el.opacity == null ? 1 : el.opacity, scale: 1 };
+    const base = { x: el.x || 0, y: el.y || 0, z: el.z || 0, rot: el.rot || 0, opacity: el.opacity == null ? 1 : el.opacity, scale: 1, tap: el.onTap || "none" };
     const tl = el.timeline;
     if (!tl || !Array.isArray(tl.keys) || !tl.keys.length) return base;
     const keys = tl.keys.slice().sort((a, b) => a.t - b.t);
-    const dur = keys[keys.length - 1].t;
+    const dur = (tl.dur > 0 ? tl.dur : keys[keys.length - 1].t);
     let t = Math.max(0, tSec);
     if (t > dur) { if (tl.loop && dur > 0) t = t % dur; else t = dur; }
     let a = null, b = null;
@@ -361,15 +417,27 @@ const Studio = (() => {
       if (has(a) && !has(b)) return a[prop];
       if (!has(a) && has(b)) return base[prop];
       if (a === b) return a[prop];
-      const f = (t - a.t) / Math.max(1e-6, b.t - a.t);
+      let f = (t - a.t) / Math.max(1e-6, b.t - a.t);
+      const ease = tl.ease || "linear";
+      if (ease === "easeIn") f = f * f;
+      else if (ease === "easeOut") f = 1 - (1 - f) * (1 - f);
+      else if (ease === "easeInOut") f = f < 0.5 ? 2 * f * f : 1 - 2 * (1 - f) * (1 - f);
+      else if (ease === "elastic") f = f <= 0 ? 0 : f >= 1 ? 1 : Math.pow(2, -10 * f) * Math.sin((f * 10 - 0.75) * (2 * Math.PI / 3)) + 1;
       return a[prop] + (b[prop] - a[prop]) * f;
     };
-    return { x: pick("x"), y: pick("y"), z: pick("z"), rot: pick("rot"), opacity: pick("opacity"), scale: pick("scale") };
+    // discrete channel: the element's tap behavior at time t (Change Interaction over time) -
+    // the most recent keyed tap holds; before the first keyed tap the element's base onTap applies
+    const pickDiscrete = (prop) => {
+      let v = base[prop];
+      for (const k of keys) { if (k.t <= t && k[prop] != null) v = k[prop]; }
+      return v;
+    };
+    return { x: pick("x"), y: pick("y"), z: pick("z"), rot: pick("rot"), opacity: pick("opacity"), scale: pick("scale"), tap: pickDiscrete("tap") };
   }
   function timelineDur(el) {
     const tl = el.timeline;
     if (!tl || !Array.isArray(tl.keys) || !tl.keys.length) return 0;
-    return Math.max(...tl.keys.map((k) => k.t));
+    return (tl.dur > 0 ? tl.dur : Math.max(...tl.keys.map((k) => k.t)));
   }
 
   // Controllable driver: play/pause/reset so the AR player can start motion at target-found
@@ -381,7 +449,10 @@ const Studio = (() => {
       const el = rec.elements.find((x) => x.id === (e.dataset && e.dataset.elId));
       if (!el || !timelineDur(el)) continue;
       const p0 = e.getAttribute("position");
-      tracks.push({ el, e, elapsed: 0, startedAt: 0, zOff: (p0 ? p0.z : 0) - (el.z || 0) });
+      const ts0 = toTargetSpace(rec, el, el.aspect || 1);
+      tracks.push({ el, e, elapsed: 0, startedAt: 0,
+        xOff: (p0 ? p0.x : 0) - ts0.x, yOff: (p0 ? p0.y : 0) - ts0.y,
+        zOff: (p0 ? p0.z : 0) - (el.z || 0) });
     }
     if (!tracks.length) return null;
     const D2R = Math.PI / 180;
@@ -392,13 +463,25 @@ const Studio = (() => {
     if (opts.autostart !== false) drv.play();
     const frame = (now) => {
       if (drv.running) {
+        // per-state loop: when every non-looping track reached its end, replay them together
+        if (drv.stateLoop) {
+          const ended = tracks.filter((tr) => !(tr.el.timeline && tr.el.timeline.loop));
+          if (ended.length && ended.every((tr) => (now - tr.startedAt) / 1000 >= timelineDur(tr.el))) {
+            for (const tr of ended) tr.startedAt = now;
+          }
+        }
         for (const tr of tracks) {
           const s = sampleTimeline(tr.el, (now - tr.startedAt) / 1000);
           const ts = toTargetSpace(rec, Object.assign({}, tr.el, { x: s.x, y: s.y, z: s.z }), tr.el.aspect || 1);
-          tr.e.object3D.position.set(ts.x, ts.y, (ts.z || 0) + tr.zOff);
+          tr.e.object3D.position.set(ts.x + tr.xOff, ts.y + tr.yOff, (ts.z || 0) + tr.zOff);
           tr.e.object3D.rotation.z = s.rot * D2R;
           tr.e.object3D.scale.set(s.scale, s.scale, 1);
           applyOpacity(tr.e, s.opacity);
+          if (s.tap !== tr.appliedTap) { // Change Interaction over time
+            tr.appliedTap = s.tap;
+            tr.e._tapOverride = s.tap;
+            tr.e.classList.toggle("cantap", !!s.tap && s.tap !== "none");
+          }
         }
       }
       requestAnimationFrame(frame);
@@ -433,7 +516,7 @@ const Studio = (() => {
   }
   async function save(rec) { rec.updatedAt = Date.now(); await idbPut(rec.id, rec); }
   async function exportJSON(rec) {
-    const out = { format: "ar-studio/1", id: rec.id, name: rec.name, createdAt: rec.createdAt, target: rec.target, elements: rec.elements.map((e) => ({ ...e })) };
+    const out = { format: "ar-studio/1", id: rec.id, name: rec.name, createdAt: rec.createdAt, target: rec.target, elements: rec.elements.map((e) => ({ ...e })), sequences: (rec.sequences || []).map((q) => ({ ...q })) };
     out.assets = {};
     for (const el of rec.elements) {
       if (el.assetId && rec.assets[el.assetId]) out.assets[el.assetId] = await blobToDataURL(rec.assets[el.assetId]);
@@ -446,6 +529,7 @@ const Studio = (() => {
     if (!o || o.format !== "ar-studio/1") throw new Error("bad format");
     const rec = blankExperience(o.name || "מיובא");
     rec.target = o.target; rec.elements = o.elements || []; rec.createdAt = o.createdAt || Date.now();
+    rec.sequences = Array.isArray(o.sequences) ? o.sequences : [];
     rec.assets = {};
     for (const [k, durl] of Object.entries(o.assets || {})) rec.assets[k] = await dataURLtoBlob(durl);
     await save(rec);
@@ -503,7 +587,100 @@ const Studio = (() => {
     setTimeout(refresh, 3000); // grace period for autoplay before showing the button
   }
 
+  // Recognition-quality heuristic for the target image: resolution + gradient energy.
+  // Artivive shows a star rating; we give a plain-language hint on the two failure modes we can measure.
+  function assessTargetQuality(img) {
+    const w = img.naturalWidth || 0, h = img.naturalHeight || 0;
+    const minDim = Math.min(w, h);
+    const S = 96;
+    const scale = S / Math.max(w, h, 1);
+    const cw = Math.max(1, Math.round(w * scale)), ch = Math.max(1, Math.round(h * scale));
+    const cv = document.createElement("canvas"); cv.width = cw; cv.height = ch;
+    const g = cv.getContext("2d", { willReadFrequently: true });
+    g.drawImage(img, 0, 0, cw, ch);
+    const d = g.getImageData(0, 0, cw, ch).data;
+    const gray = new Float32Array(cw * ch);
+    for (let i = 0; i < cw * ch; i++) gray[i] = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2];
+    let sum = 0, n = 0;
+    for (let y = 0; y < ch - 1; y++) for (let x = 0; x < cw - 1; x++) {
+      const i = y * cw + x;
+      sum += Math.abs(gray[i] - gray[i + 1]) + Math.abs(gray[i] - gray[i + cw]); n += 2;
+    }
+    const energy = n ? sum / n : 0;
+    if (minDim < 480) return { warn: true, reason: "small", energy, minDim };
+    if (energy < 6) return { warn: true, reason: "flat", energy, minDim };
+    return { warn: false, energy, minDim };
+  }
+
+  // ---------- parallel overlay tracks (simultaneous sequences) ----------
+  // A track is an independent mini-timeline with its own clock. Elements with el.track
+  // belong to it: they are visible while the track plays (el.seq still applies on top).
+  function trackList(rec) { return Array.isArray(rec.tracks) ? rec.tracks : []; }
+
+  // Owns per-track drivers and play state for a built container (previewer rig / AR target).
+  function makeTrackRunner(rec, container) {
+    const run = {}; // id -> { playing, drv }
+    const trackEntities = (id) => {
+      const ids = new Set(rec.elements.filter((el) => el.track === id).map((el) => el.id));
+      return [...container.querySelectorAll("[data-el-id]")].filter((n) => ids.has(n.dataset.elId));
+    };
+    return {
+      isPlaying: (id) => !!(run[id] && run[id].playing),
+      start(id) {
+        const tr = trackList(rec).find((t) => t.id === id);
+        if (!tr) return;
+        if (!run[id]) run[id] = { playing: false, drv: null };
+        if (!run[id].drv) {
+          const d = startTimelineDriver(rec, trackEntities(id), { autostart: true });
+          if (d) { d.stateLoop = !!tr.loop; run[id].drv = d; }
+        } else { run[id].drv.reset(); run[id].drv.play(); }
+        run[id].playing = true;
+      },
+      stop(id) {
+        if (!run[id]) return;
+        if (run[id].drv) { run[id].drv.pause(); run[id].drv.reset(); }
+        run[id].playing = false;
+      },
+      toggle(id) { if (this.isPlaying(id)) this.stop(id); else this.start(id); },
+      pauseAll() { for (const id of Object.keys(run)) if (run[id].playing && run[id].drv) run[id].drv.pause(); },
+      resumeAll() { for (const id of Object.keys(run)) if (run[id].playing && run[id].drv) run[id].drv.play(); },
+      autoStart() { for (const tr of trackList(rec)) if (tr.autoStart) this.start(tr.id); }
+    };
+  }
+
+  // ---------- sequence chaining (auto-advance) + preview notifications ----------
+  function seqAutoNext(rec, seqId) {
+    const sq = seqList(rec).find((x) => x.id === seqId);
+    return sq && sq.autoNext && sq.autoNext.at > 0 ? sq.autoNext : null;
+  }
+  // Runs the active state's autoNext chain; switchFn performs the actual state switch.
+  function makeSeqRunner(rec, switchFn) {
+    let timer = null;
+    return {
+      enter(seqId) {
+        if (timer) { clearTimeout(timer); timer = null; }
+        const an = seqAutoNext(rec, seqId);
+        if (an) timer = setTimeout(() => { timer = null; switchFn(an.to || (seqList(rec)[0] && seqList(rec)[0].id)); }, an.at * 1000);
+      },
+      cancel() { if (timer) { clearTimeout(timer); timer = null; } }
+    };
+  }
+  function notifySeq(rec, seqId) {
+    let toast = document.getElementById("seq-toast");
+    if (!toast) {
+      toast = document.createElement("div");
+      toast.id = "seq-toast";
+      toast.style.cssText = "position:fixed;bottom:110px;left:50%;transform:translateX(-50%);z-index:60;background:rgba(18,18,26,.85);color:#fff;padding:6px 14px;border-radius:999px;font:13px/1.4 sans-serif;transition:opacity .4s;pointer-events:none";
+      document.body.appendChild(toast);
+    }
+    const sq = seqList(rec).find((x) => x.id === seqId);
+    toast.textContent = "מצב: " + (sq ? sq.name : "");
+    toast.style.opacity = "1";
+    clearTimeout(toast._t);
+    toast._t = setTimeout(() => { toast.style.opacity = "0"; }, 1200);
+  }
+
   return { TARGET_W, TARGET_H, newId, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
-           geom, toTargetSpace, blankExperience, save, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, makeChromaMaterial, ensureParticlesComponent, seqList, elVisibleIn, nextSequence, applySequence, renderSeqDots, sampleTimeline, timelineDur, startTimelineDriver,
+           geom, toTargetSpace, blankExperience, save, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, seqList, elVisibleIn, nextSequence, applySequence, renderSeqDots, sampleTimeline, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, topLevelElements, groupChildren, trackList, makeTrackRunner,
            load: idbGet, all: idbAll, del: idbDel };
 })();

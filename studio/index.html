@@ -43,11 +43,16 @@
       <button data-add="model">+ מודל תלת-ממד</button>
       <button id="btn-particles">+ חלקיקים</button>
     </div>
+    <div class="row" id="group-bar">
+      <button id="btn-group" disabled>📦 קבץ</button>
+      <button id="btn-ungroup" disabled>פרק קבוצה</button>
+    </div>
     <ul id="element-list"></ul>
-    <input type="file" id="file-video" accept="video/mp4" hidden>
+    <input type="file" id="file-video" accept="video/mp4,video/webm" hidden>
     <input type="file" id="file-image" accept="image/png,image/jpeg" hidden>
-    <input type="file" id="file-sound" accept="audio/mpeg,audio/mp4,audio/wav,audio/x-m4a" hidden>
+    <input type="file" id="file-sound" accept="audio/mpeg,audio/mp4,audio/wav,audio/x-m4a,audio/ogg" hidden>
     <input type="file" id="file-model" accept=".glb,.gltf,model/gltf-binary,model/gltf+json" hidden>
+    <input type="file" id="file-psprite" accept="image/png,image/webp" hidden>
   </section>
 
   <section class="card" id="sec-arrange" hidden>
@@ -99,8 +104,9 @@
             <option value="sequence">מעבר למצב הבא</option>
           </select>
         </label>
-        <label id="row-tapurl">קישור (כתובת מלאה, למשל https://...) <input type="url" id="in-tapurl" dir="ltr" placeholder="https://"></label>
+        <label id="row-tapurl">קישור (כתובת מלאה: https://, mailto: או tel:) <input type="url" id="in-tapurl" dir="ltr" placeholder="https://"></label>
         <label id="row-seq" hidden>מצב תצוגה <select id="sel-seq"></select></label>
+        <label id="row-track" hidden>מסלול שכבה (חופף במקביל) <select id="sel-track"></select></label>
         <div id="row-timeline" hidden>
           <strong>תנועה מתוזמנת</strong>
           <div class="row">
@@ -108,17 +114,32 @@
             <input type="number" id="num-tl-scale" min="0.1" max="5" step="0.1" value="1" style="width:64px" title="גודל יחסי בנקודה הזו"> גודל
             <button id="btn-tl-add" class="ghost">הוספת נקודה מהמצב הנוכחי</button>
             <label class="check"><input type="checkbox" id="ck-tl-loop"> לולאה</label>
+            <select id="sel-tl-ease" title="עקומת תנועה"><option value="linear">תנועה קבועה</option><option value="easeIn">האצה מהתחלה</option><option value="easeOut">האטה לסוף</option><option value="easeInOut">רך בשני הצדדים</option><option value="elastic">קפיצית (אלסטית)</option></select>
+            <label title="אורך הלולאה בשניות (ריק = עד הנקודה האחרונה)">אורך <input type="number" id="num-tl-dur" min="0" max="120" step="0.5" style="width:60px" placeholder="שניות"></label>
           </div>
+          <canvas id="tl-ruler" style="width:100%;height:34px;touch-action:none;cursor:ew-resize"></canvas>
+          <div class="row"><span id="tl-time" class="hint"></span><button id="btn-tl-live" class="ghost" hidden>חזרה לניגון חי</button></div>
           <ul id="tl-keys"></ul>
           <p class="hint" id="tl-note" hidden>ציר הזמן פעיל - האנימציה הבסיסית מושבתת לאלמנט הזה.</p>
         </div>
       </div>
       <label id="row-volume">עוצמת צליל <input type="range" id="sl-vol" min="0" max="1" step="0.05"></label>
       <label id="row-loop" class="check"><input type="checkbox" id="ck-loop"> ניגון בלולאה</label>
+      <label id="row-spatial" class="check" hidden><input type="checkbox" id="ck-spatial"> צליל מרחבי (נשמע מהמיקום שלו ביצירה)</label>
+      <div id="row-spatial-opts" class="row" hidden>
+        <select id="sel-spatial-mode"><option value="log">מתחזק עם הקרבה (לא משתתק לגמרי)</option><option value="linear">פעיל רק בתוך רדיוס חיצוני</option></select>
+        <label>רדיוס פנימי <input type="number" id="num-spatial-in" min="0.05" max="5" step="0.05" value="0.35" style="width:64px"></label>
+        <label>רדיוס חיצוני <input type="number" id="num-spatial-out" min="0.1" max="20" step="0.1" value="1.4" style="width:64px"></label>
+      </div>
         <div id="row-particles" hidden>
-          <label>סגנון <select id="sel-preset"><option value="sparkle">נצנוצים עולים</option><option value="confetti">קונפטי יורד</option></select></label>
+          <label>סגנון <select id="sel-preset"><option value="sparkle">נצנוצים עולים</option><option value="confetti">קונפטי יורד</option><option value="custom">תמונה משלך</option></select></label>
+          <label id="row-psprite" hidden>דמות החלקיק <button type="button" id="btn-psprite">בחירת תמונה</button> <span id="psprite-name"></span></label>
           <label>כמות <input type="number" id="num-pcount" min="10" max="500" step="10" value="120"></label>
+          <label>גודל <input type="number" id="num-psize" min="2" max="60" step="1" value="12"></label>
+          <label>מהירות <input type="number" id="num-pspeed" min="0.2" max="3" step="0.1" value="1"></label>
           <label>צבע <input type="color" id="in-pcolor" value="#ffd94d"></label>
+          <label class="check"><input type="checkbox" id="ck-pdir-auto" checked> כיוון אוטומטי</label>
+          <label id="row-pdir" hidden>כיוון (מעלות) <input type="range" id="sl-pdir" min="0" max="359" step="1" value="0"> <input type="number" id="num-pdir" min="0" max="359" step="1" value="0"></label>
         </div>
         <div id="row-chroma" hidden>
           <label class="check"><input type="checkbox" id="ck-chroma"> הסרת רקע (מסך ירוק)</label>
@@ -134,6 +155,17 @@
       <button id="btn-play" class="primary">תצוגה בטלפון (AR חי)</button>
       <button id="btn-preview3d" class="ghost">תצוגה מקדימה על המסך (בלי מצלמה)</button>
       <button id="btn-export" class="ghost">ייצוא לקובץ</button>
+      <div id="publish-box" class="col" style="border-top:1px solid #e5e5ea;padding-top:10px;margin-top:4px">
+        <label class="hint" style="text-align:start">כתובת שרת הפרסום (אם הוגדר):
+          <input type="url" id="in-server" placeholder="https://..." style="width:100%"></label>
+        <label class="hint" style="text-align:start">סיסמת פרסום (מהשרת):
+          <input type="password" id="in-token" style="width:100%"></label>
+        <button id="btn-publish" class="ghost">פרסום כקישור קבוע + QR</button>
+        <div id="publish-out" hidden>
+          <a id="publish-link" href="#" target="_blank" rel="noopener"></a>
+          <div id="publish-qr"></div>
+        </div>
+      </div>
       <button id="btn-import" class="ghost">ייבוא מקובץ</button>
       <input type="file" id="file-import" accept="application/json" hidden>
     </div>
@@ -143,7 +175,8 @@
   <p id="msg" role="status"></p>
 </main>
 
-<script src="shared.js?v=rc5"></script>
-<script src="editor.js?v=rc5"></script>
+<script src="shared.js?v=rc20"></script>
+<script src="external/qrcode.js"></script>
+<script src="editor.js?v=rc20"></script>
 </body>
 </html>

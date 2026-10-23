@@ -7,9 +7,16 @@
 (async () => {
   const errBox = document.getElementById("err");
   const fail = (t) => { errBox.style.display = "grid"; errBox.innerHTML = t; };
-  const id = location.hash.slice(1);
-  if (!id) return fail("חסר מזהה ניסוי. <a href='index.html'>חזרה לעורך</a>");
-  const rec = await Studio.load(id);
+  let rec;
+  if (window.__REMOTE_EXPERIENCE__) {
+    const r = await fetch("/api/experiences/" + encodeURIComponent(window.__REMOTE_EXPERIENCE__));
+    if (!r.ok) return fail("הניסוי לא נמצא בשרת.");
+    rec = await Studio.importJSON(await r.text());
+  } else {
+    const id = location.hash.slice(1);
+    if (!id) return fail("חסר מזהה ניסוי. <a href='index.html'>חזרה לעורך</a>");
+    rec = await Studio.load(id);
+  }
   if (!rec || !rec.target) return fail("הניסוי לא נמצא במכשיר הזה.<br>אם ייצאת ממכשיר אחר - ייבאי קודם ב<a href='index.html'>עורך</a>.");
   rec.elements.forEach(Studio.normEl);
 
@@ -86,31 +93,59 @@
   // Multi-state artworks: tap an element wired to "sequence" to switch states.
   let curSeq = Studio.seqList(rec).length ? Studio.seqList(rec)[0].id : null;
   let tlDrv = null;
+  const runner = Studio.makeSeqRunner(rec, (to) => onSequence(to));
+  const onSequence = (id) => {
+    if (!Studio.seqList(rec).some((x) => x.id === id)) return;
+    curSeq = id;
+    refreshVisibility();
+    Studio.renderSeqDots(rec, curSeq);
+    if (tlDrv) { tlDrv.stateLoop = !!(Studio.seqList(rec).find((x) => x.id === curSeq) || {}).loop; tlDrv.reset(); }
+    runner.enter(curSeq);
+  };
   const onNextSequence = () => {
     curSeq = Studio.nextSequence(rec, curSeq);
-    Studio.applySequence(target, rec, curSeq, mediaEls);
+    refreshVisibility();
     Studio.renderSeqDots(rec, curSeq);
     if (tlDrv) tlDrv.reset(); // a new state replays its motion from the start
   };
 
   const target = document.createElement("xrextras-named-image-target");
   target.setAttribute("name", "artwork");
-  rec.elements.forEach((el, idx) => {
+  Studio.topLevelElements(rec).forEach((el, idx) => {
     const e = Studio.buildElementEntity(rec, el, idx, "ar");
     if (!e) return; // sound: no visual node
-    Studio.bindTap(e, el, { onMuteToggle, onNextSequence });
     target.appendChild(e);
     if (e.dataset.opacity) Studio.applyOpacity(e, parseFloat(e.dataset.opacity));
   });
-  if (curSeq) { Studio.applySequence(target, rec, curSeq, mediaEls); Studio.renderSeqDots(rec, curSeq); }
+  // parallel overlay tracks: independent clocks, tap start/stop, combined visibility
+  const trackRunner = Studio.makeTrackRunner(rec, target);
+  const refreshVisibility = () => {
+    Studio.applySequence(target, rec, curSeq, mediaEls, (id) => trackRunner.isPlaying(id));
+    target.setAttribute("data-tracks", JSON.stringify(Studio.trackList(rec).map((t) => [t.id, trackRunner.isPlaying(t.id)]))); // test/debug handle (DOM-readable)
+  };
+  const onTrackToggle = (id) => { trackRunner.toggle(id); refreshVisibility(); };
+  // taps bind per entity, including children inside group wrappers
+  target.querySelectorAll("[data-el-id]").forEach((n) => {
+    const el = rec.elements.find((x) => x.id === n.dataset.elId);
+    if (el) Studio.bindTap(n, el, { onMuteToggle, onNextSequence, onSequence, onTrackToggle });
+  });
+  trackRunner.autoStart();
+  refreshVisibility();
+  if (curSeq) { refreshVisibility(); Studio.renderSeqDots(rec, curSeq); }
   scene.appendChild(target);
   // Timeline motion starts when the artwork is found (not during permission/scan screens)
   // and freezes while tracking is lost, resuming where it stopped.
-  tlDrv = Studio.startTimelineDriver(rec, [...target.children], { autostart: false });
+  // the state driver drives only state-model elements; tracked elements run on their track's own driver
+  tlDrv = Studio.startTimelineDriver(rec, [...target.querySelectorAll("[data-el-id]")].filter((n) => {
+    const el = rec.elements.find((x) => x.id === n.dataset.elId);
+    return el && !el.track;
+  }), { autostart: false });
+  if (tlDrv) tlDrv.stateLoop = !!(Studio.seqList(rec).find((x) => x.id === curSeq) || {}).loop;
+  runner.enter(curSeq);
   window.__tlDrv = tlDrv; // test/debug handle
   if (tlDrv) {
-    scene.addEventListener("xrimagefound", () => tlDrv.play());
-    scene.addEventListener("xrimagelost", () => tlDrv.pause());
+    scene.addEventListener("xrimagefound", () => { tlDrv.play(); trackRunner.resumeAll(); });
+    scene.addEventListener("xrimagelost", () => { tlDrv.pause(); trackRunner.pauseAll(); });
   }
   document.body.appendChild(scene);
 
@@ -131,8 +166,28 @@
     const route = () => {
       if (window.__routed) return; window.__routed = true;
       const listener = scene.audioListener || (scene.audioListener = new THREE.AudioListener());
+      if (scene.camera && !listener.parent) scene.camera.add(listener); // positional audio is relative to the camera
       for (const m of mediaEls) {
-        const a = new THREE.Audio(listener);
+        const ent = m.el.spatial ? scene.querySelector(`[data-el-id="${m.el.id}"]`) : null;
+        let a;
+        if (ent) {
+          a = new THREE.PositionalAudio(listener);
+          const inner = m.el.spatialInner > 0 ? m.el.spatialInner : 0.35;
+          const mode = m.el.spatialMode || "log";
+          if (mode === "linear") {
+            a.setDistanceModel("linear");
+            a.setRefDistance(inner);
+            a.setMaxDistance(m.el.spatialOuter > inner ? m.el.spatialOuter : inner * 4); // silent beyond the outer sphere
+            a.setRolloffFactor(1);
+          } else {
+            a.setDistanceModel("exponential"); // never fully muted, like Artivive's logarithmic mode
+            a.setRefDistance(inner);
+            a.setRolloffFactor(1.5);
+          }
+          ent.object3D.add(a);
+        } else {
+          a = new THREE.Audio(listener);
+        }
         a.setMediaElementSource(m.node);
         a.gain.gain.value = m.el.volume == null ? 1 : m.el.volume;
         m.three = a;
