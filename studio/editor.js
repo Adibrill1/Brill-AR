@@ -526,6 +526,7 @@
     $("sl-vol").value = el.volume == null ? 1 : el.volume;
     $("row-loop").hidden = el.type !== "video" && el.type !== "sound";
     $("row-spatial").hidden = el.type !== "sound";
+    if (el.type !== "sound") $("row-spatial-opts").hidden = true; // was only set inside the sound branch and leaked across selections
     if (el.type === "sound") {
       $("ck-spatial").checked = !!el.spatial;
       $("row-spatial-opts").hidden = !el.spatial;
