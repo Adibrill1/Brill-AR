@@ -1,32 +1,92 @@
 "use strict";
-/* AR Studio editor: upload artwork, add video/image/sound elements,
-   arrange on a 2D WYSIWYG canvas, save locally, export/import, open device preview. */
+/* AR Studio editor: upload artwork, add video/image/sound/text elements,
+   arrange on a 2D WYSIWYG canvas, save locally, export/import, device preview.
+   Round A: text layers, opacity, numeric panel, z-order, animation presets,
+   tap actions, camera-free 3D preview page link. */
 (() => {
   const $ = (id) => document.getElementById(id);
   const msg = (t) => { $("msg").textContent = t; if (t) setTimeout(() => { if ($("msg").textContent === t) $("msg").textContent = ""; }, 6000); };
 
   let rec = null;              // current experience record
   let selectedId = null;
+  let curSeq = null;           // active sequence-state id (null = single-state artwork)
   const media = {};            // assetId -> HTMLImageElement | HTMLVideoElement (for canvas drawing)
-  let artworkImg = null;       // HTMLImageElement of artwork (padded draw source: original)
-  let drag = null;             // {mode:'move'|'scale', startX,startY, origX,origY,origW}
+  const textCache = {};        // el.id -> {key, canvas, aspect}
+  let artworkImg = null;       // HTMLImageElement of artwork
+  let drag = null;
+
+  const ICONS = { video: "🎬 ", image: "🖼️ ", sound: "🎵 ", text: "🔤 ", model: "🧊 ", particles: "✨ " };
 
   // ---------- boot ----------
   async function boot() {
     rec = await Studio.seedDemo(false);
+    resetSeq();
     await hydrate();
     refreshExpSelect();
     bind();
     render();
   }
 
+  function resetSeq() { curSeq = Studio.seqList(rec).length ? Studio.seqList(rec)[0].id : null; }
+
+  // Sequence-state tabs above the canvas: switch the state being edited, add/remove states.
+  function renderSeqTabs() {
+    const bar = $("seq-tabs");
+    if (!bar) return;
+    bar.innerHTML = "";
+    bar.hidden = false;
+    const seqs = Studio.seqList(rec);
+    if (!seqs.length) {
+      const b = document.createElement("button");
+      b.className = "seq-add";
+      b.textContent = "+ הפעלת מצבי תצוגה (כמו סצנות)";
+      b.onclick = async () => {
+        rec.sequences = [{ id: Studio.newId(), name: "מצב 1" }, { id: Studio.newId(), name: "מצב 2" }];
+        curSeq = rec.sequences[0].id;
+        await Studio.save(rec);
+        selectedId = null; renderSeqTabs(); renderList(); renderPanel(); draw();
+      };
+      bar.appendChild(b);
+      return;
+    }
+    seqs.forEach((sq) => {
+      const b = document.createElement("button");
+      b.className = "seq-tab" + (sq.id === curSeq ? " sel" : "");
+      b.textContent = sq.name;
+      b.onclick = () => { curSeq = sq.id; selectedId = null; renderSeqTabs(); renderList(); renderPanel(); draw(); };
+      bar.appendChild(b);
+    });
+    if (seqs.length < 6) {
+      const add = document.createElement("button");
+      add.className = "seq-add"; add.textContent = "+ מצב";
+      add.onclick = async () => {
+        rec.sequences.push({ id: Studio.newId(), name: "מצב " + (seqs.length + 1) });
+        await Studio.save(rec); renderSeqTabs(); renderPanel();
+      };
+      bar.appendChild(add);
+    }
+    if (seqs.length > 1) {
+      const del = document.createElement("button");
+      del.className = "seq-del"; del.textContent = "מחיקת המצב";
+      del.onclick = async () => {
+        rec.sequences = seqs.filter((x) => x.id !== curSeq);
+        for (const el of rec.elements) if (el.seq === curSeq) el.seq = null; // orphans become visible everywhere
+        curSeq = rec.sequences[0].id;
+        await Studio.save(rec);
+        selectedId = null; renderSeqTabs(); renderList(); renderPanel(); draw();
+      };
+      bar.appendChild(del);
+    }
+  }
+
   async function hydrate() {
-    // Build drawable media for current record.
     for (const k of Object.keys(media)) delete media[k];
+    for (const k of Object.keys(textCache)) delete textCache[k];
     if (rec.assets.__artwork) {
       artworkImg = await Studio.loadImage(await Studio.blobToDataURL(rec.assets.__artwork));
     }
     for (const el of rec.elements) {
+      Studio.normEl(el);
       if (!el.assetId || !rec.assets[el.assetId]) continue;
       const durl = await Studio.blobToDataURL(rec.assets[el.assetId]);
       if (el.type === "video") {
@@ -53,6 +113,15 @@
     });
   }
 
+  function textBitmap(el) {
+    const key = JSON.stringify([el.text, el.color, el.bold]);
+    const c = textCache[el.id];
+    if (c && c.key === key) return c;
+    const out = Studio.drawTextCanvas(el, 64);
+    textCache[el.id] = { key, canvas: out.canvas, aspect: out.aspect };
+    return textCache[el.id];
+  }
+
   // ---------- upload flows ----------
   function bind() {
     $("btn-artwork").onclick = () => $("file-artwork").click();
@@ -77,14 +146,27 @@
       const f = e.target.files[0]; e.target.value = "";
       if (!f) return;
       if (f.size > 20 * 1024 * 1024) { msg("קובץ גדול מדי (מעל 20MB) לגרסת הניסוי."); return; }
+      if (kind === "model") {
+        const head = new Uint8Array(await f.slice(0, 4).arrayBuffer());
+        const isGlb = head[0] === 0x67 && head[1] === 0x6C && head[2] === 0x54 && head[3] === 0x46; // "glTF"
+        if (!isGlb) {
+          let bad = "הקובץ לא נראה כמו מודל glb תקין.";
+          try {
+            const g = JSON.parse(await f.text());
+            const ext = [...(g.buffers || []), ...(g.images || [])].some((r) => r.uri && !r.uri.startsWith("data:"));
+            bad = ext ? "קובץ gltf הזה מפנה לקבצים חיצוניים (bin/טקסטורות) שההעלאה לא כוללת. יצאו אותו מחדש כקובץ glb יחיד (למשל מבלנדר: Export glTF Binary) והעלו שוב."
+                      : "הפורמט הזה לא נתמך עדיין - העלו קובץ glb (glTF Binary).";
+          } catch (e2) {}
+          msg(bad); return;
+        }
+      }
       const assetId = Studio.newId();
       rec.assets[assetId] = f;
       const artRatio = rec.target.artRect.w / rec.target.artRect.h;
-      const el = { id: Studio.newId(), type: kind, name: { video: "סרטון", image: "תמונה", sound: "צליל" }[kind] + " " + (rec.elements.filter((x) => x.type === kind).length + 1),
-                   assetId, x: 0, y: 0, w: kind === "video" ? 1.0 : 0.3, h: null, rot: 0, z: kind === "image" ? 0.1 : 0.01 };
+      const el = Studio.normEl({ id: Studio.newId(), type: kind, name: { video: "סרטון", image: "תמונה", sound: "צליל", model: "מודל 3D" }[kind] + " " + (rec.elements.filter((x) => x.type === kind).length + 1),
+                   assetId, x: 0, y: 0, w: kind === "video" ? 1.0 : 0.3, h: null, rot: 0, z: kind === "image" ? 0.1 : 0.01, seq: curSeq });
       if (kind === "video" || kind === "sound") { el.volume = kind === "sound" ? 0.8 : 1; el.loop = true; }
-      if (kind === "image") el.spin = false;
-      // intrinsic aspect
+      if (kind === "model") { el.w = 0.4; el.z = 0.2; el.aspect = 1; }
       const durl = await Studio.blobToDataURL(f);
       if (kind === "image") {
         const im = await Studio.loadImage(durl);
@@ -95,7 +177,7 @@
         const v = document.createElement("video");
         v.muted = true; v.playsInline = true; v.src = durl;
         el.aspect = await new Promise((res) => { v.onloadedmetadata = () => res(v.videoWidth / v.videoHeight || 9 / 16); v.onerror = () => res(9 / 16); });
-        el.h = 1.0; // default: cover the artwork, matching the device-proven v4 composition
+        el.h = 1.0;
         v.loop = true; v.play().catch(() => {});
         media[assetId] = v;
       } else {
@@ -111,6 +193,30 @@
     $("file-video").onchange = addFile("video");
     $("file-image").onchange = addFile("image");
     $("file-sound").onchange = addFile("sound");
+    $("file-model").onchange = addFile("model");
+
+    $("btn-particles").onclick = async () => {
+      const el = Studio.normEl({ id: Studio.newId(), type: "particles", name: "חלקיקים " + (rec.elements.filter((x) => x.type === "particles").length + 1),
+                   x: 0, y: 0, w: 0.6, h: 0.6, rot: 0, z: 0.12, seq: curSeq, particles: { preset: "sparkle", count: 120, color: "#ffd94d" } });
+      rec.elements.push(el);
+      selectedId = el.id;
+      await Studio.save(rec);
+      msg("נוספו חלקיקים. בחרי סגנון בלוח למטה.");
+      render();
+    };
+
+    $("btn-text").onclick = async () => {
+      const el = Studio.normEl({ id: Studio.newId(), type: "text", name: "טקסט " + (rec.elements.filter((x) => x.type === "text").length + 1),
+                   text: "כותרת חדשה", color: "#ffffff", bold: true, x: 0, y: 0.35, w: 0.5, h: null, rot: 0, z: 0.15, seq: curSeq });
+      const tb = textBitmap(el);
+      el.aspect = tb.aspect;
+      el.h = (el.w / el.aspect) * (rec.target.artRect.w / rec.target.artRect.h);
+      rec.elements.push(el);
+      selectedId = el.id;
+      await Studio.save(rec);
+      msg("נוסף טקסט. ערכי את התוכן בלוח למטה.");
+      render();
+    };
 
     $("btn-new").onclick = async () => {
       rec = Studio.blankExperience();
@@ -130,6 +236,7 @@
     $("exp-select").onchange = async (e) => {
       rec = await Studio.load(e.target.value);
       selectedId = null;
+      resetSeq();
       await hydrate(); render();
     };
     $("btn-export").onclick = async () => {
@@ -146,31 +253,83 @@
       if (!f) return;
       try {
         rec = await Studio.importJSON(await f.text());
+        rec.elements.forEach(Studio.normEl);
         selectedId = null;
         await hydrate(); refreshExpSelect(); render();
         msg("הייבוא הצליח.");
       } catch (err) { msg("הקובץ לא תקין לייבוא."); }
     };
     $("btn-play").onclick = () => { location.href = "play.html#" + rec.id; };
+    $("btn-preview3d").onclick = () => { location.href = "preview.html#" + rec.id; };
     $("btn-del-el").onclick = async () => {
       const i = rec.elements.findIndex((x) => x.id === selectedId);
       if (i < 0) return;
       const [gone] = rec.elements.splice(i, 1);
       if (gone.assetId) { delete rec.assets[gone.assetId]; delete media[gone.assetId]; }
+      delete textCache[gone.id];
       selectedId = null;
       await Studio.save(rec);
       render();
     };
 
-    // sliders
+    // z-order
+    const moveEl = (dir) => async () => {
+      const i = rec.elements.findIndex((x) => x.id === selectedId);
+      const j = i + dir;
+      if (i < 0 || j < 0 || j >= rec.elements.length) return;
+      [rec.elements[i], rec.elements[j]] = [rec.elements[j], rec.elements[i]];
+      await Studio.save(rec);
+      renderList(); draw();
+    };
+    $("btn-layer-up").onclick = moveEl(1);
+    $("btn-layer-down").onclick = moveEl(-1);
+
+    // panel bindings
     const cur = () => rec.elements.find((x) => x.id === selectedId);
     const upd = async (fn) => { const el = cur(); if (!el) return; fn(el); await Studio.save(rec); renderPanel(); draw(); renderList(); };
+    const num = (id, min, max, fn) => { $(id).onchange = (e) => { const v = parseFloat(e.target.value); if (isNaN(v)) { renderPanel(); return; } upd((el) => fn(el, Math.max(min, Math.min(max, v)))); }; };
     $("sl-scale").oninput = (e) => upd((el) => { const f = parseFloat(e.target.value) / el.w; el.w = parseFloat(e.target.value); if (el.h != null) el.h = Math.max(0.02, el.h * f); });
     $("sl-rot").oninput = (e) => upd((el) => { el.rot = parseFloat(e.target.value); });
     $("sl-z").oninput = (e) => upd((el) => { el.z = parseFloat(e.target.value); });
     $("sl-vol").oninput = (e) => upd((el) => { el.volume = parseFloat(e.target.value); });
+    $("sl-opacity").oninput = (e) => upd((el) => { el.opacity = parseFloat(e.target.value); });
     $("ck-loop").onchange = (e) => upd((el) => { el.loop = e.target.checked; });
-    $("ck-spin").onchange = (e) => upd((el) => { el.spin = e.target.checked; });
+    $("sel-anim").onchange = (e) => upd((el) => { el.anim = e.target.value; el.spin = el.anim === "spin"; });
+    $("sel-tap").onchange = (e) => upd((el) => { el.onTap = e.target.value; });
+    $("sel-seq").onchange = (e) => upd((el) => { el.seq = e.target.value || null; });
+    $("btn-tl-add").onclick = () => upd((el) => {
+      el.timeline = el.timeline && Array.isArray(el.timeline.keys) ? el.timeline : { loop: false, keys: [] };
+      const t = Math.max(0, Math.min(60, parseFloat($("num-tl-t").value) || 0));
+      const scale = Math.max(0.1, Math.min(5, parseFloat($("num-tl-scale").value) || 1));
+      el.timeline.keys.push({ t, x: el.x, y: el.y, z: el.z || 0, rot: el.rot || 0, opacity: el.opacity == null ? 1 : el.opacity, scale });
+    });
+    $("sel-preset").onchange = (e) => upd((el) => { el.particles = Object.assign({}, el.particles, { preset: e.target.value }); });
+    $("num-pcount").onchange = (e) => upd((el) => { el.particles = Object.assign({}, el.particles, { count: Math.max(10, Math.min(500, parseInt(e.target.value) || 120)) }); });
+    $("in-pcolor").onchange = (e) => upd((el) => { el.particles = Object.assign({}, el.particles, { color: e.target.value }); });
+    $("ck-chroma").onchange = (e) => upd((el) => { el.chroma = Object.assign({}, el.chroma, { enabled: e.target.checked }); });
+    $("in-chroma-color").onchange = (e) => upd((el) => { el.chroma = Object.assign({}, el.chroma, { color: e.target.value }); });
+    $("sl-chroma").onchange = (e) => upd((el) => { el.chroma = Object.assign({}, el.chroma, { threshold: parseFloat(e.target.value) }); });
+    $("ck-tl-loop").onchange = (e) => upd((el) => {
+      el.timeline = el.timeline && Array.isArray(el.timeline.keys) ? el.timeline : { loop: false, keys: [] };
+      el.timeline.loop = e.target.checked;
+    });
+    $("in-tapurl").onchange = (e) => upd((el) => { el.tapUrl = e.target.value.trim(); });
+    // numeric panel
+    num("num-x", -0.7, 0.7, (el, v) => { el.x = v; });
+    num("num-y", -0.7, 0.7, (el, v) => { el.y = v; });
+    num("num-w", 0.05, 2, (el, v) => { const f = v / el.w; el.w = v; if (el.h != null) el.h = Math.max(0.02, el.h * f); });
+    num("num-rot", -180, 180, (el, v) => { el.rot = v; });
+    num("num-z", 0, 0.5, (el, v) => { el.z = v; });
+    num("num-opacity", 0, 1, (el, v) => { el.opacity = v; });
+    // text controls
+    $("in-text").oninput = (e) => upd((el) => {
+      el.text = e.target.value;
+      const tb = textBitmap(el);
+      el.aspect = tb.aspect;
+      el.h = (el.w / el.aspect) * (rec.target.artRect.w / rec.target.artRect.h);
+    });
+    $("in-color").oninput = (e) => upd((el) => { el.color = e.target.value; });
+    $("ck-bold").onchange = (e) => upd((el) => { el.bold = e.target.checked; });
 
     bindCanvas();
   }
@@ -183,6 +342,7 @@
     $("sec-preview").hidden = !hasTarget;
     const th = $("artwork-thumb");
     if (artworkImg) { th.src = artworkImg.src; th.hidden = false; } else th.hidden = true;
+    renderSeqTabs();
     renderList();
     renderPanel();
     draw();
@@ -191,9 +351,10 @@
   function renderList() {
     const ul = $("element-list");
     ul.innerHTML = "";
-    rec.elements.forEach((el) => {
+    rec.elements.forEach((el, i) => {
+      if (!Studio.elVisibleIn(el, curSeq)) return;
       const li = document.createElement("li");
-      li.textContent = { video: "🎬 ", image: "🖼️ ", sound: "🎵 " }[el.type] + el.name;
+      li.textContent = (ICONS[el.type] || "") + el.name + (i === rec.elements.length - 1 ? "  (עליון)" : i === 0 ? "  (תחתון)" : "");
       li.className = el.id === selectedId ? "sel" : "";
       li.onclick = () => { selectedId = el.id; renderList(); renderPanel(); draw(); };
       ul.appendChild(li);
@@ -208,24 +369,83 @@
     $("sl-scale").value = el.w;
     $("sl-rot").value = el.rot || 0;
     $("sl-z").value = el.z || 0;
-    $("row-volume").hidden = el.type === "image";
+    $("sl-opacity").value = el.opacity == null ? 1 : el.opacity;
+    $("row-volume").hidden = el.type !== "video" && el.type !== "sound";
     $("sl-vol").value = el.volume == null ? 1 : el.volume;
-    $("row-loop").hidden = el.type === "image";
+    $("row-loop").hidden = el.type !== "video" && el.type !== "sound";
+    $("row-chroma").hidden = el.type !== "video";
+    $("row-particles").hidden = el.type !== "particles";
+    if (el.type === "particles") {
+      const pc = el.particles || {};
+      $("sel-preset").value = pc.preset || "sparkle";
+      $("num-pcount").value = pc.count || 120;
+      $("in-pcolor").value = pc.color || "#ffd94d";
+    }
+    if (el.type === "video") {
+      $("ck-chroma").checked = !!(el.chroma && el.chroma.enabled);
+      $("in-chroma-color").value = (el.chroma && el.chroma.color) || "#00ff00";
+      $("sl-chroma").value = el.chroma && el.chroma.threshold != null ? el.chroma.threshold : 0.35;
+    }
     $("ck-loop").checked = el.loop !== false;
-    $("row-spin").hidden = el.type !== "image";
-    $("ck-spin").checked = !!el.spin;
+    $("sel-anim").value = Studio.normEl(el).anim;
+    $("sel-tap").value = el.onTap || "none";
+    const seqs = Studio.seqList(rec);
+    $("row-seq").hidden = !seqs.length;
+    if (seqs.length) {
+      const sel = $("sel-seq");
+      sel.innerHTML = "";
+      const all = document.createElement("option"); all.value = ""; all.textContent = "כל המצבים"; sel.appendChild(all);
+      seqs.forEach((sq) => { const o = document.createElement("option"); o.value = sq.id; o.textContent = sq.name; sel.appendChild(o); });
+      sel.value = el.seq || "";
+    }
+    $("row-tapurl").hidden = el.onTap !== "link";
+    $("in-tapurl").value = el.tapUrl || "";
+    $("row-text").hidden = el.type !== "text";
+    renderTimeline(el);
+    if (el.type === "text") {
+      if (document.activeElement !== $("in-text")) $("in-text").value = el.text || "";
+      $("in-color").value = el.color || "#ffffff";
+      $("ck-bold").checked = el.bold !== false;
+    }
+    $("num-x").value = (Math.round((el.x || 0) * 100) / 100).toFixed(2);
+    $("num-y").value = (Math.round((el.y || 0) * 100) / 100).toFixed(2);
+    $("num-w").value = (Math.round(el.w * 100) / 100).toFixed(2);
+    $("num-rot").value = Math.round(el.rot || 0);
+    $("num-z").value = (Math.round((el.z || 0) * 1000) / 1000);
+    $("num-opacity").value = el.opacity == null ? 1 : el.opacity;
+  }
+
+  // ---------- timeline editor ----------
+  function renderTimeline(el) {
+    const wrap = $("row-timeline");
+    wrap.hidden = el.type === "sound";
+    if (el.type === "sound") return;
+    const tl = el.timeline || { loop: false, keys: [] };
+    $("ck-tl-loop").checked = !!tl.loop;
+    $("tl-note").hidden = !tl.keys.length;
+    const ul = $("tl-keys");
+    ul.innerHTML = "";
+    tl.keys.slice().sort((a, b) => a.t - b.t).forEach((k) => {
+      const li = document.createElement("li");
+      const i = el.timeline.keys.indexOf(k);
+      li.textContent = "t=" + k.t + "s ";
+      const del = document.createElement("button");
+      del.className = "ghost danger"; del.textContent = "✕";
+      del.onclick = () => upd((e2) => { e2.timeline.keys.splice(i, 1); });
+      li.appendChild(del);
+      ul.appendChild(li);
+    });
   }
 
   // ---------- canvas preview ----------
   const cv = () => $("preview");
-  let boxes = {}; // el.id -> {cx,cy,w,h} in canvas px (unrotated frame for hit test)
+  let boxes = {};
 
   function draw() {
     if (!rec || !rec.target || !artworkImg) return;
     const c = cv();
     const wrap = $("canvas-wrap");
     const W = wrap.clientWidth || 320;
-    const g = Studio.geom(rec);
     const artW = rec.target.artRect.w, artH = rec.target.artRect.h;
     const H = Math.round(W * (artH / artW));
     const dpr = window.devicePixelRatio || 1;
@@ -237,24 +457,51 @@
     ctx.drawImage(artworkImg, 0, 0, W, H);
     boxes = {};
     const t0 = performance.now();
+    let needsAnim = false;
     for (const el of rec.elements) {
-      const wpx = el.w * W;
-      const hpx = el.h != null ? el.h * H : wpx / (el.aspect || 1);
-      const cx = (el.x + 0.5) * W;
-      const cy = (0.5 - el.y) * H;
-      boxes[el.id] = { cx, cy, w: wpx, h: hpx, rot: -(el.rot || 0) * Math.PI / 180 };
+      Studio.normEl(el);
+      if (!Studio.elVisibleIn(el, curSeq)) continue;
+      // live timeline playback: sampled keyframe values override the element's base props
+      let ts = null;
+      if (Studio.timelineDur(el)) { ts = Studio.sampleTimeline(el, t0 / 1000); needsAnim = true; }
+      const sc = ts ? ts.scale : 1;
+      let wpx = el.w * W * sc;
+      let hpx = (el.h != null ? el.h * H : (el.w * W) / (el.aspect || 1)) * sc;
+      let cx = ((ts ? ts.x : el.x) + 0.5) * W;
+      let cy = (0.5 - (ts ? ts.y : el.y)) * H;
+      let extraRot = 0;
+      // animation previews (approximation of the player presets)
+      if (!ts && el.anim === "float") { cy += Math.sin(t0 / 1300) * H * 0.02; needsAnim = true; }
+      else if (!ts && el.anim === "pulse") { const f = 1 + 0.08 * Math.sin(t0 / 800); wpx *= f; hpx *= f; needsAnim = true; }
+      else if (!ts && el.anim === "spin") { extraRot = ((t0 / 14000) * 2 * Math.PI) % (2 * Math.PI); needsAnim = true; }
+      if (el.type === "video") needsAnim = true;
+      const effRot = ts ? ts.rot : (el.rot || 0);
+      boxes[el.id] = { cx, cy, w: wpx, h: hpx, rot: -effRot * Math.PI / 180 };
       ctx.save();
       ctx.translate(cx, cy);
-      ctx.rotate(-(el.rot || 0) * Math.PI / 180);
-      ctx.globalAlpha = 0.92;
+      ctx.rotate(-effRot * Math.PI / 180);
+      ctx.globalAlpha = 0.92 * (ts ? ts.opacity : (el.opacity == null ? 1 : el.opacity));
       const m = el.assetId && media[el.assetId];
       if (el.type === "video" && m && m.readyState >= 2) {
         ctx.drawImage(m, -wpx / 2, -hpx / 2, wpx, hpx);
       } else if (el.type === "image" && m) {
-        let rr = 0;
-        if (el.spin) rr = ((t0 / 14000) * 2 * Math.PI) % (2 * Math.PI);
-        ctx.rotate(rr);
+        ctx.rotate(extraRot);
         ctx.drawImage(m, -wpx / 2, -hpx / 2, wpx, hpx);
+      } else if (el.type === "text") {
+        const tb = textBitmap(el);
+        ctx.drawImage(tb.canvas, -wpx / 2, -hpx / 2, wpx, hpx);
+      } else if (el.type === "particles") {
+        ctx.beginPath(); ctx.arc(0, 0, Math.min(wpx, hpx) / 2, 0, 7);
+        ctx.fillStyle = "rgba(200,150,30,0.35)"; ctx.fill();
+        ctx.strokeStyle = "rgba(255,255,255,0.8)"; ctx.setLineDash([3, 5]); ctx.stroke(); ctx.setLineDash([]);
+        ctx.fillStyle = "#fff"; ctx.font = Math.round(Math.min(wpx, hpx) / 3) + "px sans-serif";
+        ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("✨", 0, 2);
+      } else if (el.type === "model") {
+        ctx.beginPath(); ctx.rect(-wpx / 2, -hpx / 2, wpx, hpx);
+        ctx.fillStyle = "rgba(70,40,140,0.55)"; ctx.fill();
+        ctx.strokeStyle = "rgba(255,255,255,0.8)"; ctx.setLineDash([5, 4]); ctx.stroke(); ctx.setLineDash([]);
+        ctx.fillStyle = "#fff"; ctx.font = Math.round(Math.min(wpx, hpx) / 3.2) + "px sans-serif";
+        ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("3D", 0, 2);
       } else if (el.type === "sound") {
         ctx.beginPath(); ctx.arc(0, 0, Math.min(wpx, hpx) / 2, 0, 7);
         ctx.fillStyle = "rgba(30,60,120,0.85)"; ctx.fill();
@@ -271,13 +518,11 @@
         ctx.strokeRect(-wpx / 2, -hpx / 2, wpx, hpx);
         ctx.setLineDash([]);
         ctx.fillStyle = "#2266ff";
-        ctx.fillRect(wpx / 2 - 8, hpx / 2 - 8, 16, 16); // scale handle
+        ctx.fillRect(wpx / 2 - 8, hpx / 2 - 8, 16, 16);
         ctx.restore();
       }
     }
-    if (rec.elements.some((e) => e.type === "video" || (e.type === "image" && e.spin))) {
-      requestAnimationFrame(draw);
-    }
+    if (needsAnim) requestAnimationFrame(draw);
   }
 
   function bindCanvas() {
@@ -296,7 +541,6 @@
     };
     c.addEventListener("pointerdown", (e) => {
       const p = pos(e);
-      // scale handle of selected?
       const sel = rec.elements.find((x) => x.id === selectedId);
       if (sel && boxes[sel.id]) {
         const b = boxes[sel.id];

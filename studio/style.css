@@ -28,3 +28,19 @@ button.ghost.danger { background: #fff; }
 #exp-select { font: inherit; padding: 8px; border-radius: 8px; max-width: 45%; }
 #msg { text-align: center; color: #0a54c2; min-height: 1.4em; }
 #panel label[hidden]{display:none}
+
+#panel select, #panel input[type=url], #panel textarea { width: 100%; font: inherit; padding: 8px; border: 1px solid #ccc; border-radius: 8px; background:#fff; }
+#panel textarea { resize: vertical; }
+.numgrid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 10px 0; }
+.numgrid label { font-size: 12px; color: #555; margin: 0; }
+.numgrid input { width: 100%; font: inherit; padding: 6px; border: 1px solid #ccc; border-radius: 8px; margin-top: 2px; direction: ltr; text-align: center; }
+label.inline { display: flex; gap: 6px; align-items: center; font-size: 14px; }
+button.small { font-size: 13px; padding: 6px 10px; }
+.mini-label { font-size: 13px; color: #555; }
+#row-order { margin: 4px 0 8px; }
+
+/* sequence tabs */
+#seq-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0; align-items: center; }
+#seq-tabs .seq-tab, #seq-tabs .seq-add, #seq-tabs .seq-del { border: 1px solid #d7d3e8; background: #fff; border-radius: 999px; padding: 6px 14px; font-size: 14px; cursor: pointer; }
+#seq-tabs .seq-tab.sel { background: #7c5cff; border-color: #7c5cff; color: #fff; font-weight: 700; }
+#seq-tabs .seq-add, #seq-tabs .seq-del { color: #6b6780; }

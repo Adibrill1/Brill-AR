@@ -114,6 +114,318 @@ const Studio = (() => {
     return { x: X, y: Y, z: el.z || 0, w: W, h: H };
   }
 
+
+  // Particles: lightweight THREE.Points emitter (sparkle rises, confetti falls).
+  function ensureParticlesComponent() {
+    if (!window.AFRAME || AFRAME.components["particles"]) return;
+    AFRAME.registerComponent("particles", {
+      schema: { preset: { default: "sparkle" }, count: { default: 120 }, color: { default: "#ffd94d" }, width: { default: 0.5 }, height: { default: 0.5 } },
+      init() {
+        const n = Math.min(500, Math.max(10, this.data.count | 0));
+        const pos = new Float32Array(n * 3);
+        this.vel = new Float32Array(n * 3);
+        for (let i = 0; i < n; i++) {
+          pos[i * 3] = (Math.random() - 0.5) * this.data.width;
+          pos[i * 3 + 1] = (Math.random() - 0.5) * this.data.height;
+          pos[i * 3 + 2] = (Math.random() - 0.5) * 0.05;
+          this.vel[i * 3] = (Math.random() - 0.5) * 0.05;
+          this.vel[i * 3 + 1] = this.data.preset === "confetti" ? -0.1 - Math.random() * 0.15 : 0.05 + Math.random() * 0.12;
+        }
+        const geo = new THREE.BufferGeometry();
+        geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+        this.points = new THREE.Points(geo, new THREE.PointsMaterial({ color: new THREE.Color(this.data.color), size: 0.012, transparent: true, opacity: 0.9, depthWrite: false }));
+        this.el.object3D.add(this.points);
+      },
+      tick(time, dt) {
+        const dtS = Math.min(0.1, (dt || 16) / 1000);
+        const arr = this.points.geometry.attributes.position.array;
+        const half = this.data.height / 2;
+        for (let i = 0; i < arr.length; i += 3) {
+          arr[i] += this.vel[i] * dtS;
+          arr[i + 1] += this.vel[i + 1] * dtS;
+          if (this.vel[i + 1] > 0 && arr[i + 1] > half) arr[i + 1] = -half;
+          if (this.vel[i + 1] < 0 && arr[i + 1] < -half) arr[i + 1] = half;
+        }
+        this.points.geometry.attributes.position.needsUpdate = true;
+      }
+    });
+  }
+
+  // Chroma-key video: samples the video texture with a key-color discard shader.
+  // Works in both preview and AR modes (replaces the plain/fade video path when enabled).
+  // The keying shader, standalone so it can be driven by any texture (video or test canvas).
+  function makeChromaMaterial(texture, color, threshold) {
+    return new THREE.ShaderMaterial({
+      uniforms: { map: { value: texture }, keyColor: { value: new THREE.Color(color || "#00ff00") }, thresh: { value: threshold == null ? 0.35 : threshold } },
+      transparent: true,
+      vertexShader: "varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
+      fragmentShader: "uniform sampler2D map; uniform vec3 keyColor; uniform float thresh; varying vec2 vUv;" +
+        "void main(){ vec4 c = texture2D(map, vUv); float d = distance(c.rgb, keyColor); if (d < thresh) discard; gl_FragColor = c; }"
+    });
+  }
+  function ensureChromaComponent() {
+    if (!window.AFRAME || AFRAME.components["chroma-video"]) return;
+    AFRAME.registerComponent("chroma-video", {
+      schema: { src: { type: "selector" }, color: { default: "#00ff00" }, threshold: { default: 0.35 }, width: { default: 1 }, height: { default: 1 } },
+      init() {
+        const tex = new THREE.VideoTexture(this.data.src);
+        const mat = makeChromaMaterial(tex, this.data.color, this.data.threshold);
+        this.el.object3D.add(new THREE.Mesh(new THREE.PlaneGeometry(this.data.width, this.data.height), mat));
+      }
+    });
+  }
+
+  // ---------- round A: element defaults + text textures ----------
+  // Backward-compatible normalization: records saved before round A lack these fields.
+  function normEl(el) {
+    if (el.opacity == null) el.opacity = 1;
+    if (el.seq === undefined) el.seq = null; // null = visible in every sequence state
+    if (el.anim == null) el.anim = el.spin ? "spin" : "none";
+    if (el.onTap == null) el.onTap = "none";
+    if (el.type === "text") {
+      if (el.text == null) el.text = "כותרת";
+      if (!el.color) el.color = "#ffffff";
+      if (el.bold == null) el.bold = true;
+    }
+    return el;
+  }
+  const ANIMS = ["none", "spin", "float", "pulse"];
+
+  // Draw a text element to an offscreen canvas (used by editor panel preview and player texture).
+  // fontPx: reference font size in canvas pixels. Returns {canvas, aspect}.
+  function drawTextCanvas(el, fontPx) {
+    const c = document.createElement("canvas");
+    const ctx = c.getContext("2d");
+    const weight = el.bold ? "700" : "400";
+    const font = weight + " " + fontPx + 'px -apple-system, "Segoe UI", Arial, sans-serif';
+    ctx.font = font;
+    const lines = String(el.text || "").split("\n");
+    const wMax = Math.max(1, ...lines.map((l) => ctx.measureText(l).width));
+    const pad = Math.round(fontPx * 0.25);
+    // resizing the canvas resets its context state, so re-apply the font explicitly
+    c.width = Math.ceil(wMax + pad * 2);
+    c.height = Math.ceil(lines.length * fontPx * 1.25 + pad * 2);
+    ctx.font = font; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.shadowColor = "rgba(0,0,0,0.55)"; ctx.shadowBlur = Math.round(fontPx * 0.12);
+    ctx.fillStyle = el.color || "#ffffff";
+    lines.forEach((l, i) => ctx.fillText(l, c.width / 2, pad + fontPx * 1.25 * (i + 0.5)));
+    return { canvas: c, aspect: c.width / c.height };
+  }
+
+
+  // ---------- round A: shared entity factory for player + preview ----------
+  // mode 'ar': video uses the device-proven xrextras-target-video-fade; 'preview': plain a-video.
+  function buildElementEntity(rec, el, idx, mode) {
+    normEl(el);
+    const ts = toTargetSpace(rec, el, el.aspect || 1);
+    const z = (ts.z || 0) + idx * 0.001; // array order breaks z ties, matching the editor's paint order
+    const pos = `${ts.x} ${ts.y} ${z}`;
+    const rot = `0 0 ${el.rot || 0}`;
+    let e = null;
+    if (el.type === "video") {
+      if (el.chroma && el.chroma.enabled) {
+        ensureChromaComponent();
+        e = document.createElement("a-entity");
+        e.setAttribute("chroma-video", `src: #m-${el.id}; color: ${el.chroma.color || "#00ff00"}; threshold: ${el.chroma.threshold == null ? 0.35 : el.chroma.threshold}; width: ${ts.w}; height: ${ts.h}`);
+      } else if (mode === "ar") {
+        e = document.createElement("a-entity");
+        e.setAttribute("xrextras-target-video-fade", `video: #m-${el.id}; width: ${ts.w}; height: ${ts.h}`);
+      } else {
+        e = document.createElement("a-video");
+        e.setAttribute("src", `#m-${el.id}`);
+        e.setAttribute("width", ts.w); e.setAttribute("height", ts.h);
+      }
+    } else if (el.type === "image") {
+      e = document.createElement("a-image");
+      e.setAttribute("src", `#m-${el.id}`);
+      e.setAttribute("width", ts.w); e.setAttribute("height", ts.h);
+    } else if (el.type === "particles") {
+      ensureParticlesComponent();
+      const pc = el.particles || {};
+      e = document.createElement("a-entity");
+      e.setAttribute("particles", `preset: ${pc.preset || "sparkle"}; count: ${pc.count || 120}; color: ${pc.color || "#ffd94d"}; width: ${ts.w}; height: ${ts.h}`);
+    } else if (el.type === "model") {
+      // glTF/GLB: wrapper carries placement (timeline/tap target); inner child carries the
+      // normalized model scale so timeline scale keys don't fight the fit-to-size normalization.
+      e = document.createElement("a-entity");
+      const blob = rec.assets && rec.assets[el.assetId];
+      if (blob) {
+        const inner = document.createElement("a-entity");
+        inner.setAttribute("gltf-model", URL.createObjectURL(blob));
+        inner.addEventListener("model-loaded", () => {
+          const mesh = inner.getObject3D("mesh");
+          if (!mesh) return;
+          const box = new THREE.Box3().setFromObject(mesh);
+          const size = box.getSize(new THREE.Vector3());
+          const center = box.getCenter(new THREE.Vector3());
+          const maxDim = Math.max(size.x, size.y, size.z) || 1;
+          const k = ts.w / maxDim; // fit the model's largest side to the chosen width
+          inner.object3D.scale.set(k, k, k);
+          inner.object3D.position.set(-center.x * k, -center.y * k, -center.z * k);
+        });
+        e.appendChild(inner);
+      }
+    } else if (el.type === "text") {
+      e = document.createElement("a-plane");
+      const tb = drawTextCanvas(el, 128);
+      const tts = toTargetSpace(rec, el, tb.aspect); // plane must match the canvas aspect or glyphs distort
+      e.setAttribute("material", { src: tb.canvas.toDataURL("image/png"), transparent: true, shader: "flat" });
+      e.setAttribute("width", tts.w); e.setAttribute("height", tts.h);
+    } else {
+      return null; // sound: no visual node
+    }
+    e.setAttribute("position", pos);
+    e.setAttribute("rotation", rot);
+    e.dataset.elId = el.id;
+    const hasTl = el.timeline && Array.isArray(el.timeline.keys) && el.timeline.keys.length;
+    if (el.anim === "spin" && !hasTl) e.setAttribute("animation__spin", `property: rotation; to: 0 0 ${(el.rot || 0) + 360}; loop: true; dur: 14000; easing: linear`);
+    else if (el.anim === "float" && !hasTl) e.setAttribute("animation__float", `property: position; from: ${pos}; to: ${ts.x} ${ts.y + 0.03} ${z}; dir: alternate; loop: true; dur: 2600; easing: easeInOutSine`);
+    else if (el.anim === "pulse" && !hasTl) e.setAttribute("animation__pulse", `property: scale; to: 1.08 1.08 1; dir: alternate; loop: true; dur: 1600; easing: easeInOutSine`);
+    if (el.onTap && el.onTap !== "none") e.classList.add("cantap");
+    if (el.opacity != null && el.opacity < 1) e.dataset.opacity = String(el.opacity);
+    return e;
+  }
+
+  // Opacity: set on the mesh material once it exists (components like the video fade create it async).
+  function applyOpacity(entity, value) {
+    let tries = 0;
+    const paint = (root) => {
+      let done = false;
+      root.traverse((n) => { if (n.material) { n.material.transparent = true; n.material.opacity = value; done = true; } });
+      return done;
+    };
+    const attempt = () => {
+      const mesh = entity.getObject3D("mesh");
+      if (mesh && paint(mesh)) return;
+      if (++tries < 20) setTimeout(attempt, 300);
+    };
+    attempt();
+  }
+
+  // Tap behavior shared by AR player and preview. hooks.onMuteToggle handles 'mute'.
+  function bindTap(entity, el, hooks) {
+    if (!el.onTap || el.onTap === "none") return;
+    entity.addEventListener("click", () => {
+      if (el.onTap === "link" && el.tapUrl) {
+        window.open(el.tapUrl, "_blank", "noopener");
+      } else if (el.onTap === "mute" && hooks && hooks.onMuteToggle) {
+        hooks.onMuteToggle();
+      } else if (el.onTap === "sequence" && hooks && hooks.onNextSequence) {
+        hooks.onNextSequence();
+      }
+    });
+  }
+
+  // ---------- sequences (multi-state artworks) ----------
+  function seqList(rec) { return Array.isArray(rec.sequences) ? rec.sequences : []; }
+  function elVisibleIn(el, seqId) { return !el.seq || !seqId || el.seq === seqId; }
+  function nextSequence(rec, cur) {
+    const s = seqList(rec);
+    if (s.length < 2) return cur || null;
+    const i = s.findIndex((x) => x.id === cur);
+    return s[(i + 1) % s.length].id;
+  }
+  // Toggles built entity visibility for the active state; hidden sounds pause.
+  function applySequence(container, rec, seqId, mediaEls) {
+    for (const child of [...container.children]) {
+      const id = child.dataset && child.dataset.elId;
+      if (!id) continue;
+      const el = rec.elements.find((x) => x.id === id);
+      if (el) child.setAttribute("visible", elVisibleIn(el, seqId));
+    }
+    if (mediaEls) for (const m of mediaEls) {
+      if (!elVisibleIn(m.el, seqId)) {
+        if (!m.node.paused) { m.resumeOnVisible = true; m.node.pause(); }
+      } else if (m.resumeOnVisible) {
+        m.resumeOnVisible = false;
+        m.node.play().catch(() => {});
+      }
+    }
+  }
+  // ---------- timeline (keyframed motion) ----------
+  // Pure sampler: el.timeline.keys [{t, x?, y?, z?, rot?, opacity?, scale?}] at time tSec.
+  // Missing props hold their last keyed value; before the first key they hold base props.
+  function sampleTimeline(el, tSec) {
+    const base = { x: el.x || 0, y: el.y || 0, z: el.z || 0, rot: el.rot || 0, opacity: el.opacity == null ? 1 : el.opacity, scale: 1 };
+    const tl = el.timeline;
+    if (!tl || !Array.isArray(tl.keys) || !tl.keys.length) return base;
+    const keys = tl.keys.slice().sort((a, b) => a.t - b.t);
+    const dur = keys[keys.length - 1].t;
+    let t = Math.max(0, tSec);
+    if (t > dur) { if (tl.loop && dur > 0) t = t % dur; else t = dur; }
+    let a = null, b = null;
+    for (const k of keys) { if (k.t <= t) a = k; if (k.t >= t) { b = k; break; } }
+    const pick = (prop) => {
+      const has = (k) => k && k[prop] != null;
+      if (!has(a) && !has(b)) return base[prop];
+      if (has(a) && !has(b)) return a[prop];
+      if (!has(a) && has(b)) return base[prop];
+      if (a === b) return a[prop];
+      const f = (t - a.t) / Math.max(1e-6, b.t - a.t);
+      return a[prop] + (b[prop] - a[prop]) * f;
+    };
+    return { x: pick("x"), y: pick("y"), z: pick("z"), rot: pick("rot"), opacity: pick("opacity"), scale: pick("scale") };
+  }
+  function timelineDur(el) {
+    const tl = el.timeline;
+    if (!tl || !Array.isArray(tl.keys) || !tl.keys.length) return 0;
+    return Math.max(...tl.keys.map((k) => k.t));
+  }
+
+  // Controllable driver: play/pause/reset so the AR player can start motion at target-found
+  // and freeze it when tracking is lost. Returns null when no element has keyframes.
+  function startTimelineDriver(rec, entities, opts) {
+    opts = opts || {};
+    const tracks = [];
+    for (const e of entities) {
+      const el = rec.elements.find((x) => x.id === (e.dataset && e.dataset.elId));
+      if (!el || !timelineDur(el)) continue;
+      const p0 = e.getAttribute("position");
+      tracks.push({ el, e, elapsed: 0, startedAt: 0, zOff: (p0 ? p0.z : 0) - (el.z || 0) });
+    }
+    if (!tracks.length) return null;
+    const D2R = Math.PI / 180;
+    const drv = { running: false };
+    drv.play = () => { if (drv.running) return; drv.running = true; const now = performance.now(); for (const tr of tracks) tr.startedAt = now - tr.elapsed * 1000; };
+    drv.pause = () => { if (!drv.running) return; drv.running = false; const now = performance.now(); for (const tr of tracks) tr.elapsed = (now - tr.startedAt) / 1000; };
+    drv.reset = () => { const now = performance.now(); for (const tr of tracks) { tr.elapsed = 0; tr.startedAt = now; } };
+    if (opts.autostart !== false) drv.play();
+    const frame = (now) => {
+      if (drv.running) {
+        for (const tr of tracks) {
+          const s = sampleTimeline(tr.el, (now - tr.startedAt) / 1000);
+          const ts = toTargetSpace(rec, Object.assign({}, tr.el, { x: s.x, y: s.y, z: s.z }), tr.el.aspect || 1);
+          tr.e.object3D.position.set(ts.x, ts.y, (ts.z || 0) + tr.zOff);
+          tr.e.object3D.rotation.z = s.rot * D2R;
+          tr.e.object3D.scale.set(s.scale, s.scale, 1);
+          applyOpacity(tr.e, s.opacity);
+        }
+      }
+      requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
+    return drv;
+  }
+
+  // Small state-position dots shown when an artwork has more than one state.
+  function renderSeqDots(rec, curSeq) {
+    let bar = document.getElementById("seq-dots");
+    const s = seqList(rec);
+    if (s.length < 2) { if (bar) bar.remove(); return; }
+    if (!bar) {
+      bar = document.createElement("div");
+      bar.id = "seq-dots";
+      bar.style.cssText = "position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:40;display:flex;gap:8px";
+      document.body.appendChild(bar);
+    }
+    bar.innerHTML = "";
+    s.forEach((sq) => {
+      const d = document.createElement("div");
+      d.style.cssText = "width:10px;height:10px;border-radius:50%;background:" + (sq.id === curSeq ? "#7c5cff" : "rgba(255,255,255,.55)") + ";box-shadow:0 1px 4px rgba(0,0,0,.4)";
+      bar.appendChild(d);
+    });
+  }
+
   // ---------- experience records ----------
   function blankExperience(name) {
     return { id: newId(), name: name || "ניסוי חדש", createdAt: Date.now(), updatedAt: Date.now(),
@@ -168,7 +480,30 @@ const Studio = (() => {
     return rec;
   }
 
+  // Try to start all given media; if autoplay is blocked (iOS low-power mode,
+  // headless browsers), show a clear tap-to-play button instead of a silently frozen frame.
+  function ensurePlayback(mediaEls, opts) {
+    opts = opts || {};
+    const pending = () => mediaEls.filter((m) => m.node.paused);
+    const tryPlay = () => { for (const m of pending()) m.node.play().catch(() => {}); };
+    tryPlay(); setTimeout(tryPlay, 800); setTimeout(tryPlay, 2500);
+    let btn = null;
+    const refresh = () => {
+      const left = pending().length;
+      if (left && !btn && opts.button !== false) {
+        btn = document.createElement("button");
+        btn.id = "play-overlay";
+        btn.textContent = opts.label || "\u25B6 \u05D4\u05E4\u05E2\u05DC\u05D4";
+        btn.style.cssText = "position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:40;padding:12px 26px;border:0;border-radius:999px;background:#7c5cff;color:#fff;font-size:16px;font-weight:700;box-shadow:0 4px 18px rgba(0,0,0,.35);cursor:pointer";
+        btn.addEventListener("click", () => { tryPlay(); setTimeout(refresh, 400); });
+        document.body.appendChild(btn);
+      } else if (!left && btn) { btn.remove(); btn = null; }
+    };
+    for (const m of mediaEls) m.node.addEventListener("playing", () => setTimeout(refresh, 50));
+    setTimeout(refresh, 3000); // grace period for autoplay before showing the button
+  }
+
   return { TARGET_W, TARGET_H, newId, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
-           geom, toTargetSpace, blankExperience, save, exportJSON, importJSON, seedDemo,
+           geom, toTargetSpace, blankExperience, save, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, makeChromaMaterial, ensureParticlesComponent, seqList, elVisibleIn, nextSequence, applySequence, renderSeqDots, sampleTimeline, timelineDur, startTimelineDriver,
            load: idbGet, all: idbAll, del: idbDel };
 })();
