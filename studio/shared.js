@@ -275,11 +275,27 @@ const Studio = (() => {
     const factor = after.w / before.w;
     const angle = (after.rot - before.rot) * Math.PI / 180;
     const ratio = geom(rec).artW / geom(rec).artH;
+    const point = (x, y) => {
+      const dx = (x - before.x) * ratio * factor, dy = (y - before.y) * factor;
+      return { x: after.x + (dx * Math.cos(angle) - dy * Math.sin(angle)) / ratio,
+        y: after.y + dx * Math.sin(angle) + dy * Math.cos(angle) };
+    };
     for (const child of groupChildren(rec, group)) {
-      const dx = ((child.x || 0) - before.x) * ratio * factor;
-      const dy = ((child.y || 0) - before.y) * factor;
-      child.x = after.x + (dx * Math.cos(angle) - dy * Math.sin(angle)) / ratio;
-      child.y = after.y + dx * Math.sin(angle) + dy * Math.cos(angle);
+      const original = structuredClone(child);
+      const keys = original.timeline && original.timeline.keys;
+      if (keys && keys.length) {
+        const xy = keys.some(k => k.x != null || k.y != null);
+        // Rotation couples X/Y. Sample the original curve at every key boundary,
+        // including sparse channels, then retain timing/ease/discrete metadata.
+        child.timeline.keys = keys.map(k => {
+          const next = Object.assign({}, k), sampled = sampleTimeline(original, k.t);
+          if (xy) Object.assign(next, point(sampled.x, sampled.y));
+          if (k.z != null) next.z = k.z + after.z - before.z;
+          if (k.rot != null) next.rot = k.rot + after.rot - before.rot;
+          return next;
+        });
+      }
+      Object.assign(child, point(child.x || 0, child.y || 0));
       child.z = (child.z || 0) + after.z - before.z;
       child.w *= factor; if (child.h != null) child.h *= factor;
       child.rot = (child.rot || 0) + after.rot - before.rot;
@@ -503,13 +519,15 @@ const Studio = (() => {
     const dur = (tl.dur > 0 ? tl.dur : keys[keys.length - 1].t);
     let t = Math.max(0, tSec);
     if (t > dur) { if (tl.loop && dur > 0) t = t % dur; else t = dur; }
-    let a = null, b = null;
-    for (const k of keys) { if (k.t <= t) a = k; if (k.t >= t) { b = k; break; } }
     const pick = (prop) => {
-      const has = (k) => k && k[prop] != null;
-      if (!has(a) && !has(b)) return base[prop];
-      if (has(a) && !has(b)) return a[prop];
-      if (!has(a) && has(b)) return base[prop];
+      let a = null, b = null;
+      for (const k of keys) {
+        if (k[prop] == null) continue;
+        if (k.t <= t) a = k;
+        if (k.t >= t) { b = k; break; }
+      }
+      if (!a) return base[prop];
+      if (!b) return a[prop];
       if (a === b) return a[prop];
       let f = (t - a.t) / Math.max(1e-6, b.t - a.t);
       const ease = tl.ease || "linear";

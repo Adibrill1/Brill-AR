@@ -480,15 +480,15 @@
 
     // panel bindings
     const cur = () => rec.elements.find((x) => x.id === selectedId);
+    const transform = (el, key, value) => {
+      if (el.type === "group") Studio.transformGroup(rec, el, { [key]: value });
+      else { const f = key === "w" ? value / el.w : 1; el[key] = value; if (key === "w" && el.h != null) el.h = Math.max(.02, el.h * f); }
+    };
     const upd = async (fn) => { const el = cur(); if (!el) return; fn(el); await Studio.save(rec); renderPanel(); draw(); renderList(); };
     const num = (id, min, max, fn) => { $(id).onchange = (e) => { const v = parseFloat(e.target.value); if (isNaN(v)) { renderPanel(); return; } upd((el) => fn(el, Math.max(min, Math.min(max, v)))); }; };
-    $("sl-scale").oninput = (e) => upd((el) => { const f = parseFloat(e.target.value) / el.w; el.w = parseFloat(e.target.value); if (el.h != null) el.h = Math.max(0.02, el.h * f); if (el.type === "group") groupScale(el, f); });
-    $("sl-rot").oninput = (e) => upd((el) => {
-      const v = parseFloat(e.target.value);
-      if (el.type === "group") Studio.transformGroup(rec, el, { rot: v });
-      else el.rot = v;
-    });
-    $("sl-z").oninput = (e) => upd((el) => { el.z = parseFloat(e.target.value); });
+    $("sl-scale").oninput = e => upd(el => transform(el, "w", parseFloat(e.target.value)));
+    $("sl-rot").oninput = e => upd(el => transform(el, "rot", parseFloat(e.target.value)));
+    $("sl-z").oninput = e => upd(el => transform(el, "z", parseFloat(e.target.value)));
     $("sl-vol").oninput = (e) => upd((el) => { el.volume = parseFloat(e.target.value); });
     $("sl-opacity").oninput = (e) => upd((el) => { el.opacity = parseFloat(e.target.value); });
     $("ck-loop").onchange = (e) => upd((el) => { el.loop = e.target.checked; });
@@ -545,11 +545,8 @@
     });
     $("in-tapurl").onchange = (e) => upd((el) => { el.tapUrl = e.target.value.trim(); });
     // numeric panel
-    num("num-x", -0.7, 0.7, (el, v) => { if (el.type === "group") { const d = v - (el.x || 0); el.x = v; for (const k of Studio.groupChildren(rec, el)) k.x = (k.x || 0) + d; } else el.x = v; });
-    num("num-y", -0.7, 0.7, (el, v) => { if (el.type === "group") { const d = v - (el.y || 0); el.y = v; for (const k of Studio.groupChildren(rec, el)) k.y = (k.y || 0) + d; } else el.y = v; });
-    num("num-w", 0.05, 2, (el, v) => { const f = v / el.w; el.w = v; if (el.h != null) el.h = Math.max(0.02, el.h * f); if (el.type === "group") groupScale(el, f); });
-    num("num-rot", -180, 180, (el, v) => { if (el.type === "group") Studio.transformGroup(rec, el, { rot: v }); else el.rot = v; });
-    num("num-z", 0, 0.5, (el, v) => { el.z = v; });
+    for (const [key, min, max] of [["x",-.7,.7],["y",-.7,.7],["w",.05,2],["rot",-180,180],["z",0,.5]])
+      num("num-"+key, min, max, (el,v) => transform(el,key,v));
     num("num-opacity", 0, 1, (el, v) => { el.opacity = v; });
     // text controls
     $("in-text").oninput = (e) => upd((el) => {
@@ -643,15 +640,6 @@
     rec.elements.splice(i, 1); // children stay as independent elements
     selectedId = null;
     Studio.save(rec).then(() => { renderList(); renderPanel(); draw(); });
-  }
-
-  function groupScale(g, f) {
-    for (const k of Studio.groupChildren(rec, g)) {
-      k.w = Math.max(0.05, k.w * f);
-      if (k.h != null) k.h = Math.max(0.02, k.h * f);
-      k.x = (g.x || 0) + ((k.x || 0) - (g.x || 0)) * f;
-      k.y = (g.y || 0) + ((k.y || 0) - (g.y || 0)) * f;
-    }
   }
 
   function renderPanel() {
@@ -992,31 +980,20 @@
       const W = c.clientWidth, H = c.clientHeight;
       if (drag.mode === "gmove") {
         const dx = (p.x - drag.start.x) / W, dy = -(p.y - drag.start.y) / H;
-        el.x = Math.max(-0.7, Math.min(0.7, drag.origGX + dx));
-        el.y = Math.max(-0.7, Math.min(0.7, drag.origGY + dy));
-        const adx = el.x - drag.origGX, ady = el.y - drag.origGY;
-        for (const o of drag.origs) {
-          const k = rec.elements.find((x) => x.id === o.id); if (!k) continue;
-          k.x = o.x + adx; k.y = o.y + ady;
-        }
+        Studio.transformGroup(rec, el, {
+          x: Math.max(-.7, Math.min(.7, drag.origGX + dx)),
+          y: Math.max(-.7, Math.min(.7, drag.origGY + dy))
+        });
       } else if (drag.mode === "move") {
         el.x = Math.max(-0.7, Math.min(0.7, drag.origX + (p.x - drag.start.x) / W));
         el.y = Math.max(-0.7, Math.min(0.7, drag.origY - (p.y - drag.start.y) / H));
       } else {
         const d0 = Math.hypot(drag.start.x - drag.cx, drag.start.y - drag.cy) || 1;
         const d1 = Math.hypot(p.x - drag.cx, p.y - drag.cy);
-        const f = Math.max(0.05, Math.min(2, drag.origW * (d1 / d0))) / el.w;
-        el.w = Math.max(0.05, Math.min(2, drag.origW * (d1 / d0)));
-        if (el.h != null) el.h = Math.max(0.02, el.h * f);
-        if (drag.gorigs) {
-          const F = el.w / drag.origW;
-          for (const o of drag.gorigs) {
-            const k = rec.elements.find((x) => x.id === o.id); if (!k) continue;
-            k.w = Math.max(0.05, o.w * F);
-            if (o.h != null) k.h = Math.max(0.02, o.h * F);
-            k.x = el.x + (o.x - el.x) * F; k.y = el.y + (o.y - el.y) * F;
-          }
-        }
+        const w = Math.max(.05, Math.min(2, drag.origW * (d1 / d0)));
+        if (el.type === "group") Studio.transformGroup(rec, el, {w});
+        else { const f = w / el.w; el.w = w; if (el.h != null) el.h = Math.max(.02,el.h*f); }
+
       }
       draw();
       renderPanel();

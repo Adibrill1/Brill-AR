@@ -141,3 +141,6 @@ Base group rotation was applied to the wrapper while child world coordinates/rot
 
 ## Round W composition evidence
 Child timelines now inverse the base parent rotation/origin for local samples, fixing rotated-group double motion. Deterministic driver fixture verifies world positions and actual rendered Show/Hide red-pixel transitions plus sequence/stopped-track gates. Camera-group explicit save/reset child geometry tested. Software Chrome proof only. Editing a group's base AFTER authoring child absolute-world keys still needs keyframe baking; simultaneous parent/child motion and group opacity/media composition remain open.
+
+## Round X creator edits and sparse channels
+Group creator transforms now bake existing child keys and all group numeric/slider/canvas transform routes use the shared helper. Sparse linear XY/Z/rotation curve tested at7times with discrete hide/tap preserved; simultaneous animated parent/child world transform tested. Sampler corrected to interpolate each numeric channel independently across unrelated keys. Still open: sparse nonlinear easing bake can change shape, group's own keys after creator base edits, group opacity/media inheritance regression. Input-route code changed but no new end-to-end creator UI recording asserted.
