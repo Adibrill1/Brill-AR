@@ -11,6 +11,6 @@ let state=await p.evaluate(async()=>{const db=await new Promise(r=>indexedDB.ope
 await p.locator('#camera-edit-save').click();await p.waitForFunction(()=>document.querySelector('#camera-edit-status').textContent.includes('לא פורסם'));
 await p.locator('#camera-edit-x').fill('.8');await p.locator('#camera-edit-y').click();await p.locator('#camera-edit-reset').click();assert.equal(await p.locator('#camera-edit-x').inputValue(),'0.25');
 await p.locator('#camera-edit-select').selectOption('two');assert(await p.evaluate(()=>!document.querySelector('[data-el-id=one]').object3D.visible&&document.querySelector('[data-el-id=two]').object3D.visible));
-await p.evaluate(()=>document.querySelector('a-scene').emit('xrimagelost'));assert(await p.locator('#camera-edit-save').isDisabled());await p.screenshot({path:'/downloads/camera-editor-mobile.png'});
+await p.screenshot({path:'/downloads/camera-editor-active.png'});await p.evaluate(()=>document.querySelector('a-scene').emit('xrimagelost'));assert(await p.locator('#camera-edit-save').isDisabled());await p.screenshot({path:'/downloads/camera-editor-mobile.png'});
 console.log('PASS AR-editor panel: tracking gate, transform x/width scale, no auto-save, explicit save, reset to saved, selected-only visibility, lost gate. Synthetic scene, not live-camera/device proof.');
 }finally{await b.close();await new Promise(r=>server.close(r));}})().catch(e=>{console.error(e);process.exit(1)});

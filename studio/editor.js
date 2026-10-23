@@ -502,6 +502,15 @@
       const scale = Math.max(0.1, Math.min(5, parseFloat($("num-tl-scale").value) || 1));
       el.timeline.keys.push({ t, x: el.x, y: el.y, z: el.z || 0, rot: el.rot || 0, opacity: el.opacity == null ? 1 : el.opacity, scale, tap: el.onTap || "none" });
     });
+    const addVisibilityKey = (visible) => upd((el) => {
+      el.timeline = el.timeline && Array.isArray(el.timeline.keys) ? el.timeline : { loop: false, keys: [] };
+      const t = Math.max(0, Math.min(60, parseFloat($("num-tl-t").value) || 0));
+      let key = el.timeline.keys.find(k => k.t === t);
+      if (!key) { key = { t }; el.timeline.keys.push(key); }
+      key.visible = visible;
+    });
+    $("btn-tl-show").onclick = () => addVisibilityKey(true);
+    $("btn-tl-hide").onclick = () => addVisibilityKey(false);
     $("ck-spatial").onchange = (e) => upd((el) => { el.spatial = e.target.checked; renderPanel(); });
     $("sel-spatial-mode").onchange = (e) => upd((el) => { el.spatialMode = e.target.value; });
     $("num-spatial-in").onchange = (e) => upd((el) => { el.spatialInner = Math.max(0.05, parseFloat(e.target.value) || 0.35); });
@@ -789,7 +798,7 @@
     tl.keys.slice().sort((a, b) => a.t - b.t).forEach((k) => {
       const li = document.createElement("li");
       const i = el.timeline.keys.indexOf(k);
-      li.textContent = "t=" + k.t + "s " + (k.tap && k.tap !== "none" ? "👆 " : "");
+      li.textContent = "t=" + k.t + "s " + (k.visible === false ? "מוסתר " : k.visible === true ? "מוצג " : "") + (k.tap && k.tap !== "none" ? "👆 " : "");
       const del = document.createElement("button");
       del.className = "ghost danger"; del.textContent = "✕";
       del.onclick = () => upd((e2) => { e2.timeline.keys.splice(i, 1); });
@@ -849,6 +858,7 @@
       // live timeline playback: sampled keyframe values override the element's base props
       let ts = null;
       if (Studio.timelineDur(el)) { ts = Studio.sampleTimeline(el, tlScrubT != null ? tlScrubT : t0 / 1000); needsAnim = tlScrubT == null; }
+      if (ts && ts.visible === false) continue;
       const sc = ts ? ts.scale : 1;
       let wpx = el.w * W * sc;
       let hpx = (el.h != null ? el.h * H : (el.w * W) / (el.aspect || 1)) * sc;

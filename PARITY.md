@@ -31,7 +31,7 @@ Legend:
 | Timeline: Move/Rotate/Scale/Transform actions | Keyframes capture x/y/z/rot/opacity/scale per element | 🆕 round-B |
 | Timeline: Speed Curve (linear/ease/elastic) | Per-element easing: linear / easeIn / easeOut / easeInOut / elastic (overshoot verified: f=0.5 -> 1.0156) | 🆕 round-G |
 | Timeline: explicit Duration (loop length independent of last key) | Optional duration field; default = last key time | 🆕 round-G |
-| Timeline: Show/Hide action at set times | Via opacity 0/1 keyframes (functionally equivalent, less discoverable) | ⚠️ partial |
+| Timeline: Show/Hide action at set times | Explicit Hebrew Show/Hide buttons add discrete visibility keys, list labels/ruler markers, canvas sampler + runtime visibility channel composed with state visibility | ⚠️ round U: actual UI creates/lists keys, sampler tests boundary1/2s and state composition; mobile UI inspected. Full runtime rendered transition + device still pending. |
 | Timeline: animate groups of layers | Layer groups: multi-select + group/ungroup in the editor, group transforms (move/scale/rotate) apply to all children, wrapper entity in the player/previewer so timelines and animation presets run on the whole group; sequence visibility and opacity propagate into groups; publish-server validates group integrity | ✅ round H |
 | Sequences: states/chapters per artwork | States with per-element assignment, state tabs, dots | 🆕 round-B |
 | Sequences: On Tap -> Trigger a chosen sequence | Tap action per element: next state OR a chosen state | 🆕 round-G |

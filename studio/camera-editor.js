@@ -3,9 +3,9 @@
 window.CameraEditor = {
   mount({rec,container,scene,isAR}) {
     const panel=document.createElement('section');panel.id='camera-edit-panel';panel.dir='rtl';
-    panel.style.cssText='position:fixed;bottom:12px;left:12px;right:12px;box-sizing:border-box;margin:auto;max-width:520px;padding:12px;background:rgba(255,255,255,.96);color:#17202b;border-radius:14px;z-index:10001;font:14px/1.5 sans-serif;box-shadow:0 3px 22px #0005';
+    panel.style.cssText='position:fixed;bottom:12px;left:12px;right:12px;box-sizing:border-box;margin:auto;max-width:520px;padding:12px;background:#fff;color:#17202b;border-radius:14px;z-index:10001;font:14px/1.5 sans-serif;box-shadow:0 3px 22px #0005';
     const title=document.createElement('strong');title.textContent='עריכה מקומית · אלמנט יחיד (בלי קבוצות)';panel.append(title);
-    const status=document.createElement('p');status.id='camera-edit-status';status.style.margin='4px 0 8px';status.textContent=isAR?'כווני את המצלמה ליצירה. השינויים אינם נשמרים עד לחיצה על שמירה.':'בדיקת בקרי עריכה בלי מצלמה. שינויים נשמרים במכשיר בלבד.';panel.append(status);
+    const status=document.createElement('p');status.id='camera-edit-status';status.style.margin='4px 0 8px';document.querySelectorAll('#seq-dots,#seq-toast,#hint').forEach(n=>n.hidden=true);status.textContent=isAR?'כווני את המצלמה ליצירה. השינויים אינם נשמרים עד לחיצה על שמירה.':'בדיקת בקרי עריכה בלי מצלמה. שינויים נשמרים במכשיר בלבד.';panel.append(status);
     const select=document.createElement('select');select.id='camera-edit-select';select.style.cssText='width:100%;padding:8px;font:inherit';select.setAttribute('aria-label','אלמנט לעריכה');
     const elements=Studio.topLevelElements(rec).filter(el=>el.type!=='group' && container.querySelector('[data-el-id="'+el.id+'"]'));
     for(const el of elements){const option=document.createElement('option');option.value=el.id;option.textContent=el.name||el.type;select.append(option);}panel.append(select);
@@ -25,7 +25,7 @@ window.CameraEditor = {
     const gate=()=>{for(const i of Object.values(inputs))i.disabled=!tracked||!elements.length;save.disabled=!tracked||!elements.length;};
     save.onclick=async()=>{save.disabled=true;try{await Studio.save(rec);initial.elements=structuredClone(rec.elements);dirty=false;status.textContent='נשמר במכשיר. לא פורסם ולא נשלח לשרת.';}catch(e){status.textContent='השמירה נכשלה. השינויים עדיין לא נשמרו.';}finally{gate();}};
     reset.onclick=()=>{for(const el of elements){const old=initial.elements.find(e=>e.id===el.id);for(const k of [...Object.keys(inputs),'h'])el[k]=old[k];apply(el);}dirty=false;fill();status.textContent='השינויים שלא נשמרו בוטלו.';};
-    if(isAR){scene.addEventListener('xrimagefound',()=>{tracked=true;gate();});scene.addEventListener('xrimagelost',()=>{tracked=false;gate();status.textContent='היצירה לא מזוהה כרגע. כווני אליה שוב כדי להמשיך.';});}
+    if(isAR){scene.addEventListener('xrimagefound',()=>{tracked=true;gate();status.textContent=dirty?'שינויים לא נשמרו. לחצי שמירה.':'היצירה מזוהה. בחרי אלמנט וערכי את המספרים.';});scene.addEventListener('xrimagelost',()=>{tracked=false;gate();status.textContent='היצירה לא מזוהה כרגע. כווני אליה שוב כדי להמשיך.';});}
     window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='';}});
     document.body.append(panel);gate();return {panel};
   }

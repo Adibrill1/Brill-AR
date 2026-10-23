@@ -457,7 +457,7 @@ const Studio = (() => {
     const vis = (el) => elVisibleIn(el, seqId) && (!el.track || (isTrackPlaying ? !!isTrackPlaying(el.track) : true));
     for (const child of container.querySelectorAll("[data-el-id]")) {
       const el = rec.elements.find((x) => x.id === child.dataset.elId);
-      if (el) child.setAttribute("visible", vis(el));
+      if (el) { child._sequenceVisible = vis(el); child.setAttribute("visible", child._sequenceVisible && child._timelineVisible !== false); }
     }
     if (mediaEls) for (const m of mediaEls) {
       if (!vis(m.el)) {
@@ -472,7 +472,7 @@ const Studio = (() => {
   // Pure sampler: el.timeline.keys [{t, x?, y?, z?, rot?, opacity?, scale?}] at time tSec.
   // Missing props hold their last keyed value; before the first key they hold base props.
   function sampleTimeline(el, tSec) {
-    const base = { x: el.x || 0, y: el.y || 0, z: el.z || 0, rot: el.rot || 0, opacity: el.opacity == null ? 1 : el.opacity, scale: 1, tap: el.onTap || "none" };
+    const base = { x: el.x || 0, y: el.y || 0, z: el.z || 0, rot: el.rot || 0, opacity: el.opacity == null ? 1 : el.opacity, scale: 1, tap: el.onTap || "none", visible: true };
     const tl = el.timeline;
     if (!tl || !Array.isArray(tl.keys) || !tl.keys.length) return base;
     const keys = tl.keys.slice().sort((a, b) => a.t - b.t);
@@ -502,7 +502,7 @@ const Studio = (() => {
       for (const k of keys) { if (k.t <= t && k[prop] != null) v = k[prop]; }
       return v;
     };
-    return { x: pick("x"), y: pick("y"), z: pick("z"), rot: pick("rot"), opacity: pick("opacity"), scale: pick("scale"), tap: pickDiscrete("tap") };
+    return { x: pick("x"), y: pick("y"), z: pick("z"), rot: pick("rot"), opacity: pick("opacity"), scale: pick("scale"), tap: pickDiscrete("tap"), visible: pickDiscrete("visible") };
   }
   function timelineDur(el) {
     const tl = el.timeline;
@@ -547,6 +547,8 @@ const Studio = (() => {
           tr.e.object3D.rotation.z = s.rot * D2R;
           tr.e.object3D.scale.set(s.scale, s.scale, 1);
           applyOpacity(tr.e, s.opacity);
+          tr.e._timelineVisible = s.visible !== false;
+          tr.e.object3D.visible = tr.e._sequenceVisible !== false && tr.e._timelineVisible;
           if (s.tap !== tr.appliedTap) { // Change Interaction over time
             tr.appliedTap = s.tap;
             tr.e._tapOverride = s.tap;
