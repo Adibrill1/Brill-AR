@@ -615,7 +615,7 @@ const Studio = (() => {
   }
   function sampleVisual(rec,el,t) {
     const out=sampleTimeline(el,t);
-    if(timelineDur(el))return out;
+    if(el.timeline&&Array.isArray(el.timeline.keys)&&el.timeline.keys.length)return out;
     const phase=(duration)=>{const p=Math.max(0,t)%(duration*2)/duration;return (1-Math.cos(Math.PI*(p<=1?p:2-p)))/2;};
     if(el.anim==='spin')out.rot+=Math.max(0,t)%14/14*360;
     else if(el.anim==='float')out.y+=.03/geom(rec).artH*phase(2.6);
@@ -652,7 +652,7 @@ const Studio = (() => {
     const tracks = [];
     for (const e of entities) {
       const el = rec.elements.find((x) => x.id === (e.dataset && e.dataset.elId));
-      if (!el || !timelineDur(el)) continue;
+      if (!el || !el.timeline || !Array.isArray(el.timeline.keys) || !el.timeline.keys.length) continue;
       const p0 = e.getAttribute("position");
       const ts0 = toTargetSpace(rec, el, el.aspect || 1);
       tracks.push({ el, e, elapsed: 0, startedAt: 0,

@@ -171,3 +171,6 @@ Original one-morph triangle renders area199→967pixels; original one-joint weig
 
 ## Round AH presets
 Canvas group/child spin/float/pulse now sampled at scrub/live time with runtime preset periods. Actual AFrame seek world-position comparison all3start/mid/end within.002; actual canvas parent-spin pixels move/rotate with fixedblueB and inspected sheet. Independent track clocks and device timing remain open.
+
+## Round AI zero-time boundary
+Single t=0timeline now gets runtime driver and suppresses presets consistently with canvas; actual driver hide/opacity/rotation fixture passes. Previously duration0caused omission. No device claim.
