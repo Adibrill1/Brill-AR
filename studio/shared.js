@@ -195,6 +195,7 @@ const Studio = (() => {
     if (el.seq === undefined) el.seq = null; // null = visible in every sequence state
     if (el.anim == null) el.anim = el.spin ? "spin" : "none";
     if (el.onTap == null) el.onTap = "none";
+    if (el.track === undefined) el.track = null; // null = shared state model; id = a parallel overlay track
     if (el.type === "group") {
       if (!Array.isArray(el.children)) el.children = [];
     }
@@ -351,6 +352,8 @@ const Studio = (() => {
         hooks.onNextSequence();
       } else if (tap && tap.indexOf("seq:") === 0 && hooks && hooks.onSequence) {
         hooks.onSequence(tap.slice(4));
+      } else if (tap && tap.indexOf("track:") === 0 && hooks && hooks.onTrackToggle) {
+        hooks.onTrackToggle(tap.slice(6));
       }
     });
   }
@@ -380,13 +383,14 @@ const Studio = (() => {
     return s[(i + 1) % s.length].id;
   }
   // Toggles built entity visibility for the active state; hidden sounds pause.
-  function applySequence(container, rec, seqId, mediaEls) {
+  function applySequence(container, rec, seqId, mediaEls, isTrackPlaying) {
+    const vis = (el) => elVisibleIn(el, seqId) && (!el.track || (isTrackPlaying ? !!isTrackPlaying(el.track) : true));
     for (const child of container.querySelectorAll("[data-el-id]")) {
       const el = rec.elements.find((x) => x.id === child.dataset.elId);
-      if (el) child.setAttribute("visible", elVisibleIn(el, seqId));
+      if (el) child.setAttribute("visible", vis(el));
     }
     if (mediaEls) for (const m of mediaEls) {
-      if (!elVisibleIn(m.el, seqId)) {
+      if (!vis(m.el)) {
         if (!m.node.paused) { m.resumeOnVisible = true; m.node.pause(); }
       } else if (m.resumeOnVisible) {
         m.resumeOnVisible = false;
@@ -608,6 +612,42 @@ const Studio = (() => {
     return { warn: false, energy, minDim };
   }
 
+  // ---------- parallel overlay tracks (simultaneous sequences) ----------
+  // A track is an independent mini-timeline with its own clock. Elements with el.track
+  // belong to it: they are visible while the track plays (el.seq still applies on top).
+  function trackList(rec) { return Array.isArray(rec.tracks) ? rec.tracks : []; }
+
+  // Owns per-track drivers and play state for a built container (previewer rig / AR target).
+  function makeTrackRunner(rec, container) {
+    const run = {}; // id -> { playing, drv }
+    const trackEntities = (id) => {
+      const ids = new Set(rec.elements.filter((el) => el.track === id).map((el) => el.id));
+      return [...container.querySelectorAll("[data-el-id]")].filter((n) => ids.has(n.dataset.elId));
+    };
+    return {
+      isPlaying: (id) => !!(run[id] && run[id].playing),
+      start(id) {
+        const tr = trackList(rec).find((t) => t.id === id);
+        if (!tr) return;
+        if (!run[id]) run[id] = { playing: false, drv: null };
+        if (!run[id].drv) {
+          const d = startTimelineDriver(rec, trackEntities(id), { autostart: true });
+          if (d) { d.stateLoop = !!tr.loop; run[id].drv = d; }
+        } else { run[id].drv.reset(); run[id].drv.play(); }
+        run[id].playing = true;
+      },
+      stop(id) {
+        if (!run[id]) return;
+        if (run[id].drv) { run[id].drv.pause(); run[id].drv.reset(); }
+        run[id].playing = false;
+      },
+      toggle(id) { if (this.isPlaying(id)) this.stop(id); else this.start(id); },
+      pauseAll() { for (const id of Object.keys(run)) if (run[id].playing && run[id].drv) run[id].drv.pause(); },
+      resumeAll() { for (const id of Object.keys(run)) if (run[id].playing && run[id].drv) run[id].drv.play(); },
+      autoStart() { for (const tr of trackList(rec)) if (tr.autoStart) this.start(tr.id); }
+    };
+  }
+
   // ---------- sequence chaining (auto-advance) + preview notifications ----------
   function seqAutoNext(rec, seqId) {
     const sq = seqList(rec).find((x) => x.id === seqId);
@@ -641,6 +681,6 @@ const Studio = (() => {
   }
 
   return { TARGET_W, TARGET_H, newId, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
-           geom, toTargetSpace, blankExperience, save, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, seqList, elVisibleIn, nextSequence, applySequence, renderSeqDots, sampleTimeline, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, topLevelElements, groupChildren,
+           geom, toTargetSpace, blankExperience, save, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, seqList, elVisibleIn, nextSequence, applySequence, renderSeqDots, sampleTimeline, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, topLevelElements, groupChildren, trackList, makeTrackRunner,
            load: idbGet, all: idbAll, del: idbDel };
 })();

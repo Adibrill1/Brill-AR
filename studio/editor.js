@@ -66,6 +66,44 @@
       };
       bar.appendChild(add);
     }
+    { // parallel overlay tracks: independent mini-timelines that run at the same time as states
+      let trow = document.createElement("div");
+      trow.style.cssText = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;font-size:12px;color:#aab;border-top:1px solid #333;padding-top:6px";
+      trow.appendChild(document.createTextNode("מסלולים במקביל:"));
+      const tracks = Studio.trackList(rec);
+      tracks.forEach((tr) => {
+        const chip = document.createElement("span");
+        chip.style.cssText = "display:inline-flex;align-items:center;gap:4px;background:#223;padding:2px 8px;border-radius:999px";
+        chip.appendChild(document.createTextNode("🎞️ " + tr.name));
+        const as = document.createElement("input");
+        as.type = "checkbox"; as.checked = !!tr.autoStart; as.title = "מתחיל אוטומטית";
+        as.onchange = async () => { tr.autoStart = as.checked; await Studio.save(rec); };
+        chip.appendChild(as);
+        const lp = document.createElement("input");
+        lp.type = "checkbox"; lp.checked = !!tr.loop; lp.title = "חזרה";
+        lp.onchange = async () => { tr.loop = lp.checked; await Studio.save(rec); };
+        chip.appendChild(lp);
+        const del = document.createElement("button");
+        del.textContent = "×"; del.title = "מחיקת המסלול";
+        del.onclick = async () => {
+          rec.tracks = tracks.filter((x) => x.id !== tr.id);
+          for (const el of rec.elements) if (el.track === tr.id) el.track = null;
+          await Studio.save(rec); renderSeqTabs(); renderList(); renderPanel();
+        };
+        chip.appendChild(del);
+        trow.appendChild(chip);
+      });
+      if (tracks.length < 4) {
+        const add = document.createElement("button");
+        add.className = "seq-add"; add.textContent = "+ מסלול";
+        add.onclick = async () => {
+          rec.tracks = tracks.concat([{ id: Studio.newId(), name: "מסלול " + (tracks.length + 1), loop: true, autoStart: true }]);
+          await Studio.save(rec); renderSeqTabs(); renderPanel();
+        };
+        trow.appendChild(add);
+      }
+      bar.appendChild(trow);
+    }
     { // per-state settings: loop + auto-advance chaining
       const sq = seqs.find((x) => x.id === curSeq);
       if (sq) {
@@ -377,6 +415,7 @@
     $("sel-anim").onchange = (e) => upd((el) => { el.anim = e.target.value; el.spin = el.anim === "spin"; });
     $("sel-tap").onchange = (e) => upd((el) => { el.onTap = e.target.value; });
     $("sel-seq").onchange = (e) => upd((el) => { el.seq = e.target.value || null; });
+    $("sel-track").onchange = (e) => upd((el) => { el.track = e.target.value || null; });
     $("btn-tl-add").onclick = () => upd((el) => {
       el.timeline = el.timeline && Array.isArray(el.timeline.keys) ? el.timeline : { loop: false, keys: [] };
       const t = Math.max(0, Math.min(60, parseFloat($("num-tl-t").value) || 0));
@@ -480,7 +519,7 @@
       cb.type = "checkbox"; cb.checked = checkedIds.has(el.id); cb.title = "סמן לקיבוץ";
       cb.onclick = (ev) => { ev.stopPropagation(); if (cb.checked) checkedIds.add(el.id); else checkedIds.delete(el.id); renderList(); };
       li.appendChild(cb);
-      li.appendChild(document.createTextNode((ICONS[el.type] || "") + el.name + (i === rec.elements.length - 1 ? "  (עליון)" : i === 0 ? "  (תחתון)" : "")));
+      li.appendChild(document.createTextNode((el.track ? "🎞️ " : "") + (ICONS[el.type] || "") + el.name + (i === rec.elements.length - 1 ? "  (עליון)" : i === 0 ? "  (תחתון)" : "")));
       li.className = el.id === selectedId ? "sel" : "";
       li.onclick = () => { selectedId = el.id; renderList(); renderPanel(); draw(); };
       ul.appendChild(li);
@@ -582,8 +621,23 @@
       o.textContent = "מעבר למצב: " + (sq.name || sq.id);
       tapSel.appendChild(o);
     }
+    for (const tr of Studio.trackList(rec)) {
+      const o = document.createElement("option");
+      o.value = "track:" + tr.id; o.dataset.seq = "1";
+      o.textContent = "הפעל/עצור מסלול: " + (tr.name || tr.id);
+      tapSel.appendChild(o);
+    }
     tapSel.value = el.onTap || "none";
     if (tapSel.value !== (el.onTap || "none")) { el.onTap = "none"; tapSel.value = "none"; }
+    const tracks = Studio.trackList(rec);
+    $("row-track").hidden = !tracks.length;
+    if (tracks.length) {
+      const tsel = $("sel-track");
+      tsel.innerHTML = "";
+      const none = document.createElement("option"); none.value = ""; none.textContent = "ללא (שייך למצב)"; tsel.appendChild(none);
+      tracks.forEach((tr) => { const o = document.createElement("option"); o.value = tr.id; o.textContent = "🎞️ " + tr.name; tsel.appendChild(o); });
+      tsel.value = el.track || "";
+    }
     const seqs = Studio.seqList(rec);
     $("row-seq").hidden = !seqs.length;
     if (seqs.length) {

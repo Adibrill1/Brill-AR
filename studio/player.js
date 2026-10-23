@@ -97,14 +97,14 @@
   const onSequence = (id) => {
     if (!Studio.seqList(rec).some((x) => x.id === id)) return;
     curSeq = id;
-    Studio.applySequence(target, rec, curSeq, mediaEls);
+    refreshVisibility();
     Studio.renderSeqDots(rec, curSeq);
     if (tlDrv) { tlDrv.stateLoop = !!(Studio.seqList(rec).find((x) => x.id === curSeq) || {}).loop; tlDrv.reset(); }
     runner.enter(curSeq);
   };
   const onNextSequence = () => {
     curSeq = Studio.nextSequence(rec, curSeq);
-    Studio.applySequence(target, rec, curSeq, mediaEls);
+    refreshVisibility();
     Studio.renderSeqDots(rec, curSeq);
     if (tlDrv) tlDrv.reset(); // a new state replays its motion from the start
   };
@@ -117,12 +117,18 @@
     target.appendChild(e);
     if (e.dataset.opacity) Studio.applyOpacity(e, parseFloat(e.dataset.opacity));
   });
+  // parallel overlay tracks: independent clocks, tap start/stop, combined visibility
+  const trackRunner = Studio.makeTrackRunner(rec, target);
+  const refreshVisibility = () => Studio.applySequence(target, rec, curSeq, mediaEls, (id) => trackRunner.isPlaying(id));
+  const onTrackToggle = (id) => { trackRunner.toggle(id); refreshVisibility(); };
   // taps bind per entity, including children inside group wrappers
   target.querySelectorAll("[data-el-id]").forEach((n) => {
     const el = rec.elements.find((x) => x.id === n.dataset.elId);
-    if (el) Studio.bindTap(n, el, { onMuteToggle, onNextSequence, onSequence });
+    if (el) Studio.bindTap(n, el, { onMuteToggle, onNextSequence, onSequence, onTrackToggle });
   });
-  if (curSeq) { Studio.applySequence(target, rec, curSeq, mediaEls); Studio.renderSeqDots(rec, curSeq); }
+  trackRunner.autoStart();
+  refreshVisibility();
+  if (curSeq) { refreshVisibility(); Studio.renderSeqDots(rec, curSeq); }
   scene.appendChild(target);
   // Timeline motion starts when the artwork is found (not during permission/scan screens)
   // and freezes while tracking is lost, resuming where it stopped.
@@ -131,8 +137,8 @@
   runner.enter(curSeq);
   window.__tlDrv = tlDrv; // test/debug handle
   if (tlDrv) {
-    scene.addEventListener("xrimagefound", () => tlDrv.play());
-    scene.addEventListener("xrimagelost", () => tlDrv.pause());
+    scene.addEventListener("xrimagefound", () => { tlDrv.play(); trackRunner.resumeAll(); });
+    scene.addEventListener("xrimagelost", () => { tlDrv.pause(); trackRunner.pauseAll(); });
   }
   document.body.appendChild(scene);
 

@@ -81,7 +81,7 @@
   const onSequence = (id) => {
     if (!Studio.seqList(rec).some((x) => x.id === id)) return;
     curSeq = id;
-    Studio.applySequence(rig, rec, curSeq, mediaEls);
+    refreshVisibility();
     Studio.renderSeqDots(rec, curSeq);
     Studio.notifySeq(rec, curSeq);
     if (tlDrv) { tlDrv.stateLoop = !!(Studio.seqList(rec).find((x) => x.id === curSeq) || {}).loop; tlDrv.reset(); }
@@ -89,7 +89,7 @@
   };
   const onNextSequence = () => {
     curSeq = Studio.nextSequence(rec, curSeq);
-    Studio.applySequence(rig, rec, curSeq, mediaEls);
+    refreshVisibility();
     Studio.renderSeqDots(rec, curSeq);
     if (tlDrv) tlDrv.reset();
   };
@@ -118,12 +118,18 @@
     rig.appendChild(e);
     if (e.dataset.opacity) Studio.applyOpacity(e, parseFloat(e.dataset.opacity));
   });
+  // parallel overlay tracks: independent clocks, tap start/stop, combined visibility
+  const trackRunner = Studio.makeTrackRunner(rec, rig);
+  const refreshVisibility = () => Studio.applySequence(rig, rec, curSeq, mediaEls, (id) => trackRunner.isPlaying(id));
+  const onTrackToggle = (id) => { trackRunner.toggle(id); refreshVisibility(); };
   // taps bind per entity, including children inside group wrappers
   rig.querySelectorAll("[data-el-id]").forEach((n) => {
     const el = rec.elements.find((x) => x.id === n.dataset.elId);
-    if (el) Studio.bindTap(n, el, { onMuteToggle, onNextSequence, onSequence });
+    if (el) Studio.bindTap(n, el, { onMuteToggle, onNextSequence, onSequence, onTrackToggle });
   });
-  if (curSeq) { Studio.applySequence(rig, rec, curSeq, mediaEls); Studio.renderSeqDots(rec, curSeq); }
+  trackRunner.autoStart();
+  refreshVisibility();
+  if (curSeq) { refreshVisibility(); Studio.renderSeqDots(rec, curSeq); }
   tlDrv = Studio.startTimelineDriver(rec, [...rig.querySelectorAll("[data-el-id]")]);
   if (tlDrv) tlDrv.stateLoop = !!(Studio.seqList(rec).find((x) => x.id === curSeq) || {}).loop;
   runner.enter(curSeq);

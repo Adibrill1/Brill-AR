@@ -70,6 +70,7 @@ function validateExport(o) {
     if (!el || typeof el !== "object") return "element " + i + " not an object";
     if (!EL_TYPES.has(el.type)) return "element " + i + ": unsupported type " + JSON.stringify(el.type);
     for (const f of NUM_FIELDS) if (el[f] != null && typeof el[f] !== "number") return "element " + i + ": bad " + f;
+    if (el.track != null && typeof el.track !== "string") return "element " + i + ": bad track";
     if (el.text != null && String(el.text).length > 2000) return "element " + i + ": text too long";
     if ((el.onTap === "url" || el.onTap === "link") && el.tapUrl && !/^(https:\/\/|mailto:|tel:)/.test(el.tapUrl)) return "element " + i + ": tap link must be https/mailto/tel";
     if (el.name != null) el.name = String(el.name).slice(0, 120);
@@ -87,6 +88,15 @@ function validateExport(o) {
         if (member.has(cid)) return "element " + i + ": child in two groups";
         member.add(cid);
       }
+    }
+  }
+  if (o.tracks != null) {
+    if (!Array.isArray(o.tracks) || o.tracks.length > 12) return "bad tracks";
+    for (const t of o.tracks) {
+      if (!t || typeof t !== "object" || typeof t.id !== "string" || t.id.length > 64) return "bad track entry";
+      if (t.name != null) t.name = String(t.name).slice(0, 120);
+      if (t.loop != null && typeof t.loop !== "boolean") return "bad track loop";
+      if (t.autoStart != null && typeof t.autoStart !== "boolean") return "bad track autoStart";
     }
   }
   if (o.sequences != null) {
