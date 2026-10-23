@@ -274,7 +274,30 @@ const Studio = (() => {
     return rec;
   }
 
+  // Try to start all given media; if autoplay is blocked (iOS low-power mode,
+  // headless browsers), show a clear tap-to-play button instead of a silently frozen frame.
+  function ensurePlayback(mediaEls, opts) {
+    opts = opts || {};
+    const pending = () => mediaEls.filter((m) => m.node.paused);
+    const tryPlay = () => { for (const m of pending()) m.node.play().catch(() => {}); };
+    tryPlay(); setTimeout(tryPlay, 800); setTimeout(tryPlay, 2500);
+    let btn = null;
+    const refresh = () => {
+      const left = pending().length;
+      if (left && !btn && opts.button !== false) {
+        btn = document.createElement("button");
+        btn.id = "play-overlay";
+        btn.textContent = opts.label || "\u25B6 \u05D4\u05E4\u05E2\u05DC\u05D4";
+        btn.style.cssText = "position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:40;padding:12px 26px;border:0;border-radius:999px;background:#7c5cff;color:#fff;font-size:16px;font-weight:700;box-shadow:0 4px 18px rgba(0,0,0,.35);cursor:pointer";
+        btn.addEventListener("click", () => { tryPlay(); setTimeout(refresh, 400); });
+        document.body.appendChild(btn);
+      } else if (!left && btn) { btn.remove(); btn = null; }
+    };
+    for (const m of mediaEls) m.node.addEventListener("playing", () => setTimeout(refresh, 50));
+    setTimeout(refresh, 3000); // grace period for autoplay before showing the button
+  }
+
   return { TARGET_W, TARGET_H, newId, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
-           geom, toTargetSpace, blankExperience, save, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap,
+           geom, toTargetSpace, blankExperience, save, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback,
            load: idbGet, all: idbAll, del: idbDel };
 })();

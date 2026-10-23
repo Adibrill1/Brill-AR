@@ -12,6 +12,7 @@
   rec.elements.forEach(Studio.normEl);
 
   const mediaEls = [];
+  const videoProbes = [];
   // Media lives in a hidden div, not a-assets: a-assets gates scene load on
   // canplaythrough of every media element, which stalls the preview entirely
   // on browsers without the right codecs.
@@ -26,6 +27,12 @@
       v.id = "m-" + el.id; v.src = url; v.muted = true; v.loop = el.loop !== false;
       v.setAttribute("playsinline", ""); v.preload = "auto";
       assets.appendChild(v); mediaEls.push({ kind: "video", node: v, el });
+      videoProbes.push(new Promise((resolve) => {
+        const done = (ok) => resolve({ id: el.id, ok });
+        const timer = setTimeout(() => done(false), 6000); // claimed codec but no data = treat as undecodable
+        v.addEventListener("loadedmetadata", () => { clearTimeout(timer); done(true); }, { once: true });
+        v.addEventListener("error", () => { clearTimeout(timer); done(false); }, { once: true });
+      }));
     } else if (el.type === "image") {
       const im = document.createElement("img");
       im.id = "m-" + el.id; im.src = url; im.crossOrigin = "anonymous";
@@ -81,10 +88,12 @@
   // would keep a-video's texture pending forever and block the whole scene load.
   const probe = document.createElement("video");
   const canPlay = (file) => { const t = file && file.type ? file.type : "video/mp4"; return probe.canPlayType(t) !== ""; };
+  const probeResults = await Promise.all(videoProbes);
+  const undecodable = new Set(probeResults.filter((r) => !r.ok).map((r) => r.id));
   let videoFallbacks = 0;
   rec.elements.forEach((el, idx) => {
     let e;
-    if (el.type === "video" && !canPlay(rec.assets[el.assetId])) {
+    if (el.type === "video" && (!canPlay(rec.assets[el.assetId]) || undecodable.has(el.id))) {
       videoFallbacks++;
       const ts = Studio.toTargetSpace(rec, el, el.aspect || 1);
       e = document.createElement("a-plane");
@@ -121,6 +130,8 @@
   kick();
   setTimeout(kick, 800);
   setTimeout(kick, 2500);
+
+  Studio.ensurePlayback(mediaEls.filter((m) => m.kind === "video"));
 
   // First tap: unmute videos, start sound elements.
   window.addEventListener("pointerdown", () => {

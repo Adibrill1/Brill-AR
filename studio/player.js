@@ -95,6 +95,8 @@
   scene.appendChild(target);
   document.body.appendChild(scene);
 
+  Studio.ensurePlayback(mediaEls.filter((m) => m.kind === "video"));
+
   // First tap: unmute videos, start sound elements, resume audio context (proven pattern).
   window.addEventListener("pointerdown", () => {
     for (const m of mediaEls) {
