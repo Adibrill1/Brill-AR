@@ -70,11 +70,12 @@
         <button id="btn-layer-up" class="ghost small">מעלה (מכסה)</button>
       </div>
       <div id="row-model" hidden>
-        <label>אנימציה מובנית (מספר, מתחיל מ־0) <input id="num-model-clip" type="number" min="0" max="99" step="1" value="0"></label>
+        <label>בחירת אנימציה <select id="sel-model-clip"><option value="0">טעינת שמות...</option></select></label>
+        <label>מספר אנימציה (מתחיל מ־0) <input id="num-model-clip" type="number" min="0" max="99" step="1" value="0"></label>
         <label>מהירות אנימציה <input id="num-model-speed" type="number" min="0.1" max="4" step="0.1" value="1"></label>
         <label><input id="ck-model-playing" type="checkbox" checked> ניגון אנימציה</label>
         <label><input id="ck-model-loop" type="checkbox" checked> לולאת אנימציה</label>
-        <p>המספר מתייחס לסדר האנימציות בקובץ. אם אין מספר כזה, תיבחר האחרונה. דגם ללא אנימציות נשאר סטטי.</p>
+        <p>השמות נקראים מתוך קובץ המודל. המספר מתייחס לסדר האנימציות בקובץ. אם אין מספר כזה, תיבחר האחרונה. דגם ללא אנימציות נשאר סטטי.</p>
       </div>
       <div id="row-text">
         <label>תוכן הטקסט <textarea id="in-text" rows="2"></textarea></label>
@@ -187,12 +188,12 @@
 
 <script src="library.js"></script>
 <script src="vendor/gifanim.js"></script>
-<script src="shared.js?v=rc48"></script>
+<script src="shared.js?v=rc49"></script>
 <script src="external/qrcode.js"></script>
 <script src="vendor/fflate.umd.js"></script>
 <script src="vendor/gltfzip.js"></script>
 <script src="vendor/fbx-import.js"></script>
     <script src="vendor/obj2glb.js"></script>
-    <script src="editor.js?v=rc48"></script>
+    <script src="editor.js?v=rc49"></script>
 </body>
 </html>

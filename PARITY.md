@@ -162,3 +162,6 @@ JSON import rejects nonembedded asset URLs before fetch, unsafe/duplicate ids, m
 
 ## Round AE model controls
 Zero-based embedded clip/speed/play/repeat creator controls persist across whole-schema publish/update.390px UI inspected. Runtime original GLB plus synthetic cloned second clip verifies index selection/speed/pause/one-shot config/tracking freeze. Real authored multi-clip/skeletal/morph fidelity and named selector remain open; no new rendered/device proof claimed.
+
+## Round AF named multi-clips
+Named GLB clip dropdown from bounded metadata now available. Actual original two-authored-clip GLB renders index0horizontal X357.5→441.3 and index1vertical Y352.8→268.8; four frames inspected. Supersedes AE's cloned-second-clip-only limit for simple translation. Skeletal/morph/blending/phone still unverified.

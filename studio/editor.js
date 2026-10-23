@@ -548,6 +548,7 @@
     for (const [key, min, max] of [["x",-.7,.7],["y",-.7,.7],["w",.05,2],["rot",-180,180],["z",0,.5]])
       num("num-"+key, min, max, (el,v) => transform(el,key,v));
     num("num-opacity", 0, 1, (el, v) => { el.opacity = v; });
+    $("sel-model-clip").onchange=e=>upd(el=>{el.modelClip=Number(e.target.value);});
     num("num-model-clip",0,99,(el,v)=>{el.modelClip=Math.floor(v);});
     num("num-model-speed",.1,4,(el,v)=>{el.modelSpeed=v;});
     $("ck-model-playing").onchange=e=>upd(el=>{el.modelPlaying=e.target.checked;});
@@ -652,6 +653,17 @@
     if (!el) return;
     const isGroup = el.type === "group";
     $("row-model").hidden=el.type!=="model";
+    if(el.type==='model') {
+      const select=$("sel-model-clip");select.replaceChildren();select.disabled=true;
+      const pending=document.createElement('option');pending.textContent='טעינת שמות...';select.append(pending);
+      Studio.modelClipNames(rec.assets[el.assetId]).then(names=>{
+        if(selectedId!==el.id)return;
+        select.replaceChildren();
+        if(!names.length){const option=document.createElement('option');option.textContent='אין אנימציות מובנות';select.append(option);return;}
+        names.forEach((name,i)=>{const option=document.createElement('option');option.value=i;option.textContent=i+' · '+name;select.append(option);});
+        select.disabled=false;select.value=Math.min(names.length-1,el.modelClip||0);
+      });
+    }
     $("num-model-clip").value=el.modelClip||0;$("num-model-speed").value=el.modelSpeed||1;
     $("ck-model-playing").checked=el.modelPlaying!==false;$("ck-model-loop").checked=el.modelLoop!==false;
     $("panel-name").textContent = (isGroup ? "📦 " : "") + el.name + (isGroup ? " (שינויים חלים על כל הפריטים בקבוצה)" : "");
