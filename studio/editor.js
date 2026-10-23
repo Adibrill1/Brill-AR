@@ -223,6 +223,29 @@
     document.querySelectorAll("[data-add]").forEach((b) => {
       b.onclick = () => $("file-" + b.dataset.add).click();
     });
+    const confirmDialog = (text, yesLabel) => new Promise((res) => {
+      const wrap = document.createElement("div");
+      wrap.id = "confirm-modal";
+      wrap.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:200;display:flex;align-items:center;justify-content:center";
+      const box = document.createElement("div");
+      box.style.cssText = "background:#1e1e2a;color:#fff;max-width:420px;margin:16px;padding:20px;border-radius:14px;font:14px/1.6 sans-serif;box-shadow:0 12px 40px rgba(0,0,0,.5)";
+      const body = document.createElement("div");
+      body.style.marginBottom = "16px"; body.textContent = text;
+      const row = document.createElement("div");
+      row.style.cssText = "display:flex;gap:10px;justify-content:flex-end";
+      const no = document.createElement("button");
+      no.textContent = "ביטול"; no.dataset.answer = "no";
+      no.style.cssText = "padding:8px 16px;border-radius:10px;border:1px solid #555;background:transparent;color:#fff;cursor:pointer";
+      const yes = document.createElement("button");
+      yes.textContent = yesLabel || "להמשיך"; yes.dataset.answer = "yes";
+      yes.style.cssText = "padding:8px 16px;border-radius:10px;border:0;background:#7c5cff;color:#fff;cursor:pointer";
+      const done = (v) => { wrap.remove(); res(v); };
+      no.onclick = () => done(false); yes.onclick = () => done(true);
+      wrap.onclick = (e) => { if (e.target === wrap) done(false); };
+      row.appendChild(no); row.appendChild(yes);
+      box.appendChild(body); box.appendChild(row); wrap.appendChild(box);
+      document.body.appendChild(wrap);
+    });
     const addFile = (kind) => async (e) => {
       let f = e.target.files[0]; e.target.value = "";
       if (!f) return;
@@ -264,7 +287,7 @@
         if (/\.obj$/i.test(f.name)) { // Wavefront OBJ -> transcode to GLB (geometry only)
           const objText = await f.text();
           const lossy = /^(mtllib|usemtl|vt\s|vn\s)/m.test(objText);
-          if (lossy && !confirm("קובץ ה־obj הזה כולל חומרים/טקסטורות או נורמלים (mtllib/usemtl/vt/vn). ההמרה שלנו שומרת רק את הצורה הגיאומטרית - החומרים והטקסטורות יאבדו. לתוצאה מלאה עדיף לייצא glb מהתוכנה המקורית. להמשיך עם גיאומטריה בלבד?")) return;
+          if (lossy && !(await confirmDialog("קובץ ה־obj הזה כולל חומרים/טקסטורות או נורמלים (mtllib/usemtl/vt/vn). ההמרה כאן שומרת רק את הצורה הגיאומטרית - החומרים והטקסטורות יאבדו. לתוצאה מלאה עדיף לייצא glb מהתוכנה המקורית.", "להמשיך עם גיאומטריה בלבד"))) return;
           const glb = window.objToGlb(objText);
           if (!glb) { msg("קובץ ה־obj ריק או לא קריא - צריך קובץ עם קודקודים ופאות (שורות v ו־f)."); return; }
           f = new File([glb], f.name.replace(/\.obj$/i, ".glb"), { type: "model/gltf-binary" });
