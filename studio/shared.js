@@ -624,11 +624,12 @@ const Studio = (() => {
   }
   // Canvas uses the same artwork-space samples and parent-base frame as runtime.
   function sampleComposition(rec, el, t, seqId) {
-    const out = sampleVisual(rec,el,t);
+    const timeFor=typeof t==='function'?t:()=>t;
+    const out = sampleVisual(rec,el,timeFor(el));
     out.visible = out.visible && elVisibleIn(el,seqId);
     const group=rec.elements.find(g=>g.type==='group'&&(g.children||[]).includes(el.id));
     if(group) {
-      const parent=sampleVisual(rec,group,t),ratio=geom(rec).artW/geom(rec).artH;
+      const parent=sampleVisual(rec,group,timeFor(group)),ratio=geom(rec).artW/geom(rec).artH;
       const angle=(parent.rot-(group.rot||0))*Math.PI/180;
       const dx=(out.x-(group.x||0))*ratio*parent.scale,dy=(out.y-(group.y||0))*parent.scale;
       out.x=parent.x+(dx*Math.cos(angle)-dy*Math.sin(angle))/ratio;

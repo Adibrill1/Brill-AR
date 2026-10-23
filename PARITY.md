@@ -174,3 +174,6 @@ Canvas group/child spin/float/pulse now sampled at scrub/live time with runtime 
 
 ## Round AI zero-time boundary
 Single t=0timeline now gets runtime driver and suppresses presets consistently with canvas; actual driver hide/opacity/rotation fixture passes. Previously duration0caused omission. No device claim.
+
+## Round AJ local preview clocks
+Canvas now uses experience/state-relative time and session-only manual track preview play/stop clocks; state switch retains track state. Composition accepts independent element clocks, global scrub unchanged. Actual controls and clock routing tested, not full runtime/pixel equivalence. Local-only pending restored deployment access.

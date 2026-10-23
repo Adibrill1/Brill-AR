@@ -10,6 +10,7 @@
   let rec = null;              // current experience record
   let selectedId = null;
   const checkedIds = new Set(); // multi-select for grouping
+  let canvasStart=performance.now(),canvasTracks={};
   let curSeq = null;           // active sequence-state id (null = single-state artwork)
   const media = {};            // assetId -> HTMLImageElement | HTMLVideoElement (for canvas drawing)
   const textCache = {};        // el.id -> {key, canvas, aspect}
@@ -28,7 +29,7 @@
     render();
   }
 
-  function resetSeq() { curSeq = Studio.seqList(rec).length ? Studio.seqList(rec)[0].id : null; }
+  function resetSeq() { canvasStart=performance.now();canvasTracks={};curSeq = Studio.seqList(rec).length ? Studio.seqList(rec)[0].id : null; }
 
   // Sequence-state tabs above the canvas: switch the state being edited, add/remove states.
   function renderSeqTabs() {
@@ -54,7 +55,7 @@
       const b = document.createElement("button");
       b.className = "seq-tab" + (sq.id === curSeq ? " sel" : "");
       b.textContent = sq.name;
-      b.onclick = () => { curSeq = sq.id; selectedId = null; renderSeqTabs(); renderList(); renderPanel(); draw(); };
+      b.onclick = () => { canvasStart=performance.now();curSeq = sq.id; selectedId = null; renderSeqTabs(); renderList(); renderPanel(); draw(); };
       bar.appendChild(b);
     });
     if (seqs.length < 6) {
@@ -83,6 +84,11 @@
         lp.type = "checkbox"; lp.checked = !!tr.loop; lp.title = "חזרה";
         lp.onchange = async () => { tr.loop = lp.checked; await Studio.save(rec); };
         chip.appendChild(lp);
+        if(!canvasTracks[tr.id])canvasTracks[tr.id]={playing:!!tr.autoStart,start:performance.now()};
+        const preview=document.createElement('button');preview.dataset.previewTrack=tr.id;
+        const state=canvasTracks[tr.id];preview.textContent=state.playing?'עצירה בתצוגה':'ניגון בתצוגה';
+        preview.onclick=()=>{state.playing=!state.playing;state.start=performance.now();renderSeqTabs();draw();};chip.append(preview);
+
         const del = document.createElement("button");
         del.textContent = "×"; del.title = "מחיקת המסלול";
         del.onclick = async () => {
@@ -865,7 +871,14 @@
       if (!Studio.elVisibleIn(el, curSeq)) continue;
       // live timeline playback: sampled keyframe values override the element's base props
       const parent=rec.elements.find(g=>g.type==='group'&&(g.children||[]).includes(el.id));
-      const ts=Studio.sampleComposition(rec,el,tlScrubT!=null?tlScrubT:t0/1000,curSeq);
+      const clock=element=>{
+        if(tlScrubT!=null)return tlScrubT;
+        if(element.track){const clock=canvasTracks[element.track];return clock&&clock.playing?(t0-clock.start)/1000:0;}
+        return (t0-canvasStart)/1000;
+      };
+      const ts=Studio.sampleComposition(rec,el,clock,curSeq);
+      const trackStopped=element=>element&&element.track&&canvasTracks[element.track]&&!canvasTracks[element.track].playing;
+      if(tlScrubT==null&&(trackStopped(el)||trackStopped(parent)))continue;
       if(Studio.timelineDur(el)||(parent&&Studio.timelineDur(parent)))needsAnim=tlScrubT==null;
       if(!ts.visible)continue;
       const sc = ts ? ts.scale : 1;
