@@ -267,6 +267,27 @@ const Studio = (() => {
   }
 
 
+  // Group children are stored in artwork/world coordinates. Bake creator edits into
+  // children, then inverse the group's base rotation when constructing local wrappers.
+  function transformGroup(rec, group, changes) {
+    const before = { x: group.x || 0, y: group.y || 0, z: group.z || 0, w: group.w || 1, rot: group.rot || 0 };
+    const after = Object.assign({}, before, changes);
+    const factor = after.w / before.w;
+    const angle = (after.rot - before.rot) * Math.PI / 180;
+    const ratio = geom(rec).artW / geom(rec).artH;
+    for (const child of groupChildren(rec, group)) {
+      const dx = ((child.x || 0) - before.x) * ratio * factor;
+      const dy = ((child.y || 0) - before.y) * factor;
+      child.x = after.x + (dx * Math.cos(angle) - dy * Math.sin(angle)) / ratio;
+      child.y = after.y + dx * Math.sin(angle) + dy * Math.cos(angle);
+      child.z = (child.z || 0) + after.z - before.z;
+      child.w *= factor; if (child.h != null) child.h *= factor;
+      child.rot = (child.rot || 0) + after.rot - before.rot;
+    }
+    if (group.h != null && changes.w != null) group.h *= factor;
+    Object.assign(group, changes);
+  }
+
   // ---------- round A: shared entity factory for player + preview ----------
   // mode 'ar': video uses the device-proven xrextras-target-video-fade; 'preview': plain a-video.
   function buildElementEntity(rec, el, idx, mode, opts) {
@@ -275,15 +296,17 @@ const Studio = (() => {
     const ts = toTargetSpace(rec, el, el.aspect || 1);
     const ox = opts.origin ? opts.origin.x : 0, oy = opts.origin ? opts.origin.y : 0, oz = opts.origin ? opts.origin.z : 0;
     const z = (ts.z || 0) + idx * 0.001; // array order breaks z ties, matching the editor's paint order
-    const pos = `${ts.x - ox} ${ts.y - oy} ${z - oz}`;
-    const rot = `0 0 ${el.rot || 0}`;
+    const angle = -(opts.baseRotation || 0) * Math.PI / 180;
+    const dx = ts.x - ox, dy = ts.y - oy;
+    const pos = `${dx * Math.cos(angle) - dy * Math.sin(angle)} ${dx * Math.sin(angle) + dy * Math.cos(angle)} ${z - oz}`;
+    const rot = `0 0 ${(el.rot || 0) - (opts.baseRotation || 0)}`;
     let e = null;
     if (el.type === "group") {
       // wrapper entity: timeline/anim presets/opacity act on the whole group; children sit inside, relative to it
       e = document.createElement("a-entity");
       groupChildren(rec, el).forEach((ch, ci) => {
         if (ch.type === "group") return; // no nesting in v1
-        const ce = buildElementEntity(rec, ch, ci, mode, { origin: { x: ts.x, y: ts.y, z: ts.z || 0 }, videoFallback: opts.videoFallback });
+        const ce = buildElementEntity(rec, ch, ci, mode, { origin: { x: ts.x, y: ts.y, z: ts.z || 0 }, baseRotation: el.rot || 0, videoFallback: opts.videoFallback });
         if (ce) { e.appendChild(ce); if (ce.dataset.opacity) applyOpacity(ce, parseFloat(ce.dataset.opacity)); }
       });
     } else if (el.type === "video") {
@@ -756,6 +779,6 @@ const Studio = (() => {
   }
 
   return { TARGET_W, TARGET_H, newId, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
-           geom, toTargetSpace, blankExperience, save, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, renderSeqDots, sampleTimeline, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, topLevelElements, groupChildren, trackList, makeTrackRunner,
+           geom, toTargetSpace, blankExperience, save, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, renderSeqDots, sampleTimeline, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
            load: idbGet, all: idbAll, del: idbDel };
 })();

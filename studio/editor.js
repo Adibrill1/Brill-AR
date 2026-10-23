@@ -485,7 +485,7 @@
     $("sl-scale").oninput = (e) => upd((el) => { const f = parseFloat(e.target.value) / el.w; el.w = parseFloat(e.target.value); if (el.h != null) el.h = Math.max(0.02, el.h * f); if (el.type === "group") groupScale(el, f); });
     $("sl-rot").oninput = (e) => upd((el) => {
       const v = parseFloat(e.target.value);
-      if (el.type === "group") { const d = v - (el.rot || 0); el.rot = v; for (const k of Studio.groupChildren(rec, el)) k.rot = (k.rot || 0) + d; }
+      if (el.type === "group") Studio.transformGroup(rec, el, { rot: v });
       else el.rot = v;
     });
     $("sl-z").oninput = (e) => upd((el) => { el.z = parseFloat(e.target.value); });
@@ -548,7 +548,7 @@
     num("num-x", -0.7, 0.7, (el, v) => { if (el.type === "group") { const d = v - (el.x || 0); el.x = v; for (const k of Studio.groupChildren(rec, el)) k.x = (k.x || 0) + d; } else el.x = v; });
     num("num-y", -0.7, 0.7, (el, v) => { if (el.type === "group") { const d = v - (el.y || 0); el.y = v; for (const k of Studio.groupChildren(rec, el)) k.y = (k.y || 0) + d; } else el.y = v; });
     num("num-w", 0.05, 2, (el, v) => { const f = v / el.w; el.w = v; if (el.h != null) el.h = Math.max(0.02, el.h * f); if (el.type === "group") groupScale(el, f); });
-    num("num-rot", -180, 180, (el, v) => { if (el.type === "group") { const d = v - (el.rot || 0); el.rot = v; for (const k of Studio.groupChildren(rec, el)) k.rot = (k.rot || 0) + d; } else el.rot = v; });
+    num("num-rot", -180, 180, (el, v) => { if (el.type === "group") Studio.transformGroup(rec, el, { rot: v }); else el.rot = v; });
     num("num-z", 0, 0.5, (el, v) => { el.z = v; });
     num("num-opacity", 0, 1, (el, v) => { el.opacity = v; });
     // text controls
