@@ -448,6 +448,7 @@
         msg("הייבוא הצליח.");
       } catch (err) { msg("הקובץ לא תקין לייבוא."); }
     };
+    $("btn-edit-ar").onclick = () => { location.href = "play.html?edit=1#" + rec.id; };
     $("btn-play").onclick = () => { location.href = "play.html#" + rec.id; };
     $("btn-preview3d").onclick = () => { location.href = "preview.html#" + rec.id; };
     $("btn-del-el").onclick = async () => {
@@ -479,15 +480,15 @@
 
     // panel bindings
     const cur = () => rec.elements.find((x) => x.id === selectedId);
+    const transform = (el, key, value) => {
+      if (el.type === "group") Studio.transformGroup(rec, el, { [key]: value });
+      else { const f = key === "w" ? value / el.w : 1; el[key] = value; if (key === "w" && el.h != null) el.h = Math.max(.02, el.h * f); }
+    };
     const upd = async (fn) => { const el = cur(); if (!el) return; fn(el); await Studio.save(rec); renderPanel(); draw(); renderList(); };
     const num = (id, min, max, fn) => { $(id).onchange = (e) => { const v = parseFloat(e.target.value); if (isNaN(v)) { renderPanel(); return; } upd((el) => fn(el, Math.max(min, Math.min(max, v)))); }; };
-    $("sl-scale").oninput = (e) => upd((el) => { const f = parseFloat(e.target.value) / el.w; el.w = parseFloat(e.target.value); if (el.h != null) el.h = Math.max(0.02, el.h * f); if (el.type === "group") groupScale(el, f); });
-    $("sl-rot").oninput = (e) => upd((el) => {
-      const v = parseFloat(e.target.value);
-      if (el.type === "group") { const d = v - (el.rot || 0); el.rot = v; for (const k of Studio.groupChildren(rec, el)) k.rot = (k.rot || 0) + d; }
-      else el.rot = v;
-    });
-    $("sl-z").oninput = (e) => upd((el) => { el.z = parseFloat(e.target.value); });
+    $("sl-scale").oninput = e => upd(el => transform(el, "w", parseFloat(e.target.value)));
+    $("sl-rot").oninput = e => upd(el => transform(el, "rot", parseFloat(e.target.value)));
+    $("sl-z").oninput = e => upd(el => transform(el, "z", parseFloat(e.target.value)));
     $("sl-vol").oninput = (e) => upd((el) => { el.volume = parseFloat(e.target.value); });
     $("sl-opacity").oninput = (e) => upd((el) => { el.opacity = parseFloat(e.target.value); });
     $("ck-loop").onchange = (e) => upd((el) => { el.loop = e.target.checked; });
@@ -499,8 +500,17 @@
       el.timeline = el.timeline && Array.isArray(el.timeline.keys) ? el.timeline : { loop: false, keys: [] };
       const t = Math.max(0, Math.min(60, parseFloat($("num-tl-t").value) || 0));
       const scale = Math.max(0.1, Math.min(5, parseFloat($("num-tl-scale").value) || 1));
-      el.timeline.keys.push({ t, x: el.x, y: el.y, z: el.z || 0, rot: el.rot || 0, opacity: el.opacity == null ? 1 : el.opacity, scale, tap: el.onTap || "none" });
+      Studio.addTimelineKey(el, { t, x: el.x, y: el.y, z: el.z || 0, rot: el.rot || 0, opacity: el.opacity == null ? 1 : el.opacity, scale, tap: el.onTap || "none" });
     });
+    const addVisibilityKey = (visible) => upd((el) => {
+      el.timeline = el.timeline && Array.isArray(el.timeline.keys) ? el.timeline : { loop: false, keys: [] };
+      const t = Math.max(0, Math.min(60, parseFloat($("num-tl-t").value) || 0));
+      let key = el.timeline.keys.find(k => k.t === t);
+      if (!key) { key = { t }; el.timeline.keys.push(key); }
+      key.visible = visible;
+    });
+    $("btn-tl-show").onclick = () => addVisibilityKey(true);
+    $("btn-tl-hide").onclick = () => addVisibilityKey(false);
     $("ck-spatial").onchange = (e) => upd((el) => { el.spatial = e.target.checked; renderPanel(); });
     $("sel-spatial-mode").onchange = (e) => upd((el) => { el.spatialMode = e.target.value; });
     $("num-spatial-in").onchange = (e) => upd((el) => { el.spatialInner = Math.max(0.05, parseFloat(e.target.value) || 0.35); });
@@ -535,11 +545,8 @@
     });
     $("in-tapurl").onchange = (e) => upd((el) => { el.tapUrl = e.target.value.trim(); });
     // numeric panel
-    num("num-x", -0.7, 0.7, (el, v) => { if (el.type === "group") { const d = v - (el.x || 0); el.x = v; for (const k of Studio.groupChildren(rec, el)) k.x = (k.x || 0) + d; } else el.x = v; });
-    num("num-y", -0.7, 0.7, (el, v) => { if (el.type === "group") { const d = v - (el.y || 0); el.y = v; for (const k of Studio.groupChildren(rec, el)) k.y = (k.y || 0) + d; } else el.y = v; });
-    num("num-w", 0.05, 2, (el, v) => { const f = v / el.w; el.w = v; if (el.h != null) el.h = Math.max(0.02, el.h * f); if (el.type === "group") groupScale(el, f); });
-    num("num-rot", -180, 180, (el, v) => { if (el.type === "group") { const d = v - (el.rot || 0); el.rot = v; for (const k of Studio.groupChildren(rec, el)) k.rot = (k.rot || 0) + d; } else el.rot = v; });
-    num("num-z", 0, 0.5, (el, v) => { el.z = v; });
+    for (const [key, min, max] of [["x",-.7,.7],["y",-.7,.7],["w",.05,2],["rot",-180,180],["z",0,.5]])
+      num("num-"+key, min, max, (el,v) => transform(el,key,v));
     num("num-opacity", 0, 1, (el, v) => { el.opacity = v; });
     // text controls
     $("in-text").oninput = (e) => upd((el) => {
@@ -635,15 +642,6 @@
     Studio.save(rec).then(() => { renderList(); renderPanel(); draw(); });
   }
 
-  function groupScale(g, f) {
-    for (const k of Studio.groupChildren(rec, g)) {
-      k.w = Math.max(0.05, k.w * f);
-      if (k.h != null) k.h = Math.max(0.02, k.h * f);
-      k.x = (g.x || 0) + ((k.x || 0) - (g.x || 0)) * f;
-      k.y = (g.y || 0) + ((k.y || 0) - (g.y || 0)) * f;
-    }
-  }
-
   function renderPanel() {
     const el = rec.elements.find((x) => x.id === selectedId);
     $("panel").hidden = !el;
@@ -666,8 +664,8 @@
       $("num-spatial-in").value = el.spatialInner > 0 ? el.spatialInner : 0.35;
       $("num-spatial-out").value = el.spatialOuter > 0 ? el.spatialOuter : 1.4;
     }
-    $("sl-z").closest("label").hidden = isGroup;
-    $("num-z").closest("label").hidden = isGroup;
+    $("sl-z").closest("label").hidden = false;
+    $("num-z").closest("label").hidden = false;
     $("sel-tap").closest("label").hidden = isGroup;
     $("row-chroma").hidden = el.type !== "video";
     $("row-particles").hidden = el.type !== "particles";
@@ -788,7 +786,7 @@
     tl.keys.slice().sort((a, b) => a.t - b.t).forEach((k) => {
       const li = document.createElement("li");
       const i = el.timeline.keys.indexOf(k);
-      li.textContent = "t=" + k.t + "s " + (k.tap && k.tap !== "none" ? "👆 " : "");
+      li.textContent = "t=" + k.t + "s " + (k.visible === false ? "מוסתר " : k.visible === true ? "מוצג " : "") + (k.tap && k.tap !== "none" ? "👆 " : "");
       const del = document.createElement("button");
       del.className = "ghost danger"; del.textContent = "✕";
       del.onclick = () => upd((e2) => { e2.timeline.keys.splice(i, 1); });
@@ -848,6 +846,7 @@
       // live timeline playback: sampled keyframe values override the element's base props
       let ts = null;
       if (Studio.timelineDur(el)) { ts = Studio.sampleTimeline(el, tlScrubT != null ? tlScrubT : t0 / 1000); needsAnim = tlScrubT == null; }
+      if (ts && ts.visible === false) continue;
       const sc = ts ? ts.scale : 1;
       let wpx = el.w * W * sc;
       let hpx = (el.h != null ? el.h * H : (el.w * W) / (el.aspect || 1)) * sc;
@@ -914,8 +913,10 @@
         let minx = 1e9, miny = 1e9, maxx = -1e9, maxy = -1e9;
         for (const k of kids) {
           const b = boxes[k.id];
-          minx = Math.min(minx, b.cx - b.w / 2); maxx = Math.max(maxx, b.cx + b.w / 2);
-          miny = Math.min(miny, b.cy - b.h / 2); maxy = Math.max(maxy, b.cy + b.h / 2);
+          const ex=(Math.abs(b.w*Math.cos(b.rot))+Math.abs(b.h*Math.sin(b.rot)))/2;
+          const ey=(Math.abs(b.w*Math.sin(b.rot))+Math.abs(b.h*Math.cos(b.rot)))/2;
+          minx = Math.min(minx, b.cx-ex); maxx = Math.max(maxx, b.cx+ex);
+          miny = Math.min(miny, b.cy-ey); maxy = Math.max(maxy, b.cy+ey);
         }
         boxes[selEl.id] = { cx: (minx + maxx) / 2, cy: (miny + maxy) / 2, w: maxx - minx, h: maxy - miny, rot: 0 };
         ctx.save();
@@ -981,31 +982,20 @@
       const W = c.clientWidth, H = c.clientHeight;
       if (drag.mode === "gmove") {
         const dx = (p.x - drag.start.x) / W, dy = -(p.y - drag.start.y) / H;
-        el.x = Math.max(-0.7, Math.min(0.7, drag.origGX + dx));
-        el.y = Math.max(-0.7, Math.min(0.7, drag.origGY + dy));
-        const adx = el.x - drag.origGX, ady = el.y - drag.origGY;
-        for (const o of drag.origs) {
-          const k = rec.elements.find((x) => x.id === o.id); if (!k) continue;
-          k.x = o.x + adx; k.y = o.y + ady;
-        }
+        Studio.transformGroup(rec, el, {
+          x: Math.max(-.7, Math.min(.7, drag.origGX + dx)),
+          y: Math.max(-.7, Math.min(.7, drag.origGY + dy))
+        });
       } else if (drag.mode === "move") {
         el.x = Math.max(-0.7, Math.min(0.7, drag.origX + (p.x - drag.start.x) / W));
         el.y = Math.max(-0.7, Math.min(0.7, drag.origY - (p.y - drag.start.y) / H));
       } else {
         const d0 = Math.hypot(drag.start.x - drag.cx, drag.start.y - drag.cy) || 1;
         const d1 = Math.hypot(p.x - drag.cx, p.y - drag.cy);
-        const f = Math.max(0.05, Math.min(2, drag.origW * (d1 / d0))) / el.w;
-        el.w = Math.max(0.05, Math.min(2, drag.origW * (d1 / d0)));
-        if (el.h != null) el.h = Math.max(0.02, el.h * f);
-        if (drag.gorigs) {
-          const F = el.w / drag.origW;
-          for (const o of drag.gorigs) {
-            const k = rec.elements.find((x) => x.id === o.id); if (!k) continue;
-            k.w = Math.max(0.05, o.w * F);
-            if (o.h != null) k.h = Math.max(0.02, o.h * F);
-            k.x = el.x + (o.x - el.x) * F; k.y = el.y + (o.y - el.y) * F;
-          }
-        }
+        const w = Math.max(.05, Math.min(2, drag.origW * (d1 / d0)));
+        if (el.type === "group") Studio.transformGroup(rec, el, {w});
+        else { const f = w / el.w; el.w = w; if (el.h != null) el.h = Math.max(.02,el.h*f); }
+
       }
       draw();
       renderPanel();

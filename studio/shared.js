@@ -115,6 +115,43 @@ const Studio = (() => {
   }
 
 
+  // Embedded glTF clips: run the first authored clip. Freeze when hidden or the
+  // image target is lost; wrapper timeline/group transforms remain independent.
+  function ensureModelAnimationComponent() {
+    if (!window.AFRAME || AFRAME.components["model-clips"]) return;
+    AFRAME.registerComponent("model-clips", {
+      init() {
+        this.tracked = !this.el.sceneEl.hasAttribute("xrweb");
+        this.onFound = () => { this.tracked = true; };
+        this.onLost = () => { this.tracked = false; };
+        this.loaded = () => {
+          if (this.mixer) this.mixer.stopAllAction();
+          const mesh = this.el.getObject3D("mesh");
+          const clips = mesh && mesh.animations;
+          if (!clips || !clips.length) return;
+          this.mixer = new THREE.AnimationMixer(mesh);
+          this.action = this.mixer.clipAction(clips[0]); this.action.play();
+          this.el.dataset.clipCount = String(clips.length);
+        };
+        this.el.addEventListener("model-loaded", this.loaded);
+        this.el.sceneEl.addEventListener("xrimagefound", this.onFound);
+        this.el.sceneEl.addEventListener("xrimagelost", this.onLost);
+        if (this.el.getObject3D("mesh")) this.loaded();
+      },
+      tick(t, dt) {
+        if (!this.mixer || !this.tracked) return;
+        for (let o = this.el.object3D; o; o = o.parent) if (!o.visible) return;
+        this.mixer.update(Math.min(0.25, (dt || 0) / 1000));
+      },
+      remove() {
+        this.el.removeEventListener("model-loaded", this.loaded);
+        this.el.sceneEl.removeEventListener("xrimagefound", this.onFound);
+        this.el.sceneEl.removeEventListener("xrimagelost", this.onLost);
+        if (this.mixer) { this.mixer.stopAllAction(); this.mixer.uncacheRoot(this.el.getObject3D("mesh")); }
+      }
+    });
+  }
+
   // Particles: lightweight THREE.Points emitter (sparkle rises, confetti falls).
   function ensureParticlesComponent() {
     if (!window.AFRAME || AFRAME.components["particles"]) return;
@@ -230,6 +267,45 @@ const Studio = (() => {
   }
 
 
+  // Group children are stored in artwork/world coordinates. Bake creator edits into
+  // children, then inverse the group's base rotation when constructing local wrappers.
+  function transformGroup(rec, group, changes) {
+    const before = { x: group.x || 0, y: group.y || 0, z: group.z || 0, w: group.w || 1, rot: group.rot || 0 };
+    const after = Object.assign({}, before, changes);
+    const factor = after.w / before.w;
+    const angle = (after.rot - before.rot) * Math.PI / 180;
+    const ratio = geom(rec).artW / geom(rec).artH;
+    const point = (x, y) => {
+      const dx = (x - before.x) * ratio * factor, dy = (y - before.y) * factor;
+      return { x: after.x + (dx * Math.cos(angle) - dy * Math.sin(angle)) / ratio,
+        y: after.y + dx * Math.sin(angle) + dy * Math.cos(angle) };
+    };
+    const mapTimeline = el => {
+      const tl = el.timeline;
+      if (!tl || !tl.keys || !tl.keys.length) return;
+      const a = factor * Math.cos(angle), b = -factor * Math.sin(angle) / ratio;
+      const c = factor * Math.sin(angle) * ratio, d = factor * Math.cos(angle);
+      const tx = after.x - a * before.x - b * before.y, ty = after.y - c * before.x - d * before.y;
+      const old = tl.xyMap || { baseX: el.x || 0, baseY: el.y || 0, matrix: [1,0,0,1,0,0] };
+      const [A,B,C,D,X,Y] = old.matrix;
+      // Preserve the original per-axis curves and compose an affine output map.
+      // No resampling: sparse nonlinear easing stays exact at every time.
+      tl.xyMap = { baseX: old.baseX, baseY: old.baseY, matrix: [a*A+b*C,a*B+b*D,c*A+d*C,c*B+d*D,a*X+b*Y+tx,c*X+d*Y+ty] };
+      tl.keys.forEach(k => { if(k.z != null) k.z += after.z-before.z; if(k.rot != null) k.rot += after.rot-before.rot; });
+    };
+    for (const child of groupChildren(rec, group)) {
+      normEl(child);
+      mapTimeline(child);
+      Object.assign(child, point(child.x || 0, child.y || 0));
+      child.z = (child.z || 0) + after.z - before.z;
+      if (child.w != null) child.w *= factor; if (child.h != null) child.h *= factor;
+      child.rot = (child.rot || 0) + after.rot - before.rot;
+    }
+    mapTimeline(group);
+    if (group.h != null && changes.w != null) group.h *= factor;
+    Object.assign(group, changes);
+  }
+
   // ---------- round A: shared entity factory for player + preview ----------
   // mode 'ar': video uses the device-proven xrextras-target-video-fade; 'preview': plain a-video.
   function buildElementEntity(rec, el, idx, mode, opts) {
@@ -238,15 +314,17 @@ const Studio = (() => {
     const ts = toTargetSpace(rec, el, el.aspect || 1);
     const ox = opts.origin ? opts.origin.x : 0, oy = opts.origin ? opts.origin.y : 0, oz = opts.origin ? opts.origin.z : 0;
     const z = (ts.z || 0) + idx * 0.001; // array order breaks z ties, matching the editor's paint order
-    const pos = `${ts.x - ox} ${ts.y - oy} ${z - oz}`;
-    const rot = `0 0 ${el.rot || 0}`;
+    const angle = -(opts.baseRotation || 0) * Math.PI / 180;
+    const dx = ts.x - ox, dy = ts.y - oy;
+    const pos = `${dx * Math.cos(angle) - dy * Math.sin(angle)} ${dx * Math.sin(angle) + dy * Math.cos(angle)} ${z - oz}`;
+    const rot = `0 0 ${(el.rot || 0) - (opts.baseRotation || 0)}`;
     let e = null;
     if (el.type === "group") {
       // wrapper entity: timeline/anim presets/opacity act on the whole group; children sit inside, relative to it
       e = document.createElement("a-entity");
       groupChildren(rec, el).forEach((ch, ci) => {
         if (ch.type === "group") return; // no nesting in v1
-        const ce = buildElementEntity(rec, ch, ci, mode, { origin: { x: ts.x, y: ts.y, z: ts.z || 0 }, videoFallback: opts.videoFallback });
+        const ce = buildElementEntity(rec, ch, ci, mode, { origin: { x: ts.x, y: ts.y, z: ts.z || 0 }, baseRotation: el.rot || 0, videoFallback: opts.videoFallback });
         if (ce) { e.appendChild(ce); if (ce.dataset.opacity) applyOpacity(ce, parseFloat(ce.dataset.opacity)); }
       });
     } else if (el.type === "video") {
@@ -284,6 +362,8 @@ const Studio = (() => {
       const blob = rec.assets && rec.assets[el.assetId];
       if (blob) {
         const inner = document.createElement("a-entity");
+        ensureModelAnimationComponent();
+        inner.setAttribute("model-clips", "");
         inner.setAttribute("gltf-model", URL.createObjectURL(blob));
         inner.addEventListener("model-loaded", () => {
           const mesh = inner.getObject3D("mesh");
@@ -312,9 +392,10 @@ const Studio = (() => {
     e.setAttribute("position", pos);
     e.setAttribute("rotation", rot);
     e.dataset.elId = el.id;
+    e._studioFrame = { ox, oy, oz, angle, baseRotation: opts.baseRotation || 0, zTie: idx * 0.001 };
     const hasTl = el.timeline && Array.isArray(el.timeline.keys) && el.timeline.keys.length;
-    if (el.anim === "spin" && !hasTl) e.setAttribute("animation__spin", `property: rotation; to: 0 0 ${(el.rot || 0) + 360}; loop: true; dur: 14000; easing: linear`);
-    else if (el.anim === "float" && !hasTl) e.setAttribute("animation__float", `property: position; from: ${pos}; to: ${ts.x - ox} ${ts.y - oy + 0.03} ${z - oz}; dir: alternate; loop: true; dur: 2600; easing: easeInOutSine`);
+    if (el.anim === "spin" && !hasTl) e.setAttribute("animation__spin", `property: rotation; to: 0 0 ${(el.rot || 0) - (opts.baseRotation || 0) + 360}; loop: true; dur: 14000; easing: linear`);
+    else if (el.anim === "float" && !hasTl) e.setAttribute("animation__float", `property: position; from: ${pos}; to: ${dx * Math.cos(angle) - dy * Math.sin(angle)} ${dx * Math.sin(angle) + dy * Math.cos(angle) + 0.03} ${z - oz}; dir: alternate; loop: true; dur: 2600; easing: easeInOutSine`);
     else if (el.anim === "pulse" && !hasTl) e.setAttribute("animation__pulse", `property: scale; to: 1.08 1.08 1; dir: alternate; loop: true; dur: 1600; easing: easeInOutSine`);
     if (el.onTap && el.onTap !== "none") e.classList.add("cantap");
     if (el.opacity != null && el.opacity < 1) e.dataset.opacity = String(el.opacity);
@@ -323,18 +404,30 @@ const Studio = (() => {
 
   // Opacity: set on the mesh material once it exists (components like the video fade create it async).
   function applyOpacity(entity, value) {
-    let tries = 0;
-    const paint = (root) => {
-      let done = false;
-      root.traverse((n) => { if (n.material) { n.material.transparent = true; n.material.opacity = value; done = true; } });
-      return done;
+    entity._studioOpacity = value;
+    const paint = () => {
+      if (!entity.object3D) return;
+      entity.object3D.traverse(n => {
+        if (!n.material) return;
+        let opacity = 1, owner = n; const seen = new Set();
+        while (owner) {
+          const el = owner.el;
+          if (el && !seen.has(el) && el._studioOpacity != null) { opacity *= el._studioOpacity; seen.add(el); }
+          owner = owner.parent;
+        }
+        for (const m of (Array.isArray(n.material) ? n.material : [n.material])) {
+          if (m._studioBaseOpacity == null) m._studioBaseOpacity = m.opacity;
+          m.transparent = true; m.opacity = m._studioBaseOpacity * opacity;
+        }
+      });
     };
-    const attempt = () => {
-      const mesh = entity.getObject3D("mesh");
-      if (mesh && paint(mesh)) return;
-      if (++tries < 20) setTimeout(attempt, 300);
-    };
-    attempt();
+    if (!entity._studioOpacityBound) {
+      entity._studioOpacityBound = true;
+      entity.addEventListener("object3dset", paint);
+      entity.addEventListener("model-loaded", paint);
+      setTimeout(paint, 300); setTimeout(paint, 1000);
+    }
+    paint();
   }
 
   // Tap behavior shared by AR player and preview. hooks.onMuteToggle handles 'mute'.
@@ -418,35 +511,59 @@ const Studio = (() => {
     const vis = (el) => elVisibleIn(el, seqId) && (!el.track || (isTrackPlaying ? !!isTrackPlaying(el.track) : true));
     for (const child of container.querySelectorAll("[data-el-id]")) {
       const el = rec.elements.find((x) => x.id === child.dataset.elId);
-      if (el) child.setAttribute("visible", vis(el));
+      if (el) { child._sequenceVisible = vis(el); child.setAttribute("visible", child._sequenceVisible && child._timelineVisible !== false); }
     }
-    if (mediaEls) for (const m of mediaEls) {
-      if (!vis(m.el)) {
-        if (!m.node.paused) { m.resumeOnVisible = true; m.node.pause(); }
-      } else if (m.resumeOnVisible) {
-        m.resumeOnVisible = false;
-        m.node.play().catch(() => {});
-      }
+    if (mediaEls) {
+      container._studioMedia = mediaEls;
+      for (const m of mediaEls) m._studioBaseAllowed = vis(m.el);
+      syncMedia(container, rec);
     }
   }
+  function syncMedia(container, rec) {
+    for (const m of container._studioMedia || []) {
+      let allowed = m._studioBaseAllowed !== false;
+      const node = container.querySelector('[data-el-id="' + m.el.id + '"]');
+      let parent = node && node.object3D;
+      while (parent) { if (!parent.visible) allowed = false; parent = parent.parent; }
+      // Nonspatial sound has no visual node: still inherit its group's state/track/timeline.
+      if (!node) for (const group of rec.elements.filter(el => el.type === "group" && (el.children || []).includes(m.el.id))) {
+        let g = container.querySelector('[data-el-id="'+group.id+'"]');
+        if (g) { let o=g.object3D; while(o) { if(!o.visible)allowed=false; o=o.parent; } }
+      }
+      m.node._studioBlocked = !allowed;
+      if (!allowed) { if (!m.node.paused) { m.resumeOnVisible = true; m.node.pause(); } }
+      else if (m.resumeOnVisible) { m.resumeOnVisible = false; m.node.play().catch(() => {}); }
+    }
+  }
+  function monitorMedia(container, rec) {
+    let active = true;
+    const frame = () => { if(!active)return; syncMedia(container,rec); requestAnimationFrame(frame); };
+    requestAnimationFrame(frame);
+    return () => { active = false; };
+  }
+
   // ---------- timeline (keyframed motion) ----------
   // Pure sampler: el.timeline.keys [{t, x?, y?, z?, rot?, opacity?, scale?}] at time tSec.
   // Missing props hold their last keyed value; before the first key they hold base props.
   function sampleTimeline(el, tSec) {
-    const base = { x: el.x || 0, y: el.y || 0, z: el.z || 0, rot: el.rot || 0, opacity: el.opacity == null ? 1 : el.opacity, scale: 1, tap: el.onTap || "none" };
+    const base = { x: el.x || 0, y: el.y || 0, z: el.z || 0, rot: el.rot || 0, opacity: el.opacity == null ? 1 : el.opacity, scale: 1, tap: el.onTap || "none", visible: true };
     const tl = el.timeline;
     if (!tl || !Array.isArray(tl.keys) || !tl.keys.length) return base;
+    const map = tl.xyMap;
+    if (map) { base.x = map.baseX; base.y = map.baseY; }
     const keys = tl.keys.slice().sort((a, b) => a.t - b.t);
     const dur = (tl.dur > 0 ? tl.dur : keys[keys.length - 1].t);
     let t = Math.max(0, tSec);
     if (t > dur) { if (tl.loop && dur > 0) t = t % dur; else t = dur; }
-    let a = null, b = null;
-    for (const k of keys) { if (k.t <= t) a = k; if (k.t >= t) { b = k; break; } }
     const pick = (prop) => {
-      const has = (k) => k && k[prop] != null;
-      if (!has(a) && !has(b)) return base[prop];
-      if (has(a) && !has(b)) return a[prop];
-      if (!has(a) && has(b)) return base[prop];
+      let a = null, b = null;
+      for (const k of keys) {
+        if (k[prop] == null) continue;
+        if (k.t <= t) a = k;
+        if (k.t >= t) { b = k; break; }
+      }
+      if (!a) return base[prop];
+      if (!b) return a[prop];
       if (a === b) return a[prop];
       let f = (t - a.t) / Math.max(1e-6, b.t - a.t);
       const ease = tl.ease || "linear";
@@ -463,7 +580,20 @@ const Studio = (() => {
       for (const k of keys) { if (k.t <= t && k[prop] != null) v = k[prop]; }
       return v;
     };
-    return { x: pick("x"), y: pick("y"), z: pick("z"), rot: pick("rot"), opacity: pick("opacity"), scale: pick("scale"), tap: pickDiscrete("tap") };
+    let x = pick("x"), y = pick("y");
+    if (map) { const [a,b,c,d,tx,ty] = map.matrix; const ox=x; x=a*x+b*y+tx; y=c*ox+d*y+ty; }
+    return { x, y, z: pick("z"), rot: pick("rot"), opacity: pick("opacity"), scale: pick("scale"), tap: pickDiscrete("tap"), visible: pickDiscrete("visible") };
+  }
+  // Editor records visible-world coordinates; convert XY back to the curve frame.
+  function addTimelineKey(el, key) {
+    const tl = el.timeline || (el.timeline = { keys: [] });
+    const k = Object.assign({}, key), map = tl.xyMap;
+    if (map && (k.x != null || k.y != null)) {
+      const current = sampleTimeline(el, k.t), x = k.x == null ? current.x : k.x, y = k.y == null ? current.y : k.y;
+      const [a,b,c,d,tx,ty] = map.matrix, det = a*d-b*c;
+      k.x = (d*(x-tx)-b*(y-ty))/det; k.y = (-c*(x-tx)+a*(y-ty))/det;
+    }
+    tl.keys.push(k); return k;
   }
   function timelineDur(el) {
     const tl = el.timeline;
@@ -504,10 +634,16 @@ const Studio = (() => {
         for (const tr of tracks) {
           const s = sampleTimeline(tr.el, (now - tr.startedAt) / 1000);
           const ts = toTargetSpace(rec, Object.assign({}, tr.el, { x: s.x, y: s.y, z: s.z }), tr.el.aspect || 1);
-          tr.e.object3D.position.set(ts.x + tr.xOff, ts.y + tr.yOff, (ts.z || 0) + tr.zOff);
-          tr.e.object3D.rotation.z = s.rot * D2R;
+          const f = tr.e._studioFrame;
+          if (f) {
+            const dx = ts.x - f.ox, dy = ts.y - f.oy;
+            tr.e.object3D.position.set(dx * Math.cos(f.angle) - dy * Math.sin(f.angle), dx * Math.sin(f.angle) + dy * Math.cos(f.angle), (ts.z || 0) + f.zTie - f.oz);
+          } else tr.e.object3D.position.set(ts.x + tr.xOff, ts.y + tr.yOff, (ts.z || 0) + tr.zOff);
+          tr.e.object3D.rotation.z = (s.rot - (f ? f.baseRotation : 0)) * D2R;
           tr.e.object3D.scale.set(s.scale, s.scale, 1);
           applyOpacity(tr.e, s.opacity);
+          tr.e._timelineVisible = s.visible !== false;
+          tr.e.object3D.visible = tr.e._sequenceVisible !== false && tr.e._timelineVisible;
           if (s.tap !== tr.appliedTap) { // Change Interaction over time
             tr.appliedTap = s.tap;
             tr.e._tapOverride = s.tap;
@@ -547,10 +683,12 @@ const Studio = (() => {
   }
   async function save(rec) { rec.updatedAt = Date.now(); await idbPut(rec.id, rec); }
   async function exportJSON(rec) {
-    const out = { format: "ar-studio/1", id: rec.id, name: rec.name, createdAt: rec.createdAt, target: rec.target, elements: rec.elements.map((e) => ({ ...e })), sequences: (rec.sequences || []).map((q) => ({ ...q })) };
+    const out = { format: "ar-studio/1", id: rec.id, name: rec.name, createdAt: rec.createdAt, target: rec.target, elements: rec.elements.map((e) => ({ ...e })), sequences: (rec.sequences || []).map((q) => ({ ...q })), tracks: (rec.tracks || []).map((t) => ({ ...t })) };
     out.assets = {};
     for (const el of rec.elements) {
-      if (el.assetId && rec.assets[el.assetId]) out.assets[el.assetId] = await blobToDataURL(rec.assets[el.assetId]);
+      for (const id of [el.assetId, el.particles && el.particles.spriteAssetId]) {
+        if (id && rec.assets[id]) out.assets[id] = await blobToDataURL(rec.assets[id]);
+      }
     }
     if (rec.assets.__artwork) out.assets.__artwork = await blobToDataURL(rec.assets.__artwork);
     return JSON.stringify(out);
@@ -558,9 +696,44 @@ const Studio = (() => {
   async function importJSON(text) {
     const o = JSON.parse(text);
     if (!o || o.format !== "ar-studio/1") throw new Error("bad format");
+    if (!Array.isArray(o.elements) || o.elements.length > 60) throw new Error("bad elements (maximum60)");
+    const ids = new Set();
+    for (const el of o.elements) {
+      if (!el || !["video","image","sound","text","model","particles","group"].includes(el.type)) throw new Error("bad element type");
+      if (typeof el.id !== "string" || !/^[a-zA-Z0-9_-]{1,128}$/.test(el.id) || ids.has(el.id)) throw new Error("bad or duplicate element id");
+      ids.add(el.id);
+      for (const key of ["x","y","z","w","h","rot","opacity","aspect","volume"]) if (el[key] != null && (typeof el[key] !== "number" || !Number.isFinite(el[key]))) throw new Error("bad numeric field");
+      if (el.timeline != null) {
+        const tl = el.timeline;
+        if (!Array.isArray(tl.keys) || tl.keys.length > 1000) throw new Error("bad timeline keys");
+        for (const k of tl.keys) {
+          if (!k || !Number.isFinite(k.t) || k.t < 0 || k.t > 3600) throw new Error("bad key time");
+          for (const key of ["x","y","z","rot","scale","opacity"]) if (k[key] != null && !Number.isFinite(k[key])) throw new Error("bad key value");
+        }
+        if (tl.xyMap) {
+          const m=tl.xyMap;
+          if (!Number.isFinite(m.baseX)||!Number.isFinite(m.baseY)||!Array.isArray(m.matrix)||m.matrix.length!==6||!m.matrix.every(Number.isFinite)||Math.abs(m.matrix[0]*m.matrix[3]-m.matrix[1]*m.matrix[2])<1e-12) throw new Error("bad timeline curve map");
+        }
+      }
+    }
+    const member = new Set();
+    for (const el of o.elements.filter(e=>e.type === "group")) {
+      if (!Array.isArray(el.children)||!el.children.length) throw new Error("bad group children");
+      for(const id of el.children) { const child=o.elements.find(e=>e.id===id);if(!child||child.type==='group'||member.has(id))throw new Error("bad group membership");member.add(id); }
+    }
+    // JSON imports are self-contained. Never fetch an arbitrary URL from a file.
+    const entries=Object.entries(o.assets || {});
+    if(entries.length>121)throw new Error("too many assets");
+    let total=0;
+    for(const [key,value]of entries) {
+      if(typeof value!=="string"||!/^data:(image\/(png|jpeg|webp|gif)|video\/(mp4|webm)|audio\/(mpeg|wav|x-wav|mp4|x-m4a|ogg)|model\/gltf-binary|application\/octet-stream);base64,[A-Za-z0-9+/]*={0,2}$/.test(value))throw new Error("asset must be embedded supported media");
+      const size=Math.floor(value.slice(value.indexOf(',')+1).length*.75);total+=size;
+      if(size>20*1024*1024||total>60*1024*1024)throw new Error("import media too large");
+    }
     const rec = blankExperience(o.name || "מיובא");
     rec.target = o.target; rec.elements = o.elements || []; rec.createdAt = o.createdAt || Date.now();
     rec.sequences = Array.isArray(o.sequences) ? o.sequences : [];
+    rec.tracks = Array.isArray(o.tracks) ? o.tracks : [];
     rec.assets = {};
     for (const [k, durl] of Object.entries(o.assets || {})) rec.assets[k] = await dataURLtoBlob(durl);
     await save(rec);
@@ -599,8 +772,8 @@ const Studio = (() => {
   // headless browsers), show a clear tap-to-play button instead of a silently frozen frame.
   function ensurePlayback(mediaEls, opts) {
     opts = opts || {};
-    const pending = () => mediaEls.filter((m) => m.node.paused);
-    const tryPlay = () => { for (const m of pending()) m.node.play().catch(() => {}); };
+    const pending = () => mediaEls.filter((m) => m.node.paused && !m.node._studioBlocked);
+    const tryPlay = () => { for (const m of mediaEls) { if (m.node._studioBlocked) { m.resumeOnVisible = true; continue; } if (m.node.paused) m.node.play().catch(() => {}); } };
     tryPlay(); setTimeout(tryPlay, 800); setTimeout(tryPlay, 2500);
     let btn = null;
     const refresh = () => {
@@ -712,6 +885,6 @@ const Studio = (() => {
   }
 
   return { TARGET_W, TARGET_H, newId, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
-           geom, toTargetSpace, blankExperience, save, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, renderSeqDots, sampleTimeline, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, topLevelElements, groupChildren, trackList, makeTrackRunner,
+           geom, toTargetSpace, blankExperience, save, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
            load: idbGet, all: idbAll, del: idbDel };
 })();
