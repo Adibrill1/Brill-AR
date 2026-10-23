@@ -739,7 +739,7 @@ const Studio = (() => {
   function ensurePlayback(mediaEls, opts) {
     opts = opts || {};
     const pending = () => mediaEls.filter((m) => m.node.paused && !m.node._studioBlocked);
-    const tryPlay = () => { for (const m of pending()) m.node.play().catch(() => {}); };
+    const tryPlay = () => { for (const m of mediaEls) { if (m.node._studioBlocked) { m.resumeOnVisible = true; continue; } if (m.node.paused) m.node.play().catch(() => {}); } };
     tryPlay(); setTimeout(tryPlay, 800); setTimeout(tryPlay, 2500);
     let btn = null;
     const refresh = () => {

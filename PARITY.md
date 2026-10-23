@@ -147,3 +147,6 @@ Group creator transforms now bake existing child keys and all group numeric/slid
 
 ## Round Y accumulated group checkpoint
 Supersedes X's open sparse-easing/own-group-key gaps: exact affine sampled-output map, all5 easing modes ×201times for child/group, new world-key inverse entry, map included in whole-schema publish/update/readback. Group opacity descendant multiplication rendered at expected.4 intensity. Actual WAV group+child state/visibility/track pause/resume tested. Creator numeric group rotation/width/X/depth and key-entry UI tested/inspected. New canvas-pointer regression and phone audio/camera/capture validation remain open; no broad device claim.
+
+## Round Z follow-through
+Creator2D canvas actual pointer move/corner-scale regression passes with inspected selection screenshot. Camera group reset now restores affine timeline map as well as geometry; reset→save roundtrip fixture added. Actual WAV currentTime advances and actual parent timeline Show/Hide pauses/resumes playback. Live-camera drag, device audio/capture and complex transparent-model ordering still unverified.

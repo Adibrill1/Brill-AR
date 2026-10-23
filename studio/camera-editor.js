@@ -24,7 +24,7 @@ window.CameraEditor = {
     for(const b of [save,reset]){b.style.cssText='flex:1;padding:10px;border:1px solid #777;border-radius:9px;font:inherit;background:#fff;color:#17202b';row.append(b);}
     const gate=()=>{for(const i of Object.values(inputs))i.disabled=!tracked||!elements.length;save.disabled=!tracked||!elements.length;};
     save.onclick=async()=>{save.disabled=true;try{await Studio.save(rec);initial.elements=structuredClone(rec.elements);dirty=false;status.textContent='נשמר במכשיר. לא פורסם ולא נשלח לשרת.';}catch(e){status.textContent='השמירה נכשלה. השינויים עדיין לא נשמרו.';}finally{gate();}};
-    reset.onclick=()=>{for(const el of rec.elements){const old=initial.elements.find(e=>e.id===el.id);for(const k of [...Object.keys(inputs),'h'])el[k]=old[k];}for(const el of elements)apply(el);dirty=false;fill();status.textContent='השינויים שלא נשמרו בוטלו.';};
+    reset.onclick=()=>{for(const el of rec.elements){const old=initial.elements.find(e=>e.id===el.id);for(const k of [...Object.keys(inputs),'h'])el[k]=old[k];if(old.timeline)el.timeline=structuredClone(old.timeline);else delete el.timeline;}for(const el of elements)apply(el);dirty=false;fill();status.textContent='השינויים שלא נשמרו בוטלו.';};
     if(isAR){scene.addEventListener('xrimagefound',()=>{tracked=true;gate();status.textContent=dirty?'שינויים לא נשמרו. לחצי שמירה.':'היצירה מזוהה. בחרי אלמנט וערכי את המספרים.';});scene.addEventListener('xrimagelost',()=>{tracked=false;gate();status.textContent='היצירה לא מזוהה כרגע. כווני אליה שוב כדי להמשיך.';});}
     window.addEventListener('beforeunload',e=>{if(dirty){e.preventDefault();e.returnValue='';}});
     document.body.append(panel);gate();return {panel};
