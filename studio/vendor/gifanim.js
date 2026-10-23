@@ -99,7 +99,15 @@
     const markDirty = () => {
       const ent = getEntity && getEntity();
       const mesh = ent && ent.getObject3D && ent.getObject3D("mesh");
-      if (mesh && mesh.material && mesh.material.map) mesh.material.map.needsUpdate = true;
+      const t = mesh && mesh.material && mesh.material.map;
+      if (!t) return;
+      // NPOT safety: most GIFs are non-power-of-two; mipmapped/repeat sampling makes the
+      // texture incomplete (invisible) on WebGL1. Force linear+clamp; idempotent per frame.
+      t.generateMipmaps = false;
+      if (t.minFilter !== 1006) t.minFilter = 1006; // LinearFilter
+      if (t.wrapS !== 1000) t.wrapS = 1000; // ClampToEdgeWrapping
+      if (t.wrapT !== 1000) t.wrapT = 1000;
+      t.needsUpdate = true;
     };
     const draw = () => {
       if (stopped) return;
