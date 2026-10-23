@@ -167,7 +167,7 @@ const server = http.createServer(async (req, res) => {
       const id = safeId(u.pathname.split("/")[2]);
       if (!id || !fs.existsSync(path.join(DATA, id + ".json"))) return send(res, 404, "לא נמצא", "text/plain; charset=utf-8");
       const html = fs.readFileSync(path.join(STUDIO, "play.html"), "utf8")
-        .replace("</body>", `<script>window.__REMOTE_EXPERIENCE__=${JSON.stringify(id)};</script></body>`);
+        .replace("<head>", `<head><base href="/"><script>window.__REMOTE_EXPERIENCE__=${JSON.stringify(id)};</script>`);
       return send(res, 200, html, "text/html; charset=utf-8");
     }
     if (req.method === "GET") {

@@ -589,7 +589,9 @@ const Studio = (() => {
     const out = { format: "ar-studio/1", id: rec.id, name: rec.name, createdAt: rec.createdAt, target: rec.target, elements: rec.elements.map((e) => ({ ...e })), sequences: (rec.sequences || []).map((q) => ({ ...q })), tracks: (rec.tracks || []).map((t) => ({ ...t })) };
     out.assets = {};
     for (const el of rec.elements) {
-      if (el.assetId && rec.assets[el.assetId]) out.assets[el.assetId] = await blobToDataURL(rec.assets[el.assetId]);
+      for (const id of [el.assetId, el.particles && el.particles.spriteAssetId]) {
+        if (id && rec.assets[id]) out.assets[id] = await blobToDataURL(rec.assets[id]);
+      }
     }
     if (rec.assets.__artwork) out.assets.__artwork = await blobToDataURL(rec.assets.__artwork);
     return JSON.stringify(out);
