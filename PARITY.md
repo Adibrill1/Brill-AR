@@ -30,7 +30,7 @@ Legend:
 | Sequences (multi-state artworks, tap to switch) | States per artwork, per-element state assignment, tap-to-advance action, state dots | 🆕 round-B (cloud-verified) |
 | 3D models (glTF/GLB) | Upload .glb/.gltf as an element; auto-fit + center on load; works with opacity/anim/timeline/sequences/tap | 🆕 round-C (cloud-verified) |
 | Particle effects | Not built | 🔜 planned (round C) |
-| Chroma-key (green screen) video | Key color + sensitivity per video element; custom discard shader on the video texture | 🆕 round-C (pipeline cloud-verified; visual keying needs a decodable browser/device) |
+| Chroma-key (green screen) video | Key color + sensitivity per video element; custom discard shader on the video texture | 🆕 round-C (keying pixel-verified; real footage + performance device-pending) |
 | Spatial/positional audio | Not built | 🔜 planned (round D) |
 | Recognition-quality feedback on target upload | Not built | 🔜 planned (round D) |
 | Share link / QR per artwork | play.html?r=N#id link exists; polished per-artwork share page + QR planned | 🔜 planned (round E) |
@@ -46,8 +46,16 @@ Legend:
   BOTH preview and player; editor shows a dashed 3D placeholder on the 2D canvas. Textures/
   animations inside complex GLBs untested (needs real device + real model files).
 - Chroma: editor row persists key color + threshold; player entity builds with the
-  chroma-video component, ShaderMaterial with a live VideoTexture. Actual keying of green
-  pixels can't be judged in the cloud (video doesn't decode there) - device check pending.
+  chroma-video component (ShaderMaterial on a live VideoTexture). Keying itself is
+  pixel-verified: the production shader rendered against a synthetic green-screen frame
+  (red square on green) reads back green=[0,0,0,0] keyed out, red=[255,0,0,255] kept.
+  Real footage, edges and performance remain a device check.
+- Rich model fixture: multi-mesh GLB with an embedded checker texture verifies 2 mesh nodes,
+  a real texture map on the textured mesh, MeshStandardMaterial (light-reactive) on both.
+- Upload guard: .gltf files referencing external bin/textures are rejected with a clear
+  Hebrew message (export as single .glb); non-GLB files rejected. No false format support.
+- Precision note: in the cloud browser the 2D canvas decodes mp4 fine; the WebGL video
+  texture path is what stalls. Claims about 'the environment can't decode' were wrong.
 - Regression note: a missing function definition briefly broke shared.js on deploy rc2;
   caught by cloud boot check, fixed in rc3, re-verified editor + player boot clean.
 

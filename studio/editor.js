@@ -146,6 +146,20 @@
       const f = e.target.files[0]; e.target.value = "";
       if (!f) return;
       if (f.size > 20 * 1024 * 1024) { msg("קובץ גדול מדי (מעל 20MB) לגרסת הניסוי."); return; }
+      if (kind === "model") {
+        const head = new Uint8Array(await f.slice(0, 4).arrayBuffer());
+        const isGlb = head[0] === 0x67 && head[1] === 0x6C && head[2] === 0x54 && head[3] === 0x46; // "glTF"
+        if (!isGlb) {
+          let bad = "הקובץ לא נראה כמו מודל glb תקין.";
+          try {
+            const g = JSON.parse(await f.text());
+            const ext = [...(g.buffers || []), ...(g.images || [])].some((r) => r.uri && !r.uri.startsWith("data:"));
+            bad = ext ? "קובץ gltf הזה מפנה לקבצים חיצוניים (bin/טקסטורות) שההעלאה לא כוללת. יצאו אותו מחדש כקובץ glb יחיד (למשל מבלנדר: Export glTF Binary) והעלו שוב."
+                      : "הפורמט הזה לא נתמך עדיין - העלו קובץ glb (glTF Binary).";
+          } catch (e2) {}
+          msg(bad); return;
+        }
+      }
       const assetId = Studio.newId();
       rec.assets[assetId] = f;
       const artRatio = rec.target.artRect.w / rec.target.artRect.h;

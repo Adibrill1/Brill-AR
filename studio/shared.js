@@ -117,19 +117,23 @@ const Studio = (() => {
 
   // Chroma-key video: samples the video texture with a key-color discard shader.
   // Works in both preview and AR modes (replaces the plain/fade video path when enabled).
+  // The keying shader, standalone so it can be driven by any texture (video or test canvas).
+  function makeChromaMaterial(texture, color, threshold) {
+    return new THREE.ShaderMaterial({
+      uniforms: { map: { value: texture }, keyColor: { value: new THREE.Color(color || "#00ff00") }, thresh: { value: threshold == null ? 0.35 : threshold } },
+      transparent: true,
+      vertexShader: "varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
+      fragmentShader: "uniform sampler2D map; uniform vec3 keyColor; uniform float thresh; varying vec2 vUv;" +
+        "void main(){ vec4 c = texture2D(map, vUv); float d = distance(c.rgb, keyColor); if (d < thresh) discard; gl_FragColor = c; }"
+    });
+  }
   function ensureChromaComponent() {
     if (!window.AFRAME || AFRAME.components["chroma-video"]) return;
     AFRAME.registerComponent("chroma-video", {
       schema: { src: { type: "selector" }, color: { default: "#00ff00" }, threshold: { default: 0.35 }, width: { default: 1 }, height: { default: 1 } },
       init() {
         const tex = new THREE.VideoTexture(this.data.src);
-        const mat = new THREE.ShaderMaterial({
-          uniforms: { map: { value: tex }, keyColor: { value: new THREE.Color(this.data.color) }, thresh: { value: this.data.threshold } },
-          transparent: true,
-          vertexShader: "varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
-          fragmentShader: "uniform sampler2D map; uniform vec3 keyColor; uniform float thresh; varying vec2 vUv;" +
-            "void main(){ vec4 c = texture2D(map, vUv); float d = distance(c.rgb, keyColor); if (d < thresh) discard; gl_FragColor = c; }"
-        });
+        const mat = makeChromaMaterial(tex, this.data.color, this.data.threshold);
         this.el.object3D.add(new THREE.Mesh(new THREE.PlaneGeometry(this.data.width, this.data.height), mat));
       }
     });
@@ -459,6 +463,6 @@ const Studio = (() => {
   }
 
   return { TARGET_W, TARGET_H, newId, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
-           geom, toTargetSpace, blankExperience, save, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, seqList, elVisibleIn, nextSequence, applySequence, renderSeqDots, sampleTimeline, timelineDur, startTimelineDriver,
+           geom, toTargetSpace, blankExperience, save, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, makeChromaMaterial, seqList, elVisibleIn, nextSequence, applySequence, renderSeqDots, sampleTimeline, timelineDur, startTimelineDriver,
            load: idbGet, all: idbAll, del: idbDel };
 })();
