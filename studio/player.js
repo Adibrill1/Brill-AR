@@ -39,9 +39,9 @@
       v.setAttribute("crossorigin", "anonymous"); v.preload = "auto";
       assets.appendChild(v); mediaEls.push({ kind: "video", node: v, el });
     } else if (el.type === "image") {
-      const im = document.createElement("img");
-      im.id = "m-" + el.id; im.src = url;
-      assets.appendChild(im);
+      const mm = await Studio.makeImageMedia(rec.assets[el.assetId], "m-" + el.id,
+        () => document.querySelector('[data-el-id="' + el.id + '"]'));
+      assets.appendChild(mm.node);
     } else if (el.type === "sound") {
       const a = document.createElement("audio");
       a.id = "m-" + el.id; a.src = url; a.loop = el.loop !== false; a.preload = "auto";

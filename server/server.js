@@ -152,6 +152,17 @@ const server = http.createServer(async (req, res) => {
       if (!fs.existsSync(f)) return send(res, 404, { error: "not found" });
       return send(res, 200, fs.readFileSync(f));
     }
+    if (req.method === "POST" && u.pathname === "/api/convert/mov") {
+      if (server.convertingMov) return send(res, 429, { error: "conversion busy" });
+      server.convertingMov = true;
+      try {
+        const body = await readBody(req);
+        if (body.length > 20 * 1024 * 1024) return send(res, 413, { error: "MOV too large" });
+        const converted = await require("./media-convert").movToMp4(body);
+        return send(res, 200, converted, "video/mp4");
+      } catch (err) { return send(res, 422, { error: err.message }); }
+      finally { server.convertingMov = false; }
+    }
     if (req.method === "GET" && u.pathname.startsWith("/e/")) {
       const id = safeId(u.pathname.split("/")[2]);
       if (!id || !fs.existsSync(path.join(DATA, id + ".json"))) return send(res, 404, "לא נמצא", "text/plain; charset=utf-8");

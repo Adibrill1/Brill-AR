@@ -375,6 +375,37 @@ const Studio = (() => {
   }
 
   function seqList(rec) { return Array.isArray(rec.sequences) ? rec.sequences : []; }
+  // Animated GIF layer: parse + pump onto a canvas (the A-Frame src="#id" canvas texture path);
+  // falls back to a static <img> for non-GIF, single-frame, or unparseable (e.g. interlaced) files.
+  async function makeImageMedia(blob, id, getEntity) {
+    const url = URL.createObjectURL(blob);
+    const img = () => { const im = document.createElement("img"); im.id = id; im.src = url; im.crossOrigin = "anonymous"; return im; };
+    const head = new Uint8Array(await blob.slice(0, 6).arrayBuffer());
+    const isGif = head[0] === 0x47 && head[1] === 0x49 && head[2] === 0x46; // "GIF"
+    if (!isGif || !window.GifAnim) return { node: img(), animated: false };
+    try {
+      const gif = window.GifAnim.parse(await blob.arrayBuffer());
+      if (gif.frames.length < 2) return { node: img(), animated: false };
+      const canvas = document.createElement("canvas");
+      canvas.id = id;
+      window.GifAnim.startPump(canvas, gif, getEntity || (() => null));
+      return { node: canvas, animated: true, width: gif.width, height: gif.height };
+    } catch (e) {
+      // <img src=GIF> would still animate in the browser. Freeze the first decoded
+      // frame into a canvas so the stated static fallback is actually static.
+      const im = img();
+      await new Promise((resolve, reject) => {
+        im.onload = resolve; im.onerror = () => reject(new Error("GIF image decode failed"));
+        if (im.complete && im.naturalWidth) resolve();
+      });
+      const canvas = document.createElement("canvas"); canvas.id = id;
+      canvas.width = im.naturalWidth; canvas.height = im.naturalHeight;
+      canvas.getContext("2d").drawImage(im, 0, 0);
+      URL.revokeObjectURL(url);
+      return { node: canvas, animated: false, staticFallback: true,
+        width: canvas.width, height: canvas.height, gifError: String((e && e.message) || e) };
+    }
+  }
   function elVisibleIn(el, seqId) { return !el.seq || !seqId || el.seq === seqId; }
   function nextSequence(rec, cur) {
     const s = seqList(rec);
@@ -681,6 +712,6 @@ const Studio = (() => {
   }
 
   return { TARGET_W, TARGET_H, newId, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
-           geom, toTargetSpace, blankExperience, save, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, seqList, elVisibleIn, nextSequence, applySequence, renderSeqDots, sampleTimeline, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, topLevelElements, groupChildren, trackList, makeTrackRunner,
+           geom, toTargetSpace, blankExperience, save, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, renderSeqDots, sampleTimeline, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, topLevelElements, groupChildren, trackList, makeTrackRunner,
            load: idbGet, all: idbAll, del: idbDel };
 })();

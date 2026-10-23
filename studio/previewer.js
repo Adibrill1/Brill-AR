@@ -34,9 +34,9 @@
         v.addEventListener("error", () => { clearTimeout(timer); done(false); }, { once: true });
       }));
     } else if (el.type === "image") {
-      const im = document.createElement("img");
-      im.id = "m-" + el.id; im.src = url; im.crossOrigin = "anonymous";
-      assets.appendChild(im);
+      const mm = await Studio.makeImageMedia(rec.assets[el.assetId], "m-" + el.id,
+        () => document.querySelector('[data-el-id="' + el.id + '"]'));
+      assets.appendChild(mm.node);
     } else if (el.type === "sound") {
       const a = document.createElement("audio");
       a.id = "m-" + el.id; a.src = url; a.loop = el.loop !== false; a.preload = "auto";
@@ -67,7 +67,9 @@
   const r = rec.target.artRect;
   const art = document.createElement("a-plane");
   const artURL = URL.createObjectURL(rec.assets.__artwork);
-  art.setAttribute("material", { src: artURL, shader: "flat" });
+  const artImg = await Studio.loadImage(artURL);
+  artImg.id = "preview-artwork"; assets.appendChild(artImg);
+  art.setAttribute("material", { src: "#preview-artwork", shader: "flat" });
   art.setAttribute("width", g.artW); art.setAttribute("height", g.artH);
   const acx = ((r.x + r.w / 2) / Studio.TARGET_W - 0.5) * g.tw;
   const acy = 0.5 - (r.y + r.h / 2) / Studio.TARGET_H;

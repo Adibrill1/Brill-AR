@@ -173,7 +173,8 @@
         v.play().catch(() => {});
         media[el.assetId] = v;
       } else if (el.type === "image") {
-        media[el.assetId] = await Studio.loadImage(durl);
+        const mm = await Studio.makeImageMedia(rec.assets[el.assetId], "m-" + el.id, null);
+        media[el.assetId] = (mm.animated || mm.staticFallback) ? mm.node : await Studio.loadImage(durl);
       }
     }
   }
@@ -223,11 +224,74 @@
     document.querySelectorAll("[data-add]").forEach((b) => {
       b.onclick = () => $("file-" + b.dataset.add).click();
     });
-    const addFile = (kind) => async (e) => {
-      const f = e.target.files[0]; e.target.value = "";
+    const confirmDialog = (text, yesLabel) => new Promise((res) => {
+      const wrap = document.createElement("div");
+      wrap.id = "confirm-modal";
+      wrap.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:200;display:flex;align-items:center;justify-content:center";
+      const box = document.createElement("div");
+      box.style.cssText = "background:#1e1e2a;color:#fff;max-width:420px;margin:16px;padding:20px;border-radius:14px;font:14px/1.6 sans-serif;box-shadow:0 12px 40px rgba(0,0,0,.5)";
+      const body = document.createElement("div");
+      body.style.marginBottom = "16px"; body.textContent = text;
+      const row = document.createElement("div");
+      row.style.cssText = "display:flex;gap:10px;justify-content:flex-end";
+      const no = document.createElement("button");
+      no.textContent = "ביטול"; no.dataset.answer = "no";
+      no.style.cssText = "padding:8px 16px;border-radius:10px;border:1px solid #555;background:transparent;color:#fff;cursor:pointer";
+      const yes = document.createElement("button");
+      yes.textContent = yesLabel || "להמשיך"; yes.dataset.answer = "yes";
+      yes.style.cssText = "padding:8px 16px;border-radius:10px;border:0;background:#7c5cff;color:#fff;cursor:pointer";
+      const done = (v) => { wrap.remove(); res(v); };
+      no.onclick = () => done(false); yes.onclick = () => done(true);
+      wrap.onclick = (e) => { if (e.target === wrap) done(false); };
+      row.appendChild(no); row.appendChild(yes);
+      box.appendChild(body); box.appendChild(row); wrap.appendChild(box);
+      document.body.appendChild(wrap);
+    });
+    const importAsset = async (kind, f, options = {}) => {
       if (!f) return;
+      let importNote = "";
       if (f.size > 20 * 1024 * 1024) { msg("קובץ גדול מדי (מעל 20MB) לגרסת הניסוי."); return; }
+      if (kind === "video" && (/\.mov$/i.test(f.name) || f.type === "video/quicktime")) {
+        const base = ($("in-server").value || "").trim().replace(/\/+$/, "");
+        const token = ($("in-token").value || "").trim();
+        if (!base || !token) { msg("המרת MOV דורשת שרת מוגדר עם כלי ffmpeg וסיסמה. אפשר גם לייצא MP4 מהתוכנה המקורית ולהעלות אותו."); return; }
+        let parsed; try { parsed = new URL(base); } catch (_) { msg("כתובת שרת לא תקינה."); return; }
+        if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && ["localhost", "127.0.0.1"].includes(parsed.hostname))) { msg("להמרה צריך שרת HTTPS מאובטח."); return; }
+        if (!(await confirmDialog("הקובץ יישלח להמרה בשרת " + parsed.origin + ". ההמרה ל־MP4 אינה ללא אובדן: עד 1920 פיקסלים, 30 תמונות בשנייה, עד 120 שניות, בלי שקיפות או מטא־נתונים. צליל יומר ל־AAC. הסרטון המקורי אינו משתנה וההמרה אינה מפרסמת אותו.", "שליחה להמרה"))) return;
+        msg("ממיר MOV ל־MP4…");
+        try {
+          const response = await fetch(base + "/api/convert/mov", { method: "POST", headers: { "content-type": "video/quicktime", authorization: "Bearer " + token }, body: f });
+          if (!response.ok) { let out={};try{out=await response.json();}catch(_){}throw Error(out.error || "שרת ענה " + response.status); }
+          const blob = await response.blob();
+          if (blob.size > 20 * 1024 * 1024 || !blob.size || !blob.type.startsWith("video/mp4")) throw Error("תוצאת המרה לא תקינה");
+          f = new File([blob], f.name.replace(/\.mov$/i, "") + ".mp4", { type: "video/mp4" });
+          importNote = "MOV הומר ל־MP4 ונוסף. נשמר רק במכשיר; המקור אינו משתנה.";
+        } catch (err) { msg("ההמרה לא הושלמה: " + err.message); return; }
+      }
       if (kind === "model") {
+        const magic = new Uint8Array(await f.slice(0, 4).arrayBuffer());
+        if (magic[0] === 0x50 && magic[1] === 0x4B) {
+          try {
+            const packed = window.gltfZipToGlb(new Uint8Array(await f.arrayBuffer()), fflate);
+            f = new File([packed.bytes], packed.name, { type: "model/gltf-binary" });
+          } catch (ez) { msg("לא ניתן לייבא את ה־zip: " + ez.message); return; }
+        }
+        if (/\.fbx$/i.test(f.name)) {
+          if (!(await confirmDialog("המרת FBX היא ניסיונית: מודלים סטטיים בלבד, עד 20MB. חומרים או מאפיינים מיוחדים עשויים להשתנות. אין תמיכה בשלד/הנפשה או טקסטורות חיצוניות. לתוצאה נאמנה למקור עדיף לייצא GLB מהתוכנה המקורית. הקובץ מומר במכשיר, בלי העלאה לשרת.", "המרה ובדיקה"))) return;
+          try {
+            const bytes = await window.fbxToGlb(f);
+            f = new File([bytes], f.name.replace(/\.fbx$/i, ".glb"), { type: "model/gltf-binary" });
+            importNote = "FBX הומר כמודל סטטי. בדקי צורה, כיוון וחומרים בתצוגה המקדימה לפני שימוש.";
+          } catch (err) { msg("ה־FBX לא נוסף: " + err.message); return; }
+        }
+        if (/\.obj$/i.test(f.name)) { // Wavefront OBJ -> transcode to GLB (geometry only)
+          const objText = await f.text();
+          const lossy = /^(mtllib|usemtl|vt\s|vn\s)/m.test(objText);
+          if (lossy && !(await confirmDialog("קובץ ה־obj הזה כולל חומרים/טקסטורות או נורמלים (mtllib/usemtl/vt/vn). ההמרה כאן שומרת רק את הצורה הגיאומטרית - החומרים והטקסטורות יאבדו. לתוצאה מלאה עדיף לייצא glb מהתוכנה המקורית.", "להמשיך עם גיאומטריה בלבד"))) return;
+          const glb = window.objToGlb(objText);
+          if (!glb) { msg("קובץ ה־obj ריק או לא קריא - צריך קובץ עם קודקודים ופאות (שורות v ו־f)."); return; }
+          f = new File([glb], f.name.replace(/\.obj$/i, ".glb"), { type: "model/gltf-binary" });
+        }
         const head = new Uint8Array(await f.slice(0, 4).arrayBuffer());
         const isGlb = head[0] === 0x67 && head[1] === 0x6C && head[2] === 0x54 && head[3] === 0x46; // "glTF"
         if (!isGlb) {
@@ -250,10 +314,18 @@
       if (kind === "model") { el.w = 0.4; el.z = 0.2; el.aspect = 1; }
       const durl = await Studio.blobToDataURL(f);
       if (kind === "image") {
-        const im = await Studio.loadImage(durl);
-        el.aspect = im.naturalWidth / im.naturalHeight;
+        const mm = await Studio.makeImageMedia(f, "m-" + el.id, null);
+        if (mm.animated || mm.staticFallback) {
+          el.aspect = mm.width / mm.height;
+          media[assetId] = mm.node;
+        } else {
+          const im = await Studio.loadImage(durl);
+          el.aspect = im.naturalWidth / im.naturalHeight;
+          media[assetId] = im;
+          if (mm.gifError) msg(mm.gifError === "interlaced" ? "ה־GIF הזה שמור בשיטת שילוב (interlaced) שלא נתמכת - מוצג כתמונה סטטית." : "ה־GIF לא נטען כאנימציה - מוצג כתמונה סטטית.");
+        }
+        if (mm.staticFallback) importNote = (mm.gifError === "interlaced" ? "ה־GIF הזה שמור בשיטת שילוב (interlaced) שלא נתמכת - מוצג כתמונה סטטית." : "ה־GIF לא נטען כאנימציה - מוצג כתמונה סטטית.");
         el.h = (el.w / el.aspect) * artRatio;
-        media[assetId] = im;
       } else if (kind === "video") {
         const v = document.createElement("video");
         v.muted = true; v.playsInline = true; v.src = durl;
@@ -265,12 +337,19 @@
         el.aspect = 1;
         el.h = el.w * artRatio;
       }
+      if (options.name) el.name = options.name;
+      if (options.loop != null) el.loop = options.loop;
       rec.elements.push(el);
       selectedId = el.id;
       await Studio.save(rec);
-      msg("האלמנט נוסף. אפשר לגרור אותו על התצוגה.");
+      msg(importNote || "האלמנט נוסף. אפשר לגרור אותו על התצוגה.");
       render();
     };
+    const addFile = (kind) => async (e) => {
+      const f = e.target.files[0]; e.target.value = "";
+      await importAsset(kind, f);
+    };
+    $("btn-library").onclick = () => StarterLibrary.open(importAsset);
     $("file-video").onchange = addFile("video");
     $("file-image").onchange = addFile("image");
     $("file-sound").onchange = addFile("sound");
@@ -792,6 +871,7 @@
       } else if (el.type === "image" && m) {
         ctx.rotate(extraRot);
         ctx.drawImage(m, -wpx / 2, -hpx / 2, wpx, hpx);
+        if (m.tagName === "CANVAS") needsAnim = true; // animated gif canvas updates itself; keep repainting
       } else if (el.type === "text") {
         const tb = textBitmap(el);
         ctx.drawImage(tb.canvas, -wpx / 2, -hpx / 2, wpx, hpx);
