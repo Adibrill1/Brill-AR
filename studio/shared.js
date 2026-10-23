@@ -120,6 +120,17 @@ const Studio = (() => {
   function ensureModelAnimationComponent() {
     if (!window.AFRAME || AFRAME.components["model-clips"]) return;
     AFRAME.registerComponent("model-clips", {
+      schema: { clip: {default:0}, speed: {default:1}, playing: {default:true}, loop: {default:true} },
+      update() { if(this.mixer)this.selectClip(); },
+      selectClip() {
+        const mesh=this.el.getObject3D("mesh"),clips=mesh&&mesh.animations;
+        if(!this.mixer||!clips||!clips.length)return;
+        this.mixer.stopAllAction();
+        const index=Math.max(0,Math.min(clips.length-1,Math.floor(this.data.clip)));
+        this.action=this.mixer.clipAction(clips[index]);this.action.reset();
+        this.action.setLoop(this.data.loop?THREE.LoopRepeat:THREE.LoopOnce,this.data.loop?Infinity:1);this.action.clampWhenFinished=!this.data.loop;this.action.play();
+        this.el.dataset.activeClip=String(index);
+      },
       init() {
         this.tracked = !this.el.sceneEl.hasAttribute("xrweb");
         this.onFound = () => { this.tracked = true; };
@@ -130,7 +141,7 @@ const Studio = (() => {
           const clips = mesh && mesh.animations;
           if (!clips || !clips.length) return;
           this.mixer = new THREE.AnimationMixer(mesh);
-          this.action = this.mixer.clipAction(clips[0]); this.action.play();
+          this.selectClip();
           this.el.dataset.clipCount = String(clips.length);
         };
         this.el.addEventListener("model-loaded", this.loaded);
@@ -139,9 +150,9 @@ const Studio = (() => {
         if (this.el.getObject3D("mesh")) this.loaded();
       },
       tick(t, dt) {
-        if (!this.mixer || !this.tracked) return;
+        if (!this.mixer || !this.tracked || !this.data.playing) return;
         for (let o = this.el.object3D; o; o = o.parent) if (!o.visible) return;
-        this.mixer.update(Math.min(0.25, (dt || 0) / 1000));
+        this.mixer.update(Math.min(0.25, (dt || 0) / 1000) * Math.max(.1,Math.min(4,this.data.speed)));
       },
       remove() {
         this.el.removeEventListener("model-loaded", this.loaded);
@@ -363,7 +374,7 @@ const Studio = (() => {
       if (blob) {
         const inner = document.createElement("a-entity");
         ensureModelAnimationComponent();
-        inner.setAttribute("model-clips", "");
+        inner.setAttribute("model-clips", {clip:el.modelClip||0,speed:el.modelSpeed||1,playing:el.modelPlaying!==false,loop:el.modelLoop!==false});
         inner.setAttribute("gltf-model", URL.createObjectURL(blob));
         inner.addEventListener("model-loaded", () => {
           const mesh = inner.getObject3D("mesh");

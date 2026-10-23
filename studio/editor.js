@@ -548,6 +548,10 @@
     for (const [key, min, max] of [["x",-.7,.7],["y",-.7,.7],["w",.05,2],["rot",-180,180],["z",0,.5]])
       num("num-"+key, min, max, (el,v) => transform(el,key,v));
     num("num-opacity", 0, 1, (el, v) => { el.opacity = v; });
+    num("num-model-clip",0,99,(el,v)=>{el.modelClip=Math.floor(v);});
+    num("num-model-speed",.1,4,(el,v)=>{el.modelSpeed=v;});
+    $("ck-model-playing").onchange=e=>upd(el=>{el.modelPlaying=e.target.checked;});
+    $("ck-model-loop").onchange=e=>upd(el=>{el.modelLoop=e.target.checked;});
     // text controls
     $("in-text").oninput = (e) => upd((el) => {
       el.text = e.target.value;
@@ -647,6 +651,9 @@
     $("panel").hidden = !el;
     if (!el) return;
     const isGroup = el.type === "group";
+    $("row-model").hidden=el.type!=="model";
+    $("num-model-clip").value=el.modelClip||0;$("num-model-speed").value=el.modelSpeed||1;
+    $("ck-model-playing").checked=el.modelPlaying!==false;$("ck-model-loop").checked=el.modelLoop!==false;
     $("panel-name").textContent = (isGroup ? "📦 " : "") + el.name + (isGroup ? " (שינויים חלים על כל הפריטים בקבוצה)" : "");
     $("sl-scale").value = el.w;
     $("sl-rot").value = el.rot || 0;

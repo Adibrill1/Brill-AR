@@ -159,3 +159,6 @@ JSON import rejects nonembedded asset URLs before fetch, unsafe/duplicate ids, m
 
 ## Round AD canvas consistency
 2D creator now composes parent group timeline into children for move/rotation/scale/opacity/visibility at scrub/live time. Actual ruler-pointer0/1/2.1s red pixels235→59→0 with fixed blue B, contact sheet inspected; existing runtime group and whole-schema regression pass. Parent preset/independent-clock preview and3D-on2D limitations remain separate, no full preview-equivalence claim.
+
+## Round AE model controls
+Zero-based embedded clip/speed/play/repeat creator controls persist across whole-schema publish/update.390px UI inspected. Runtime original GLB plus synthetic cloned second clip verifies index selection/speed/pause/one-shot config/tracking freeze. Real authored multi-clip/skeletal/morph fidelity and named selector remain open; no new rendered/device proof claimed.
