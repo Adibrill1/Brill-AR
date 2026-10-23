@@ -237,7 +237,9 @@
       await hydrate(); refreshExpSelect(); render();
     };
     $("exp-select").onchange = async (e) => {
-      rec = await Studio.load(e.target.value);
+      const r = await Studio.load(e.target.value);
+      if (!r) return; // keep the current experience instead of wiping the editor
+      rec = r;
       selectedId = null;
       resetSeq();
       await hydrate(); render();

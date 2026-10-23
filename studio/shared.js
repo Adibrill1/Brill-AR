@@ -441,7 +441,7 @@ const Studio = (() => {
   }
   async function save(rec) { rec.updatedAt = Date.now(); await idbPut(rec.id, rec); }
   async function exportJSON(rec) {
-    const out = { format: "ar-studio/1", id: rec.id, name: rec.name, createdAt: rec.createdAt, target: rec.target, elements: rec.elements.map((e) => ({ ...e })) };
+    const out = { format: "ar-studio/1", id: rec.id, name: rec.name, createdAt: rec.createdAt, target: rec.target, elements: rec.elements.map((e) => ({ ...e })), sequences: (rec.sequences || []).map((q) => ({ ...q })) };
     out.assets = {};
     for (const el of rec.elements) {
       if (el.assetId && rec.assets[el.assetId]) out.assets[el.assetId] = await blobToDataURL(rec.assets[el.assetId]);
@@ -454,6 +454,7 @@ const Studio = (() => {
     if (!o || o.format !== "ar-studio/1") throw new Error("bad format");
     const rec = blankExperience(o.name || "מיובא");
     rec.target = o.target; rec.elements = o.elements || []; rec.createdAt = o.createdAt || Date.now();
+    rec.sequences = Array.isArray(o.sequences) ? o.sequences : [];
     rec.assets = {};
     for (const [k, durl] of Object.entries(o.assets || {})) rec.assets[k] = await dataURLtoBlob(durl);
     await save(rec);

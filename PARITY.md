@@ -16,34 +16,45 @@ Legend:
 | Artivive capability (documented) | Brill-AR Studio | Status |
 |---|---|---|
 | Image target recognition (upload photo, detect in camera) | 8th Wall engine, per-experience target | ✅ device |
-| Multiple layers per artwork (video/image/sound elements) | Unlimited elements, drag + sliders, element list | ✅ device/cloud |
-| Standalone audio layer | Sound element with volume/loop | ✅ cloud |
-| Play video on the artwork | Video element, muted autoplay + first-tap unmute | ✅ device |
-| Opacity per layer | Per-element opacity 0–1 | 🆕 round-A |
-| Precise positioning (numeric x/y/scale/rotate/depth) | Numeric transform panel | 🆕 round-A |
-| Layer order control (bring forward/back) | z-order up/down buttons | 🆕 round-A |
-| Text layer | Text element: content, size, color, bold | 🆕 round-A |
-| Animation presets | none / slow spin / float / pulse per element | 🆕 round-A |
-| Tap interactions (open link etc.) | Tap action: open URL / mute-unmute sound | 🆕 round-A |
-| Preview without the camera | 3D preview page (orbit + zoom, same scene graph) | 🆕 round-A |
-| Timeline (keyframed motion over time) | Per-element keyframes (t, position/rotation/opacity), loop, linear interpolation | 🆕 round-B (cloud-verified) |
-| Sequences (multi-state artworks, tap to switch) | States per artwork, per-element state assignment, tap-to-advance action, state dots | 🆕 round-B (cloud-verified) |
-| 3D models (glTF/GLB) | Upload .glb/.gltf as an element; auto-fit + center on load; works with opacity/anim/timeline/sequences/tap | 🆕 round-C (cloud-verified) |
-| Particle effects | Not built | 🔜 planned (round C) |
-| Chroma-key (green screen) video | Key color + sensitivity per video element; custom discard shader on the video texture | 🆕 round-C (keying pixel-verified; real footage + performance device-pending) |
-| Particle effects | Built-in emitter: rising-sparkle / falling-confetti presets, count (10-500) + color per element | 🆕 round-C (motion verified in cloud; device visuals pending) |
-| Per-artwork stable link / QR | Each artwork gets a public link; Artivive shows a QR | 🆕 round-E PREP: zero-dep Node server (publish API + stable player page + static host) written and locally tested with synthetic assets; editor publish button + client-side QR (vendored MIT qrcode-generator); publish AUTH built: Bearer token (fail-closed), strict validation (element allowlist, https-only taps, media-type allowlist, size/count/rate limits), nosniff, 10 local security tests passing; NOT deployed - production needs an always-on host + HTTPS domain + chosen token (owner decision, small cost) |
-| Timeline ruler + scrub | (retained gap, now closed) | 🆕 round-F: ruler with second ticks, keyframe markers, draggable red playhead that seeks the live editor canvas; "back to live" button |
-| Target quality hint | Artivive rates target images with stars | 🆕 round-D: resolution + gradient-energy heuristic with a plain Hebrew hint on upload (non-blocking) |
-| Spatial audio | Sound can play flat | 🆕 round-D: optional per-sound spatial mode (THREE.PositionalAudio at the element's position); default stays flat |
-| Spatial/positional audio | Not built | 🔜 planned (round D) |
-| Recognition-quality feedback on target upload | Not built | 🔜 planned (round D) |
-| Share link / QR per artwork | play.html?r=N#id link exists; polished per-artwork share page + QR planned | 🔜 planned (round E) |
-| AR editing (arrange layers in camera view on device) | Web editor is 2D canvas + 3D preview; in-AR editing is native-app territory | ⛔ limit |
-| Headphone-only enforcement | Cannot force output routing from a browser | ⛔ limit |
-| Save video to camera roll automatically | iOS blocks programmatic Photos writes; Share > Save Video is the route | ⛔ limit |
-| Cloud-hosted projects, accounts, asset library | Local browser storage per device (export/import JSON to move) | 🖥️ server |
-| Buyer flow (stable per-artwork link/QR for collectors) | Scoped, needs a server + owner approval before any publication | 🖥️ server |
+| Trackability feedback on target (0-5 stars in Artivive) | Resolution + gradient-energy heuristic, plain Hebrew hint (non-blocking) | 🆕 round-D (binary-ish hint, not a 5-star scale; thresholds calibrated, not Artivive's algorithm) |
+| Multiple layers per artwork (video/image/sound) | Unlimited elements, drag + sliders + numeric panel, element list | ✅ device/cloud |
+| Layer types: video, image, audio, 3D (glTF/GLB), text, particles | All six built | 🆕 rounds A/C |
+| File types: jpg/png/gif images; mp4/mov/gif video; glTF/GLB (+zip, .obj/.fbx) models | jpg/png/webp images; mp4/webm video; single-file .glb models | ⚠️ partial: animated gif, .mov, .obj/.fbx, zipped glTF not supported; .gltf with external files rejected with a clear export-as-glb message |
+| Transform layers (handles + numeric panel) | Drag + sliders + numeric x/y/w/rot/depth panel | 🆕 round-A |
+| 2D and 3D editor views | 2D canvas editor + separate 3D preview page (orbit/zoom) | 🆕 round-A |
+| Layer order control | z-order up/down buttons | 🆕 round-A |
+| Opacity per layer | Per-element opacity 0-1 | 🆕 round-A |
+| Text layer | Content, size, color, bold | 🆕 round-A |
+| Animation presets | none / spin / float / pulse | 🆕 round-A |
+| Timeline: Move/Rotate/Scale/Transform actions | Keyframes capture x/y/z/rot/opacity/scale per element | 🆕 round-B |
+| Timeline: Speed Curve (linear/ease/elastic) | Per-element easing: linear / easeIn / easeOut / easeInOut (no elastic) | 🆕 round-G ⚠️ partial (elastic missing) |
+| Timeline: explicit Duration (loop length independent of last key) | Optional duration field; default = last key time | 🆕 round-G |
+| Timeline: Show/Hide action at set times | Via opacity 0/1 keyframes (functionally equivalent, less discoverable) | ⚠️ partial |
+| Timeline: animate groups of layers | No group concept | ❌ not built |
+| Sequences: states/chapters per artwork | States with per-element assignment, state tabs, dots | 🆕 round-B |
+| Sequences: On Tap -> Trigger a chosen sequence | Tap action per element: next state OR a chosen state | 🆕 round-G |
+| Sequences: multiple sequences overlay simultaneously | States switch (one active at a time), audio/visibility reset on switch | ❌ not built (architectural difference) |
+| Sequences: Manage Sequence (chain/stop), Change Interaction over time | Not built | ❌ not built |
+| Sequences: loop/reset per sequence | State replays its timelines on entry; no per-state auto-loop setting | ⚠️ partial |
+| Preview Mode (simulate viewer, sequence notifications) | 3D preview page + live timeline playback on the editor canvas + ruler/scrub; no sequence start/stop notifications | 🆕 rounds A/F ⚠️ partial (no notifications) |
+| Timeline editor: ruler with drag scrub | Ruler with second ticks, keyframe markers, draggable playhead seeking the canvas | 🆕 round-F |
+| 3D models: auto-fit, multi-mesh, textures | Auto-fit + center, multi-mesh opacity, textures/MeshStandardMaterial verified | 🆕 round-C |
+| Particle effects: presets + speed/direction/size/density, custom assets | Sparkle/confetti presets, count (10-500) + color; no direction/size controls, no custom sprites | 🆕 round-C ⚠️ partial |
+| 3D Sound: logarithmic mode (never fully muted) | PositionalAudio exponential rolloff, adjustable inner radius | 🆕 round-G |
+| 3D Sound: linear mode (silent beyond outer sphere) | PositionalAudio linear model, inner + outer radii | 🆕 round-G |
+| Chroma-key (green screen) video: color pick + threshold | Key color + threshold per video; custom discard shader, pixel-verified | 🆕 round-C |
+| Transparent GIF upload | Not supported | ❌ not built |
+| Tap interactions: open link | Tap -> https URL (validated) | 🆕 round-A |
+| Tap interactions: emails/phone links | https only | ⚠️ partial (mailto/tel not wired) |
+| Publish artwork + stable link, QR for WebAR | Publish server written + secured (token auth, validation, limits); editor publish button + client-side QR; NOT deployed | 🆕 round-E 🖥️ needs host + domain + token (owner decision) |
+| Update published artwork, QR unchanged | Same id re-publish overwrites; link stable | 🆕 round-E (code-verified, undeployed) |
+| Recording the AR experience | 10s in-player recording with tone | ✅ device |
+| Headphone-only playback toggle | Cannot force output routing from a browser | ⛔ limit |
+| Save video to camera roll automatically | iOS blocks programmatic Photos writes; Share > Save Video | ⛔ limit |
+| AR Mode editing on device | Web editor is 2D canvas + 3D preview | ⛔ limit (native-app territory) |
+| Element Library (pre-made assets) | None (self-generated test assets only) | ❌ not built (content, not code) |
+| Cloud accounts, asset library, multi-device sync | Local IndexedDB per browser + export/import JSON (roundtrip verified for every element type + states) | 🖥️ server (publish server is a first step) |
+| Buyer flow: per-artwork link/QR for collectors | Round-E server covers the technical half; commerce/rights need owner decisions | 🖥️ server + owner decision |
 
 ## Verification provenance (round C part 1 - 3D models + chroma key, 2026-10-23)
 - glTF: minimal GLB built in-page, added as an element, model-loaded fired, mesh present,
