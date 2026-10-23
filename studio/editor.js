@@ -247,8 +247,7 @@
       box.appendChild(body); box.appendChild(row); wrap.appendChild(box);
       document.body.appendChild(wrap);
     });
-    const addFile = (kind) => async (e) => {
-      let f = e.target.files[0]; e.target.value = "";
+    const importAsset = async (kind, f, options = {}) => {
       if (!f) return;
       let importNote = "";
       if (f.size > 20 * 1024 * 1024) { msg("קובץ גדול מדי (מעל 20MB) לגרסת הניסוי."); return; }
@@ -313,12 +312,19 @@
         el.aspect = 1;
         el.h = el.w * artRatio;
       }
+      if (options.name) el.name = options.name;
+      if (options.loop != null) el.loop = options.loop;
       rec.elements.push(el);
       selectedId = el.id;
       await Studio.save(rec);
       msg(importNote || "האלמנט נוסף. אפשר לגרור אותו על התצוגה.");
       render();
     };
+    const addFile = (kind) => async (e) => {
+      const f = e.target.files[0]; e.target.value = "";
+      await importAsset(kind, f);
+    };
+    $("btn-library").onclick = () => StarterLibrary.open(importAsset);
     $("file-video").onchange = addFile("video");
     $("file-image").onchange = addFile("image");
     $("file-sound").onchange = addFile("sound");

@@ -52,7 +52,7 @@ Legend:
 | Headphone-only playback toggle | Cannot force output routing from a browser | ⛔ limit |
 | Save video to camera roll automatically | iOS blocks programmatic Photos writes; Share > Save Video | ⛔ limit |
 | AR Mode editing on device | Web editor is 2D canvas + 3D preview | ⛔ limit (native-app territory) |
-| Element Library (pre-made assets) | None (self-generated test assets only) | ❌ not built (content, not code) |
+| Element Library (pre-made assets) | Small original starter catalog: transparent star/ring PNGs, animated ring GIF, synthesized bell WAV, purple gem GLB; mobile dialog, one-tap copy into local experience, editable/exportable | ⚠️ starter scope only: all five imported through real UI on live staging in sandbox Chrome, binary assets stored and exported (5 elements/6 assets incl artwork); GLB 24 vertices/color and rendered scene verified; WAV decoded 1.2s peak .213, ready4 (not phone/audio-listening proof). Mobile 390px thumbnails, scrolling and add controls visually inspected. Not Artivive catalog size/variety parity; no video starter yet. |
 | Cloud accounts, asset library, multi-device sync | Local IndexedDB per browser + export/import JSON (roundtrip verified for every element type + states) | 🖥️ server (publish server is a first step) |
 | Buyer flow: per-artwork link/QR for collectors | Round-E server covers the technical half; commerce/rights need owner decisions | 🖥️ server + owner decision |
 

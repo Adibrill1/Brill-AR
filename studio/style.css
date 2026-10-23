@@ -47,3 +47,15 @@ button.small { font-size: 13px; padding: 6px 10px; }
 
 /* the hidden attribute must beat .row display:flex */
 .row[hidden], [hidden].row { display: none; }
+
+#starter-library { width:min(640px,calc(100vw - 24px));max-height:90vh;border:0;border-radius:16px;padding:18px;color:#1c1c1c; }
+#starter-library::backdrop { background:rgba(0,0,0,.65); }
+.library-head { display:flex;justify-content:space-between;align-items:center;gap:12px; }
+.library-head h2 { margin:0; }
+.library-grid { display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:14px; }
+.library-card { border:1px solid #ddd;border-radius:12px;padding:12px;min-width:0; }
+.library-thumb { height:100px;border-radius:8px;background:#f3f0e9;display:grid;place-items:center;font-size:70px;color:#7c5cff; }
+.library-thumb img { width:85px;height:85px;object-fit:contain; }
+.library-card h3 { margin:8px 0 2px;font-size:16px; }
+.library-card button { width:100%;padding:10px 5px;font-size:14px; }
+@media(max-width:350px) { .library-grid { grid-template-columns:1fr; } }
