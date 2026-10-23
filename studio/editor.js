@@ -253,37 +253,11 @@
       if (f.size > 20 * 1024 * 1024) { msg("קובץ גדול מדי (מעל 20MB) לגרסת הניסוי."); return; }
       if (kind === "model") {
         const magic = new Uint8Array(await f.slice(0, 4).arrayBuffer());
-        if (magic[0] === 0x50 && magic[1] === 0x4B) { // "PK" - zip containing one .glb
-          // Bounded extraction: only .glb entries under the size cap are decompressed (filter runs
-          // before inflation), entry count is capped, nested zips are not recursed into, and entry
-          // bytes only ever land in an in-memory File - never written to a path, so traversal is N/A.
-          const MAX_ENTRY = 20 * 1024 * 1024, MAX_ENTRIES = 100, MAX_TOTAL = 60 * 1024 * 1024;
+        if (magic[0] === 0x50 && magic[1] === 0x4B) {
           try {
-            let seen = 0, oversize = false, wanted = null, totalRaw = 0;
-            const scan = new fflate.Unzip((entry) => {
-              seen++;
-              totalRaw += entry.originalSize || 0;
-              if (/\.glb$/i.test(entry.name) && !wanted) {
-                if (entry.originalSize > MAX_ENTRY) { oversize = true; return; }
-                wanted = entry.name;
-              }
-            });
-            scan.push(new Uint8Array(await f.arrayBuffer()), true);
-            if (seen === 0) throw new Error("no readable zip entries");
-            if (seen > MAX_ENTRIES) { msg("ה־zip מכיל יותר מדי קבצים - כווצו קובץ glb יחיד והעלו שוב."); return; }
-            if (totalRaw > MAX_TOTAL) { msg("תכולת ה־zip גדולה מדי בסך הכל (מעל 60MB אחרי חילוץ) - כווצו קובץ glb יחיד בלבד."); return; }
-            if (oversize) { msg("המודל בתוך ה־zip גדול מדי (מעל 20MB) לגרסת הניסוי."); return; }
-            if (!wanted) {
-              msg("לא נמצא קובץ glb בתוך ה־zip - כווצו קובץ glb יחיד והעלו שוב. (zip עם gltf וקבצים חיצוניים עדיין לא נתמך)");
-              return;
-            }
-            const entries = fflate.unzipSync(new Uint8Array(await f.arrayBuffer()), {
-              filter: (file) => file.name === wanted && file.originalSize <= MAX_ENTRY
-            });
-            const data = entries[wanted];
-            if (!data || data.length > MAX_ENTRY) { msg("המודל בתוך ה־zip גדול מדי (מעל 20MB) לגרסת הניסוי."); return; }
-            f = new File([data], wanted.split("/").pop(), { type: "model/gltf-binary" });
-          } catch (ez) { msg("ה־zip לא נפתח - ודאי שזה קובץ zip תקין עם קובץ glb בפנים."); return; }
+            const packed = window.gltfZipToGlb(new Uint8Array(await f.arrayBuffer()), fflate);
+            f = new File([packed.bytes], packed.name, { type: "model/gltf-binary" });
+          } catch (ez) { msg("לא ניתן לייבא את ה־zip: " + ez.message); return; }
         }
         if (/\.obj$/i.test(f.name)) { // Wavefront OBJ -> transcode to GLB (geometry only)
           const objText = await f.text();
