@@ -183,6 +183,9 @@ const Studio = (() => {
     if (el.seq === undefined) el.seq = null; // null = visible in every sequence state
     if (el.anim == null) el.anim = el.spin ? "spin" : "none";
     if (el.onTap == null) el.onTap = "none";
+    if (el.type === "group") {
+      if (!Array.isArray(el.children)) el.children = [];
+    }
     if (el.type === "text") {
       if (el.text == null) el.text = "כותרת";
       if (!el.color) el.color = "#ffffff";
@@ -216,15 +219,29 @@ const Studio = (() => {
 
   // ---------- round A: shared entity factory for player + preview ----------
   // mode 'ar': video uses the device-proven xrextras-target-video-fade; 'preview': plain a-video.
-  function buildElementEntity(rec, el, idx, mode) {
+  function buildElementEntity(rec, el, idx, mode, opts) {
+    opts = opts || {};
     normEl(el);
     const ts = toTargetSpace(rec, el, el.aspect || 1);
+    const ox = opts.origin ? opts.origin.x : 0, oy = opts.origin ? opts.origin.y : 0, oz = opts.origin ? opts.origin.z : 0;
     const z = (ts.z || 0) + idx * 0.001; // array order breaks z ties, matching the editor's paint order
-    const pos = `${ts.x} ${ts.y} ${z}`;
+    const pos = `${ts.x - ox} ${ts.y - oy} ${z - oz}`;
     const rot = `0 0 ${el.rot || 0}`;
     let e = null;
-    if (el.type === "video") {
-      if (el.chroma && el.chroma.enabled) {
+    if (el.type === "group") {
+      // wrapper entity: timeline/anim presets/opacity act on the whole group; children sit inside, relative to it
+      e = document.createElement("a-entity");
+      groupChildren(rec, el).forEach((ch, ci) => {
+        if (ch.type === "group") return; // no nesting in v1
+        const ce = buildElementEntity(rec, ch, ci, mode, { origin: { x: ts.x, y: ts.y, z: ts.z || 0 }, videoFallback: opts.videoFallback });
+        if (ce) { e.appendChild(ce); if (ce.dataset.opacity) applyOpacity(ce, parseFloat(ce.dataset.opacity)); }
+      });
+    } else if (el.type === "video") {
+      if (opts.videoFallback && opts.videoFallback(el)) {
+        e = document.createElement("a-plane");
+        e.setAttribute("material", { color: "#333333", opacity: 0.85, transparent: true, shader: "flat" });
+        e.setAttribute("width", ts.w); e.setAttribute("height", ts.h);
+      } else if (el.chroma && el.chroma.enabled) {
         ensureChromaComponent();
         e = document.createElement("a-entity");
         e.setAttribute("chroma-video", `src: #m-${el.id}; color: ${el.chroma.color || "#00ff00"}; threshold: ${el.chroma.threshold == null ? 0.35 : el.chroma.threshold}; width: ${ts.w}; height: ${ts.h}`);
@@ -282,7 +299,7 @@ const Studio = (() => {
     e.dataset.elId = el.id;
     const hasTl = el.timeline && Array.isArray(el.timeline.keys) && el.timeline.keys.length;
     if (el.anim === "spin" && !hasTl) e.setAttribute("animation__spin", `property: rotation; to: 0 0 ${(el.rot || 0) + 360}; loop: true; dur: 14000; easing: linear`);
-    else if (el.anim === "float" && !hasTl) e.setAttribute("animation__float", `property: position; from: ${pos}; to: ${ts.x} ${ts.y + 0.03} ${z}; dir: alternate; loop: true; dur: 2600; easing: easeInOutSine`);
+    else if (el.anim === "float" && !hasTl) e.setAttribute("animation__float", `property: position; from: ${pos}; to: ${ts.x - ox} ${ts.y - oy + 0.03} ${z - oz}; dir: alternate; loop: true; dur: 2600; easing: easeInOutSine`);
     else if (el.anim === "pulse" && !hasTl) e.setAttribute("animation__pulse", `property: scale; to: 1.08 1.08 1; dir: alternate; loop: true; dur: 1600; easing: easeInOutSine`);
     if (el.onTap && el.onTap !== "none") e.classList.add("cantap");
     if (el.opacity != null && el.opacity < 1) e.dataset.opacity = String(el.opacity);
@@ -323,6 +340,21 @@ const Studio = (() => {
   }
 
   // ---------- sequences (multi-state artworks) ----------
+  // ---------- layer groups ----------
+  // A group is an element (type "group") whose children are ids of other elements.
+  // Children stay normal elements in rec.elements; topLevelElements hides them from
+  // top-level iteration. v1: no nested groups.
+  function topLevelElements(rec) {
+    const inGroup = new Set();
+    for (const el of rec.elements) if (el.type === "group" && Array.isArray(el.children)) for (const id of el.children) inGroup.add(id);
+    return rec.elements.filter((el) => !inGroup.has(el.id));
+  }
+  function groupChildren(rec, groupEl) {
+    const ids = Array.isArray(groupEl.children) ? groupEl.children : [];
+    const byId = new Map(rec.elements.map((el) => [el.id, el]));
+    return ids.map((id) => byId.get(id)).filter(Boolean);
+  }
+
   function seqList(rec) { return Array.isArray(rec.sequences) ? rec.sequences : []; }
   function elVisibleIn(el, seqId) { return !el.seq || !seqId || el.seq === seqId; }
   function nextSequence(rec, cur) {
@@ -333,10 +365,8 @@ const Studio = (() => {
   }
   // Toggles built entity visibility for the active state; hidden sounds pause.
   function applySequence(container, rec, seqId, mediaEls) {
-    for (const child of [...container.children]) {
-      const id = child.dataset && child.dataset.elId;
-      if (!id) continue;
-      const el = rec.elements.find((x) => x.id === id);
+    for (const child of container.querySelectorAll("[data-el-id]")) {
+      const el = rec.elements.find((x) => x.id === child.dataset.elId);
       if (el) child.setAttribute("visible", elVisibleIn(el, seqId));
     }
     if (mediaEls) for (const m of mediaEls) {
@@ -392,7 +422,10 @@ const Studio = (() => {
       const el = rec.elements.find((x) => x.id === (e.dataset && e.dataset.elId));
       if (!el || !timelineDur(el)) continue;
       const p0 = e.getAttribute("position");
-      tracks.push({ el, e, elapsed: 0, startedAt: 0, zOff: (p0 ? p0.z : 0) - (el.z || 0) });
+      const ts0 = toTargetSpace(rec, el, el.aspect || 1);
+      tracks.push({ el, e, elapsed: 0, startedAt: 0,
+        xOff: (p0 ? p0.x : 0) - ts0.x, yOff: (p0 ? p0.y : 0) - ts0.y,
+        zOff: (p0 ? p0.z : 0) - (el.z || 0) });
     }
     if (!tracks.length) return null;
     const D2R = Math.PI / 180;
@@ -403,10 +436,17 @@ const Studio = (() => {
     if (opts.autostart !== false) drv.play();
     const frame = (now) => {
       if (drv.running) {
+        // per-state loop: when every non-looping track reached its end, replay them together
+        if (drv.stateLoop) {
+          const ended = tracks.filter((tr) => !(tr.el.timeline && tr.el.timeline.loop));
+          if (ended.length && ended.every((tr) => (now - tr.startedAt) / 1000 >= timelineDur(tr.el))) {
+            for (const tr of ended) tr.startedAt = now;
+          }
+        }
         for (const tr of tracks) {
           const s = sampleTimeline(tr.el, (now - tr.startedAt) / 1000);
           const ts = toTargetSpace(rec, Object.assign({}, tr.el, { x: s.x, y: s.y, z: s.z }), tr.el.aspect || 1);
-          tr.e.object3D.position.set(ts.x, ts.y, (ts.z || 0) + tr.zOff);
+          tr.e.object3D.position.set(ts.x + tr.xOff, ts.y + tr.yOff, (ts.z || 0) + tr.zOff);
           tr.e.object3D.rotation.z = s.rot * D2R;
           tr.e.object3D.scale.set(s.scale, s.scale, 1);
           applyOpacity(tr.e, s.opacity);
@@ -540,7 +580,39 @@ const Studio = (() => {
     return { warn: false, energy, minDim };
   }
 
+  // ---------- sequence chaining (auto-advance) + preview notifications ----------
+  function seqAutoNext(rec, seqId) {
+    const sq = seqList(rec).find((x) => x.id === seqId);
+    return sq && sq.autoNext && sq.autoNext.at > 0 ? sq.autoNext : null;
+  }
+  // Runs the active state's autoNext chain; switchFn performs the actual state switch.
+  function makeSeqRunner(rec, switchFn) {
+    let timer = null;
+    return {
+      enter(seqId) {
+        if (timer) { clearTimeout(timer); timer = null; }
+        const an = seqAutoNext(rec, seqId);
+        if (an) timer = setTimeout(() => { timer = null; switchFn(an.to || (seqList(rec)[0] && seqList(rec)[0].id)); }, an.at * 1000);
+      },
+      cancel() { if (timer) { clearTimeout(timer); timer = null; } }
+    };
+  }
+  function notifySeq(rec, seqId) {
+    let toast = document.getElementById("seq-toast");
+    if (!toast) {
+      toast = document.createElement("div");
+      toast.id = "seq-toast";
+      toast.style.cssText = "position:fixed;bottom:110px;left:50%;transform:translateX(-50%);z-index:60;background:rgba(18,18,26,.85);color:#fff;padding:6px 14px;border-radius:999px;font:13px/1.4 sans-serif;transition:opacity .4s;pointer-events:none";
+      document.body.appendChild(toast);
+    }
+    const sq = seqList(rec).find((x) => x.id === seqId);
+    toast.textContent = "מצב: " + (sq ? sq.name : "");
+    toast.style.opacity = "1";
+    clearTimeout(toast._t);
+    toast._t = setTimeout(() => { toast.style.opacity = "0"; }, 1200);
+  }
+
   return { TARGET_W, TARGET_H, newId, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
-           geom, toTargetSpace, blankExperience, save, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, seqList, elVisibleIn, nextSequence, applySequence, renderSeqDots, sampleTimeline, timelineDur, startTimelineDriver,
+           geom, toTargetSpace, blankExperience, save, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, seqList, elVisibleIn, nextSequence, applySequence, renderSeqDots, sampleTimeline, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, topLevelElements, groupChildren,
            load: idbGet, all: idbAll, del: idbDel };
 })();

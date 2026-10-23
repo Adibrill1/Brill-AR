@@ -27,7 +27,7 @@ const rateLog = new Map();
 
 fs.mkdirSync(DATA, { recursive: true });
 
-const EL_TYPES = new Set(["video", "image", "sound", "text", "model", "particles"]);
+const EL_TYPES = new Set(["video", "image", "sound", "text", "model", "particles", "group"]);
 const ASSET_MIME = /^data:(image\/png|image\/jpeg|image\/webp|image\/gif|video\/mp4|audio\/mpeg|audio\/wav|audio\/x-wav|audio\/mp4|audio\/x-m4a|model\/gltf-binary|application\/octet-stream);base64,/;
 const NUM_FIELDS = ["x", "y", "w", "h", "rot", "z", "volume", "opacity", "aspect", "size"];
 
@@ -74,9 +74,29 @@ function validateExport(o) {
     if ((el.onTap === "url" || el.onTap === "link") && el.tapUrl && !/^(https:\/\/|mailto:|tel:)/.test(el.tapUrl)) return "element " + i + ": tap link must be https/mailto/tel";
     if (el.name != null) el.name = String(el.name).slice(0, 120);
   }
+  { // group integrity: children exist, no nesting, single membership
+    const ids = new Set(o.elements.map((e) => e && e.id).filter((x) => typeof x === "string"));
+    const member = new Set();
+    for (const [i, el] of o.elements.entries()) {
+      if (el.type !== "group") continue;
+      if (!Array.isArray(el.children) || !el.children.length || el.children.length > 60) return "element " + i + ": bad group children";
+      for (const cid of el.children) {
+        if (typeof cid !== "string" || !ids.has(cid)) return "element " + i + ": unknown group child";
+        const ch = o.elements.find((e) => e && e.id === cid);
+        if (ch && ch.type === "group") return "element " + i + ": nested groups not supported";
+        if (member.has(cid)) return "element " + i + ": child in two groups";
+        member.add(cid);
+      }
+    }
+  }
   if (o.sequences != null) {
     if (!Array.isArray(o.sequences) || o.sequences.length > 24) return "bad sequences";
-    for (const q of o.sequences) { if (!q || typeof q !== "object" || typeof q.id !== "string" || q.id.length > 64) return "bad sequence entry"; if (q.name != null) q.name = String(q.name).slice(0, 120); }
+    for (const q of o.sequences) {
+      if (!q || typeof q !== "object" || typeof q.id !== "string" || q.id.length > 64) return "bad sequence entry";
+      if (q.name != null) q.name = String(q.name).slice(0, 120);
+      if (q.loop != null && typeof q.loop !== "boolean") return "bad sequence loop";
+      if (q.autoNext != null && (typeof q.autoNext !== "object" || typeof q.autoNext.at !== "number" || q.autoNext.at < 0 || q.autoNext.at > 3600 || (q.autoNext.to != null && typeof q.autoNext.to !== "string"))) return "bad sequence autoNext";
+    }
   }
   const assets = o.assets || {};
   for (const [k, v] of Object.entries(assets)) {

@@ -77,12 +77,15 @@
   // Multi-state artworks: tap an element wired to "sequence" to switch states.
   let curSeq = Studio.seqList(rec).length ? Studio.seqList(rec)[0].id : null;
   let tlDrv = null;
+  const runner = Studio.makeSeqRunner(rec, (to) => onSequence(to));
   const onSequence = (id) => {
     if (!Studio.seqList(rec).some((x) => x.id === id)) return;
     curSeq = id;
     Studio.applySequence(rig, rec, curSeq, mediaEls);
     Studio.renderSeqDots(rec, curSeq);
-    if (tlDrv) tlDrv.reset();
+    Studio.notifySeq(rec, curSeq);
+    if (tlDrv) { tlDrv.stateLoop = !!(Studio.seqList(rec).find((x) => x.id === curSeq) || {}).loop; tlDrv.reset(); }
+    runner.enter(curSeq);
   };
   const onNextSequence = () => {
     curSeq = Studio.nextSequence(rec, curSeq);
@@ -107,27 +110,23 @@
   const canPlay = (file) => { const t = file && file.type ? file.type : "video/mp4"; return probe.canPlayType(t) !== ""; };
   const probeResults = await Promise.all(videoProbes);
   const undecodable = new Set(probeResults.filter((r) => !r.ok).map((r) => r.id));
-  let videoFallbacks = 0;
-  rec.elements.forEach((el, idx) => {
-    let e;
-    if (el.type === "video" && (!canPlay(rec.assets[el.assetId]) || undecodable.has(el.id))) {
-      videoFallbacks++;
-      const ts = Studio.toTargetSpace(rec, el, el.aspect || 1);
-      e = document.createElement("a-plane");
-      e.setAttribute("material", { color: "#333333", opacity: 0.85, transparent: true, shader: "flat" });
-      e.setAttribute("width", ts.w); e.setAttribute("height", ts.h);
-      e.setAttribute("position", `${ts.x} ${ts.y} ${(ts.z || 0) + idx * 0.001}`);
-      e.setAttribute("rotation", `0 0 ${el.rot || 0}`);
-    } else {
-      e = Studio.buildElementEntity(rec, el, idx, "preview");
-    }
+  const videoFallback = (el) => el.type === "video" && (!canPlay(rec.assets[el.assetId]) || undecodable.has(el.id));
+  const videoFallbacks = rec.elements.filter(videoFallback).length;
+  Studio.topLevelElements(rec).forEach((el, idx) => {
+    const e = Studio.buildElementEntity(rec, el, idx, "preview", { videoFallback });
     if (!e) return;
-    Studio.bindTap(e, el, { onMuteToggle, onNextSequence, onSequence });
     rig.appendChild(e);
     if (e.dataset.opacity) Studio.applyOpacity(e, parseFloat(e.dataset.opacity));
   });
+  // taps bind per entity, including children inside group wrappers
+  rig.querySelectorAll("[data-el-id]").forEach((n) => {
+    const el = rec.elements.find((x) => x.id === n.dataset.elId);
+    if (el) Studio.bindTap(n, el, { onMuteToggle, onNextSequence, onSequence });
+  });
   if (curSeq) { Studio.applySequence(rig, rec, curSeq, mediaEls); Studio.renderSeqDots(rec, curSeq); }
-  tlDrv = Studio.startTimelineDriver(rec, [...rig.children]);
+  tlDrv = Studio.startTimelineDriver(rec, [...rig.querySelectorAll("[data-el-id]")]);
+  if (tlDrv) tlDrv.stateLoop = !!(Studio.seqList(rec).find((x) => x.id === curSeq) || {}).loop;
+  runner.enter(curSeq);
   window.__tlDrv = tlDrv; // test/debug handle
   if (videoFallbacks) {
     document.getElementById("hint").textContent = "שים לב: הדפדפן הזה לא מצליח להציג את הסרטון, והוא מוצג כמלבן אפור. נסו מכשיר אחר או קובץ וידאו בפורמט נתמך (mp4 / H.264).";

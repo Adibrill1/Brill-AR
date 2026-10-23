@@ -93,12 +93,14 @@
   // Multi-state artworks: tap an element wired to "sequence" to switch states.
   let curSeq = Studio.seqList(rec).length ? Studio.seqList(rec)[0].id : null;
   let tlDrv = null;
+  const runner = Studio.makeSeqRunner(rec, (to) => onSequence(to));
   const onSequence = (id) => {
     if (!Studio.seqList(rec).some((x) => x.id === id)) return;
     curSeq = id;
     Studio.applySequence(target, rec, curSeq, mediaEls);
     Studio.renderSeqDots(rec, curSeq);
-    if (tlDrv) tlDrv.reset();
+    if (tlDrv) { tlDrv.stateLoop = !!(Studio.seqList(rec).find((x) => x.id === curSeq) || {}).loop; tlDrv.reset(); }
+    runner.enter(curSeq);
   };
   const onNextSequence = () => {
     curSeq = Studio.nextSequence(rec, curSeq);
@@ -109,18 +111,24 @@
 
   const target = document.createElement("xrextras-named-image-target");
   target.setAttribute("name", "artwork");
-  rec.elements.forEach((el, idx) => {
+  Studio.topLevelElements(rec).forEach((el, idx) => {
     const e = Studio.buildElementEntity(rec, el, idx, "ar");
     if (!e) return; // sound: no visual node
-    Studio.bindTap(e, el, { onMuteToggle, onNextSequence, onSequence });
     target.appendChild(e);
     if (e.dataset.opacity) Studio.applyOpacity(e, parseFloat(e.dataset.opacity));
+  });
+  // taps bind per entity, including children inside group wrappers
+  target.querySelectorAll("[data-el-id]").forEach((n) => {
+    const el = rec.elements.find((x) => x.id === n.dataset.elId);
+    if (el) Studio.bindTap(n, el, { onMuteToggle, onNextSequence, onSequence });
   });
   if (curSeq) { Studio.applySequence(target, rec, curSeq, mediaEls); Studio.renderSeqDots(rec, curSeq); }
   scene.appendChild(target);
   // Timeline motion starts when the artwork is found (not during permission/scan screens)
   // and freezes while tracking is lost, resuming where it stopped.
-  tlDrv = Studio.startTimelineDriver(rec, [...target.children], { autostart: false });
+  tlDrv = Studio.startTimelineDriver(rec, [...target.querySelectorAll("[data-el-id]")], { autostart: false });
+  if (tlDrv) tlDrv.stateLoop = !!(Studio.seqList(rec).find((x) => x.id === curSeq) || {}).loop;
+  runner.enter(curSeq);
   window.__tlDrv = tlDrv; // test/debug handle
   if (tlDrv) {
     scene.addEventListener("xrimagefound", () => tlDrv.play());
