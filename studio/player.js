@@ -119,7 +119,10 @@
   });
   // parallel overlay tracks: independent clocks, tap start/stop, combined visibility
   const trackRunner = Studio.makeTrackRunner(rec, target);
-  const refreshVisibility = () => Studio.applySequence(target, rec, curSeq, mediaEls, (id) => trackRunner.isPlaying(id));
+  const refreshVisibility = () => {
+    Studio.applySequence(target, rec, curSeq, mediaEls, (id) => trackRunner.isPlaying(id));
+    target.setAttribute("data-tracks", JSON.stringify(Studio.trackList(rec).map((t) => [t.id, trackRunner.isPlaying(t.id)]))); // test/debug handle (DOM-readable)
+  };
   const onTrackToggle = (id) => { trackRunner.toggle(id); refreshVisibility(); };
   // taps bind per entity, including children inside group wrappers
   target.querySelectorAll("[data-el-id]").forEach((n) => {
@@ -128,7 +131,6 @@
   });
   trackRunner.autoStart();
   refreshVisibility();
-  window.__trackRunner = trackRunner; // test/debug handle
   if (curSeq) { refreshVisibility(); Studio.renderSeqDots(rec, curSeq); }
   scene.appendChild(target);
   // Timeline motion starts when the artwork is found (not during permission/scan screens)

@@ -120,7 +120,10 @@
   });
   // parallel overlay tracks: independent clocks, tap start/stop, combined visibility
   const trackRunner = Studio.makeTrackRunner(rec, rig);
-  const refreshVisibility = () => Studio.applySequence(rig, rec, curSeq, mediaEls, (id) => trackRunner.isPlaying(id));
+  const refreshVisibility = () => {
+    Studio.applySequence(rig, rec, curSeq, mediaEls, (id) => trackRunner.isPlaying(id));
+    rig.setAttribute("data-tracks", JSON.stringify(Studio.trackList(rec).map((t) => [t.id, trackRunner.isPlaying(t.id)]))); // test/debug handle (DOM-readable)
+  };
   const onTrackToggle = (id) => { trackRunner.toggle(id); refreshVisibility(); };
   // taps bind per entity, including children inside group wrappers
   rig.querySelectorAll("[data-el-id]").forEach((n) => {
@@ -129,7 +132,6 @@
   });
   trackRunner.autoStart();
   refreshVisibility();
-  window.__trackRunner = trackRunner; // test/debug handle
   if (curSeq) { refreshVisibility(); Studio.renderSeqDots(rec, curSeq); }
   // the state driver drives only state-model elements; tracked elements run on their track's own driver
   tlDrv = Studio.startTimelineDriver(rec, [...rig.querySelectorAll("[data-el-id]")].filter((n) => {
