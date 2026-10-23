@@ -276,6 +276,14 @@
             f = new File([packed.bytes], packed.name, { type: "model/gltf-binary" });
           } catch (ez) { msg("לא ניתן לייבא את ה־zip: " + ez.message); return; }
         }
+        if (/\.fbx$/i.test(f.name)) {
+          if (!(await confirmDialog("המרת FBX היא ניסיונית: מודלים סטטיים בלבד, עד 20MB. חומרים או מאפיינים מיוחדים עשויים להשתנות. אין תמיכה בשלד/הנפשה או טקסטורות חיצוניות. לתוצאה נאמנה למקור עדיף לייצא GLB מהתוכנה המקורית. הקובץ מומר במכשיר, בלי העלאה לשרת.", "המרה ובדיקה"))) return;
+          try {
+            const bytes = await window.fbxToGlb(f);
+            f = new File([bytes], f.name.replace(/\.fbx$/i, ".glb"), { type: "model/gltf-binary" });
+            importNote = "FBX הומר כמודל סטטי. בדקי צורה, כיוון וחומרים בתצוגה המקדימה לפני שימוש.";
+          } catch (err) { msg("ה־FBX לא נוסף: " + err.message); return; }
+        }
         if (/\.obj$/i.test(f.name)) { // Wavefront OBJ -> transcode to GLB (geometry only)
           const objText = await f.text();
           const lossy = /^(mtllib|usemtl|vt\s|vn\s)/m.test(objText);
