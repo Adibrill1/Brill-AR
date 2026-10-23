@@ -834,6 +834,7 @@
       tlScrubT = null; $("tl-time").textContent = ""; $("btn-tl-live").hidden = true;
       const el = rec && rec.elements.find((x) => x.id === selectedId);
       if (el) { renderRuler(el); }
+      draw();
     };
   })();
 
@@ -872,11 +873,7 @@
       let hpx = (el.h != null ? el.h * H : (el.w * W) / (el.aspect || 1)) * sc;
       let cx = ((ts ? ts.x : el.x) + 0.5) * W;
       let cy = (0.5 - (ts ? ts.y : el.y)) * H;
-      let extraRot = 0;
-      // animation previews (approximation of the player presets)
-      if (!Studio.timelineDur(el) && el.anim === "float") { cy += Math.sin(t0 / 1300) * H * 0.02; needsAnim = true; }
-      else if (!Studio.timelineDur(el) && el.anim === "pulse") { const f = 1 + 0.08 * Math.sin(t0 / 800); wpx *= f; hpx *= f; needsAnim = true; }
-      else if (!Studio.timelineDur(el) && el.anim === "spin") { extraRot = ((t0 / 14000) * 2 * Math.PI) % (2 * Math.PI); needsAnim = true; }
+      if(el.anim&&el.anim!=='none'||parent&&parent.anim&&parent.anim!=='none')needsAnim=tlScrubT==null;
       if (el.type === "video") needsAnim = true;
       const effRot = ts ? ts.rot : (el.rot || 0);
       boxes[el.id] = { cx, cy, w: wpx, h: hpx, rot: -effRot * Math.PI / 180 };
@@ -888,7 +885,6 @@
       if (el.type === "video" && m && m.readyState >= 2) {
         ctx.drawImage(m, -wpx / 2, -hpx / 2, wpx, hpx);
       } else if (el.type === "image" && m) {
-        ctx.rotate(extraRot);
         ctx.drawImage(m, -wpx / 2, -hpx / 2, wpx, hpx);
         if (m.tagName === "CANVAS") needsAnim = true; // animated gif canvas updates itself; keep repainting
       } else if (el.type === "text") {

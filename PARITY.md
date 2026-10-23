@@ -168,3 +168,6 @@ Named GLB clip dropdown from bounded metadata now available. Actual original two
 
 ## Round AG deformation evidence
 Original one-morph triangle renders area199→967pixels; original one-joint weighted triangle renders centroidX357.5→441.3. Same-scale crops inspected. Confirms minimal morph/skinning through existing loader/mixer; complex rigs/inverse binds/multijoint/blending and phone remain open. No broad model-fidelity claim.
+
+## Round AH presets
+Canvas group/child spin/float/pulse now sampled at scrub/live time with runtime preset periods. Actual AFrame seek world-position comparison all3start/mid/end within.002; actual canvas parent-spin pixels move/rotate with fixedblueB and inspected sheet. Independent track clocks and device timing remain open.

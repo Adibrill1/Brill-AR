@@ -613,13 +613,22 @@ const Studio = (() => {
     }
     tl.keys.push(k); return k;
   }
+  function sampleVisual(rec,el,t) {
+    const out=sampleTimeline(el,t);
+    if(timelineDur(el))return out;
+    const phase=(duration)=>{const p=Math.max(0,t)%(duration*2)/duration;return (1-Math.cos(Math.PI*(p<=1?p:2-p)))/2;};
+    if(el.anim==='spin')out.rot+=Math.max(0,t)%14/14*360;
+    else if(el.anim==='float')out.y+=.03/geom(rec).artH*phase(2.6);
+    else if(el.anim==='pulse')out.scale=1+.08*phase(1.6);
+    return out;
+  }
   // Canvas uses the same artwork-space samples and parent-base frame as runtime.
   function sampleComposition(rec, el, t, seqId) {
-    const out = sampleTimeline(el,t);
+    const out = sampleVisual(rec,el,t);
     out.visible = out.visible && elVisibleIn(el,seqId);
     const group=rec.elements.find(g=>g.type==='group'&&(g.children||[]).includes(el.id));
     if(group) {
-      const parent=sampleTimeline(group,t),ratio=geom(rec).artW/geom(rec).artH;
+      const parent=sampleVisual(rec,group,t),ratio=geom(rec).artW/geom(rec).artH;
       const angle=(parent.rot-(group.rot||0))*Math.PI/180;
       const dx=(out.x-(group.x||0))*ratio*parent.scale,dy=(out.y-(group.y||0))*parent.scale;
       out.x=parent.x+(dx*Math.cos(angle)-dy*Math.sin(angle))/ratio;
@@ -920,6 +929,6 @@ const Studio = (() => {
   }
 
   return { TARGET_W, TARGET_H, newId, modelClipNames, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
-           geom, toTargetSpace, blankExperience, save, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleComposition, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
+           geom, toTargetSpace, blankExperience, save, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
            load: idbGet, all: idbAll, del: idbDel };
 })();
