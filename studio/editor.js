@@ -444,6 +444,36 @@
   }
 
   // ---------- timeline editor ----------
+  let tlScrubT = null; // null = live playback; number = frozen playhead seconds
+
+  function renderRuler(el) {
+    const c = $("tl-ruler");
+    const tl = el.timeline && Array.isArray(el.timeline.keys) ? el.timeline : { keys: [] };
+    const span = Math.max(Math.ceil(Studio.timelineDur(el)), 2) + 1;
+    const dpr = window.devicePixelRatio || 1;
+    const W = c.clientWidth || 300;
+    c.width = W * dpr; c.height = 34 * dpr;
+    const g = c.getContext("2d"); g.scale(dpr, dpr);
+    g.clearRect(0, 0, W, 34);
+    g.strokeStyle = "#c7c7cc"; g.fillStyle = "#8e8e93"; g.font = "9px sans-serif"; g.textAlign = "center";
+    for (let sec = 0; sec <= span; sec++) {
+      const x = (sec / span) * W;
+      g.beginPath(); g.moveTo(x, 18); g.lineTo(x, 28); g.stroke();
+      g.fillText(sec + "s", x, 10);
+    }
+    g.fillStyle = "#7c5cff";
+    for (const k of tl.keys) {
+      const x = (k.t / span) * W;
+      g.beginPath(); g.moveTo(x, 19); g.lineTo(x - 5, 29); g.lineTo(x + 5, 29); g.closePath(); g.fill();
+    }
+    if (tlScrubT != null) {
+      const x = (tlScrubT / span) * W;
+      g.strokeStyle = "#ff3b30"; g.lineWidth = 2;
+      g.beginPath(); g.moveTo(x, 0); g.lineTo(x, 34); g.stroke(); g.lineWidth = 1;
+    }
+    c.dataset.span = span;
+  }
+
   function renderTimeline(el) {
     const wrap = $("row-timeline");
     wrap.hidden = el.type === "sound";
@@ -463,7 +493,30 @@
       li.appendChild(del);
       ul.appendChild(li);
     });
+    renderRuler(el);
   }
+
+  // Scrubbing: drag on the ruler freezes the playhead; the canvas samples that exact time.
+  (() => {
+    const ruler = $("tl-ruler");
+    const scrubTo = (e) => {
+      const r = ruler.getBoundingClientRect();
+      const span = parseFloat(ruler.dataset.span || "3");
+      tlScrubT = Math.max(0, Math.min(span, ((e.clientX - r.left) / r.width) * span));
+      $("tl-time").textContent = "t=" + tlScrubT.toFixed(1) + "s";
+      $("btn-tl-live").hidden = false;
+      const el = rec && rec.elements.find((x) => x.id === selectedId);
+      if (el) renderRuler(el);
+      draw();
+    };
+    ruler.onpointerdown = (e) => { ruler.setPointerCapture(e.pointerId); scrubTo(e); ruler.onpointermove = scrubTo; };
+    ruler.onpointerup = () => { ruler.onpointermove = null; };
+    $("btn-tl-live").onclick = () => {
+      tlScrubT = null; $("tl-time").textContent = ""; $("btn-tl-live").hidden = true;
+      const el = rec && rec.elements.find((x) => x.id === selectedId);
+      if (el) { renderRuler(el); }
+    };
+  })();
 
   // ---------- canvas preview ----------
   const cv = () => $("preview");
@@ -491,7 +544,7 @@
       if (!Studio.elVisibleIn(el, curSeq)) continue;
       // live timeline playback: sampled keyframe values override the element's base props
       let ts = null;
-      if (Studio.timelineDur(el)) { ts = Studio.sampleTimeline(el, t0 / 1000); needsAnim = true; }
+      if (Studio.timelineDur(el)) { ts = Studio.sampleTimeline(el, tlScrubT != null ? tlScrubT : t0 / 1000); needsAnim = tlScrubT == null; }
       const sc = ts ? ts.scale : 1;
       let wpx = el.w * W * sc;
       let hpx = (el.h != null ? el.h * H : (el.w * W) / (el.aspect || 1)) * sc;

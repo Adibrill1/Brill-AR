@@ -33,6 +33,7 @@ Legend:
 | Chroma-key (green screen) video | Key color + sensitivity per video element; custom discard shader on the video texture | 🆕 round-C (keying pixel-verified; real footage + performance device-pending) |
 | Particle effects | Built-in emitter: rising-sparkle / falling-confetti presets, count (10-500) + color per element | 🆕 round-C (motion verified in cloud; device visuals pending) |
 | Per-artwork stable link / QR | Each artwork gets a public link; Artivive shows a QR | 🆕 round-E PREP: zero-dep Node server (publish API + stable player page + static host) written and locally tested with synthetic assets; editor publish button + client-side QR (vendored MIT qrcode-generator); NOT deployed - production needs an always-on host + HTTPS domain + publish auth (owner decision, small cost) |
+| Timeline ruler + scrub | (retained gap, now closed) | 🆕 round-F: ruler with second ticks, keyframe markers, draggable red playhead that seeks the live editor canvas; "back to live" button |
 | Target quality hint | Artivive rates target images with stars | 🆕 round-D: resolution + gradient-energy heuristic with a plain Hebrew hint on upload (non-blocking) |
 | Spatial audio | Sound can play flat | 🆕 round-D: optional per-sound spatial mode (THREE.PositionalAudio at the element's position); default stays flat |
 | Spatial/positional audio | Not built | 🔜 planned (round D) |
@@ -63,6 +64,10 @@ Legend:
 - Particles: editor button creates a particle element (no asset); panel edits preset/count/color;
   runtime is a THREE.Points emitter component. Verified: 120 points, positions advance over a
   3s window (sparkle rises), visible as sparkles in preview screenshot 140730.
+- Round F (ruler/scrub) verified in cloud: ruler renders ticks + purple key markers (ink pixel
+  count > 0); pointer scrub to t=0.2s shows the test text at the left sample point (93 dark px,
+  0 right) and t=1.2s at the right point (72 px, 0 left) - the playhead seeks the exact sampled
+  time on the editor canvas. Screenshot 144020 shows the ruler UI.
 - Round D verified in cloud: assessTargetQuality flags a flat solid image (energy 0.0) and a
   small image (150px short side) with warnings, passes a detailed synthetic image (energy 12.1,
   768px). Spatial sound creates exactly one invisible carrier entity at the element's target-space
@@ -83,7 +88,7 @@ Legend:
 - Scale keyframes editable in the editor (per-key scale input).
 - Editor canvas plays timelines live while editing (same sampler as the runtime driver) -
   two-frame screenshot evidence. No time ruler/scrub yet: creators get live playback + numeric
-  key entry, not drag-on-timeline. Retained gap, judged acceptable for this round.
+  key entry, not drag-on-timeline. Closed in round F (ruler + scrub playhead).
 - Headless-cloud caveat: rAF runs ~3fps in 3D scenes there, so tight timing asserts mislead;
   2D canvas decodes mp4 while the WebGL video path stalls (environment, handled by watchdog).
 
