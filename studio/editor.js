@@ -381,7 +381,7 @@
       el.timeline = el.timeline && Array.isArray(el.timeline.keys) ? el.timeline : { loop: false, keys: [] };
       const t = Math.max(0, Math.min(60, parseFloat($("num-tl-t").value) || 0));
       const scale = Math.max(0.1, Math.min(5, parseFloat($("num-tl-scale").value) || 1));
-      el.timeline.keys.push({ t, x: el.x, y: el.y, z: el.z || 0, rot: el.rot || 0, opacity: el.opacity == null ? 1 : el.opacity, scale });
+      el.timeline.keys.push({ t, x: el.x, y: el.y, z: el.z || 0, rot: el.rot || 0, opacity: el.opacity == null ? 1 : el.opacity, scale, tap: el.onTap || "none" });
     });
     $("ck-spatial").onchange = (e) => upd((el) => { el.spatial = e.target.checked; renderPanel(); });
     $("sel-spatial-mode").onchange = (e) => upd((el) => { el.spatialMode = e.target.value; });
@@ -635,7 +635,7 @@
     tl.keys.slice().sort((a, b) => a.t - b.t).forEach((k) => {
       const li = document.createElement("li");
       const i = el.timeline.keys.indexOf(k);
-      li.textContent = "t=" + k.t + "s ";
+      li.textContent = "t=" + k.t + "s " + (k.tap && k.tap !== "none" ? "👆 " : "");
       const del = document.createElement("button");
       del.className = "ghost danger"; del.textContent = "✕";
       del.onclick = () => upd((e2) => { e2.timeline.keys.splice(i, 1); });

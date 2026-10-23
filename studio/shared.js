@@ -324,17 +324,19 @@ const Studio = (() => {
 
   // Tap behavior shared by AR player and preview. hooks.onMuteToggle handles 'mute'.
   function bindTap(entity, el, hooks) {
-    if (!el.onTap || el.onTap === "none") return;
+    const hasKeyedTap = el.timeline && Array.isArray(el.timeline.keys) && el.timeline.keys.some((k) => k.tap != null && k.tap !== "none");
+    if ((!el.onTap || el.onTap === "none") && !hasKeyedTap) return;
     entity.addEventListener("click", () => {
-      if (el.onTap === "link" && el.tapUrl) {
+      const tap = entity._tapOverride != null ? entity._tapOverride : el.onTap;
+      if (tap === "link" && el.tapUrl) {
         if (/^https:/.test(el.tapUrl)) window.open(el.tapUrl, "_blank", "noopener");
         else window.location.href = el.tapUrl; // mailto: / tel:
-      } else if (el.onTap === "mute" && hooks && hooks.onMuteToggle) {
+      } else if (tap === "mute" && hooks && hooks.onMuteToggle) {
         hooks.onMuteToggle();
-      } else if (el.onTap === "sequence" && hooks && hooks.onNextSequence) {
+      } else if (tap === "sequence" && hooks && hooks.onNextSequence) {
         hooks.onNextSequence();
-      } else if (el.onTap && el.onTap.indexOf("seq:") === 0 && hooks && hooks.onSequence) {
-        hooks.onSequence(el.onTap.slice(4));
+      } else if (tap && tap.indexOf("seq:") === 0 && hooks && hooks.onSequence) {
+        hooks.onSequence(tap.slice(4));
       }
     });
   }
@@ -382,7 +384,7 @@ const Studio = (() => {
   // Pure sampler: el.timeline.keys [{t, x?, y?, z?, rot?, opacity?, scale?}] at time tSec.
   // Missing props hold their last keyed value; before the first key they hold base props.
   function sampleTimeline(el, tSec) {
-    const base = { x: el.x || 0, y: el.y || 0, z: el.z || 0, rot: el.rot || 0, opacity: el.opacity == null ? 1 : el.opacity, scale: 1 };
+    const base = { x: el.x || 0, y: el.y || 0, z: el.z || 0, rot: el.rot || 0, opacity: el.opacity == null ? 1 : el.opacity, scale: 1, tap: el.onTap || "none" };
     const tl = el.timeline;
     if (!tl || !Array.isArray(tl.keys) || !tl.keys.length) return base;
     const keys = tl.keys.slice().sort((a, b) => a.t - b.t);
@@ -405,7 +407,14 @@ const Studio = (() => {
       else if (ease === "elastic") f = f <= 0 ? 0 : f >= 1 ? 1 : Math.pow(2, -10 * f) * Math.sin((f * 10 - 0.75) * (2 * Math.PI / 3)) + 1;
       return a[prop] + (b[prop] - a[prop]) * f;
     };
-    return { x: pick("x"), y: pick("y"), z: pick("z"), rot: pick("rot"), opacity: pick("opacity"), scale: pick("scale") };
+    // discrete channel: the element's tap behavior at time t (Change Interaction over time) -
+    // the most recent keyed tap holds; before the first keyed tap the element's base onTap applies
+    const pickDiscrete = (prop) => {
+      let v = base[prop];
+      for (const k of keys) { if (k.t <= t && k[prop] != null) v = k[prop]; }
+      return v;
+    };
+    return { x: pick("x"), y: pick("y"), z: pick("z"), rot: pick("rot"), opacity: pick("opacity"), scale: pick("scale"), tap: pickDiscrete("tap") };
   }
   function timelineDur(el) {
     const tl = el.timeline;
@@ -450,6 +459,11 @@ const Studio = (() => {
           tr.e.object3D.rotation.z = s.rot * D2R;
           tr.e.object3D.scale.set(s.scale, s.scale, 1);
           applyOpacity(tr.e, s.opacity);
+          if (s.tap !== tr.appliedTap) { // Change Interaction over time
+            tr.appliedTap = s.tap;
+            tr.e._tapOverride = s.tap;
+            tr.e.classList.toggle("cantap", !!s.tap && s.tap !== "none");
+          }
         }
       }
       requestAnimationFrame(frame);
