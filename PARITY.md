@@ -138,3 +138,6 @@ Legend:
 
 ## Round V group composition correction
 Base group rotation was applied to the wrapper while child world coordinates/rotations were also baked, producing double rotation and editor/runtime mismatch. Child local coordinates now inverse the base group rotation; creator group edits bake position, width, depth and rotation consistently. Synthetic 90deg/2x/translation fixture reconstructs exact child world positions after save/export/import. Independent child timelines under a rotated group remain a separate unresolved composition case; no broad group parity claim from this fixture.
+
+## Round W composition evidence
+Child timelines now inverse the base parent rotation/origin for local samples, fixing rotated-group double motion. Deterministic driver fixture verifies world positions and actual rendered Show/Hide red-pixel transitions plus sequence/stopped-track gates. Camera-group explicit save/reset child geometry tested. Software Chrome proof only. Editing a group's base AFTER authoring child absolute-world keys still needs keyframe baking; simultaneous parent/child motion and group opacity/media composition remain open.

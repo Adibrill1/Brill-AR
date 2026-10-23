@@ -374,9 +374,10 @@ const Studio = (() => {
     e.setAttribute("position", pos);
     e.setAttribute("rotation", rot);
     e.dataset.elId = el.id;
+    e._studioFrame = { ox, oy, oz, angle, baseRotation: opts.baseRotation || 0, zTie: idx * 0.001 };
     const hasTl = el.timeline && Array.isArray(el.timeline.keys) && el.timeline.keys.length;
-    if (el.anim === "spin" && !hasTl) e.setAttribute("animation__spin", `property: rotation; to: 0 0 ${(el.rot || 0) + 360}; loop: true; dur: 14000; easing: linear`);
-    else if (el.anim === "float" && !hasTl) e.setAttribute("animation__float", `property: position; from: ${pos}; to: ${ts.x - ox} ${ts.y - oy + 0.03} ${z - oz}; dir: alternate; loop: true; dur: 2600; easing: easeInOutSine`);
+    if (el.anim === "spin" && !hasTl) e.setAttribute("animation__spin", `property: rotation; to: 0 0 ${(el.rot || 0) - (opts.baseRotation || 0) + 360}; loop: true; dur: 14000; easing: linear`);
+    else if (el.anim === "float" && !hasTl) e.setAttribute("animation__float", `property: position; from: ${pos}; to: ${dx * Math.cos(angle) - dy * Math.sin(angle)} ${dx * Math.sin(angle) + dy * Math.cos(angle) + 0.03} ${z - oz}; dir: alternate; loop: true; dur: 2600; easing: easeInOutSine`);
     else if (el.anim === "pulse" && !hasTl) e.setAttribute("animation__pulse", `property: scale; to: 1.08 1.08 1; dir: alternate; loop: true; dur: 1600; easing: easeInOutSine`);
     if (el.onTap && el.onTap !== "none") e.classList.add("cantap");
     if (el.opacity != null && el.opacity < 1) e.dataset.opacity = String(el.opacity);
@@ -566,8 +567,12 @@ const Studio = (() => {
         for (const tr of tracks) {
           const s = sampleTimeline(tr.el, (now - tr.startedAt) / 1000);
           const ts = toTargetSpace(rec, Object.assign({}, tr.el, { x: s.x, y: s.y, z: s.z }), tr.el.aspect || 1);
-          tr.e.object3D.position.set(ts.x + tr.xOff, ts.y + tr.yOff, (ts.z || 0) + tr.zOff);
-          tr.e.object3D.rotation.z = s.rot * D2R;
+          const f = tr.e._studioFrame;
+          if (f) {
+            const dx = ts.x - f.ox, dy = ts.y - f.oy;
+            tr.e.object3D.position.set(dx * Math.cos(f.angle) - dy * Math.sin(f.angle), dx * Math.sin(f.angle) + dy * Math.cos(f.angle), (ts.z || 0) + f.zTie - f.oz);
+          } else tr.e.object3D.position.set(ts.x + tr.xOff, ts.y + tr.yOff, (ts.z || 0) + tr.zOff);
+          tr.e.object3D.rotation.z = (s.rot - (f ? f.baseRotation : 0)) * D2R;
           tr.e.object3D.scale.set(s.scale, s.scale, 1);
           applyOpacity(tr.e, s.opacity);
           tr.e._timelineVisible = s.visible !== false;
