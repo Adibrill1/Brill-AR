@@ -19,7 +19,7 @@ Legend:
 | Trackability feedback on target (0-5 stars in Artivive) | Resolution + gradient-energy heuristic, plain Hebrew hint (non-blocking) | 🆕 round-D (binary-ish hint, not a 5-star scale; thresholds calibrated, not Artivive's algorithm) |
 | Multiple layers per artwork (video/image/sound) | Unlimited elements, drag + sliders + numeric panel, element list | ✅ device/cloud |
 | Layer types: video, image, audio, 3D (glTF/GLB), text, particles | All six built | 🆕 rounds A/C |
-| File types: jpg/png/gif images; mp4/mov/gif video; glTF/GLB (+zip, .obj/.fbx) models | jpg/png/webp images; mp4/webm video; single-file .glb models | ⚠️ partial: animated gif, .mov, .obj/.fbx, zipped glTF not supported; .gltf with external files rejected with a clear export-as-glb message |
+| File types: jpg/png/gif images; mp4/mov/gif video; glTF/GLB (+zip, .obj/.fbx) models | jpg/png/webp images; mp4/webm video; mpeg/mp4/wav/m4a/ogg audio; single-file .glb models | ⚠️ partial: animated gif layers, .mov, .obj/.fbx, zipped glTF not supported; .gltf with external files rejected with a clear export-as-glb message |
 | Transform layers (handles + numeric panel) | Drag + sliders + numeric x/y/w/rot/depth panel | 🆕 round-A |
 | 2D and 3D editor views | 2D canvas editor + separate 3D preview page (orbit/zoom) | 🆕 round-A |
 | Layer order control | z-order up/down buttons | 🆕 round-A |
@@ -39,7 +39,7 @@ Legend:
 | Preview Mode (simulate viewer, sequence notifications) | 3D preview page + live timeline playback on the editor canvas + ruler/scrub + state-switch toast notifications on tap and chained switches (previewer) | 🆕 rounds A/F/H ✅ |
 | Timeline editor: ruler with drag scrub | Ruler with second ticks, keyframe markers, draggable playhead seeking the canvas | 🆕 round-F |
 | 3D models: auto-fit, multi-mesh, textures | Auto-fit + center, multi-mesh opacity, textures/MeshStandardMaterial verified | 🆕 round-C |
-| Particle effects: presets + speed/direction/size/density, custom assets | Sparkle/confetti presets (two fixed directions: rising/falling), count/density 10-500, size 2-60, speed 0.2-3x, color; NO arbitrary direction control, no custom sprite upload | 🆕 round-C+G ⚠️ partial (arbitrary direction + custom sprites missing) |
+| Particle effects: presets + speed/direction/size/density, custom assets | Sparkle/confetti presets, count/density 10-500, size 2-60, speed 0.2-3x, color, custom PNG/WebP sprite upload (verified: textured round points), arbitrary direction 0-359deg overriding the preset direction (verified: dir=90 -> purely horizontal velocities) | ✅ round C+G+I |
 | 3D Sound: logarithmic mode (never fully muted) | PositionalAudio exponential rolloff, adjustable inner radius | 🆕 round-G |
 | 3D Sound: linear mode (silent beyond outer sphere) | PositionalAudio linear model, inner + outer radii | 🆕 round-G |
 | Chroma-key (green screen) video: color pick + threshold | Key color + threshold per video; custom discard shader, pixel-verified | 🆕 round-C |
