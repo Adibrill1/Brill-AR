@@ -129,6 +129,7 @@
   });
   trackRunner.autoStart();
   refreshVisibility();
+  window.__trackRunner = trackRunner; // test/debug handle
   if (curSeq) { refreshVisibility(); Studio.renderSeqDots(rec, curSeq); }
   // the state driver drives only state-model elements; tracked elements run on their track's own driver
   tlDrv = Studio.startTimelineDriver(rec, [...rig.querySelectorAll("[data-el-id]")].filter((n) => {

@@ -128,6 +128,7 @@
   });
   trackRunner.autoStart();
   refreshVisibility();
+  window.__trackRunner = trackRunner; // test/debug handle
   if (curSeq) { refreshVisibility(); Studio.renderSeqDots(rec, curSeq); }
   scene.appendChild(target);
   // Timeline motion starts when the artwork is found (not during permission/scan screens)
