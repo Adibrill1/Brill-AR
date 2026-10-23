@@ -7,6 +7,7 @@
 (async () => {
   const errBox = document.getElementById("err");
   const fail = (t) => { errBox.style.display = "grid"; errBox.innerHTML = t; };
+  const editMode = new URLSearchParams(location.search).get("edit") === "1" && !window.__REMOTE_EXPERIENCE__;
   let rec;
   if (window.__REMOTE_EXPERIENCE__) {
     const r = await fetch("/api/experiences/" + encodeURIComponent(window.__REMOTE_EXPERIENCE__));
@@ -78,7 +79,7 @@
   capCfg.setAttribute("request-mic", "manual");
   capCfg.setAttribute("enable-end-card", "false");
   const capPrev = document.createElement("xrextras-capture-preview");
-  scene.appendChild(capBtn); scene.appendChild(capCfg); scene.appendChild(capPrev);
+  if (!editMode) { scene.appendChild(capBtn); scene.appendChild(capCfg); scene.appendChild(capPrev); }
 
   // Mute toggle shared by tap actions: all sources are routed through THREE.Audio gains,
   // so flipping the gain is the one reliable mute across browsers.
@@ -100,7 +101,7 @@
     refreshVisibility();
     Studio.renderSeqDots(rec, curSeq);
     if (tlDrv) { tlDrv.stateLoop = !!(Studio.seqList(rec).find((x) => x.id === curSeq) || {}).loop; tlDrv.reset(); }
-    runner.enter(curSeq);
+    if (!editMode) runner.enter(curSeq);
   };
   const onNextSequence = () => {
     curSeq = Studio.nextSequence(rec, curSeq);
@@ -127,9 +128,9 @@
   // taps bind per entity, including children inside group wrappers
   target.querySelectorAll("[data-el-id]").forEach((n) => {
     const el = rec.elements.find((x) => x.id === n.dataset.elId);
-    if (el) Studio.bindTap(n, el, { onMuteToggle, onNextSequence, onSequence, onTrackToggle });
+    if (el && !editMode) Studio.bindTap(n, el, { onMuteToggle, onNextSequence, onSequence, onTrackToggle });
   });
-  trackRunner.autoStart();
+  if (!editMode) trackRunner.autoStart();
   refreshVisibility();
   if (curSeq) { refreshVisibility(); Studio.renderSeqDots(rec, curSeq); }
   scene.appendChild(target);
@@ -141,18 +142,28 @@
     return el && !el.track;
   }), { autostart: false });
   if (tlDrv) tlDrv.stateLoop = !!(Studio.seqList(rec).find((x) => x.id === curSeq) || {}).loop;
-  runner.enter(curSeq);
+  if (!editMode) runner.enter(curSeq);
   window.__tlDrv = tlDrv; // test/debug handle
-  if (tlDrv) {
+  if (editMode && tlDrv) tlDrv.pause();
+  if (tlDrv && !editMode) {
     scene.addEventListener("xrimagefound", () => { tlDrv.play(); trackRunner.resumeAll(); });
     scene.addEventListener("xrimagelost", () => { tlDrv.pause(); trackRunner.pauseAll(); });
   }
   document.body.appendChild(scene);
 
+  if (editMode) {
+    target.querySelectorAll("[animation__spin], [animation__float], [animation__pulse]").forEach(n => {
+      n.removeAttribute("animation__spin"); n.removeAttribute("animation__float"); n.removeAttribute("animation__pulse");
+    });
+    target.querySelectorAll("[model-clips]").forEach(n => n.removeAttribute("model-clips"));
+    CameraEditor.mount({ rec, container: target, scene, isAR: true });
+  }
+
   Studio.ensurePlayback(mediaEls.filter((m) => m.kind === "video"));
 
   // First tap: unmute videos, start sound elements, resume audio context (proven pattern).
   window.addEventListener("pointerdown", () => {
+    if (editMode) return;
     for (const m of mediaEls) {
       if (m.kind === "video") { if (!muted) m.node.muted = false; if (m.node.paused) m.node.play().catch(() => {}); }
       else { if (m.node.paused) m.node.play().catch(() => {}); }

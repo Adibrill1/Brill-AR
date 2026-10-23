@@ -448,6 +448,7 @@
         msg("הייבוא הצליח.");
       } catch (err) { msg("הקובץ לא תקין לייבוא."); }
     };
+    $("btn-edit-ar").onclick = () => { location.href = "play.html?edit=1#" + rec.id; };
     $("btn-play").onclick = () => { location.href = "play.html#" + rec.id; };
     $("btn-preview3d").onclick = () => { location.href = "preview.html#" + rec.id; };
     $("btn-del-el").onclick = async () => {
