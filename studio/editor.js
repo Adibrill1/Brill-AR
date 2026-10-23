@@ -259,6 +259,11 @@
             f = new File([data], wanted.split("/").pop(), { type: "model/gltf-binary" });
           } catch (ez) { msg("ה־zip לא נפתח - ודאי שזה קובץ zip תקין עם קובץ glb בפנים."); return; }
         }
+        if (/\.obj$/i.test(f.name)) { // Wavefront OBJ -> transcode to GLB (geometry only)
+          const glb = window.objToGlb(await f.text());
+          if (!glb) { msg("קובץ ה־obj ריק או לא קריא - צריך קובץ עם קודקודים ופאות (שורות v ו־f)."); return; }
+          f = new File([glb], f.name.replace(/\.obj$/i, ".glb"), { type: "model/gltf-binary" });
+        }
         const head = new Uint8Array(await f.slice(0, 4).arrayBuffer());
         const isGlb = head[0] === 0x67 && head[1] === 0x6C && head[2] === 0x54 && head[3] === 0x46; // "glTF"
         if (!isGlb) {
