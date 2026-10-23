@@ -85,10 +85,12 @@
 
   // Multi-state artworks: tap an element wired to "sequence" to switch states.
   let curSeq = Studio.seqList(rec).length ? Studio.seqList(rec)[0].id : null;
+  let tlDrv = null;
   const onNextSequence = () => {
     curSeq = Studio.nextSequence(rec, curSeq);
     Studio.applySequence(target, rec, curSeq, mediaEls);
     Studio.renderSeqDots(rec, curSeq);
+    if (tlDrv) tlDrv.reset(); // a new state replays its motion from the start
   };
 
   const target = document.createElement("xrextras-named-image-target");
@@ -102,7 +104,14 @@
   });
   if (curSeq) { Studio.applySequence(target, rec, curSeq, mediaEls); Studio.renderSeqDots(rec, curSeq); }
   scene.appendChild(target);
-  Studio.startTimelineDriver(rec, [...target.children]);
+  // Timeline motion starts when the artwork is found (not during permission/scan screens)
+  // and freezes while tracking is lost, resuming where it stopped.
+  tlDrv = Studio.startTimelineDriver(rec, [...target.children], { autostart: false });
+  window.__tlDrv = tlDrv; // test/debug handle
+  if (tlDrv) {
+    scene.addEventListener("xrimagefound", () => tlDrv.play());
+    scene.addEventListener("xrimagelost", () => tlDrv.pause());
+  }
   document.body.appendChild(scene);
 
   Studio.ensurePlayback(mediaEls.filter((m) => m.kind === "video"));

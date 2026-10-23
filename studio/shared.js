@@ -244,51 +244,77 @@ const Studio = (() => {
       if (el) child.setAttribute("visible", elVisibleIn(el, seqId));
     }
     if (mediaEls) for (const m of mediaEls) {
-      if (!elVisibleIn(m.el, seqId) && !m.node.paused) m.node.pause();
+      if (!elVisibleIn(m.el, seqId)) {
+        if (!m.node.paused) { m.resumeOnVisible = true; m.node.pause(); }
+      } else if (m.resumeOnVisible) {
+        m.resumeOnVisible = false;
+        m.node.play().catch(() => {});
+      }
     }
   }
   // ---------- timeline (keyframed motion) ----------
-  // Drives entities from el.timeline.keys [{t, x?, y?, z?, rot?, opacity?, scale?}].
+  // Pure sampler: el.timeline.keys [{t, x?, y?, z?, rot?, opacity?, scale?}] at time tSec.
   // Missing props hold their last keyed value; before the first key they hold base props.
-  function startTimelineDriver(rec, entities) {
+  function sampleTimeline(el, tSec) {
+    const base = { x: el.x || 0, y: el.y || 0, z: el.z || 0, rot: el.rot || 0, opacity: el.opacity == null ? 1 : el.opacity, scale: 1 };
+    const tl = el.timeline;
+    if (!tl || !Array.isArray(tl.keys) || !tl.keys.length) return base;
+    const keys = tl.keys.slice().sort((a, b) => a.t - b.t);
+    const dur = keys[keys.length - 1].t;
+    let t = Math.max(0, tSec);
+    if (t > dur) { if (tl.loop && dur > 0) t = t % dur; else t = dur; }
+    let a = null, b = null;
+    for (const k of keys) { if (k.t <= t) a = k; if (k.t >= t) { b = k; break; } }
+    const pick = (prop) => {
+      const has = (k) => k && k[prop] != null;
+      if (!has(a) && !has(b)) return base[prop];
+      if (has(a) && !has(b)) return a[prop];
+      if (!has(a) && has(b)) return base[prop];
+      if (a === b) return a[prop];
+      const f = (t - a.t) / Math.max(1e-6, b.t - a.t);
+      return a[prop] + (b[prop] - a[prop]) * f;
+    };
+    return { x: pick("x"), y: pick("y"), z: pick("z"), rot: pick("rot"), opacity: pick("opacity"), scale: pick("scale") };
+  }
+  function timelineDur(el) {
+    const tl = el.timeline;
+    if (!tl || !Array.isArray(tl.keys) || !tl.keys.length) return 0;
+    return Math.max(...tl.keys.map((k) => k.t));
+  }
+
+  // Controllable driver: play/pause/reset so the AR player can start motion at target-found
+  // and freeze it when tracking is lost. Returns null when no element has keyframes.
+  function startTimelineDriver(rec, entities, opts) {
+    opts = opts || {};
     const tracks = [];
     for (const e of entities) {
       const el = rec.elements.find((x) => x.id === (e.dataset && e.dataset.elId));
-      if (!el || !el.timeline || !Array.isArray(el.timeline.keys) || !el.timeline.keys.length) continue;
-      const keys = el.timeline.keys.slice().sort((a, b) => a.t - b.t);
+      if (!el || !timelineDur(el)) continue;
       const p0 = e.getAttribute("position");
-      tracks.push({ el, e, keys, loop: !!el.timeline.loop, t0: performance.now(),
-        base: { x: el.x || 0, y: el.y || 0, z: el.z || 0, rot: el.rot || 0, opacity: el.opacity == null ? 1 : el.opacity, scale: 1 },
-        zOff: (p0 ? p0.z : 0) - (el.z || 0) });
+      tracks.push({ el, e, elapsed: 0, startedAt: 0, zOff: (p0 ? p0.z : 0) - (el.z || 0) });
     }
-    if (!tracks.length) return;
+    if (!tracks.length) return null;
     const D2R = Math.PI / 180;
+    const drv = { running: false };
+    drv.play = () => { if (drv.running) return; drv.running = true; const now = performance.now(); for (const tr of tracks) tr.startedAt = now - tr.elapsed * 1000; };
+    drv.pause = () => { if (!drv.running) return; drv.running = false; const now = performance.now(); for (const tr of tracks) tr.elapsed = (now - tr.startedAt) / 1000; };
+    drv.reset = () => { const now = performance.now(); for (const tr of tracks) { tr.elapsed = 0; tr.startedAt = now; } };
+    if (opts.autostart !== false) drv.play();
     const frame = (now) => {
-      for (const tr of tracks) {
-        let t = (now - tr.t0) / 1000;
-        const dur = tr.keys[tr.keys.length - 1].t;
-        if (t > dur) { if (tr.loop) { tr.t0 = now; t = 0; } else t = dur; }
-        let a = null, b = null;
-        for (const k of tr.keys) { if (k.t <= t) a = k; if (k.t >= t) { b = k; break; } }
-        const pick = (prop) => {
-          const has = (k) => k && k[prop] != null;
-          if (!has(a) && !has(b)) return tr.base[prop];
-          if (has(a) && !has(b)) return a[prop];
-          if (!has(a) && has(b)) return tr.base[prop];
-          if (a === b) return a[prop];
-          const f = (t - a.t) / Math.max(1e-6, b.t - a.t);
-          return a[prop] + (b[prop] - a[prop]) * f;
-        };
-        const x = pick("x"), y = pick("y"), z = pick("z"), rot = pick("rot"), op = pick("opacity"), sc = pick("scale");
-        const ts = toTargetSpace(rec, Object.assign({}, tr.el, { x, y, z }), tr.el.aspect || 1);
-        tr.e.object3D.position.set(ts.x, ts.y, (ts.z || 0) + tr.zOff);
-        tr.e.object3D.rotation.z = rot * D2R;
-        tr.e.object3D.scale.set(sc, sc, 1);
-        applyOpacity(tr.e, op);
+      if (drv.running) {
+        for (const tr of tracks) {
+          const s = sampleTimeline(tr.el, (now - tr.startedAt) / 1000);
+          const ts = toTargetSpace(rec, Object.assign({}, tr.el, { x: s.x, y: s.y, z: s.z }), tr.el.aspect || 1);
+          tr.e.object3D.position.set(ts.x, ts.y, (ts.z || 0) + tr.zOff);
+          tr.e.object3D.rotation.z = s.rot * D2R;
+          tr.e.object3D.scale.set(s.scale, s.scale, 1);
+          applyOpacity(tr.e, s.opacity);
+        }
       }
       requestAnimationFrame(frame);
     };
     requestAnimationFrame(frame);
+    return drv;
   }
 
   // Small state-position dots shown when an artwork has more than one state.
@@ -388,6 +414,6 @@ const Studio = (() => {
   }
 
   return { TARGET_W, TARGET_H, newId, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
-           geom, toTargetSpace, blankExperience, save, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, seqList, elVisibleIn, nextSequence, applySequence, renderSeqDots, startTimelineDriver,
+           geom, toTargetSpace, blankExperience, save, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, seqList, elVisibleIn, nextSequence, applySequence, renderSeqDots, sampleTimeline, timelineDur, startTimelineDriver,
            load: idbGet, all: idbAll, del: idbDel };
 })();

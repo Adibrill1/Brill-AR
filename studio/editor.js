@@ -274,7 +274,8 @@
     $("btn-tl-add").onclick = () => upd((el) => {
       el.timeline = el.timeline && Array.isArray(el.timeline.keys) ? el.timeline : { loop: false, keys: [] };
       const t = Math.max(0, Math.min(60, parseFloat($("num-tl-t").value) || 0));
-      el.timeline.keys.push({ t, x: el.x, y: el.y, z: el.z || 0, rot: el.rot || 0, opacity: el.opacity == null ? 1 : el.opacity });
+      const scale = Math.max(0.1, Math.min(5, parseFloat($("num-tl-scale").value) || 1));
+      el.timeline.keys.push({ t, x: el.x, y: el.y, z: el.z || 0, rot: el.rot || 0, opacity: el.opacity == null ? 1 : el.opacity, scale });
     });
     $("ck-tl-loop").onchange = (e) => upd((el) => {
       el.timeline = el.timeline && Array.isArray(el.timeline.keys) ? el.timeline : { loop: false, keys: [] };
@@ -415,21 +416,26 @@
     for (const el of rec.elements) {
       Studio.normEl(el);
       if (!Studio.elVisibleIn(el, curSeq)) continue;
-      let wpx = el.w * W;
-      let hpx = el.h != null ? el.h * H : wpx / (el.aspect || 1);
-      let cx = (el.x + 0.5) * W;
-      let cy = (0.5 - el.y) * H;
+      // live timeline playback: sampled keyframe values override the element's base props
+      let ts = null;
+      if (Studio.timelineDur(el)) { ts = Studio.sampleTimeline(el, t0 / 1000); needsAnim = true; }
+      const sc = ts ? ts.scale : 1;
+      let wpx = el.w * W * sc;
+      let hpx = (el.h != null ? el.h * H : (el.w * W) / (el.aspect || 1)) * sc;
+      let cx = ((ts ? ts.x : el.x) + 0.5) * W;
+      let cy = (0.5 - (ts ? ts.y : el.y)) * H;
       let extraRot = 0;
       // animation previews (approximation of the player presets)
-      if (el.anim === "float") { cy += Math.sin(t0 / 1300) * H * 0.02; needsAnim = true; }
-      else if (el.anim === "pulse") { const f = 1 + 0.08 * Math.sin(t0 / 800); wpx *= f; hpx *= f; needsAnim = true; }
-      else if (el.anim === "spin") { extraRot = ((t0 / 14000) * 2 * Math.PI) % (2 * Math.PI); needsAnim = true; }
+      if (!ts && el.anim === "float") { cy += Math.sin(t0 / 1300) * H * 0.02; needsAnim = true; }
+      else if (!ts && el.anim === "pulse") { const f = 1 + 0.08 * Math.sin(t0 / 800); wpx *= f; hpx *= f; needsAnim = true; }
+      else if (!ts && el.anim === "spin") { extraRot = ((t0 / 14000) * 2 * Math.PI) % (2 * Math.PI); needsAnim = true; }
       if (el.type === "video") needsAnim = true;
-      boxes[el.id] = { cx, cy, w: wpx, h: hpx, rot: -(el.rot || 0) * Math.PI / 180 };
+      const effRot = ts ? ts.rot : (el.rot || 0);
+      boxes[el.id] = { cx, cy, w: wpx, h: hpx, rot: -effRot * Math.PI / 180 };
       ctx.save();
       ctx.translate(cx, cy);
-      ctx.rotate(-(el.rot || 0) * Math.PI / 180);
-      ctx.globalAlpha = 0.92 * (el.opacity == null ? 1 : el.opacity);
+      ctx.rotate(-effRot * Math.PI / 180);
+      ctx.globalAlpha = 0.92 * (ts ? ts.opacity : (el.opacity == null ? 1 : el.opacity));
       const m = el.assetId && media[el.assetId];
       if (el.type === "video" && m && m.readyState >= 2) {
         ctx.drawImage(m, -wpx / 2, -hpx / 2, wpx, hpx);

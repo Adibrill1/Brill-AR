@@ -76,10 +76,12 @@
 
   // Multi-state artworks: tap an element wired to "sequence" to switch states.
   let curSeq = Studio.seqList(rec).length ? Studio.seqList(rec)[0].id : null;
+  let tlDrv = null;
   const onNextSequence = () => {
     curSeq = Studio.nextSequence(rec, curSeq);
     Studio.applySequence(rig, rec, curSeq, mediaEls);
     Studio.renderSeqDots(rec, curSeq);
+    if (tlDrv) tlDrv.reset();
   };
 
   let muted = false;
@@ -118,7 +120,8 @@
     if (e.dataset.opacity) Studio.applyOpacity(e, parseFloat(e.dataset.opacity));
   });
   if (curSeq) { Studio.applySequence(rig, rec, curSeq, mediaEls); Studio.renderSeqDots(rec, curSeq); }
-  Studio.startTimelineDriver(rec, [...rig.children]);
+  tlDrv = Studio.startTimelineDriver(rec, [...rig.children]);
+  window.__tlDrv = tlDrv; // test/debug handle
   if (videoFallbacks) {
     document.getElementById("hint").textContent = "שים לב: הדפדפן הזה לא מצליח להציג את הסרטון, והוא מוצג כמלבן אפור. נסו מכשיר אחר או קובץ וידאו בפורמט נתמך (mp4 / H.264).";
   }
