@@ -254,13 +254,18 @@
 
     $("in-server").value = localStorage.getItem("ar-studio-server") || "";
     $("in-server").onchange = (e) => localStorage.setItem("ar-studio-server", e.target.value.trim());
+    $("in-token").value = localStorage.getItem("ar-studio-token") || "";
+    $("in-token").onchange = (e) => localStorage.setItem("ar-studio-token", e.target.value.trim());
     $("btn-publish").onclick = async () => {
       const base = ($("in-server").value || "").trim().replace(/\/+$/, "");
       if (!base) { msg("כדי לפרסם צריך שרת קטן שמחזיק את הקישורים. כרגע אפשר לייצא לקובץ ולשתף ידנית."); return; }
       msg("מפרסם...");
       try {
         const body = await Studio.exportJSON(rec);
-        const r = await fetch(base + "/api/experiences", { method: "POST", headers: { "content-type": "application/json" }, body });
+        const tok = ($("in-token").value || "").trim();
+        const r = await fetch(base + "/api/experiences", { method: "POST", headers: { "content-type": "application/json", authorization: "Bearer " + tok }, body });
+        if (r.status === 401) throw new Error("סיסמת הפרסום שגויה");
+        if (r.status === 413) throw new Error("הניסוי גדול מדי לשרת");
         if (!r.ok) throw new Error("שרת ענה " + r.status);
         const out = await r.json();
         const url = base + out.url;

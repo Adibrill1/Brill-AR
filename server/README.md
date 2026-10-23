@@ -4,9 +4,19 @@ Zero-dependency Node.js (>=18) server that gives each published artwork a stable
 (`/e/<id>`) that plays the experience, plus a JSON API the editor's "publish" button uses.
 
 ## Run locally
-    PORT=8787 node server/server.js
-Then in the editor, set "כתובת שרת הפרסום" to `http://localhost:8787` and press
-"פרסום כקישור קבוע + QR".
+    PUBLISH_TOKEN=$(openssl rand -hex 24) PORT=8787 node server/server.js
+Then in the editor set "כתובת שרת הפרסום" to `http://localhost:8787`, paste the token into
+"סיסמת פרסום", and press "פרסום כקישור קבוע + QR".
+
+## Security
+- Publishing and deleting require `Authorization: Bearer $PUBLISH_TOKEN` (timing-safe compare).
+  With no PUBLISH_TOKEN set the server REFUSES all publishes (fail closed, 503).
+- Viewing is public: /e/<id> links are meant to be shared.
+- Validation: strict element-type allowlist, numeric field checks, tap links must be https,
+  assets must be known media data-URLs (png/jpeg/webp/gif/mp4/mp3/wav/m4a/glb), 15MB per asset,
+  40MB per upload, 60 elements max, 500 experiences max, 30 publishes/IP/hour.
+- Stored JSON is served with X-Content-Type-Options: nosniff; the player page embeds only the
+  server-generated id, never user content.
 
 ## API
 - `POST /api/experiences` - body: studio export JSON. Returns `{id, url}`.
@@ -20,5 +30,5 @@ JSON files under `server/data/`. No database.
 ## What production needs (not done - needs owner's decision + small cost)
 1. An always-on host: a small VPS (~$5/mo) or a free-tier worker/serverless equivalent.
 2. An HTTPS domain pointed at it (buyers open these links on their phones).
-3. A decision on who can publish (open endpoint now; add a shared secret before real use).
+3. Set a strong PUBLISH_TOKEN (auth is implemented; the owner chooses and guards the secret).
 4. Backups of `server/data/`.
