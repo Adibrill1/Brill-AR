@@ -32,6 +32,7 @@ Legend:
 | Particle effects | Not built | 🔜 planned (round C) |
 | Chroma-key (green screen) video | Key color + sensitivity per video element; custom discard shader on the video texture | 🆕 round-C (keying pixel-verified; real footage + performance device-pending) |
 | Particle effects | Built-in emitter: rising-sparkle / falling-confetti presets, count (10-500) + color per element | 🆕 round-C (motion verified in cloud; device visuals pending) |
+| Per-artwork stable link / QR | Each artwork gets a public link; Artivive shows a QR | 🆕 round-E PREP: zero-dep Node server (publish API + stable player page + static host) written and locally tested with synthetic assets; editor publish button + client-side QR (vendored MIT qrcode-generator); NOT deployed - production needs an always-on host + HTTPS domain + publish auth (owner decision, small cost) |
 | Target quality hint | Artivive rates target images with stars | 🆕 round-D: resolution + gradient-energy heuristic with a plain Hebrew hint on upload (non-blocking) |
 | Spatial audio | Sound can play flat | 🆕 round-D: optional per-sound spatial mode (THREE.PositionalAudio at the element's position); default stays flat |
 | Spatial/positional audio | Not built | 🔜 planned (round D) |

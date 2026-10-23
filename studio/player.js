@@ -7,9 +7,16 @@
 (async () => {
   const errBox = document.getElementById("err");
   const fail = (t) => { errBox.style.display = "grid"; errBox.innerHTML = t; };
-  const id = location.hash.slice(1);
-  if (!id) return fail("חסר מזהה ניסוי. <a href='index.html'>חזרה לעורך</a>");
-  const rec = await Studio.load(id);
+  let rec;
+  if (window.__REMOTE_EXPERIENCE__) {
+    const r = await fetch("/api/experiences/" + encodeURIComponent(window.__REMOTE_EXPERIENCE__));
+    if (!r.ok) return fail("הניסוי לא נמצא בשרת.");
+    rec = await Studio.importJSON(await r.text());
+  } else {
+    const id = location.hash.slice(1);
+    if (!id) return fail("חסר מזהה ניסוי. <a href='index.html'>חזרה לעורך</a>");
+    rec = await Studio.load(id);
+  }
   if (!rec || !rec.target) return fail("הניסוי לא נמצא במכשיר הזה.<br>אם ייצאת ממכשיר אחר - ייבאי קודם ב<a href='index.html'>עורך</a>.");
   rec.elements.forEach(Studio.normEl);
 

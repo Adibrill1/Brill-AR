@@ -135,6 +135,15 @@
       <button id="btn-play" class="primary">תצוגה בטלפון (AR חי)</button>
       <button id="btn-preview3d" class="ghost">תצוגה מקדימה על המסך (בלי מצלמה)</button>
       <button id="btn-export" class="ghost">ייצוא לקובץ</button>
+      <div id="publish-box" class="col" style="border-top:1px solid #e5e5ea;padding-top:10px;margin-top:4px">
+        <label class="hint" style="text-align:start">כתובת שרת הפרסום (אם הוגדר):
+          <input type="url" id="in-server" placeholder="https://..." style="width:100%"></label>
+        <button id="btn-publish" class="ghost">פרסום כקישור קבוע + QR</button>
+        <div id="publish-out" hidden>
+          <a id="publish-link" href="#" target="_blank" rel="noopener"></a>
+          <div id="publish-qr"></div>
+        </div>
+      </div>
       <button id="btn-import" class="ghost">ייבוא מקובץ</button>
       <input type="file" id="file-import" accept="application/json" hidden>
     </div>
@@ -145,6 +154,7 @@
 </main>
 
 <script src="shared.js?v=rc6"></script>
+<script src="external/qrcode.js"></script>
 <script src="editor.js?v=rc6"></script>
 </body>
 </html>

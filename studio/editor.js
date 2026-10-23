@@ -251,6 +251,28 @@
       setTimeout(() => URL.revokeObjectURL(a.href), 5000);
     };
     $("btn-import").onclick = () => $("file-import").click();
+
+    $("in-server").value = localStorage.getItem("ar-studio-server") || "";
+    $("in-server").onchange = (e) => localStorage.setItem("ar-studio-server", e.target.value.trim());
+    $("btn-publish").onclick = async () => {
+      const base = ($("in-server").value || "").trim().replace(/\/+$/, "");
+      if (!base) { msg("כדי לפרסם צריך שרת קטן שמחזיק את הקישורים. כרגע אפשר לייצא לקובץ ולשתף ידנית."); return; }
+      msg("מפרסם...");
+      try {
+        const body = await Studio.exportJSON(rec);
+        const r = await fetch(base + "/api/experiences", { method: "POST", headers: { "content-type": "application/json" }, body });
+        if (!r.ok) throw new Error("שרת ענה " + r.status);
+        const out = await r.json();
+        const url = base + out.url;
+        const link = $("publish-link"); link.href = url; link.textContent = url;
+        const qr = qrcode(0, "M"); qr.addData(url); qr.make();
+        $("publish-qr").innerHTML = qr.createImgTag(4, 8);
+        $("publish-out").hidden = false;
+        msg("פורסם! הקישור קבוע ואפשר לשתף אותו.");
+      } catch (err) {
+        msg("הפרסום נכשל: " + err.message);
+      }
+    };
     $("file-import").onchange = async (e) => {
       const f = e.target.files[0]; e.target.value = "";
       if (!f) return;
