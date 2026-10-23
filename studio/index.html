@@ -108,6 +108,8 @@
             <input type="number" id="num-tl-scale" min="0.1" max="5" step="0.1" value="1" style="width:64px" title="גודל יחסי בנקודה הזו"> גודל
             <button id="btn-tl-add" class="ghost">הוספת נקודה מהמצב הנוכחי</button>
             <label class="check"><input type="checkbox" id="ck-tl-loop"> לולאה</label>
+            <select id="sel-tl-ease" title="עקומת תנועה"><option value="linear">תנועה קבועה</option><option value="easeIn">האצה מהתחלה</option><option value="easeOut">האטה לסוף</option><option value="easeInOut">רך בשני הצדדים</option></select>
+            <input type="number" id="num-tl-dur" min="0" max="120" step="0.5" style="width:64px" title="אורך הלולאה בשניות (ריק = עד הנקודה האחרונה)">
           </div>
           <canvas id="tl-ruler" style="width:100%;height:34px;touch-action:none;cursor:ew-resize"></canvas>
           <div class="row"><span id="tl-time" class="hint"></span><button id="btn-tl-live" class="ghost" hidden>חזרה לניגון חי</button></div>
@@ -118,6 +120,11 @@
       <label id="row-volume">עוצמת צליל <input type="range" id="sl-vol" min="0" max="1" step="0.05"></label>
       <label id="row-loop" class="check"><input type="checkbox" id="ck-loop"> ניגון בלולאה</label>
       <label id="row-spatial" class="check" hidden><input type="checkbox" id="ck-spatial"> צליל מרחבי (נשמע מהמיקום שלו ביצירה)</label>
+      <div id="row-spatial-opts" class="row" hidden>
+        <select id="sel-spatial-mode"><option value="log">מתחזק עם הקרבה (לא משתתק לגמרי)</option><option value="linear">פעיל רק בתוך רדיוס חיצוני</option></select>
+        <label>רדיוס פנימי <input type="number" id="num-spatial-in" min="0.05" max="5" step="0.05" value="0.35" style="width:64px"></label>
+        <label>רדיוס חיצוני <input type="number" id="num-spatial-out" min="0.1" max="20" step="0.1" value="1.4" style="width:64px"></label>
+      </div>
         <div id="row-particles" hidden>
           <label>סגנון <select id="sel-preset"><option value="sparkle">נצנוצים עולים</option><option value="confetti">קונפטי יורד</option></select></label>
           <label>כמות <input type="number" id="num-pcount" min="10" max="500" step="10" value="120"></label>
@@ -157,8 +164,8 @@
   <p id="msg" role="status"></p>
 </main>
 
-<script src="shared.js?v=rc7"></script>
+<script src="shared.js?v=rc8"></script>
 <script src="external/qrcode.js"></script>
-<script src="editor.js?v=rc7"></script>
+<script src="editor.js?v=rc8"></script>
 </body>
 </html>

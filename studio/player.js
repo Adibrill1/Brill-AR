@@ -93,6 +93,13 @@
   // Multi-state artworks: tap an element wired to "sequence" to switch states.
   let curSeq = Studio.seqList(rec).length ? Studio.seqList(rec)[0].id : null;
   let tlDrv = null;
+  const onSequence = (id) => {
+    if (!Studio.seqList(rec).some((x) => x.id === id)) return;
+    curSeq = id;
+    Studio.applySequence(target, rec, curSeq, mediaEls);
+    Studio.renderSeqDots(rec, curSeq);
+    if (tlDrv) tlDrv.reset();
+  };
   const onNextSequence = () => {
     curSeq = Studio.nextSequence(rec, curSeq);
     Studio.applySequence(target, rec, curSeq, mediaEls);
@@ -105,7 +112,7 @@
   rec.elements.forEach((el, idx) => {
     const e = Studio.buildElementEntity(rec, el, idx, "ar");
     if (!e) return; // sound: no visual node
-    Studio.bindTap(e, el, { onMuteToggle, onNextSequence });
+    Studio.bindTap(e, el, { onMuteToggle, onNextSequence, onSequence });
     target.appendChild(e);
     if (e.dataset.opacity) Studio.applyOpacity(e, parseFloat(e.dataset.opacity));
   });
@@ -144,9 +151,18 @@
         let a;
         if (ent) {
           a = new THREE.PositionalAudio(listener);
-          a.setRefDistance(0.35);
-          a.setDistanceModel("exponential");
-          a.setRolloffFactor(1.5);
+          const inner = m.el.spatialInner > 0 ? m.el.spatialInner : 0.35;
+          const mode = m.el.spatialMode || "log";
+          if (mode === "linear") {
+            a.setDistanceModel("linear");
+            a.setRefDistance(inner);
+            a.setMaxDistance(m.el.spatialOuter > inner ? m.el.spatialOuter : inner * 4); // silent beyond the outer sphere
+            a.setRolloffFactor(1);
+          } else {
+            a.setDistanceModel("exponential"); // never fully muted, like Artivive's logarithmic mode
+            a.setRefDistance(inner);
+            a.setRolloffFactor(1.5);
+          }
           ent.object3D.add(a);
         } else {
           a = new THREE.Audio(listener);

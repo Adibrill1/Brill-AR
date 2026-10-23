@@ -333,13 +333,18 @@
       const scale = Math.max(0.1, Math.min(5, parseFloat($("num-tl-scale").value) || 1));
       el.timeline.keys.push({ t, x: el.x, y: el.y, z: el.z || 0, rot: el.rot || 0, opacity: el.opacity == null ? 1 : el.opacity, scale });
     });
-    $("ck-spatial").onchange = (e) => upd((el) => { el.spatial = e.target.checked; });
+    $("ck-spatial").onchange = (e) => upd((el) => { el.spatial = e.target.checked; renderPanel(); });
+    $("sel-spatial-mode").onchange = (e) => upd((el) => { el.spatialMode = e.target.value; });
+    $("num-spatial-in").onchange = (e) => upd((el) => { el.spatialInner = Math.max(0.05, parseFloat(e.target.value) || 0.35); });
+    $("num-spatial-out").onchange = (e) => upd((el) => { el.spatialOuter = Math.max(0.1, parseFloat(e.target.value) || 1.4); });
     $("sel-preset").onchange = (e) => upd((el) => { el.particles = Object.assign({}, el.particles, { preset: e.target.value }); });
     $("num-pcount").onchange = (e) => upd((el) => { el.particles = Object.assign({}, el.particles, { count: Math.max(10, Math.min(500, parseInt(e.target.value) || 120)) }); });
     $("in-pcolor").onchange = (e) => upd((el) => { el.particles = Object.assign({}, el.particles, { color: e.target.value }); });
     $("ck-chroma").onchange = (e) => upd((el) => { el.chroma = Object.assign({}, el.chroma, { enabled: e.target.checked }); });
     $("in-chroma-color").onchange = (e) => upd((el) => { el.chroma = Object.assign({}, el.chroma, { color: e.target.value }); });
     $("sl-chroma").onchange = (e) => upd((el) => { el.chroma = Object.assign({}, el.chroma, { threshold: parseFloat(e.target.value) }); });
+    $("sel-tl-ease").onchange = (e) => upd((el) => { el.timeline = el.timeline && Array.isArray(el.timeline.keys) ? el.timeline : { loop: false, keys: [] }; el.timeline.ease = e.target.value; });
+    $("num-tl-dur").onchange = (e) => upd((el) => { el.timeline = el.timeline && Array.isArray(el.timeline.keys) ? el.timeline : { loop: false, keys: [] }; const v = parseFloat(e.target.value); el.timeline.dur = v > 0 ? v : null; });
     $("ck-tl-loop").onchange = (e) => upd((el) => {
       el.timeline = el.timeline && Array.isArray(el.timeline.keys) ? el.timeline : { loop: false, keys: [] };
       el.timeline.loop = e.target.checked;
@@ -405,7 +410,13 @@
     $("sl-vol").value = el.volume == null ? 1 : el.volume;
     $("row-loop").hidden = el.type !== "video" && el.type !== "sound";
     $("row-spatial").hidden = el.type !== "sound";
-    if (el.type === "sound") $("ck-spatial").checked = !!el.spatial;
+    if (el.type === "sound") {
+      $("ck-spatial").checked = !!el.spatial;
+      $("row-spatial-opts").hidden = !el.spatial;
+      $("sel-spatial-mode").value = el.spatialMode || "log";
+      $("num-spatial-in").value = el.spatialInner > 0 ? el.spatialInner : 0.35;
+      $("num-spatial-out").value = el.spatialOuter > 0 ? el.spatialOuter : 1.4;
+    }
     $("row-chroma").hidden = el.type !== "video";
     $("row-particles").hidden = el.type !== "particles";
     if (el.type === "particles") {
@@ -421,7 +432,16 @@
     }
     $("ck-loop").checked = el.loop !== false;
     $("sel-anim").value = Studio.normEl(el).anim;
-    $("sel-tap").value = el.onTap || "none";
+    const tapSel = $("sel-tap");
+    [...tapSel.querySelectorAll("option[data-seq]")].forEach((o) => o.remove());
+    for (const sq of Studio.seqList(rec)) {
+      const o = document.createElement("option");
+      o.value = "seq:" + sq.id; o.dataset.seq = "1";
+      o.textContent = "מעבר למצב: " + (sq.name || sq.id);
+      tapSel.appendChild(o);
+    }
+    tapSel.value = el.onTap || "none";
+    if (tapSel.value !== (el.onTap || "none")) { el.onTap = "none"; tapSel.value = "none"; }
     const seqs = Studio.seqList(rec);
     $("row-seq").hidden = !seqs.length;
     if (seqs.length) {
@@ -485,6 +505,8 @@
     if (el.type === "sound") return;
     const tl = el.timeline || { loop: false, keys: [] };
     $("ck-tl-loop").checked = !!tl.loop;
+    $("sel-tl-ease").value = tl.ease || "linear";
+    $("num-tl-dur").value = tl.dur > 0 ? tl.dur : "";
     $("tl-note").hidden = !tl.keys.length;
     const ul = $("tl-keys");
     ul.innerHTML = "";

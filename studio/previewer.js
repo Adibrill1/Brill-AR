@@ -77,6 +77,13 @@
   // Multi-state artworks: tap an element wired to "sequence" to switch states.
   let curSeq = Studio.seqList(rec).length ? Studio.seqList(rec)[0].id : null;
   let tlDrv = null;
+  const onSequence = (id) => {
+    if (!Studio.seqList(rec).some((x) => x.id === id)) return;
+    curSeq = id;
+    Studio.applySequence(rig, rec, curSeq, mediaEls);
+    Studio.renderSeqDots(rec, curSeq);
+    if (tlDrv) tlDrv.reset();
+  };
   const onNextSequence = () => {
     curSeq = Studio.nextSequence(rec, curSeq);
     Studio.applySequence(rig, rec, curSeq, mediaEls);
@@ -115,7 +122,7 @@
       e = Studio.buildElementEntity(rec, el, idx, "preview");
     }
     if (!e) return;
-    Studio.bindTap(e, el, { onMuteToggle, onNextSequence });
+    Studio.bindTap(e, el, { onMuteToggle, onNextSequence, onSequence });
     rig.appendChild(e);
     if (e.dataset.opacity) Studio.applyOpacity(e, parseFloat(e.dataset.opacity));
   });

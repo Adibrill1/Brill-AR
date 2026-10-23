@@ -314,6 +314,8 @@ const Studio = (() => {
         hooks.onMuteToggle();
       } else if (el.onTap === "sequence" && hooks && hooks.onNextSequence) {
         hooks.onNextSequence();
+      } else if (el.onTap && el.onTap.indexOf("seq:") === 0 && hooks && hooks.onSequence) {
+        hooks.onSequence(el.onTap.slice(4));
       }
     });
   }
@@ -352,7 +354,7 @@ const Studio = (() => {
     const tl = el.timeline;
     if (!tl || !Array.isArray(tl.keys) || !tl.keys.length) return base;
     const keys = tl.keys.slice().sort((a, b) => a.t - b.t);
-    const dur = keys[keys.length - 1].t;
+    const dur = (tl.dur > 0 ? tl.dur : keys[keys.length - 1].t);
     let t = Math.max(0, tSec);
     if (t > dur) { if (tl.loop && dur > 0) t = t % dur; else t = dur; }
     let a = null, b = null;
@@ -363,7 +365,11 @@ const Studio = (() => {
       if (has(a) && !has(b)) return a[prop];
       if (!has(a) && has(b)) return base[prop];
       if (a === b) return a[prop];
-      const f = (t - a.t) / Math.max(1e-6, b.t - a.t);
+      let f = (t - a.t) / Math.max(1e-6, b.t - a.t);
+      const ease = tl.ease || "linear";
+      if (ease === "easeIn") f = f * f;
+      else if (ease === "easeOut") f = 1 - (1 - f) * (1 - f);
+      else if (ease === "easeInOut") f = f < 0.5 ? 2 * f * f : 1 - 2 * (1 - f) * (1 - f);
       return a[prop] + (b[prop] - a[prop]) * f;
     };
     return { x: pick("x"), y: pick("y"), z: pick("z"), rot: pick("rot"), opacity: pick("opacity"), scale: pick("scale") };
@@ -371,7 +377,7 @@ const Studio = (() => {
   function timelineDur(el) {
     const tl = el.timeline;
     if (!tl || !Array.isArray(tl.keys) || !tl.keys.length) return 0;
-    return Math.max(...tl.keys.map((k) => k.t));
+    return (tl.dur > 0 ? tl.dur : Math.max(...tl.keys.map((k) => k.t)));
   }
 
   // Controllable driver: play/pause/reset so the AR player can start motion at target-found
