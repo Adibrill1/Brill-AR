@@ -1,0 +1,30 @@
+* { box-sizing: border-box; }
+body { margin: 0; font: 16px/1.6 -apple-system, "Segoe UI", Arial, sans-serif; background: #f4f2ee; color: #1c1c1c; }
+header { background: #1c1c1c; color: #fff; padding: 18px 20px; }
+header h1 { margin: 0; font-size: 22px; }
+header .sub { margin: 4px 0 0; font-size: 14px; color: #cfcfcf; }
+main { max-width: 640px; margin: 0 auto; padding: 14px; }
+.card { background: #fff; border-radius: 14px; padding: 16px; margin-bottom: 14px; box-shadow: 0 1px 4px rgba(0,0,0,.08); }
+h2 { font-size: 17px; margin: 0 0 6px; }
+.step { display: inline-grid; place-items: center; width: 24px; height: 24px; border-radius: 50%; background: #1c1c1c; color: #fff; font-size: 13px; margin-inline-end: 6px; }
+.hint { font-size: 13px; color: #666; margin: 4px 0 10px; }
+.row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.row.spread { justify-content: space-between; }
+.col { display: flex; flex-direction: column; gap: 10px; }
+button { font: inherit; font-size: 16px; padding: 12px 18px; border-radius: 12px; border: 1px solid #1c1c1c; background: #1c1c1c; color: #fff; cursor: pointer; }
+button.ghost { background: #fff; color: #1c1c1c; }
+button.primary { background: #0a54c2; border-color: #0a54c2; font-size: 18px; }
+button.danger { color: #b00020; border-color: #b00020; }
+button.ghost.danger { background: #fff; }
+#artwork-thumb { max-height: 90px; border-radius: 8px; border: 1px solid #ddd; }
+#element-list { list-style: none; margin: 10px 0 0; padding: 0; }
+#element-list li { padding: 10px 12px; border: 1px solid #ddd; border-radius: 10px; margin-bottom: 6px; cursor: pointer; background: #fafafa; }
+#element-list li.sel { border-color: #0a54c2; background: #eaf2ff; }
+#canvas-wrap { width: 100%; margin: 8px 0; touch-action: none; }
+#preview { display: block; border: 1px solid #ddd; border-radius: 8px; width: 100%; }
+#panel label { display: block; font-size: 14px; margin: 8px 0 2px; }
+#panel label.check { display: flex; gap: 8px; align-items: center; }
+#panel input[type=range] { width: 100%; }
+#exp-select { font: inherit; padding: 8px; border-radius: 8px; max-width: 45%; }
+#msg { text-align: center; color: #0a54c2; min-height: 1.4em; }
+#panel label[hidden]{display:none}
