@@ -34,7 +34,7 @@ Legend:
 | Sequences: states/chapters per artwork | States with per-element assignment, state tabs, dots | 🆕 round-B |
 | Sequences: On Tap -> Trigger a chosen sequence | Tap action per element: next state OR a chosen state | 🆕 round-G |
 | Sequences: multiple sequences overlay simultaneously | States switch (one active at a time), audio/visibility reset on switch | ❌ not built (architectural difference) |
-| Sequences: Manage Sequence (chain/stop), Change Interaction over time | Sequence chaining built: per-state auto-advance `autoNext {at,to}` with editor controls, runs in previewer and player. Change Interaction over time is deferred by design (documented in docs-round-h.md) | ⚠️ round H (chaining ✅, interaction-over-time deferred) |
+| Sequences: Manage Sequence (chain/stop), Change Interaction over time | Sequence chaining: per-state auto-advance `autoNext {at,to}` with editor controls, runs in previewer and player. Change Interaction over time: keyframes capture the element's tap behavior; the timeline driver switches it live during playback (discrete channel, base onTap before the first key) | ✅ round H |
 | Sequences: loop/reset per sequence | Per-state loop setting: when on, the state's one-shot timelines replay together on completion (timeline driver); editor checkbox per state | ✅ round H |
 | Preview Mode (simulate viewer, sequence notifications) | 3D preview page + live timeline playback on the editor canvas + ruler/scrub + state-switch toast notifications on tap and chained switches (previewer) | 🆕 rounds A/F/H ✅ |
 | Timeline editor: ruler with drag scrub | Ruler with second ticks, keyframe markers, draggable playhead seeking the canvas | 🆕 round-F |
