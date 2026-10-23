@@ -187,9 +187,10 @@ const Studio = (() => {
     e.setAttribute("position", pos);
     e.setAttribute("rotation", rot);
     e.dataset.elId = el.id;
-    if (el.anim === "spin") e.setAttribute("animation__spin", `property: rotation; to: 0 0 ${(el.rot || 0) + 360}; loop: true; dur: 14000; easing: linear`);
-    else if (el.anim === "float") e.setAttribute("animation__float", `property: position; from: ${pos}; to: ${ts.x} ${ts.y + 0.03} ${z}; dir: alternate; loop: true; dur: 2600; easing: easeInOutSine`);
-    else if (el.anim === "pulse") e.setAttribute("animation__pulse", `property: scale; to: 1.08 1.08 1; dir: alternate; loop: true; dur: 1600; easing: easeInOutSine`);
+    const hasTl = el.timeline && Array.isArray(el.timeline.keys) && el.timeline.keys.length;
+    if (el.anim === "spin" && !hasTl) e.setAttribute("animation__spin", `property: rotation; to: 0 0 ${(el.rot || 0) + 360}; loop: true; dur: 14000; easing: linear`);
+    else if (el.anim === "float" && !hasTl) e.setAttribute("animation__float", `property: position; from: ${pos}; to: ${ts.x} ${ts.y + 0.03} ${z}; dir: alternate; loop: true; dur: 2600; easing: easeInOutSine`);
+    else if (el.anim === "pulse" && !hasTl) e.setAttribute("animation__pulse", `property: scale; to: 1.08 1.08 1; dir: alternate; loop: true; dur: 1600; easing: easeInOutSine`);
     if (el.onTap && el.onTap !== "none") e.classList.add("cantap");
     if (el.opacity != null && el.opacity < 1) e.dataset.opacity = String(el.opacity);
     return e;
@@ -246,6 +247,50 @@ const Studio = (() => {
       if (!elVisibleIn(m.el, seqId) && !m.node.paused) m.node.pause();
     }
   }
+  // ---------- timeline (keyframed motion) ----------
+  // Drives entities from el.timeline.keys [{t, x?, y?, z?, rot?, opacity?, scale?}].
+  // Missing props hold their last keyed value; before the first key they hold base props.
+  function startTimelineDriver(rec, entities) {
+    const tracks = [];
+    for (const e of entities) {
+      const el = rec.elements.find((x) => x.id === (e.dataset && e.dataset.elId));
+      if (!el || !el.timeline || !Array.isArray(el.timeline.keys) || !el.timeline.keys.length) continue;
+      const keys = el.timeline.keys.slice().sort((a, b) => a.t - b.t);
+      const p0 = e.getAttribute("position");
+      tracks.push({ el, e, keys, loop: !!el.timeline.loop, t0: performance.now(),
+        base: { x: el.x || 0, y: el.y || 0, z: el.z || 0, rot: el.rot || 0, opacity: el.opacity == null ? 1 : el.opacity, scale: 1 },
+        zOff: (p0 ? p0.z : 0) - (el.z || 0) });
+    }
+    if (!tracks.length) return;
+    const D2R = Math.PI / 180;
+    const frame = (now) => {
+      for (const tr of tracks) {
+        let t = (now - tr.t0) / 1000;
+        const dur = tr.keys[tr.keys.length - 1].t;
+        if (t > dur) { if (tr.loop) { tr.t0 = now; t = 0; } else t = dur; }
+        let a = null, b = null;
+        for (const k of tr.keys) { if (k.t <= t) a = k; if (k.t >= t) { b = k; break; } }
+        const pick = (prop) => {
+          const has = (k) => k && k[prop] != null;
+          if (!has(a) && !has(b)) return tr.base[prop];
+          if (has(a) && !has(b)) return a[prop];
+          if (!has(a) && has(b)) return tr.base[prop];
+          if (a === b) return a[prop];
+          const f = (t - a.t) / Math.max(1e-6, b.t - a.t);
+          return a[prop] + (b[prop] - a[prop]) * f;
+        };
+        const x = pick("x"), y = pick("y"), z = pick("z"), rot = pick("rot"), op = pick("opacity"), sc = pick("scale");
+        const ts = toTargetSpace(rec, Object.assign({}, tr.el, { x, y, z }), tr.el.aspect || 1);
+        tr.e.object3D.position.set(ts.x, ts.y, (ts.z || 0) + tr.zOff);
+        tr.e.object3D.rotation.z = rot * D2R;
+        tr.e.object3D.scale.set(sc, sc, 1);
+        applyOpacity(tr.e, op);
+      }
+      requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
+  }
+
   // Small state-position dots shown when an artwork has more than one state.
   function renderSeqDots(rec, curSeq) {
     let bar = document.getElementById("seq-dots");
@@ -343,6 +388,6 @@ const Studio = (() => {
   }
 
   return { TARGET_W, TARGET_H, newId, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
-           geom, toTargetSpace, blankExperience, save, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, seqList, elVisibleIn, nextSequence, applySequence, renderSeqDots,
+           geom, toTargetSpace, blankExperience, save, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, seqList, elVisibleIn, nextSequence, applySequence, renderSeqDots, startTimelineDriver,
            load: idbGet, all: idbAll, del: idbDel };
 })();

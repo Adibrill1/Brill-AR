@@ -26,7 +26,7 @@ Legend:
 | Animation presets | none / slow spin / float / pulse per element | 🆕 round-A |
 | Tap interactions (open link etc.) | Tap action: open URL / mute-unmute sound | 🆕 round-A |
 | Preview without the camera | 3D preview page (orbit + zoom, same scene graph) | 🆕 round-A |
-| Timeline (keyframed motion over time) | Not built | 🔜 planned (round B) |
+| Timeline (keyframed motion over time) | Per-element keyframes (t, position/rotation/opacity), loop, linear interpolation | 🆕 round-B (cloud-verified) |
 | Sequences (multi-state artworks, tap to switch) | States per artwork, per-element state assignment, tap-to-advance action, state dots | 🆕 round-B (cloud-verified) |
 | 3D models (glTF/GLB) | Not built | 🔜 planned (round C) |
 | Particle effects | Not built | 🔜 planned (round C) |
@@ -39,6 +39,13 @@ Legend:
 | Save video to camera roll automatically | iOS blocks programmatic Photos writes; Share > Save Video is the route | ⛔ limit |
 | Cloud-hosted projects, accounts, asset library | Local browser storage per device (export/import JSON to move) | 🖥️ server |
 | Buyer flow (stable per-artwork link/QR for collectors) | Scoped, needs a server + owner approval before any publication | 🖥️ server |
+
+## Verification provenance (round B part 2 - timeline, 2026-10-23)
+- Cloud browser: keyframed text element moves/rotates/fades over a 2s loop (sampled object3D
+  transforms at two times, loop wrap observed), editor panel adds/lists/deletes keys, loop
+  persists, base animation preset is disabled while a timeline exists, player boots clean.
+- scale keyframes supported in the runtime but not yet exposed in the editor UI.
+- Timeline t=0 is scene start in both preview and player (not target-found); device pass pending.
 
 ## Verification provenance (round B part 1 - sequences, 2026-10-23)
 - Cloud browser: enabled multi-state from the editor UI, per-element state dropdown, list/canvas

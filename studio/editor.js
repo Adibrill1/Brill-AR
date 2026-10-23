@@ -271,6 +271,15 @@
     $("sel-anim").onchange = (e) => upd((el) => { el.anim = e.target.value; el.spin = el.anim === "spin"; });
     $("sel-tap").onchange = (e) => upd((el) => { el.onTap = e.target.value; });
     $("sel-seq").onchange = (e) => upd((el) => { el.seq = e.target.value || null; });
+    $("btn-tl-add").onclick = () => upd((el) => {
+      el.timeline = el.timeline && Array.isArray(el.timeline.keys) ? el.timeline : { loop: false, keys: [] };
+      const t = Math.max(0, Math.min(60, parseFloat($("num-tl-t").value) || 0));
+      el.timeline.keys.push({ t, x: el.x, y: el.y, z: el.z || 0, rot: el.rot || 0, opacity: el.opacity == null ? 1 : el.opacity });
+    });
+    $("ck-tl-loop").onchange = (e) => upd((el) => {
+      el.timeline = el.timeline && Array.isArray(el.timeline.keys) ? el.timeline : { loop: false, keys: [] };
+      el.timeline.loop = e.target.checked;
+    });
     $("in-tapurl").onchange = (e) => upd((el) => { el.tapUrl = e.target.value.trim(); });
     // numeric panel
     num("num-x", -0.7, 0.7, (el, v) => { el.x = v; });
@@ -346,6 +355,7 @@
     $("row-tapurl").hidden = el.onTap !== "link";
     $("in-tapurl").value = el.tapUrl || "";
     $("row-text").hidden = el.type !== "text";
+    renderTimeline(el);
     if (el.type === "text") {
       if (document.activeElement !== $("in-text")) $("in-text").value = el.text || "";
       $("in-color").value = el.color || "#ffffff";
@@ -357,6 +367,28 @@
     $("num-rot").value = Math.round(el.rot || 0);
     $("num-z").value = (Math.round((el.z || 0) * 1000) / 1000);
     $("num-opacity").value = el.opacity == null ? 1 : el.opacity;
+  }
+
+  // ---------- timeline editor ----------
+  function renderTimeline(el) {
+    const wrap = $("row-timeline");
+    wrap.hidden = el.type === "sound";
+    if (el.type === "sound") return;
+    const tl = el.timeline || { loop: false, keys: [] };
+    $("ck-tl-loop").checked = !!tl.loop;
+    $("tl-note").hidden = !tl.keys.length;
+    const ul = $("tl-keys");
+    ul.innerHTML = "";
+    tl.keys.slice().sort((a, b) => a.t - b.t).forEach((k) => {
+      const li = document.createElement("li");
+      const i = el.timeline.keys.indexOf(k);
+      li.textContent = "t=" + k.t + "s ";
+      const del = document.createElement("button");
+      del.className = "ghost danger"; del.textContent = "✕";
+      del.onclick = () => upd((e2) => { e2.timeline.keys.splice(i, 1); });
+      li.appendChild(del);
+      ul.appendChild(li);
+    });
   }
 
   // ---------- canvas preview ----------

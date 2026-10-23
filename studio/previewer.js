@@ -118,6 +118,7 @@
     if (e.dataset.opacity) Studio.applyOpacity(e, parseFloat(e.dataset.opacity));
   });
   if (curSeq) { Studio.applySequence(rig, rec, curSeq, mediaEls); Studio.renderSeqDots(rec, curSeq); }
+  Studio.startTimelineDriver(rec, [...rig.children]);
   if (videoFallbacks) {
     document.getElementById("hint").textContent = "שים לב: הדפדפן הזה לא מצליח להציג את הסרטון, והוא מוצג כמלבן אפור. נסו מכשיר אחר או קובץ וידאו בפורמט נתמך (mp4 / H.264).";
   }

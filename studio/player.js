@@ -102,6 +102,7 @@
   });
   if (curSeq) { Studio.applySequence(target, rec, curSeq, mediaEls); Studio.renderSeqDots(rec, curSeq); }
   scene.appendChild(target);
+  Studio.startTimelineDriver(rec, [...target.children]);
   document.body.appendChild(scene);
 
   Studio.ensurePlayback(mediaEls.filter((m) => m.kind === "video"));
