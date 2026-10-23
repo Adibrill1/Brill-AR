@@ -32,3 +32,10 @@ JSON files under `server/data/`. No database.
 2. An HTTPS domain pointed at it (buyers open these links on their phones).
 3. Set a strong PUBLISH_TOKEN (auth is implemented; the owner chooses and guards the secret).
 4. Backups of `server/data/`.
+
+## Optional MOV conversion (round O)
+`POST /api/convert/mov` requires the same bearer token and rate limit as publishing. Body is raw MOV bytes, not a URL. Requires `ffmpeg` and `ffprobe` binaries (current patched versions) on the host. No binaries downloaded or executed from the upload.
+
+20MB input/output, 120s duration, 4096px input sides, max 1920px output, 30fps, H264 yuv420p + AAC stereo. Metadata/chapters stripped, transparency/HDR fidelity not preserved. Temp files cleaned on success/failure. One concurrent conversion per process; child commands time out after90s. External MOV references disabled and network protocols not allowed. Root output-size guard rejects truncated output duration. This is a lossy conversion, not original-format preservation. Editor shows exact destination and fidelity limits before upload; cancel sends nothing. No configured server/token means clear guidance to export MP4 instead.
+
+Test: `node tests/mov-convert.cjs`. This route is locally tested, not deployed by static Surge hosting. Production should run media parsers in a low-privilege isolated process/container with CPU/memory limits and patched ffmpeg. It does not publish the converted clip or retain the upload.

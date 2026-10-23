@@ -251,6 +251,23 @@
       if (!f) return;
       let importNote = "";
       if (f.size > 20 * 1024 * 1024) { msg("קובץ גדול מדי (מעל 20MB) לגרסת הניסוי."); return; }
+      if (kind === "video" && (/\.mov$/i.test(f.name) || f.type === "video/quicktime")) {
+        const base = ($("in-server").value || "").trim().replace(/\/+$/, "");
+        const token = ($("in-token").value || "").trim();
+        if (!base || !token) { msg("המרת MOV דורשת שרת מוגדר עם כלי ffmpeg וסיסמה. אפשר גם לייצא MP4 מהתוכנה המקורית ולהעלות אותו."); return; }
+        let parsed; try { parsed = new URL(base); } catch (_) { msg("כתובת שרת לא תקינה."); return; }
+        if (parsed.protocol !== "https:" && !(parsed.protocol === "http:" && ["localhost", "127.0.0.1"].includes(parsed.hostname))) { msg("להמרה צריך שרת HTTPS מאובטח."); return; }
+        if (!(await confirmDialog("הקובץ יישלח להמרה בשרת " + parsed.origin + ". ההמרה ל־MP4 אינה ללא אובדן: עד 1920 פיקסלים, 30 תמונות בשנייה, עד 120 שניות, בלי שקיפות או מטא־נתונים. צליל יומר ל־AAC. הסרטון המקורי אינו משתנה וההמרה אינה מפרסמת אותו.", "שליחה להמרה"))) return;
+        msg("ממיר MOV ל־MP4…");
+        try {
+          const response = await fetch(base + "/api/convert/mov", { method: "POST", headers: { "content-type": "video/quicktime", authorization: "Bearer " + token }, body: f });
+          if (!response.ok) { let out={};try{out=await response.json();}catch(_){}throw Error(out.error || "שרת ענה " + response.status); }
+          const blob = await response.blob();
+          if (blob.size > 20 * 1024 * 1024 || !blob.size || !blob.type.startsWith("video/mp4")) throw Error("תוצאת המרה לא תקינה");
+          f = new File([blob], f.name.replace(/\.mov$/i, "") + ".mp4", { type: "video/mp4" });
+          importNote = "MOV הומר ל־MP4 ונוסף. נשמר רק במכשיר; המקור אינו משתנה.";
+        } catch (err) { msg("ההמרה לא הושלמה: " + err.message); return; }
+      }
       if (kind === "model") {
         const magic = new Uint8Array(await f.slice(0, 4).arrayBuffer());
         if (magic[0] === 0x50 && magic[1] === 0x4B) {
