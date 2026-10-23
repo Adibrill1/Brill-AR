@@ -229,18 +229,34 @@
       if (f.size > 20 * 1024 * 1024) { msg("קובץ גדול מדי (מעל 20MB) לגרסת הניסוי."); return; }
       if (kind === "model") {
         const magic = new Uint8Array(await f.slice(0, 4).arrayBuffer());
-        if (magic[0] === 0x50 && magic[1] === 0x4B) { // "PK" - zipped model
+        if (magic[0] === 0x50 && magic[1] === 0x4B) { // "PK" - zip containing one .glb
+          // Bounded extraction: only .glb entries under the size cap are decompressed (filter runs
+          // before inflation), entry count is capped, nested zips are not recursed into, and entry
+          // bytes only ever land in an in-memory File - never written to a path, so traversal is N/A.
+          const MAX_ENTRY = 20 * 1024 * 1024, MAX_ENTRIES = 100;
           try {
-            const entries = fflate.unzipSync(new Uint8Array(await f.arrayBuffer()));
-            const glbName = Object.keys(entries).find((n) => /\.glb$/i.test(n));
-            if (!glbName) {
-              const hasGltf = Object.keys(entries).some((n) => /\.gltf$/i.test(n));
-              msg(hasGltf ? "ה־zip מכיל gltf עם קבצים חיצוניים - יצאו מחדש כ־glb יחיד (Export glTF Binary), כווצו אותו והעלו שוב."
-                          : "לא נמצא קובץ glb בתוך ה־zip - כווצו קובץ glb יחיד והעלו שוב.");
+            let seen = 0, oversize = false, wanted = null;
+            const scan = new fflate.Unzip((entry) => {
+              seen++;
+              if (/\.glb$/i.test(entry.name) && !wanted) {
+                if (entry.originalSize > MAX_ENTRY) { oversize = true; return; }
+                wanted = entry.name;
+              }
+            });
+            scan.push(new Uint8Array(await f.arrayBuffer()), true);
+            if (seen === 0) throw new Error("no readable zip entries");
+            if (seen > MAX_ENTRIES) { msg("ה־zip מכיל יותר מדי קבצים - כווצו קובץ glb יחיד והעלו שוב."); return; }
+            if (oversize) { msg("המודל בתוך ה־zip גדול מדי (מעל 20MB) לגרסת הניסוי."); return; }
+            if (!wanted) {
+              msg("לא נמצא קובץ glb בתוך ה־zip - כווצו קובץ glb יחיד והעלו שוב. (zip עם gltf וקבצים חיצוניים עדיין לא נתמך)");
               return;
             }
-            if (entries[glbName].length > 20 * 1024 * 1024) { msg("המודל בתוך ה־zip גדול מדי (מעל 20MB) לגרסת הניסוי."); return; }
-            f = new File([entries[glbName]], glbName.split("/").pop(), { type: "model/gltf-binary" });
+            const entries = fflate.unzipSync(new Uint8Array(await f.arrayBuffer()), {
+              filter: (file) => file.name === wanted && file.originalSize <= MAX_ENTRY
+            });
+            const data = entries[wanted];
+            if (!data || data.length > MAX_ENTRY) { msg("המודל בתוך ה־zip גדול מדי (מעל 20MB) לגרסת הניסוי."); return; }
+            f = new File([data], wanted.split("/").pop(), { type: "model/gltf-binary" });
           } catch (ez) { msg("ה־zip לא נפתח - ודאי שזה קובץ zip תקין עם קובץ glb בפנים."); return; }
         }
         const head = new Uint8Array(await f.slice(0, 4).arrayBuffer());
