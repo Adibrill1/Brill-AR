@@ -165,3 +165,6 @@ Zero-based embedded clip/speed/play/repeat creator controls persist across whole
 
 ## Round AF named multi-clips
 Named GLB clip dropdown from bounded metadata now available. Actual original two-authored-clip GLB renders index0horizontal X357.5→441.3 and index1vertical Y352.8→268.8; four frames inspected. Supersedes AE's cloned-second-clip-only limit for simple translation. Skeletal/morph/blending/phone still unverified.
+
+## Round AG deformation evidence
+Original one-morph triangle renders area199→967pixels; original one-joint weighted triangle renders centroidX357.5→441.3. Same-scale crops inspected. Confirms minimal morph/skinning through existing loader/mixer; complex rigs/inverse binds/multijoint/blending and phone remain open. No broad model-fidelity claim.
