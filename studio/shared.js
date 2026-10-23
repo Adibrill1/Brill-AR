@@ -280,26 +280,28 @@ const Studio = (() => {
       return { x: after.x + (dx * Math.cos(angle) - dy * Math.sin(angle)) / ratio,
         y: after.y + dx * Math.sin(angle) + dy * Math.cos(angle) };
     };
+    const mapTimeline = el => {
+      const tl = el.timeline;
+      if (!tl || !tl.keys || !tl.keys.length) return;
+      const a = factor * Math.cos(angle), b = -factor * Math.sin(angle) / ratio;
+      const c = factor * Math.sin(angle) * ratio, d = factor * Math.cos(angle);
+      const tx = after.x - a * before.x - b * before.y, ty = after.y - c * before.x - d * before.y;
+      const old = tl.xyMap || { baseX: el.x || 0, baseY: el.y || 0, matrix: [1,0,0,1,0,0] };
+      const [A,B,C,D,X,Y] = old.matrix;
+      // Preserve the original per-axis curves and compose an affine output map.
+      // No resampling: sparse nonlinear easing stays exact at every time.
+      tl.xyMap = { baseX: old.baseX, baseY: old.baseY, matrix: [a*A+b*C,a*B+b*D,c*A+d*C,c*B+d*D,a*X+b*Y+tx,c*X+d*Y+ty] };
+      tl.keys.forEach(k => { if(k.z != null) k.z += after.z-before.z; if(k.rot != null) k.rot += after.rot-before.rot; });
+    };
     for (const child of groupChildren(rec, group)) {
-      const original = structuredClone(child);
-      const keys = original.timeline && original.timeline.keys;
-      if (keys && keys.length) {
-        const xy = keys.some(k => k.x != null || k.y != null);
-        // Rotation couples X/Y. Sample the original curve at every key boundary,
-        // including sparse channels, then retain timing/ease/discrete metadata.
-        child.timeline.keys = keys.map(k => {
-          const next = Object.assign({}, k), sampled = sampleTimeline(original, k.t);
-          if (xy) Object.assign(next, point(sampled.x, sampled.y));
-          if (k.z != null) next.z = k.z + after.z - before.z;
-          if (k.rot != null) next.rot = k.rot + after.rot - before.rot;
-          return next;
-        });
-      }
+      normEl(child);
+      mapTimeline(child);
       Object.assign(child, point(child.x || 0, child.y || 0));
       child.z = (child.z || 0) + after.z - before.z;
-      child.w *= factor; if (child.h != null) child.h *= factor;
+      if (child.w != null) child.w *= factor; if (child.h != null) child.h *= factor;
       child.rot = (child.rot || 0) + after.rot - before.rot;
     }
+    mapTimeline(group);
     if (group.h != null && changes.w != null) group.h *= factor;
     Object.assign(group, changes);
   }
@@ -402,18 +404,30 @@ const Studio = (() => {
 
   // Opacity: set on the mesh material once it exists (components like the video fade create it async).
   function applyOpacity(entity, value) {
-    let tries = 0;
-    const paint = (root) => {
-      let done = false;
-      root.traverse((n) => { if (n.material) { n.material.transparent = true; n.material.opacity = value; done = true; } });
-      return done;
+    entity._studioOpacity = value;
+    const paint = () => {
+      if (!entity.object3D) return;
+      entity.object3D.traverse(n => {
+        if (!n.material) return;
+        let opacity = 1, owner = n; const seen = new Set();
+        while (owner) {
+          const el = owner.el;
+          if (el && !seen.has(el) && el._studioOpacity != null) { opacity *= el._studioOpacity; seen.add(el); }
+          owner = owner.parent;
+        }
+        for (const m of (Array.isArray(n.material) ? n.material : [n.material])) {
+          if (m._studioBaseOpacity == null) m._studioBaseOpacity = m.opacity;
+          m.transparent = true; m.opacity = m._studioBaseOpacity * opacity;
+        }
+      });
     };
-    const attempt = () => {
-      const mesh = entity.getObject3D("mesh");
-      if (mesh && paint(mesh)) return;
-      if (++tries < 20) setTimeout(attempt, 300);
-    };
-    attempt();
+    if (!entity._studioOpacityBound) {
+      entity._studioOpacityBound = true;
+      entity.addEventListener("object3dset", paint);
+      entity.addEventListener("model-loaded", paint);
+      setTimeout(paint, 300); setTimeout(paint, 1000);
+    }
+    paint();
   }
 
   // Tap behavior shared by AR player and preview. hooks.onMuteToggle handles 'mute'.
@@ -499,15 +513,35 @@ const Studio = (() => {
       const el = rec.elements.find((x) => x.id === child.dataset.elId);
       if (el) { child._sequenceVisible = vis(el); child.setAttribute("visible", child._sequenceVisible && child._timelineVisible !== false); }
     }
-    if (mediaEls) for (const m of mediaEls) {
-      if (!vis(m.el)) {
-        if (!m.node.paused) { m.resumeOnVisible = true; m.node.pause(); }
-      } else if (m.resumeOnVisible) {
-        m.resumeOnVisible = false;
-        m.node.play().catch(() => {});
-      }
+    if (mediaEls) {
+      container._studioMedia = mediaEls;
+      for (const m of mediaEls) m._studioBaseAllowed = vis(m.el);
+      syncMedia(container, rec);
     }
   }
+  function syncMedia(container, rec) {
+    for (const m of container._studioMedia || []) {
+      let allowed = m._studioBaseAllowed !== false;
+      const node = container.querySelector('[data-el-id="' + m.el.id + '"]');
+      let parent = node && node.object3D;
+      while (parent) { if (!parent.visible) allowed = false; parent = parent.parent; }
+      // Nonspatial sound has no visual node: still inherit its group's state/track/timeline.
+      if (!node) for (const group of rec.elements.filter(el => el.type === "group" && (el.children || []).includes(m.el.id))) {
+        let g = container.querySelector('[data-el-id="'+group.id+'"]');
+        if (g) { let o=g.object3D; while(o) { if(!o.visible)allowed=false; o=o.parent; } }
+      }
+      m.node._studioBlocked = !allowed;
+      if (!allowed) { if (!m.node.paused) { m.resumeOnVisible = true; m.node.pause(); } }
+      else if (m.resumeOnVisible) { m.resumeOnVisible = false; m.node.play().catch(() => {}); }
+    }
+  }
+  function monitorMedia(container, rec) {
+    let active = true;
+    const frame = () => { if(!active)return; syncMedia(container,rec); requestAnimationFrame(frame); };
+    requestAnimationFrame(frame);
+    return () => { active = false; };
+  }
+
   // ---------- timeline (keyframed motion) ----------
   // Pure sampler: el.timeline.keys [{t, x?, y?, z?, rot?, opacity?, scale?}] at time tSec.
   // Missing props hold their last keyed value; before the first key they hold base props.
@@ -515,6 +549,8 @@ const Studio = (() => {
     const base = { x: el.x || 0, y: el.y || 0, z: el.z || 0, rot: el.rot || 0, opacity: el.opacity == null ? 1 : el.opacity, scale: 1, tap: el.onTap || "none", visible: true };
     const tl = el.timeline;
     if (!tl || !Array.isArray(tl.keys) || !tl.keys.length) return base;
+    const map = tl.xyMap;
+    if (map) { base.x = map.baseX; base.y = map.baseY; }
     const keys = tl.keys.slice().sort((a, b) => a.t - b.t);
     const dur = (tl.dur > 0 ? tl.dur : keys[keys.length - 1].t);
     let t = Math.max(0, tSec);
@@ -544,7 +580,20 @@ const Studio = (() => {
       for (const k of keys) { if (k.t <= t && k[prop] != null) v = k[prop]; }
       return v;
     };
-    return { x: pick("x"), y: pick("y"), z: pick("z"), rot: pick("rot"), opacity: pick("opacity"), scale: pick("scale"), tap: pickDiscrete("tap"), visible: pickDiscrete("visible") };
+    let x = pick("x"), y = pick("y");
+    if (map) { const [a,b,c,d,tx,ty] = map.matrix; const ox=x; x=a*x+b*y+tx; y=c*ox+d*y+ty; }
+    return { x, y, z: pick("z"), rot: pick("rot"), opacity: pick("opacity"), scale: pick("scale"), tap: pickDiscrete("tap"), visible: pickDiscrete("visible") };
+  }
+  // Editor records visible-world coordinates; convert XY back to the curve frame.
+  function addTimelineKey(el, key) {
+    const tl = el.timeline || (el.timeline = { keys: [] });
+    const k = Object.assign({}, key), map = tl.xyMap;
+    if (map && (k.x != null || k.y != null)) {
+      const current = sampleTimeline(el, k.t), x = k.x == null ? current.x : k.x, y = k.y == null ? current.y : k.y;
+      const [a,b,c,d,tx,ty] = map.matrix, det = a*d-b*c;
+      k.x = (d*(x-tx)-b*(y-ty))/det; k.y = (-c*(x-tx)+a*(y-ty))/det;
+    }
+    tl.keys.push(k); return k;
   }
   function timelineDur(el) {
     const tl = el.timeline;
@@ -689,7 +738,7 @@ const Studio = (() => {
   // headless browsers), show a clear tap-to-play button instead of a silently frozen frame.
   function ensurePlayback(mediaEls, opts) {
     opts = opts || {};
-    const pending = () => mediaEls.filter((m) => m.node.paused);
+    const pending = () => mediaEls.filter((m) => m.node.paused && !m.node._studioBlocked);
     const tryPlay = () => { for (const m of pending()) m.node.play().catch(() => {}); };
     tryPlay(); setTimeout(tryPlay, 800); setTimeout(tryPlay, 2500);
     let btn = null;
@@ -802,6 +851,6 @@ const Studio = (() => {
   }
 
   return { TARGET_W, TARGET_H, newId, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
-           geom, toTargetSpace, blankExperience, save, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, renderSeqDots, sampleTimeline, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
+           geom, toTargetSpace, blankExperience, save, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
            load: idbGet, all: idbAll, del: idbDel };
 })();

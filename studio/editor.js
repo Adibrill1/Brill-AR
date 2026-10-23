@@ -500,7 +500,7 @@
       el.timeline = el.timeline && Array.isArray(el.timeline.keys) ? el.timeline : { loop: false, keys: [] };
       const t = Math.max(0, Math.min(60, parseFloat($("num-tl-t").value) || 0));
       const scale = Math.max(0.1, Math.min(5, parseFloat($("num-tl-scale").value) || 1));
-      el.timeline.keys.push({ t, x: el.x, y: el.y, z: el.z || 0, rot: el.rot || 0, opacity: el.opacity == null ? 1 : el.opacity, scale, tap: el.onTap || "none" });
+      Studio.addTimelineKey(el, { t, x: el.x, y: el.y, z: el.z || 0, rot: el.rot || 0, opacity: el.opacity == null ? 1 : el.opacity, scale, tap: el.onTap || "none" });
     });
     const addVisibilityKey = (visible) => upd((el) => {
       el.timeline = el.timeline && Array.isArray(el.timeline.keys) ? el.timeline : { loop: false, keys: [] };
@@ -664,8 +664,8 @@
       $("num-spatial-in").value = el.spatialInner > 0 ? el.spatialInner : 0.35;
       $("num-spatial-out").value = el.spatialOuter > 0 ? el.spatialOuter : 1.4;
     }
-    $("sl-z").closest("label").hidden = isGroup;
-    $("num-z").closest("label").hidden = isGroup;
+    $("sl-z").closest("label").hidden = false;
+    $("num-z").closest("label").hidden = false;
     $("sel-tap").closest("label").hidden = isGroup;
     $("row-chroma").hidden = el.type !== "video";
     $("row-particles").hidden = el.type !== "particles";

@@ -144,3 +144,6 @@ Child timelines now inverse the base parent rotation/origin for local samples, f
 
 ## Round X creator edits and sparse channels
 Group creator transforms now bake existing child keys and all group numeric/slider/canvas transform routes use the shared helper. Sparse linear XY/Z/rotation curve tested at7times with discrete hide/tap preserved; simultaneous animated parent/child world transform tested. Sampler corrected to interpolate each numeric channel independently across unrelated keys. Still open: sparse nonlinear easing bake can change shape, group's own keys after creator base edits, group opacity/media inheritance regression. Input-route code changed but no new end-to-end creator UI recording asserted.
+
+## Round Y accumulated group checkpoint
+Supersedes X's open sparse-easing/own-group-key gaps: exact affine sampled-output map, all5 easing modes ×201times for child/group, new world-key inverse entry, map included in whole-schema publish/update/readback. Group opacity descendant multiplication rendered at expected.4 intensity. Actual WAV group+child state/visibility/track pause/resume tested. Creator numeric group rotation/width/X/depth and key-entry UI tested/inspected. New canvas-pointer regression and phone audio/camera/capture validation remain open; no broad device claim.

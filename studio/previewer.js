@@ -165,11 +165,13 @@
   setTimeout(kick, 800);
   setTimeout(kick, 2500);
 
+  Studio.monitorMedia(rig, rec);
   Studio.ensurePlayback(mediaEls.filter((m) => m.kind === "video"));
 
   // First tap: unmute videos, start sound elements.
   window.addEventListener("pointerdown", () => {
     for (const m of mediaEls) {
+      if (m.node._studioBlocked) { m.resumeOnVisible = true; continue; }
       if (m.kind === "video") { if (!muted) m.node.muted = false; if (m.node.paused) m.node.play().catch(() => {}); }
       else if (m.node.paused) m.node.play().catch(() => {});
     }
