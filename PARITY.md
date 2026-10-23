@@ -39,7 +39,7 @@ Legend:
 | Preview Mode (simulate viewer, sequence notifications) | 3D preview page + live timeline playback on the editor canvas + ruler/scrub; no sequence start/stop notifications | 🆕 rounds A/F ⚠️ partial (no notifications) |
 | Timeline editor: ruler with drag scrub | Ruler with second ticks, keyframe markers, draggable playhead seeking the canvas | 🆕 round-F |
 | 3D models: auto-fit, multi-mesh, textures | Auto-fit + center, multi-mesh opacity, textures/MeshStandardMaterial verified | 🆕 round-C |
-| Particle effects: presets + speed/direction/size/density, custom assets | Sparkle/confetti presets (direction), count/density 10-500, size 2-60, speed 0.2-3x, color; no custom sprite upload | 🆕 round-C+G ⚠️ partial (custom sprites missing) |
+| Particle effects: presets + speed/direction/size/density, custom assets | Sparkle/confetti presets (two fixed directions: rising/falling), count/density 10-500, size 2-60, speed 0.2-3x, color; NO arbitrary direction control, no custom sprite upload | 🆕 round-C+G ⚠️ partial (arbitrary direction + custom sprites missing) |
 | 3D Sound: logarithmic mode (never fully muted) | PositionalAudio exponential rolloff, adjustable inner radius | 🆕 round-G |
 | 3D Sound: linear mode (silent beyond outer sphere) | PositionalAudio linear model, inner + outer radii | 🆕 round-G |
 | Chroma-key (green screen) video: color pick + threshold | Key color + threshold per video; custom discard shader, pixel-verified | 🆕 round-C |
