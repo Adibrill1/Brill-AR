@@ -173,7 +173,8 @@
         v.play().catch(() => {});
         media[el.assetId] = v;
       } else if (el.type === "image") {
-        media[el.assetId] = await Studio.loadImage(durl);
+        const mm = await Studio.makeImageMedia(rec.assets[el.assetId], "m-" + el.id, null);
+        media[el.assetId] = mm.animated ? mm.node : await Studio.loadImage(durl);
       }
     }
   }
@@ -314,10 +315,17 @@
       if (kind === "model") { el.w = 0.4; el.z = 0.2; el.aspect = 1; }
       const durl = await Studio.blobToDataURL(f);
       if (kind === "image") {
-        const im = await Studio.loadImage(durl);
-        el.aspect = im.naturalWidth / im.naturalHeight;
+        const mm = await Studio.makeImageMedia(f, "m-" + el.id, null);
+        if (mm.animated) {
+          el.aspect = mm.width / mm.height;
+          media[assetId] = mm.node;
+        } else {
+          const im = await Studio.loadImage(durl);
+          el.aspect = im.naturalWidth / im.naturalHeight;
+          media[assetId] = im;
+          if (mm.gifError) msg(mm.gifError === "interlaced" ? "ה־GIF הזה שמור בשיטת שילוב (interlaced) שלא נתמכת - מוצג כתמונה סטטית." : "ה־GIF לא נטען כאנימציה - מוצג כתמונה סטטית.");
+        }
         el.h = (el.w / el.aspect) * artRatio;
-        media[assetId] = im;
       } else if (kind === "video") {
         const v = document.createElement("video");
         v.muted = true; v.playsInline = true; v.src = durl;

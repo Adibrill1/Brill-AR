@@ -49,7 +49,7 @@
     </div>
     <ul id="element-list"></ul>
     <input type="file" id="file-video" accept="video/mp4,video/webm" hidden>
-    <input type="file" id="file-image" accept="image/png,image/jpeg" hidden>
+    <input type="file" id="file-image" accept="image/png,image/jpeg,image/gif" hidden>
     <input type="file" id="file-sound" accept="audio/mpeg,audio/mp4,audio/wav,audio/x-m4a,audio/ogg" hidden>
     <input type="file" id="file-model" accept=".glb,.gltf,.zip,.obj,model/gltf-binary,model/gltf+json,application/zip" hidden>
     <input type="file" id="file-psprite" accept="image/png,image/webp" hidden>
@@ -175,10 +175,11 @@
   <p id="msg" role="status"></p>
 </main>
 
-<script src="shared.js?v=rc25"></script>
+<script src="vendor/gifanim.js"></script>
+<script src="shared.js?v=rc26"></script>
 <script src="external/qrcode.js"></script>
 <script src="vendor/fflate.umd.js"></script>
     <script src="vendor/obj2glb.js"></script>
-    <script src="editor.js?v=rc25"></script>
+    <script src="editor.js?v=rc26"></script>
 </body>
 </html>

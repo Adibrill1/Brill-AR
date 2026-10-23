@@ -34,9 +34,9 @@
         v.addEventListener("error", () => { clearTimeout(timer); done(false); }, { once: true });
       }));
     } else if (el.type === "image") {
-      const im = document.createElement("img");
-      im.id = "m-" + el.id; im.src = url; im.crossOrigin = "anonymous";
-      assets.appendChild(im);
+      const mm = await Studio.makeImageMedia(rec.assets[el.assetId], "m-" + el.id,
+        () => document.querySelector('[data-el-id="' + el.id + '"]'));
+      assets.appendChild(mm.node);
     } else if (el.type === "sound") {
       const a = document.createElement("audio");
       a.id = "m-" + el.id; a.src = url; a.loop = el.loop !== false; a.preload = "auto";
