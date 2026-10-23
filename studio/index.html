@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>סטודיו AR</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<header>
+  <h1>סטודיו AR</h1>
+  <p class="sub">בונים חוויה מעל יצירה: מעלים תמונה, מוסיפים אלמנטים, מסדרים ובודקים בטלפון.</p>
+</header>
+
+<main>
+  <section class="card" id="sec-exp">
+    <div class="row spread">
+      <label>ניסוי:</label>
+      <select id="exp-select"></select>
+      <button id="btn-new" class="ghost">חדש</button>
+      <button id="btn-del-exp" class="ghost danger">מחיקה</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <h2><span class="step">1</span> תמונת היצירה</h2>
+    <p class="hint">התמונה שהמצלמה תזהה. צלמי את היצירה ישר מולה, בתאורה טובה.</p>
+    <div class="row">
+      <button id="btn-artwork">העלאת תמונת יצירה</button>
+      <img id="artwork-thumb" alt="" hidden>
+    </div>
+    <input type="file" id="file-artwork" accept="image/jpeg,image/png" hidden>
+  </section>
+
+  <section class="card" id="sec-elements" hidden>
+    <h2><span class="step">2</span> אלמנטים</h2>
+    <p class="hint">מה שיופיע מעל היצירה. אפשר כמה אלמנטים יחד.</p>
+    <div class="row">
+      <button data-add="video">+ סרטון</button>
+      <button data-add="image">+ תמונה</button>
+      <button data-add="sound">+ צליל</button>
+    </div>
+    <ul id="element-list"></ul>
+    <input type="file" id="file-video" accept="video/mp4" hidden>
+    <input type="file" id="file-image" accept="image/png,image/jpeg" hidden>
+    <input type="file" id="file-sound" accept="audio/mpeg,audio/mp4,audio/wav,audio/x-m4a" hidden>
+  </section>
+
+  <section class="card" id="sec-arrange" hidden>
+    <h2><span class="step">3</span> סידור על היצירה</h2>
+    <p class="hint">גוררים אלמנט כדי להזיז, ומהידית בפינה כדי להקטין ולהגדיל. נגיעה באלמנט בוחרת אותו.</p>
+    <div id="canvas-wrap"><canvas id="preview"></canvas></div>
+    <div id="panel" hidden>
+      <div class="row spread"><strong id="panel-name"></strong>
+        <button id="btn-del-el" class="ghost danger">מחיקת אלמנט</button></div>
+      <label>גודל <input type="range" id="sl-scale" min="0.05" max="2" step="0.01"></label>
+      <label>סיבוב <input type="range" id="sl-rot" min="-180" max="180" step="1"></label>
+      <label>עומק (צפ לעומת היצירה) <input type="range" id="sl-z" min="0" max="0.5" step="0.005"></label>
+      <label id="row-volume">עוצמת צליל <input type="range" id="sl-vol" min="0" max="1" step="0.05"></label>
+      <label id="row-loop" class="check"><input type="checkbox" id="ck-loop"> ניגון בלולאה</label>
+      <label id="row-spin" class="check"><input type="checkbox" id="ck-spin"> סיבוב איטי של התמונה</label>
+    </div>
+  </section>
+
+  <section class="card" id="sec-preview" hidden>
+    <h2><span class="step">4</span> בדיקה ושמירה</h2>
+    <div class="col">
+      <button id="btn-play" class="primary">תצוגה בטלפון (AR חי)</button>
+      <button id="btn-export" class="ghost">ייצוא לקובץ</button>
+      <button id="btn-import" class="ghost">ייבוא מקובץ</button>
+      <input type="file" id="file-import" accept="application/json" hidden>
+    </div>
+    <p class="hint">הקבצים נשמרים רק בטלפון או במחשב שממנו עובדים - כלום לא עולה לשום שרת.</p>
+  </section>
+
+  <p id="msg" role="status"></p>
+</main>
+
+<script src="shared.js"></script>
+<script src="editor.js"></script>
+</body>
+</html>
