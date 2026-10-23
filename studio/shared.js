@@ -114,6 +114,112 @@ const Studio = (() => {
     return { x: X, y: Y, z: el.z || 0, w: W, h: H };
   }
 
+
+  // ---------- round A: element defaults + text textures ----------
+  // Backward-compatible normalization: records saved before round A lack these fields.
+  function normEl(el) {
+    if (el.opacity == null) el.opacity = 1;
+    if (el.anim == null) el.anim = el.spin ? "spin" : "none";
+    if (el.onTap == null) el.onTap = "none";
+    if (el.type === "text") {
+      if (el.text == null) el.text = "כותרת";
+      if (!el.color) el.color = "#ffffff";
+      if (el.bold == null) el.bold = true;
+    }
+    return el;
+  }
+  const ANIMS = ["none", "spin", "float", "pulse"];
+
+  // Draw a text element to an offscreen canvas (used by editor panel preview and player texture).
+  // fontPx: reference font size in canvas pixels. Returns {canvas, aspect}.
+  function drawTextCanvas(el, fontPx) {
+    const c = document.createElement("canvas");
+    const ctx = c.getContext("2d");
+    const weight = el.bold ? "700" : "400";
+    const font = weight + " " + fontPx + 'px -apple-system, "Segoe UI", Arial, sans-serif';
+    ctx.font = font;
+    const lines = String(el.text || "").split("\n");
+    const wMax = Math.max(1, ...lines.map((l) => ctx.measureText(l).width));
+    const pad = Math.round(fontPx * 0.25);
+    // resizing the canvas resets its context state, so re-apply the font explicitly
+    c.width = Math.ceil(wMax + pad * 2);
+    c.height = Math.ceil(lines.length * fontPx * 1.25 + pad * 2);
+    ctx.font = font; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.shadowColor = "rgba(0,0,0,0.55)"; ctx.shadowBlur = Math.round(fontPx * 0.12);
+    ctx.fillStyle = el.color || "#ffffff";
+    lines.forEach((l, i) => ctx.fillText(l, c.width / 2, pad + fontPx * 1.25 * (i + 0.5)));
+    return { canvas: c, aspect: c.width / c.height };
+  }
+
+
+  // ---------- round A: shared entity factory for player + preview ----------
+  // mode 'ar': video uses the device-proven xrextras-target-video-fade; 'preview': plain a-video.
+  function buildElementEntity(rec, el, idx, mode) {
+    normEl(el);
+    const ts = toTargetSpace(rec, el, el.aspect || 1);
+    const z = (ts.z || 0) + idx * 0.001; // array order breaks z ties, matching the editor's paint order
+    const pos = `${ts.x} ${ts.y} ${z}`;
+    const rot = `0 0 ${el.rot || 0}`;
+    let e = null;
+    if (el.type === "video") {
+      if (mode === "ar") {
+        e = document.createElement("a-entity");
+        e.setAttribute("xrextras-target-video-fade", `video: #m-${el.id}; width: ${ts.w}; height: ${ts.h}`);
+      } else {
+        e = document.createElement("a-video");
+        e.setAttribute("src", `#m-${el.id}`);
+        e.setAttribute("width", ts.w); e.setAttribute("height", ts.h);
+      }
+    } else if (el.type === "image") {
+      e = document.createElement("a-image");
+      e.setAttribute("src", `#m-${el.id}`);
+      e.setAttribute("width", ts.w); e.setAttribute("height", ts.h);
+    } else if (el.type === "text") {
+      e = document.createElement("a-plane");
+      const tb = drawTextCanvas(el, 128);
+      e.setAttribute("material", { src: tb.canvas.toDataURL("image/png"), transparent: true, shader: "flat" });
+      e.setAttribute("width", ts.w); e.setAttribute("height", ts.h);
+    } else {
+      return null; // sound: no visual node
+    }
+    e.setAttribute("position", pos);
+    e.setAttribute("rotation", rot);
+    if (el.anim === "spin") e.setAttribute("animation__spin", `property: rotation; to: 0 0 ${(el.rot || 0) + 360}; loop: true; dur: 14000; easing: linear`);
+    else if (el.anim === "float") e.setAttribute("animation__float", `property: position; from: ${pos}; to: ${ts.x} ${ts.y + 0.03} ${z}; dir: alternate; loop: true; dur: 2600; easing: easeInOutSine`);
+    else if (el.anim === "pulse") e.setAttribute("animation__pulse", `property: scale; to: 1.08 1.08 1; dir: alternate; loop: true; dur: 1600; easing: easeInOutSine`);
+    if (el.onTap && el.onTap !== "none") e.classList.add("cantap");
+    if (el.opacity != null && el.opacity < 1) e.dataset.opacity = String(el.opacity);
+    return e;
+  }
+
+  // Opacity: set on the mesh material once it exists (components like the video fade create it async).
+  function applyOpacity(entity, value) {
+    let tries = 0;
+    const attempt = () => {
+      const mesh = entity.getObject3D("mesh");
+      if (mesh && mesh.material) {
+        mesh.material.transparent = true;
+        mesh.material.opacity = value;
+        mesh.material.needsUpdate = true;
+        return;
+      }
+      if (++tries < 20) setTimeout(attempt, 300);
+    };
+    attempt();
+  }
+
+  // Tap behavior shared by AR player and preview. hooks.onMuteToggle handles 'mute'.
+  function bindTap(entity, el, hooks) {
+    if (!el.onTap || el.onTap === "none") return;
+    entity.addEventListener("click", () => {
+      if (el.onTap === "link" && el.tapUrl) {
+        window.open(el.tapUrl, "_blank", "noopener");
+      } else if (el.onTap === "mute" && hooks && hooks.onMuteToggle) {
+        hooks.onMuteToggle();
+      }
+    });
+  }
+
   // ---------- experience records ----------
   function blankExperience(name) {
     return { id: newId(), name: name || "ניסוי חדש", createdAt: Date.now(), updatedAt: Date.now(),
@@ -169,6 +275,6 @@ const Studio = (() => {
   }
 
   return { TARGET_W, TARGET_H, newId, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
-           geom, toTargetSpace, blankExperience, save, exportJSON, importJSON, seedDemo,
+           geom, toTargetSpace, blankExperience, save, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap,
            load: idbGet, all: idbAll, del: idbDel };
 })();

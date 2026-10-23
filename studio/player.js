@@ -1,7 +1,9 @@
 "use strict";
 /* AR Studio player: loads a saved experience from local IndexedDB and runs it
    on the proven engine stack. Same behaviors as the device-verified v4:
-   muted autoplay + first-tap sound, 10s capture, no mic, no end card. */
+   muted autoplay + first-tap sound, 10s capture, no mic, no end card.
+   Round A: text layers, opacity, animation presets (spin/float/pulse),
+   tap actions (open link / mute toggle), z-order via array order. */
 (async () => {
   const errBox = document.getElementById("err");
   const fail = (t) => { errBox.style.display = "grid"; errBox.innerHTML = t; };
@@ -9,6 +11,7 @@
   if (!id) return fail("חסר מזהה ניסוי. <a href='index.html'>חזרה לעורך</a>");
   const rec = await Studio.load(id);
   if (!rec || !rec.target) return fail("הניסוי לא נמצא במכשיר הזה.<br>אם ייצאת ממכשיר אחר - ייבאי קודם ב<a href='index.html'>עורך</a>.");
+  rec.elements.forEach(Studio.normEl);
 
   // Regenerate the engine target from the stored artwork (deterministic pipeline).
   const artURL = URL.createObjectURL(rec.assets.__artwork);
@@ -17,9 +20,8 @@
   const targetData = Studio.targetDataJSON(t.luminance, t.padded, t.thumb);
 
   // Build media assets with blob URLs.
-  const mediaEls = []; // {kind:'video'|'audio', node, el}
+  const mediaEls = []; // {kind:'video'|'audio', node, el, three (routed gain)}
   const assets = document.createElement("a-assets");
-  let assetCount = 0;
   for (const el of rec.elements) {
     if (!el.assetId || !rec.assets[el.assetId]) continue;
     const url = URL.createObjectURL(rec.assets[el.assetId]);
@@ -32,7 +34,7 @@
     } else if (el.type === "image") {
       const im = document.createElement("img");
       im.id = "m-" + el.id; im.src = url;
-      assets.appendChild(im); assetCount++;
+      assets.appendChild(im);
     } else if (el.type === "sound") {
       const a = document.createElement("audio");
       a.id = "m-" + el.id; a.src = url; a.loop = el.loop !== false; a.preload = "auto";
@@ -71,37 +73,33 @@
   const capPrev = document.createElement("xrextras-capture-preview");
   scene.appendChild(capBtn); scene.appendChild(capCfg); scene.appendChild(capPrev);
 
+  // Mute toggle shared by tap actions: all sources are routed through THREE.Audio gains,
+  // so flipping the gain is the one reliable mute across browsers.
+  let muted = false;
+  const onMuteToggle = () => {
+    muted = !muted;
+    for (const m of mediaEls) {
+      if (m.three) m.three.gain.gain.value = muted ? 0 : (m.el.volume == null ? 1 : m.el.volume);
+    }
+  };
+
   const target = document.createElement("xrextras-named-image-target");
   target.setAttribute("name", "artwork");
-  for (const el of rec.elements) {
-    const ts = Studio.toTargetSpace(rec, el, el.aspect || 1);
-    const pos = `${ts.x} ${ts.y} ${ts.z}`;
-    const rot = `0 0 ${el.rot || 0}`;
-    if (el.type === "video") {
-      const e = document.createElement("a-entity");
-      e.setAttribute("xrextras-target-video-fade", `video: #m-${el.id}; width: ${ts.w}; height: ${ts.h}`);
-      e.setAttribute("position", pos);
-      e.setAttribute("rotation", rot);
-      target.appendChild(e);
-    } else if (el.type === "image") {
-      const im = document.createElement("a-image");
-      im.setAttribute("src", "#m-" + el.id);
-      im.setAttribute("position", pos);
-      im.setAttribute("rotation", rot);
-      im.setAttribute("width", ts.w); im.setAttribute("height", ts.h);
-      if (el.spin) im.setAttribute("animation", `property: rotation; to: 0 0 ${(el.rot || 0) + 360}; loop: true; dur: 14000; easing: linear`);
-      target.appendChild(im);
-    }
-    // sound elements have no visual node; their <audio> plays on first tap.
-  }
+  rec.elements.forEach((el, idx) => {
+    const e = Studio.buildElementEntity(rec, el, idx, "ar");
+    if (!e) return; // sound: no visual node
+    Studio.bindTap(e, el, { onMuteToggle });
+    target.appendChild(e);
+    if (e.dataset.opacity) Studio.applyOpacity(e, parseFloat(e.dataset.opacity));
+  });
   scene.appendChild(target);
   document.body.appendChild(scene);
 
   // First tap: unmute videos, start sound elements, resume audio context (proven pattern).
   window.addEventListener("pointerdown", () => {
     for (const m of mediaEls) {
-      if (m.kind === "video") { m.node.muted = false; if (m.node.paused) m.node.play().catch(() => {}); }
-      else { m.node.volume = 1; if (m.node.paused) m.node.play().catch(() => {}); }
+      if (m.kind === "video") { if (!muted) m.node.muted = false; if (m.node.paused) m.node.play().catch(() => {}); }
+      else { if (m.node.paused) m.node.play().catch(() => {}); }
     }
     const ctx = scene.audioListener && scene.audioListener.context;
     if (ctx && ctx.state === "suspended") ctx.resume().catch(() => {});
@@ -116,6 +114,7 @@
         const a = new THREE.Audio(listener);
         a.setMediaElementSource(m.node);
         a.gain.gain.value = m.el.volume == null ? 1 : m.el.volume;
+        m.three = a;
       }
     };
     if (scene.hasLoaded) route(); else scene.addEventListener("loaded", route);

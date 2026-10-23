@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no">
+<title>תצוגה מקדימה</title>
+<script crossorigin="anonymous" src="./external/scripts/8frame-1.5.0.min.js"></script>
+<style>
+  body { margin: 0; }
+  #topbar { position: fixed; top: 10px; inset-inline-start: 10px; z-index: 9999; display:flex; gap:8px; align-items:center;
+    background: rgba(255,255,255,.88); border-radius: 20px; padding: 6px 14px; font: 14px/1.4 sans-serif; }
+  #topbar a { color: #123; text-decoration: none; }
+  #hint { position: fixed; bottom: 12px; left: 0; right: 0; text-align: center; z-index: 9999;
+    font: 13px/1.5 sans-serif; color: #fff; text-shadow: 0 1px 3px rgba(0,0,0,.8); pointer-events: none; }
+  #err { position: fixed; inset: 0; display: none; place-items: center; background: #fff; z-index: 99999;
+    font: 16px/1.7 sans-serif; text-align: center; padding: 24px; }
+</style>
+</head>
+<body>
+<div id="topbar"><a href="index.html">↩ לעורך</a><span>תצוגה מקדימה ללא מצלמה</span></div>
+<div id="hint">גררו כדי לסובב את המבט · גלגלת/צביטה לקרב ולהרחיק · נגיעה ראשונה מפעילה סאונד</div>
+<div id="err"></div>
+<script src="shared.js"></script>
+<script src="previewer.js"></script>
+</body>
+</html>

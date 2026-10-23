@@ -39,6 +39,7 @@
       <button data-add="video">+ סרטון</button>
       <button data-add="image">+ תמונה</button>
       <button data-add="sound">+ צליל</button>
+      <button id="btn-text">+ טקסט</button>
     </div>
     <ul id="element-list"></ul>
     <input type="file" id="file-video" accept="video/mp4" hidden>
@@ -53,12 +54,50 @@
     <div id="panel" hidden>
       <div class="row spread"><strong id="panel-name"></strong>
         <button id="btn-del-el" class="ghost danger">מחיקת אלמנט</button></div>
+      <div class="row" id="row-order">
+        <span class="mini-label">סדר:</span>
+        <button id="btn-layer-down" class="ghost small">מטה (מכוסה)</button>
+        <button id="btn-layer-up" class="ghost small">מעלה (מכסה)</button>
+      </div>
+      <div id="row-text">
+        <label>תוכן הטקסט <textarea id="in-text" rows="2"></textarea></label>
+        <div class="row">
+          <label class="inline">צבע <input type="color" id="in-color" value="#ffffff"></label>
+          <label class="check"><input type="checkbox" id="ck-bold" checked> מודגש</label>
+        </div>
+      </div>
       <label>גודל <input type="range" id="sl-scale" min="0.05" max="2" step="0.01"></label>
       <label>סיבוב <input type="range" id="sl-rot" min="-180" max="180" step="1"></label>
       <label>עומק (צפ לעומת היצירה) <input type="range" id="sl-z" min="0" max="0.5" step="0.005"></label>
+      <label>שקיפות <input type="range" id="sl-opacity" min="0" max="1" step="0.01"></label>
+      <div class="numgrid">
+        <label>ימינה/שמאלה <input type="number" id="num-x" step="0.01" min="-0.7" max="0.7"></label>
+        <label>למעלה/למטה <input type="number" id="num-y" step="0.01" min="-0.7" max="0.7"></label>
+        <label>גודל <input type="number" id="num-w" step="0.01" min="0.05" max="2"></label>
+        <label>סיבוב <input type="number" id="num-rot" step="1" min="-180" max="180"></label>
+        <label>עומק <input type="number" id="num-z" step="0.005" min="0" max="0.5"></label>
+        <label>שקיפות <input type="number" id="num-opacity" step="0.05" min="0" max="1"></label>
+      </div>
+      <label>אנימציה
+        <select id="sel-anim">
+          <option value="none">ללא</option>
+          <option value="spin">סיבוב איטי</option>
+          <option value="float">ריחוף עדין</option>
+          <option value="pulse">פעימה</option>
+        </select>
+      </label>
+      <div id="row-tap">
+        <label>נגיעה באלמנט
+          <select id="sel-tap">
+            <option value="none">לא קורה כלום</option>
+            <option value="link">פתיחת קישור</option>
+            <option value="mute">השתקה/הפעלה של הסאונד</option>
+          </select>
+        </label>
+        <label id="row-tapurl">קישור (כתובת מלאה, למשל https://...) <input type="url" id="in-tapurl" dir="ltr" placeholder="https://"></label>
+      </div>
       <label id="row-volume">עוצמת צליל <input type="range" id="sl-vol" min="0" max="1" step="0.05"></label>
       <label id="row-loop" class="check"><input type="checkbox" id="ck-loop"> ניגון בלולאה</label>
-      <label id="row-spin" class="check"><input type="checkbox" id="ck-spin"> סיבוב איטי של התמונה</label>
     </div>
   </section>
 
@@ -66,6 +105,7 @@
     <h2><span class="step">4</span> בדיקה ושמירה</h2>
     <div class="col">
       <button id="btn-play" class="primary">תצוגה בטלפון (AR חי)</button>
+      <button id="btn-preview3d" class="ghost">תצוגה מקדימה על המסך (בלי מצלמה)</button>
       <button id="btn-export" class="ghost">ייצוא לקובץ</button>
       <button id="btn-import" class="ghost">ייבוא מקובץ</button>
       <input type="file" id="file-import" accept="application/json" hidden>
