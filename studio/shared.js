@@ -595,6 +595,23 @@ const Studio = (() => {
     }
     tl.keys.push(k); return k;
   }
+  // Canvas uses the same artwork-space samples and parent-base frame as runtime.
+  function sampleComposition(rec, el, t, seqId) {
+    const out = sampleTimeline(el,t);
+    out.visible = out.visible && elVisibleIn(el,seqId);
+    const group=rec.elements.find(g=>g.type==='group'&&(g.children||[]).includes(el.id));
+    if(group) {
+      const parent=sampleTimeline(group,t),ratio=geom(rec).artW/geom(rec).artH;
+      const angle=(parent.rot-(group.rot||0))*Math.PI/180;
+      const dx=(out.x-(group.x||0))*ratio*parent.scale,dy=(out.y-(group.y||0))*parent.scale;
+      out.x=parent.x+(dx*Math.cos(angle)-dy*Math.sin(angle))/ratio;
+      out.y=parent.y+dx*Math.sin(angle)+dy*Math.cos(angle);
+      out.z+=parent.z-(group.z||0);out.rot+=parent.rot-(group.rot||0);
+      out.scale*=parent.scale;out.opacity*=parent.opacity;
+      out.visible=out.visible&&parent.visible&&elVisibleIn(group,seqId);
+    }
+    return out;
+  }
   function timelineDur(el) {
     const tl = el.timeline;
     if (!tl || !Array.isArray(tl.keys) || !tl.keys.length) return 0;
@@ -885,6 +902,6 @@ const Studio = (() => {
   }
 
   return { TARGET_W, TARGET_H, newId, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
-           geom, toTargetSpace, blankExperience, save, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
+           geom, toTargetSpace, blankExperience, save, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleComposition, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
            load: idbGet, all: idbAll, del: idbDel };
 })();

@@ -844,9 +844,10 @@
       if (el.type === "group") continue; // children draw at their own positions; the group shows as a selection box
       if (!Studio.elVisibleIn(el, curSeq)) continue;
       // live timeline playback: sampled keyframe values override the element's base props
-      let ts = null;
-      if (Studio.timelineDur(el)) { ts = Studio.sampleTimeline(el, tlScrubT != null ? tlScrubT : t0 / 1000); needsAnim = tlScrubT == null; }
-      if (ts && ts.visible === false) continue;
+      const parent=rec.elements.find(g=>g.type==='group'&&(g.children||[]).includes(el.id));
+      const ts=Studio.sampleComposition(rec,el,tlScrubT!=null?tlScrubT:t0/1000,curSeq);
+      if(Studio.timelineDur(el)||(parent&&Studio.timelineDur(parent)))needsAnim=tlScrubT==null;
+      if(!ts.visible)continue;
       const sc = ts ? ts.scale : 1;
       let wpx = el.w * W * sc;
       let hpx = (el.h != null ? el.h * H : (el.w * W) / (el.aspect || 1)) * sc;
@@ -854,9 +855,9 @@
       let cy = (0.5 - (ts ? ts.y : el.y)) * H;
       let extraRot = 0;
       // animation previews (approximation of the player presets)
-      if (!ts && el.anim === "float") { cy += Math.sin(t0 / 1300) * H * 0.02; needsAnim = true; }
-      else if (!ts && el.anim === "pulse") { const f = 1 + 0.08 * Math.sin(t0 / 800); wpx *= f; hpx *= f; needsAnim = true; }
-      else if (!ts && el.anim === "spin") { extraRot = ((t0 / 14000) * 2 * Math.PI) % (2 * Math.PI); needsAnim = true; }
+      if (!Studio.timelineDur(el) && el.anim === "float") { cy += Math.sin(t0 / 1300) * H * 0.02; needsAnim = true; }
+      else if (!Studio.timelineDur(el) && el.anim === "pulse") { const f = 1 + 0.08 * Math.sin(t0 / 800); wpx *= f; hpx *= f; needsAnim = true; }
+      else if (!Studio.timelineDur(el) && el.anim === "spin") { extraRot = ((t0 / 14000) * 2 * Math.PI) % (2 * Math.PI); needsAnim = true; }
       if (el.type === "video") needsAnim = true;
       const effRot = ts ? ts.rot : (el.rot || 0);
       boxes[el.id] = { cx, cy, w: wpx, h: hpx, rot: -effRot * Math.PI / 180 };

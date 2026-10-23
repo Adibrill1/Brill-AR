@@ -156,3 +156,6 @@ Tilted-target group drag and track-only full-player found/lost startup gate fixt
 
 ## Round AC import integrity
 JSON import rejects nonembedded asset URLs before fetch, unsafe/duplicate ids, malformed timeline keys/maps and group references; supported embedded media bounded20MB each/60MB total. Six malformed fixtures rejected by import and authenticated server, external fetch count0. All14browser and importer/conversion/stable-publish regressions green. Server remains undeployed.
+
+## Round AD canvas consistency
+2D creator now composes parent group timeline into children for move/rotation/scale/opacity/visibility at scrub/live time. Actual ruler-pointer0/1/2.1s red pixels235→59→0 with fixed blue B, contact sheet inspected; existing runtime group and whole-schema regression pass. Parent preset/independent-clock preview and3D-on2D limitations remain separate, no full preview-equivalence claim.
