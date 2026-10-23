@@ -69,12 +69,12 @@
     }
     { // parallel overlay tracks: independent mini-timelines that run at the same time as states
       let trow = document.createElement("div");
-      trow.style.cssText = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;font-size:12px;color:#aab;border-top:1px solid #333;padding-top:6px";
+      trow.style.cssText = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;font-size:12px;color:#3c374b;border-top:1px solid #d7d3e8;padding-top:6px";
       trow.appendChild(document.createTextNode("מסלולים במקביל:"));
       const tracks = Studio.trackList(rec);
       tracks.forEach((tr) => {
         const chip = document.createElement("span");
-        chip.style.cssText = "display:inline-flex;align-items:center;gap:4px;background:#223;padding:2px 8px;border-radius:999px";
+        chip.style.cssText = "display:inline-flex;align-items:center;gap:4px;background:#f0edf8;color:#292535;padding:2px 8px;border-radius:999px";
         chip.appendChild(document.createTextNode("🎞️ " + tr.name));
         const as = document.createElement("input");
         as.type = "checkbox"; as.checked = !!tr.autoStart; as.title = "מתחיל אוטומטית";
@@ -86,7 +86,7 @@
         chip.appendChild(lp);
         if(!canvasTracks[tr.id])canvasTracks[tr.id]={playing:!!tr.autoStart,start:performance.now()};
         const preview=document.createElement('button');preview.dataset.previewTrack=tr.id;
-        const state=canvasTracks[tr.id];preview.textContent=state.playing?'עצירה בתצוגה':'ניגון בתצוגה';
+        const state=canvasTracks[tr.id];preview.style.cssText='background:#fff;color:#292535;border:1px solid #787087';preview.textContent=state.playing?'עצירה בתצוגה':'ניגון בתצוגה';
         preview.onclick=()=>{state.playing=!state.playing;state.start=performance.now();renderSeqTabs();draw();};chip.append(preview);
 
         const del = document.createElement("button");
@@ -114,7 +114,7 @@
       const sq = seqs.find((x) => x.id === curSeq);
       if (sq) {
         const row = document.createElement("div");
-        row.style.cssText = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;font-size:12px;color:#aab";
+        row.style.cssText = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;font-size:12px;color:#3c374b";
         const loopL = document.createElement("label");
         loopL.style.cssText = "display:flex;align-items:center;gap:4px";
         const loopC = document.createElement("input");

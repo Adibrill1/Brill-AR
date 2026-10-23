@@ -177,3 +177,6 @@ Single t=0timeline now gets runtime driver and suppresses presets consistently w
 
 ## Round AJ local preview clocks
 Canvas now uses experience/state-relative time and session-only manual track preview play/stop clocks; state switch retains track state. Composition accepts independent element clocks, global scrub unchanged. Actual controls and clock routing tested, not full runtime/pixel equivalence. Local-only pending restored deployment access.
+
+## Round AK readability
+Inactive state-tab text and track/sequence label contrast fixed;390px image inspected, manual preview fixture passes. Local-only pending deployment recovery, stagingrc51 unchanged.

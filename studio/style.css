@@ -41,7 +41,7 @@ button.small { font-size: 13px; padding: 6px 10px; }
 
 /* sequence tabs */
 #seq-tabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0; align-items: center; }
-#seq-tabs .seq-tab, #seq-tabs .seq-add, #seq-tabs .seq-del { border: 1px solid #d7d3e8; background: #fff; border-radius: 999px; padding: 6px 14px; font-size: 14px; cursor: pointer; }
+#seq-tabs .seq-tab, #seq-tabs .seq-add, #seq-tabs .seq-del { border: 1px solid #d7d3e8; background: #fff; border-radius: 999px; padding: 6px 14px; font-size: 14px; cursor: pointer; color:#292535; }
 #seq-tabs .seq-tab.sel { background: #7c5cff; border-color: #7c5cff; color: #fff; font-weight: 700; }
 #seq-tabs .seq-add, #seq-tabs .seq-del { color: #6b6780; }
 
