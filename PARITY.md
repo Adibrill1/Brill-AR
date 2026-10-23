@@ -30,13 +30,13 @@ Legend:
 | Timeline: Speed Curve (linear/ease/elastic) | Per-element easing: linear / easeIn / easeOut / easeInOut / elastic (overshoot verified: f=0.5 -> 1.0156) | 🆕 round-G |
 | Timeline: explicit Duration (loop length independent of last key) | Optional duration field; default = last key time | 🆕 round-G |
 | Timeline: Show/Hide action at set times | Via opacity 0/1 keyframes (functionally equivalent, less discoverable) | ⚠️ partial |
-| Timeline: animate groups of layers | No group concept | ❌ not built |
+| Timeline: animate groups of layers | Layer groups: multi-select + group/ungroup in the editor, group transforms (move/scale/rotate) apply to all children, wrapper entity in the player/previewer so timelines and animation presets run on the whole group; sequence visibility and opacity propagate into groups; publish-server validates group integrity | ✅ round H |
 | Sequences: states/chapters per artwork | States with per-element assignment, state tabs, dots | 🆕 round-B |
 | Sequences: On Tap -> Trigger a chosen sequence | Tap action per element: next state OR a chosen state | 🆕 round-G |
 | Sequences: multiple sequences overlay simultaneously | States switch (one active at a time), audio/visibility reset on switch | ❌ not built (architectural difference) |
-| Sequences: Manage Sequence (chain/stop), Change Interaction over time | Not built | ❌ not built |
-| Sequences: loop/reset per sequence | State replays its timelines on entry; no per-state auto-loop setting | ⚠️ partial |
-| Preview Mode (simulate viewer, sequence notifications) | 3D preview page + live timeline playback on the editor canvas + ruler/scrub; no sequence start/stop notifications | 🆕 rounds A/F ⚠️ partial (no notifications) |
+| Sequences: Manage Sequence (chain/stop), Change Interaction over time | Sequence chaining built: per-state auto-advance `autoNext {at,to}` with editor controls, runs in previewer and player. Change Interaction over time is deferred by design (documented in docs-round-h.md) | ⚠️ round H (chaining ✅, interaction-over-time deferred) |
+| Sequences: loop/reset per sequence | Per-state loop setting: when on, the state's one-shot timelines replay together on completion (timeline driver); editor checkbox per state | ✅ round H |
+| Preview Mode (simulate viewer, sequence notifications) | 3D preview page + live timeline playback on the editor canvas + ruler/scrub + state-switch toast notifications on tap and chained switches (previewer) | 🆕 rounds A/F/H ✅ |
 | Timeline editor: ruler with drag scrub | Ruler with second ticks, keyframe markers, draggable playhead seeking the canvas | 🆕 round-F |
 | 3D models: auto-fit, multi-mesh, textures | Auto-fit + center, multi-mesh opacity, textures/MeshStandardMaterial verified | 🆕 round-C |
 | Particle effects: presets + speed/direction/size/density, custom assets | Sparkle/confetti presets (two fixed directions: rising/falling), count/density 10-500, size 2-60, speed 0.2-3x, color; NO arbitrary direction control, no custom sprite upload | 🆕 round-C+G ⚠️ partial (arbitrary direction + custom sprites missing) |
