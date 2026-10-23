@@ -6,6 +6,7 @@ window.StarterLibrary = (() => {
     {id:'ring',name:'טבעת סגולה',detail:'תמונה שקופה · PNG',kind:'image',file:'ring.png',thumb:'ring.png'},
     {id:'pulse',name:'טבעת פועמת',detail:'אנימציה שקופה · GIF',kind:'image',file:'pulse.gif',thumb:'pulse.gif'},
     {id:'bell',name:'פעמון עדין',detail:'צליל מקורי · 1.2 שניות',kind:'sound',file:'bell.wav',icon:'♪'},
+    {id:'orbit',name:'מסלול אור',detail:'סרטון מקורי · 2 שניות · ללא צליל',kind:'video',file:'orbit.mp4',thumb:'orbit-poster.png'},
     {id:'gem',name:'אבן סגולה',detail:'תלת-ממד · GLB',kind:'model',file:'gem.glb',icon:'◇'}
   ];
   async function open(importAsset) {
@@ -14,7 +15,7 @@ window.StarterLibrary = (() => {
     const title=document.createElement('h2');title.textContent='ספריית התחלה';
     const close=document.createElement('button');close.textContent='סגירה';close.className='ghost';close.onclick=()=>dialog.close();
     head.append(title,close);dialog.append(head);
-    const note=document.createElement('p');note.className='hint';note.textContent='חמישה פריטים מקוריים לשימוש ולעריכה ביצירה שלך. נשמרים עם הניסוי במכשיר, בלי חשבון ובלי תשלום.';dialog.append(note);
+    const note=document.createElement('p');note.className='hint';note.textContent='שישה פריטים מקוריים לשימוש ולעריכה ביצירה שלך. נשמרים עם הניסוי במכשיר, בלי חשבון ובלי תשלום.';dialog.append(note);
     const grid=document.createElement('div');grid.className='library-grid';dialog.append(grid);
     const status=document.createElement('p');status.setAttribute('role','status');dialog.append(status);
     let busy=false;

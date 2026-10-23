@@ -8,3 +8,5 @@ These starter assets were generated for Brill-AR from geometric shapes, procedur
 - gem.glb: octahedron with purple PBR material.
 
 Available for reuse and editing within the user's artwork. This starter set is small and is not a claim to match Artivive's catalog size or content variety. Bell is silent until the user selects preview/play, subject to normal browser audio rules.
+
+- orbit.mp4/orbit-poster.png: original two-second orbital geometric animation, H264/yuv420p, 256x256, no audio.

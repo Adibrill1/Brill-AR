@@ -34,3 +34,11 @@ g={'asset':{'version':'2.0','generator':'Brill AR original starter assets'},'sce
 s=json.dumps(g,separators=(',',':')).encode();s+=b' '*((-len(s))%4)
 out=struct.pack('<III',0x46546c67,2,12+8+len(s)+8+len(data))+struct.pack('<II',len(s),0x4e4f534a)+s+struct.pack('<II',len(data),0x004e4942)+data
 (root/'gem.glb').write_bytes(out)
+
+# Original orbital animation; ffmpeg needed only to regenerate the bundled MP4.
+import tempfile,subprocess
+with tempfile.TemporaryDirectory() as tmp:
+ for i in range(60):
+  im=Image.new('RGB',(256,256),(24,19,45));d=ImageDraw.Draw(im);d.ellipse((48,48,208,208),outline=(85,67,123),width=2);a=i*math.tau/60;x=128+80*math.cos(a);y=128+80*math.sin(a);d.ellipse((x-14,y-14,x+14,y+14),fill=(255,204,74));d.ellipse((104,104,152,152),fill=(124,92,255));im.save(pathlib.Path(tmp)/('%03d.png'%i))
+  if i==0:im.save(root/'orbit-poster.png')
+ subprocess.run(['ffmpeg','-v','error','-y','-framerate','30','-i',str(pathlib.Path(tmp)/'%03d.png'),'-c:v','libx264','-crf','20','-pix_fmt','yuv420p','-movflags','+faststart','-an',str(root/'orbit.mp4')],check=True)
