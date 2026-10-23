@@ -403,6 +403,9 @@
     $("num-psize").onchange = (e) => upd((el) => { el.particles = Object.assign({}, el.particles, { size: Math.max(2, Math.min(60, parseInt(e.target.value) || 12)) }); });
     $("num-pspeed").onchange = (e) => upd((el) => { el.particles = Object.assign({}, el.particles, { speed: Math.max(0.2, Math.min(3, parseFloat(e.target.value) || 1)) }); });
     $("in-pcolor").onchange = (e) => upd((el) => { el.particles = Object.assign({}, el.particles, { color: e.target.value }); });
+    $("ck-pdir-auto").onchange = (e) => upd((el) => { el.particles = Object.assign({}, el.particles, { direction: e.target.checked ? null : (el.particles && el.particles.direction != null ? el.particles.direction : 0) }); });
+    $("sl-pdir").oninput = (e) => upd((el) => { el.particles = Object.assign({}, el.particles, { direction: Math.max(0, Math.min(359, parseInt(e.target.value) || 0)) }); });
+    $("num-pdir").onchange = (e) => upd((el) => { el.particles = Object.assign({}, el.particles, { direction: Math.max(0, Math.min(359, parseInt(e.target.value) || 0)) }); });
     $("ck-chroma").onchange = (e) => upd((el) => { el.chroma = Object.assign({}, el.chroma, { enabled: e.target.checked }); });
     $("in-chroma-color").onchange = (e) => upd((el) => { el.chroma = Object.assign({}, el.chroma, { color: e.target.value }); });
     $("sl-chroma").onchange = (e) => upd((el) => { el.chroma = Object.assign({}, el.chroma, { threshold: parseFloat(e.target.value) }); });
@@ -558,6 +561,10 @@
       $("num-pspeed").value = pc.speed || 1;
       $("in-pcolor").value = pc.color || "#ffd94d";
       $("row-psprite").hidden = (pc.preset || "sparkle") !== "custom";
+      $("ck-pdir-auto").checked = pc.direction == null;
+      $("row-pdir").hidden = pc.direction == null;
+      $("sl-pdir").value = pc.direction != null ? pc.direction : 0;
+      $("num-pdir").value = pc.direction != null ? pc.direction : 0;
       $("psprite-name").textContent = pc.spriteAssetId && rec.assets[pc.spriteAssetId] ? "✓ נבחרה תמונה" : "(עדיין לא נבחרה)";
     }
     if (el.type === "video") {

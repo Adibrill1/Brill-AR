@@ -119,7 +119,7 @@ const Studio = (() => {
   function ensureParticlesComponent() {
     if (!window.AFRAME || AFRAME.components["particles"]) return;
     AFRAME.registerComponent("particles", {
-      schema: { preset: { default: "sparkle" }, count: { default: 120 }, color: { default: "#ffd94d" }, width: { default: 0.5 }, height: { default: 0.5 }, size: { default: 12 }, speed: { default: 1 }, sprite: { default: "" } },
+      schema: { preset: { default: "sparkle" }, count: { default: 120 }, color: { default: "#ffd94d" }, width: { default: 0.5 }, height: { default: 0.5 }, size: { default: 12 }, speed: { default: 1 }, sprite: { default: "" }, direction: { default: -1 } }, // direction: degrees (0=up,90=right,180=down,270=left); -1 = preset's fixed direction
       init() {
         const n = Math.min(500, Math.max(10, this.data.count | 0));
         const pos = new Float32Array(n * 3);
@@ -129,8 +129,15 @@ const Studio = (() => {
           pos[i * 3 + 1] = (Math.random() - 0.5) * this.data.height;
           pos[i * 3 + 2] = (Math.random() - 0.5) * 0.05;
           const sp = this.data.speed > 0 ? this.data.speed : 1;
-          this.vel[i * 3] = (Math.random() - 0.5) * 0.05 * sp;
-          this.vel[i * 3 + 1] = (this.data.preset === "confetti" ? -0.1 - Math.random() * 0.15 : 0.05 + Math.random() * 0.12) * sp;
+          const m = (0.05 + Math.random() * 0.12) * sp;
+          if (this.data.direction >= 0) { // arbitrary direction control (round I)
+            const a = this.data.direction * Math.PI / 180;
+            this.vel[i * 3] = Math.sin(a) * m;
+            this.vel[i * 3 + 1] = Math.cos(a) * m;
+          } else {
+            this.vel[i * 3] = (Math.random() - 0.5) * 0.05 * sp;
+            this.vel[i * 3 + 1] = (this.data.preset === "confetti" ? -0.1 - Math.random() * 0.15 : 0.05 + Math.random() * 0.12) * sp;
+          }
         }
         const geo = new THREE.BufferGeometry();
         geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
@@ -146,6 +153,9 @@ const Studio = (() => {
         for (let i = 0; i < arr.length; i += 3) {
           arr[i] += this.vel[i] * dtS;
           arr[i + 1] += this.vel[i + 1] * dtS;
+          const halfW = this.data.width / 2;
+          if (this.vel[i] > 0 && arr[i] > halfW) arr[i] = -halfW;
+          if (this.vel[i] < 0 && arr[i] < -halfW) arr[i] = halfW;
           if (this.vel[i + 1] > 0 && arr[i + 1] > half) arr[i + 1] = -half;
           if (this.vel[i + 1] < 0 && arr[i + 1] < -half) arr[i + 1] = half;
         }
@@ -265,7 +275,7 @@ const Studio = (() => {
       e = document.createElement("a-entity");
       let spriteAttr = "";
       if (pc.preset === "custom" && pc.spriteAssetId && rec.assets && rec.assets[pc.spriteAssetId]) spriteAttr = `; sprite: ${URL.createObjectURL(rec.assets[pc.spriteAssetId])}`;
-      e.setAttribute("particles", `preset: ${pc.preset || "sparkle"}; count: ${pc.count || 120}; color: ${pc.color || "#ffd94d"}; size: ${pc.size || 12}; speed: ${pc.speed || 1}; width: ${ts.w}; height: ${ts.h}${spriteAttr}`);
+      e.setAttribute("particles", `preset: ${pc.preset || "sparkle"}; count: ${pc.count || 120}; color: ${pc.color || "#ffd94d"}; size: ${pc.size || 12}; speed: ${pc.speed || 1}; width: ${ts.w}; height: ${ts.h}${spriteAttr}${pc.direction != null && pc.direction >= 0 ? "; direction: " + (pc.direction | 0) : ""}`);
     } else if (el.type === "model") {
       // glTF/GLB: wrapper carries placement (timeline/tap target); inner child carries the
       // normalized model scale so timeline scale keys don't fight the fit-to-size normalization.
