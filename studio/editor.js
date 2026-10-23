@@ -174,7 +174,7 @@
         media[el.assetId] = v;
       } else if (el.type === "image") {
         const mm = await Studio.makeImageMedia(rec.assets[el.assetId], "m-" + el.id, null);
-        media[el.assetId] = mm.animated ? mm.node : await Studio.loadImage(durl);
+        media[el.assetId] = (mm.animated || mm.staticFallback) ? mm.node : await Studio.loadImage(durl);
       }
     }
   }
@@ -250,6 +250,7 @@
     const addFile = (kind) => async (e) => {
       let f = e.target.files[0]; e.target.value = "";
       if (!f) return;
+      let importNote = "";
       if (f.size > 20 * 1024 * 1024) { msg("קובץ גדול מדי (מעל 20MB) לגרסת הניסוי."); return; }
       if (kind === "model") {
         const magic = new Uint8Array(await f.slice(0, 4).arrayBuffer());
@@ -290,7 +291,7 @@
       const durl = await Studio.blobToDataURL(f);
       if (kind === "image") {
         const mm = await Studio.makeImageMedia(f, "m-" + el.id, null);
-        if (mm.animated) {
+        if (mm.animated || mm.staticFallback) {
           el.aspect = mm.width / mm.height;
           media[assetId] = mm.node;
         } else {
@@ -299,6 +300,7 @@
           media[assetId] = im;
           if (mm.gifError) msg(mm.gifError === "interlaced" ? "ה־GIF הזה שמור בשיטת שילוב (interlaced) שלא נתמכת - מוצג כתמונה סטטית." : "ה־GIF לא נטען כאנימציה - מוצג כתמונה סטטית.");
         }
+        if (mm.staticFallback) importNote = (mm.gifError === "interlaced" ? "ה־GIF הזה שמור בשיטת שילוב (interlaced) שלא נתמכת - מוצג כתמונה סטטית." : "ה־GIF לא נטען כאנימציה - מוצג כתמונה סטטית.");
         el.h = (el.w / el.aspect) * artRatio;
       } else if (kind === "video") {
         const v = document.createElement("video");
@@ -314,7 +316,7 @@
       rec.elements.push(el);
       selectedId = el.id;
       await Studio.save(rec);
-      msg("האלמנט נוסף. אפשר לגרור אותו על התצוגה.");
+      msg(importNote || "האלמנט נוסף. אפשר לגרור אותו על התצוגה.");
       render();
     };
     $("file-video").onchange = addFile("video");

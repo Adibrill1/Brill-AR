@@ -391,7 +391,19 @@ const Studio = (() => {
       window.GifAnim.startPump(canvas, gif, getEntity || (() => null));
       return { node: canvas, animated: true, width: gif.width, height: gif.height };
     } catch (e) {
-      return { node: img(), animated: false, gifError: String((e && e.message) || e) };
+      // <img src=GIF> would still animate in the browser. Freeze the first decoded
+      // frame into a canvas so the stated static fallback is actually static.
+      const im = img();
+      await new Promise((resolve, reject) => {
+        im.onload = resolve; im.onerror = () => reject(new Error("GIF image decode failed"));
+        if (im.complete && im.naturalWidth) resolve();
+      });
+      const canvas = document.createElement("canvas"); canvas.id = id;
+      canvas.width = im.naturalWidth; canvas.height = im.naturalHeight;
+      canvas.getContext("2d").drawImage(im, 0, 0);
+      URL.revokeObjectURL(url);
+      return { node: canvas, animated: false, staticFallback: true,
+        width: canvas.width, height: canvas.height, gifError: String((e && e.message) || e) };
     }
   }
   function elVisibleIn(el, seqId) { return !el.seq || !seqId || el.seq === seqId; }
