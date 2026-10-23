@@ -271,6 +271,8 @@ const Studio = (() => {
       const tts = toTargetSpace(rec, el, tb.aspect); // plane must match the canvas aspect or glyphs distort
       e.setAttribute("material", { src: tb.canvas.toDataURL("image/png"), transparent: true, shader: "flat" });
       e.setAttribute("width", tts.w); e.setAttribute("height", tts.h);
+    } else if (el.type === "sound" && el.spatial) {
+      e = document.createElement("a-entity"); // invisible carrier for PositionalAudio
     } else {
       return null; // sound: no visual node
     }
@@ -503,7 +505,32 @@ const Studio = (() => {
     setTimeout(refresh, 3000); // grace period for autoplay before showing the button
   }
 
+  // Recognition-quality heuristic for the target image: resolution + gradient energy.
+  // Artivive shows a star rating; we give a plain-language hint on the two failure modes we can measure.
+  function assessTargetQuality(img) {
+    const w = img.naturalWidth || 0, h = img.naturalHeight || 0;
+    const minDim = Math.min(w, h);
+    const S = 96;
+    const scale = S / Math.max(w, h, 1);
+    const cw = Math.max(1, Math.round(w * scale)), ch = Math.max(1, Math.round(h * scale));
+    const cv = document.createElement("canvas"); cv.width = cw; cv.height = ch;
+    const g = cv.getContext("2d", { willReadFrequently: true });
+    g.drawImage(img, 0, 0, cw, ch);
+    const d = g.getImageData(0, 0, cw, ch).data;
+    const gray = new Float32Array(cw * ch);
+    for (let i = 0; i < cw * ch; i++) gray[i] = 0.299 * d[i * 4] + 0.587 * d[i * 4 + 1] + 0.114 * d[i * 4 + 2];
+    let sum = 0, n = 0;
+    for (let y = 0; y < ch - 1; y++) for (let x = 0; x < cw - 1; x++) {
+      const i = y * cw + x;
+      sum += Math.abs(gray[i] - gray[i + 1]) + Math.abs(gray[i] - gray[i + cw]); n += 2;
+    }
+    const energy = n ? sum / n : 0;
+    if (minDim < 480) return { warn: true, reason: "small", energy, minDim };
+    if (energy < 6) return { warn: true, reason: "flat", energy, minDim };
+    return { warn: false, energy, minDim };
+  }
+
   return { TARGET_W, TARGET_H, newId, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
-           geom, toTargetSpace, blankExperience, save, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, makeChromaMaterial, ensureParticlesComponent, seqList, elVisibleIn, nextSequence, applySequence, renderSeqDots, sampleTimeline, timelineDur, startTimelineDriver,
+           geom, toTargetSpace, blankExperience, save, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, seqList, elVisibleIn, nextSequence, applySequence, renderSeqDots, sampleTimeline, timelineDur, startTimelineDriver,
            load: idbGet, all: idbAll, del: idbDel };
 })();

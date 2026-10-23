@@ -131,8 +131,19 @@
     const route = () => {
       if (window.__routed) return; window.__routed = true;
       const listener = scene.audioListener || (scene.audioListener = new THREE.AudioListener());
+      if (scene.camera && !listener.parent) scene.camera.add(listener); // positional audio is relative to the camera
       for (const m of mediaEls) {
-        const a = new THREE.Audio(listener);
+        const ent = m.el.spatial ? scene.querySelector(`[data-el-id="${m.el.id}"]`) : null;
+        let a;
+        if (ent) {
+          a = new THREE.PositionalAudio(listener);
+          a.setRefDistance(0.35);
+          a.setDistanceModel("exponential");
+          a.setRolloffFactor(1.5);
+          ent.object3D.add(a);
+        } else {
+          a = new THREE.Audio(listener);
+        }
         a.setMediaElementSource(m.node);
         a.gain.gain.value = m.el.volume == null ? 1 : m.el.volume;
         m.three = a;

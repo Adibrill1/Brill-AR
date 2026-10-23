@@ -135,7 +135,10 @@
       rec.assets.__artwork = f;
       artworkImg = img;
       await Studio.save(rec);
-      msg("תמונת היצירה נשמרה.");
+      const q = Studio.assessTargetQuality(img);
+      if (q.warn && q.reason === "small") msg("נשמרה. שימי לב: התמונה קטנה (מתחת ל-480 פיקסלים בצד הקצר) - הזיהוי עלול להיות חלש. עדיפה תמונה גדולה וחדה.");
+      else if (q.warn) msg("נשמרה. שימי לב: לתמונה מעט פרטים או ניגודיות - הזיהוי עלול להיות חלש. עדיפה תמונה עם הרבה פרטים.");
+      else msg("תמונת היצירה נשמרה.");
       render();
     };
 
@@ -303,6 +306,7 @@
       const scale = Math.max(0.1, Math.min(5, parseFloat($("num-tl-scale").value) || 1));
       el.timeline.keys.push({ t, x: el.x, y: el.y, z: el.z || 0, rot: el.rot || 0, opacity: el.opacity == null ? 1 : el.opacity, scale });
     });
+    $("ck-spatial").onchange = (e) => upd((el) => { el.spatial = e.target.checked; });
     $("sel-preset").onchange = (e) => upd((el) => { el.particles = Object.assign({}, el.particles, { preset: e.target.value }); });
     $("num-pcount").onchange = (e) => upd((el) => { el.particles = Object.assign({}, el.particles, { count: Math.max(10, Math.min(500, parseInt(e.target.value) || 120)) }); });
     $("in-pcolor").onchange = (e) => upd((el) => { el.particles = Object.assign({}, el.particles, { color: e.target.value }); });
@@ -373,6 +377,8 @@
     $("row-volume").hidden = el.type !== "video" && el.type !== "sound";
     $("sl-vol").value = el.volume == null ? 1 : el.volume;
     $("row-loop").hidden = el.type !== "video" && el.type !== "sound";
+    $("row-spatial").hidden = el.type !== "sound";
+    if (el.type === "sound") $("ck-spatial").checked = !!el.spatial;
     $("row-chroma").hidden = el.type !== "video";
     $("row-particles").hidden = el.type !== "particles";
     if (el.type === "particles") {

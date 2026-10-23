@@ -32,6 +32,8 @@ Legend:
 | Particle effects | Not built | 🔜 planned (round C) |
 | Chroma-key (green screen) video | Key color + sensitivity per video element; custom discard shader on the video texture | 🆕 round-C (keying pixel-verified; real footage + performance device-pending) |
 | Particle effects | Built-in emitter: rising-sparkle / falling-confetti presets, count (10-500) + color per element | 🆕 round-C (motion verified in cloud; device visuals pending) |
+| Target quality hint | Artivive rates target images with stars | 🆕 round-D: resolution + gradient-energy heuristic with a plain Hebrew hint on upload (non-blocking) |
+| Spatial audio | Sound can play flat | 🆕 round-D: optional per-sound spatial mode (THREE.PositionalAudio at the element's position); default stays flat |
 | Spatial/positional audio | Not built | 🔜 planned (round D) |
 | Recognition-quality feedback on target upload | Not built | 🔜 planned (round D) |
 | Share link / QR per artwork | play.html?r=N#id link exists; polished per-artwork share page + QR planned | 🔜 planned (round E) |
@@ -60,6 +62,11 @@ Legend:
 - Particles: editor button creates a particle element (no asset); panel edits preset/count/color;
   runtime is a THREE.Points emitter component. Verified: 120 points, positions advance over a
   3s window (sparkle rises), visible as sparkles in preview screenshot 140730.
+- Round D verified in cloud: assessTargetQuality flags a flat solid image (energy 0.0) and a
+  small image (150px short side) with warnings, passes a detailed synthetic image (energy 12.1,
+  768px). Spatial sound creates exactly one invisible carrier entity at the element's target-space
+  position (flat sounds create none); player attaches THREE.PositionalAudio to it - audible
+  panning is device-pending.
 - Visual readability fixture: 256px 2x2 checker texture + bright standard materials render
   crisp and lit in preview (screenshot 140730, top of frame). The earlier blurry-band quad in
   that shot is the old 2px test texture - kept as contrast, not a defect.
