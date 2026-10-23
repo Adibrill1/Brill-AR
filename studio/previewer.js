@@ -74,6 +74,14 @@
   art.setAttribute("position", `${acx} ${acy} 0`);
   rig.appendChild(art);
 
+  // Multi-state artworks: tap an element wired to "sequence" to switch states.
+  let curSeq = Studio.seqList(rec).length ? Studio.seqList(rec)[0].id : null;
+  const onNextSequence = () => {
+    curSeq = Studio.nextSequence(rec, curSeq);
+    Studio.applySequence(rig, rec, curSeq, mediaEls);
+    Studio.renderSeqDots(rec, curSeq);
+  };
+
   let muted = false;
   const onMuteToggle = () => {
     muted = !muted;
@@ -105,10 +113,11 @@
       e = Studio.buildElementEntity(rec, el, idx, "preview");
     }
     if (!e) return;
-    Studio.bindTap(e, el, { onMuteToggle });
+    Studio.bindTap(e, el, { onMuteToggle, onNextSequence });
     rig.appendChild(e);
     if (e.dataset.opacity) Studio.applyOpacity(e, parseFloat(e.dataset.opacity));
   });
+  if (curSeq) { Studio.applySequence(rig, rec, curSeq, mediaEls); Studio.renderSeqDots(rec, curSeq); }
   if (videoFallbacks) {
     document.getElementById("hint").textContent = "שים לב: הדפדפן הזה לא מצליח להציג את הסרטון, והוא מוצג כמלבן אפור. נסו מכשיר אחר או קובץ וידאו בפורמט נתמך (mp4 / H.264).";
   }

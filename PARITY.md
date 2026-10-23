@@ -27,7 +27,7 @@ Legend:
 | Tap interactions (open link etc.) | Tap action: open URL / mute-unmute sound | 🆕 round-A |
 | Preview without the camera | 3D preview page (orbit + zoom, same scene graph) | 🆕 round-A |
 | Timeline (keyframed motion over time) | Not built | 🔜 planned (round B) |
-| Sequences (multi-state artworks, tap to switch) | Not built | 🔜 planned (round B) |
+| Sequences (multi-state artworks, tap to switch) | States per artwork, per-element state assignment, tap-to-advance action, state dots | 🆕 round-B (cloud-verified) |
 | 3D models (glTF/GLB) | Not built | 🔜 planned (round C) |
 | Particle effects | Not built | 🔜 planned (round C) |
 | Chroma-key (green screen) video | Not built | 🔜 planned (round C) |
@@ -39,6 +39,12 @@ Legend:
 | Save video to camera roll automatically | iOS blocks programmatic Photos writes; Share > Save Video is the route | ⛔ limit |
 | Cloud-hosted projects, accounts, asset library | Local browser storage per device (export/import JSON to move) | 🖥️ server |
 | Buyer flow (stable per-artwork link/QR for collectors) | Scoped, needs a server + owner approval before any publication | 🖥️ server |
+
+## Verification provenance (round B part 1 - sequences, 2026-10-23)
+- Cloud browser: enabled multi-state from the editor UI, per-element state dropdown, list/canvas
+  filter by edited state, add/delete states, preview toggles entity visibility on tap of a
+  sequence-wired element, state dots track position, player boots with states honored, 0 console errors.
+- Sound pause-on-hidden-state is code-verified only (cloud has no audio); device check pending.
 
 ## Verification provenance (round A, 2026-10-23)
 - Cloud browser (headless Chrome, no camera): editor boots, demo seeds, legacy `spin` → `anim`

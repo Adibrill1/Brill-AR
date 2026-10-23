@@ -9,6 +9,7 @@
 
   let rec = null;              // current experience record
   let selectedId = null;
+  let curSeq = null;           // active sequence-state id (null = single-state artwork)
   const media = {};            // assetId -> HTMLImageElement | HTMLVideoElement (for canvas drawing)
   const textCache = {};        // el.id -> {key, canvas, aspect}
   let artworkImg = null;       // HTMLImageElement of artwork
@@ -19,10 +20,63 @@
   // ---------- boot ----------
   async function boot() {
     rec = await Studio.seedDemo(false);
+    resetSeq();
     await hydrate();
     refreshExpSelect();
     bind();
     render();
+  }
+
+  function resetSeq() { curSeq = Studio.seqList(rec).length ? Studio.seqList(rec)[0].id : null; }
+
+  // Sequence-state tabs above the canvas: switch the state being edited, add/remove states.
+  function renderSeqTabs() {
+    const bar = $("seq-tabs");
+    if (!bar) return;
+    bar.innerHTML = "";
+    bar.hidden = false;
+    const seqs = Studio.seqList(rec);
+    if (!seqs.length) {
+      const b = document.createElement("button");
+      b.className = "seq-add";
+      b.textContent = "+ הפעלת מצבי תצוגה (כמו סצנות)";
+      b.onclick = async () => {
+        rec.sequences = [{ id: Studio.newId(), name: "מצב 1" }, { id: Studio.newId(), name: "מצב 2" }];
+        curSeq = rec.sequences[0].id;
+        await Studio.save(rec);
+        selectedId = null; renderSeqTabs(); renderList(); renderPanel(); draw();
+      };
+      bar.appendChild(b);
+      return;
+    }
+    seqs.forEach((sq) => {
+      const b = document.createElement("button");
+      b.className = "seq-tab" + (sq.id === curSeq ? " sel" : "");
+      b.textContent = sq.name;
+      b.onclick = () => { curSeq = sq.id; selectedId = null; renderSeqTabs(); renderList(); renderPanel(); draw(); };
+      bar.appendChild(b);
+    });
+    if (seqs.length < 6) {
+      const add = document.createElement("button");
+      add.className = "seq-add"; add.textContent = "+ מצב";
+      add.onclick = async () => {
+        rec.sequences.push({ id: Studio.newId(), name: "מצב " + (seqs.length + 1) });
+        await Studio.save(rec); renderSeqTabs(); renderPanel();
+      };
+      bar.appendChild(add);
+    }
+    if (seqs.length > 1) {
+      const del = document.createElement("button");
+      del.className = "seq-del"; del.textContent = "מחיקת המצב";
+      del.onclick = async () => {
+        rec.sequences = seqs.filter((x) => x.id !== curSeq);
+        for (const el of rec.elements) if (el.seq === curSeq) el.seq = null; // orphans become visible everywhere
+        curSeq = rec.sequences[0].id;
+        await Studio.save(rec);
+        selectedId = null; renderSeqTabs(); renderList(); renderPanel(); draw();
+      };
+      bar.appendChild(del);
+    }
   }
 
   async function hydrate() {
@@ -96,7 +150,7 @@
       rec.assets[assetId] = f;
       const artRatio = rec.target.artRect.w / rec.target.artRect.h;
       const el = Studio.normEl({ id: Studio.newId(), type: kind, name: { video: "סרטון", image: "תמונה", sound: "צליל" }[kind] + " " + (rec.elements.filter((x) => x.type === kind).length + 1),
-                   assetId, x: 0, y: 0, w: kind === "video" ? 1.0 : 0.3, h: null, rot: 0, z: kind === "image" ? 0.1 : 0.01 });
+                   assetId, x: 0, y: 0, w: kind === "video" ? 1.0 : 0.3, h: null, rot: 0, z: kind === "image" ? 0.1 : 0.01, seq: curSeq });
       if (kind === "video" || kind === "sound") { el.volume = kind === "sound" ? 0.8 : 1; el.loop = true; }
       const durl = await Studio.blobToDataURL(f);
       if (kind === "image") {
@@ -127,7 +181,7 @@
 
     $("btn-text").onclick = async () => {
       const el = Studio.normEl({ id: Studio.newId(), type: "text", name: "טקסט " + (rec.elements.filter((x) => x.type === "text").length + 1),
-                   text: "כותרת חדשה", color: "#ffffff", bold: true, x: 0, y: 0.35, w: 0.5, h: null, rot: 0, z: 0.15 });
+                   text: "כותרת חדשה", color: "#ffffff", bold: true, x: 0, y: 0.35, w: 0.5, h: null, rot: 0, z: 0.15, seq: curSeq });
       const tb = textBitmap(el);
       el.aspect = tb.aspect;
       el.h = (el.w / el.aspect) * (rec.target.artRect.w / rec.target.artRect.h);
@@ -156,6 +210,7 @@
     $("exp-select").onchange = async (e) => {
       rec = await Studio.load(e.target.value);
       selectedId = null;
+      resetSeq();
       await hydrate(); render();
     };
     $("btn-export").onclick = async () => {
@@ -215,6 +270,7 @@
     $("ck-loop").onchange = (e) => upd((el) => { el.loop = e.target.checked; });
     $("sel-anim").onchange = (e) => upd((el) => { el.anim = e.target.value; el.spin = el.anim === "spin"; });
     $("sel-tap").onchange = (e) => upd((el) => { el.onTap = e.target.value; });
+    $("sel-seq").onchange = (e) => upd((el) => { el.seq = e.target.value || null; });
     $("in-tapurl").onchange = (e) => upd((el) => { el.tapUrl = e.target.value.trim(); });
     // numeric panel
     num("num-x", -0.7, 0.7, (el, v) => { el.x = v; });
@@ -244,6 +300,7 @@
     $("sec-preview").hidden = !hasTarget;
     const th = $("artwork-thumb");
     if (artworkImg) { th.src = artworkImg.src; th.hidden = false; } else th.hidden = true;
+    renderSeqTabs();
     renderList();
     renderPanel();
     draw();
@@ -253,6 +310,7 @@
     const ul = $("element-list");
     ul.innerHTML = "";
     rec.elements.forEach((el, i) => {
+      if (!Studio.elVisibleIn(el, curSeq)) return;
       const li = document.createElement("li");
       li.textContent = (ICONS[el.type] || "") + el.name + (i === rec.elements.length - 1 ? "  (עליון)" : i === 0 ? "  (תחתון)" : "");
       li.className = el.id === selectedId ? "sel" : "";
@@ -276,6 +334,15 @@
     $("ck-loop").checked = el.loop !== false;
     $("sel-anim").value = Studio.normEl(el).anim;
     $("sel-tap").value = el.onTap || "none";
+    const seqs = Studio.seqList(rec);
+    $("row-seq").hidden = !seqs.length;
+    if (seqs.length) {
+      const sel = $("sel-seq");
+      sel.innerHTML = "";
+      const all = document.createElement("option"); all.value = ""; all.textContent = "כל המצבים"; sel.appendChild(all);
+      seqs.forEach((sq) => { const o = document.createElement("option"); o.value = sq.id; o.textContent = sq.name; sel.appendChild(o); });
+      sel.value = el.seq || "";
+    }
     $("row-tapurl").hidden = el.onTap !== "link";
     $("in-tapurl").value = el.tapUrl || "";
     $("row-text").hidden = el.type !== "text";
@@ -315,6 +382,7 @@
     let needsAnim = false;
     for (const el of rec.elements) {
       Studio.normEl(el);
+      if (!Studio.elVisibleIn(el, curSeq)) continue;
       let wpx = el.w * W;
       let hpx = el.h != null ? el.h * H : wpx / (el.aspect || 1);
       let cx = (el.x + 0.5) * W;

@@ -83,15 +83,24 @@
     }
   };
 
+  // Multi-state artworks: tap an element wired to "sequence" to switch states.
+  let curSeq = Studio.seqList(rec).length ? Studio.seqList(rec)[0].id : null;
+  const onNextSequence = () => {
+    curSeq = Studio.nextSequence(rec, curSeq);
+    Studio.applySequence(target, rec, curSeq, mediaEls);
+    Studio.renderSeqDots(rec, curSeq);
+  };
+
   const target = document.createElement("xrextras-named-image-target");
   target.setAttribute("name", "artwork");
   rec.elements.forEach((el, idx) => {
     const e = Studio.buildElementEntity(rec, el, idx, "ar");
     if (!e) return; // sound: no visual node
-    Studio.bindTap(e, el, { onMuteToggle });
+    Studio.bindTap(e, el, { onMuteToggle, onNextSequence });
     target.appendChild(e);
     if (e.dataset.opacity) Studio.applyOpacity(e, parseFloat(e.dataset.opacity));
   });
+  if (curSeq) { Studio.applySequence(target, rec, curSeq, mediaEls); Studio.renderSeqDots(rec, curSeq); }
   scene.appendChild(target);
   document.body.appendChild(scene);
 

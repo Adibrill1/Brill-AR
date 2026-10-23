@@ -119,6 +119,7 @@ const Studio = (() => {
   // Backward-compatible normalization: records saved before round A lack these fields.
   function normEl(el) {
     if (el.opacity == null) el.opacity = 1;
+    if (el.seq === undefined) el.seq = null; // null = visible in every sequence state
     if (el.anim == null) el.anim = el.spin ? "spin" : "none";
     if (el.onTap == null) el.onTap = "none";
     if (el.type === "text") {
@@ -185,6 +186,7 @@ const Studio = (() => {
     }
     e.setAttribute("position", pos);
     e.setAttribute("rotation", rot);
+    e.dataset.elId = el.id;
     if (el.anim === "spin") e.setAttribute("animation__spin", `property: rotation; to: 0 0 ${(el.rot || 0) + 360}; loop: true; dur: 14000; easing: linear`);
     else if (el.anim === "float") e.setAttribute("animation__float", `property: position; from: ${pos}; to: ${ts.x} ${ts.y + 0.03} ${z}; dir: alternate; loop: true; dur: 2600; easing: easeInOutSine`);
     else if (el.anim === "pulse") e.setAttribute("animation__pulse", `property: scale; to: 1.08 1.08 1; dir: alternate; loop: true; dur: 1600; easing: easeInOutSine`);
@@ -217,7 +219,49 @@ const Studio = (() => {
         window.open(el.tapUrl, "_blank", "noopener");
       } else if (el.onTap === "mute" && hooks && hooks.onMuteToggle) {
         hooks.onMuteToggle();
+      } else if (el.onTap === "sequence" && hooks && hooks.onNextSequence) {
+        hooks.onNextSequence();
       }
+    });
+  }
+
+  // ---------- sequences (multi-state artworks) ----------
+  function seqList(rec) { return Array.isArray(rec.sequences) ? rec.sequences : []; }
+  function elVisibleIn(el, seqId) { return !el.seq || !seqId || el.seq === seqId; }
+  function nextSequence(rec, cur) {
+    const s = seqList(rec);
+    if (s.length < 2) return cur || null;
+    const i = s.findIndex((x) => x.id === cur);
+    return s[(i + 1) % s.length].id;
+  }
+  // Toggles built entity visibility for the active state; hidden sounds pause.
+  function applySequence(container, rec, seqId, mediaEls) {
+    for (const child of [...container.children]) {
+      const id = child.dataset && child.dataset.elId;
+      if (!id) continue;
+      const el = rec.elements.find((x) => x.id === id);
+      if (el) child.setAttribute("visible", elVisibleIn(el, seqId));
+    }
+    if (mediaEls) for (const m of mediaEls) {
+      if (!elVisibleIn(m.el, seqId) && !m.node.paused) m.node.pause();
+    }
+  }
+  // Small state-position dots shown when an artwork has more than one state.
+  function renderSeqDots(rec, curSeq) {
+    let bar = document.getElementById("seq-dots");
+    const s = seqList(rec);
+    if (s.length < 2) { if (bar) bar.remove(); return; }
+    if (!bar) {
+      bar = document.createElement("div");
+      bar.id = "seq-dots";
+      bar.style.cssText = "position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:40;display:flex;gap:8px";
+      document.body.appendChild(bar);
+    }
+    bar.innerHTML = "";
+    s.forEach((sq) => {
+      const d = document.createElement("div");
+      d.style.cssText = "width:10px;height:10px;border-radius:50%;background:" + (sq.id === curSeq ? "#7c5cff" : "rgba(255,255,255,.55)") + ";box-shadow:0 1px 4px rgba(0,0,0,.4)";
+      bar.appendChild(d);
     });
   }
 
@@ -299,6 +343,6 @@ const Studio = (() => {
   }
 
   return { TARGET_W, TARGET_H, newId, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
-           geom, toTargetSpace, blankExperience, save, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback,
+           geom, toTargetSpace, blankExperience, save, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, seqList, elVisibleIn, nextSequence, applySequence, renderSeqDots,
            load: idbGet, all: idbAll, del: idbDel };
 })();
