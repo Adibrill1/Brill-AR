@@ -808,7 +808,10 @@ const Studio = (() => {
     if(before&&!options.noHistory){
       let h=history.get(rec.id);if(!h){h={undo:[],redo:[]};history.set(rec.id,h);}
       const content=r=>JSON.stringify({...r,updatedAt:0,assets:Object.keys(r.assets||{}).sort()});
-      if(content(before)!==content(rec)){h.undo.push(before);if(h.undo.length>20)h.undo.shift();h.redo=[];}
+      const beforeAssets=Object.keys(before.assets||{}).sort(),afterAssets=Object.keys(rec.assets||{}).sort();
+      let assetChanged=beforeAssets.join('\0')!==afterAssets.join('\0');
+      if(!assetChanged)for(const key of beforeAssets){const a=before.assets[key],b=rec.assets[key];if(a.size!==b.size||a.type!==b.type){assetChanged=true;break;}const aa=new Uint8Array(await a.arrayBuffer()),bb=new Uint8Array(await b.arrayBuffer());if(!aa.every((value,i)=>value===bb[i])){assetChanged=true;break;}}
+      if(assetChanged||content(before)!==content(rec)){h.undo.push(before);if(h.undo.length>20)h.undo.shift();h.redo=[];}
     }
     rec.updatedAt = Date.now(); await idbPut(rec.id, rec);
   }

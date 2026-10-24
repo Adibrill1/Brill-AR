@@ -23,3 +23,6 @@ Layer/group duplication uses fresh layer and action ids, copies dependent action
 
 ## Timeline authoring ergonomics
 Action duration can also be changed by dragging the bar's end handle. Exact duration fields remain. Move action target can be chosen by clicking the artwork; the layer base is unchanged, and Escape cancels. A target marker is shown while choosing. Engine tests17; browser suite39. These are independently designed controls, not proof of vendor behavior.
+
+## Sparse-frame correctness
+Timed sequence commands are processed in authored chronological order with original timestamps, not list order or render-arrival time. Child clocks retain the elapsed time when frames are sparse; previous-loop events are not dropped. Bounded512-command batches preserve pending commands rather than discard them. Pause shifts authored command deadlines.20engine tests cover these boundaries. Undo includes same-key/same-size media-only replacements by comparing bytes as well as metadata.

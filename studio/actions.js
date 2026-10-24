@@ -86,39 +86,37 @@ const ActionCore = (() => {
     const runs=new Map();let serial=0,paused=false,pauseAt=0;
     const clock=()=>paused?pauseAt:now();
     const api={
-      start(id){const q=list(rec).find(q=>q.id===id);if(!q)return false;runs.set(id,{start:clock(),order:++serial,seen:new Set()});return true;},
+      start(id,at=clock()){const q=list(rec).find(q=>q.id===id);if(!q)return false;runs.set(id,{start:at,order:++serial,events:q.actions.filter(a=>a.type==='sequence').map(a=>({a,at:at+a.start}))});return true;},
       stop(id){runs.delete(id);},
       toggle(id){if(api.isPlaying(id))api.stop(id);else api.start(id);},
       isPlaying(id){const r=runs.get(id),q=list(rec).find(q=>q.id===id);return !!(r&&q&&(q.loop||clock()-r.start<q.duration));},
       reset(){runs.clear();},
       autoStart(){for(const q of list(rec))if(q.autoStart)api.start(q.id);},
       pause(){if(!paused){pauseAt=now();paused=true;}},
-      resume(){if(paused){const delta=now()-pauseAt;for(const r of runs.values())r.start+=delta;paused=false;}},
+      resume(){if(paused){const delta=now()-pauseAt;for(const r of runs.values()){r.start+=delta;for(const event of r.events||[])event.at+=delta;}paused=false;}},
       seek(id,t){api.reset();const q=list(rec).find(q=>q.id===id);if(q){runs.set(id,{start:clock()-Math.min(q.duration,Math.max(0,t)),order:++serial,seek:true,seekTime:Math.min(q.duration,Math.max(0,t))});}},
       isPaused(){return paused||[...runs.values()].some(r=>r.seek);},
-      snapshot(){const out={};for(const q of list(rec)){const r=runs.get(q.id);if(r)out[q.id]={time:Math.max(0,clock()-r.start),playing:api.isPlaying(q.id)};}return out;},
+      snapshot(){const out={};for(const q of list(rec)){const r=runs.get(q.id);if(r)out[q.id]={time:r.seek?r.seekTime:Math.max(0,clock()-r.start),playing:!r.seek&&api.isPlaying(q.id)};}return out;},
       values(){
-        // Sequence-management events are consumed once per cycle, including t=0.
-        // A bounded generation prevents self-start/cyclic graphs from spinning.
-        let budget=64;const handled=new Set();
-        while(budget-->0){let found=false;
-          for(const [id,r]of [...runs]){const q=list(rec).find(q=>q.id===id);if(!q||r.seek)continue;
-            const elapsed=Math.max(0,clock()-r.start),cycle=q.loop?Math.floor(elapsed/q.duration):0,t=q.loop?elapsed%q.duration:elapsed;
-            r.seen||=new Set();
-            for(const a of q.actions){if(a.type!=='sequence'||a.start>t)continue;const key=cycle+':'+a.id;
-              if(r.seen.has(key))continue;r.seen.add(key);
-              const globalKey=id+':'+a.id;if(handled.has(globalKey))continue;handled.add(globalKey);found=true;
-              if(a.to.command==='start')api.start(a.to.sequenceId);else api.stop(a.to.sequenceId);
-            }
-            // Drop old-cycle markers to keep memory bounded through endless loops.
-            if(r.seen.size>600)r.seen=new Set([...r.seen].filter(k=>k.startsWith(cycle+':')));
+        // Process commands in authored chronological order, not render/list order.
+        // Backdated starts keep downstream clocks correct after sparse frames.
+        // Long loop backlogs are processed in bounded batches, never discarded.
+        let budget=512;
+        while(budget-->0){
+          let next=null;
+          for(const [id,r]of runs){const q=list(rec).find(q=>q.id===id);if(!q||r.seek)continue;
+            for(const event of r.events||[])if(event.at<=clock()&&(!next||event.at<next.event.at||event.at===next.event.at&&r.order<next.r.order))next={id,r,q,event};
           }
-          if(!found)break;
+          if(!next)break;
+          const {r,q,event}=next;
+          if(q.loop)event.at+=q.duration;else r.events.splice(r.events.indexOf(event),1);
+          const at=q.loop?event.at-q.duration:event.at;
+          if(event.a.to.command==='start')api.start(event.a.to.sequenceId,at);else api.stop(event.a.to.sequenceId);
         }
         const out={};for(const [id,r]of [...runs].sort((a,b)=>a[1].order-b[1].order)){
         const q=list(rec).find(q=>q.id===id);if(!q){runs.delete(id);continue;}
         let t=r.seek?r.seekTime:Math.max(0,clock()-r.start);
-        if(!q.loop&&t>=q.duration&&q.reset&&!r.seek){runs.delete(id);continue;}
+        if(!q.loop&&t>=q.duration&&q.reset&&!r.seek){if(!(r.events||[]).some(e=>e.at<=clock()))runs.delete(id);continue;}
         t=q.loop?t%q.duration:Math.min(q.duration,t);
         for(const [layer,values]of Object.entries(sampleSequence(rec,q,t)))out[layer]={...out[layer],...values};
       }return out;}

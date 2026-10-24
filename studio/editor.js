@@ -622,7 +622,7 @@
       changed:async()=>{const id=rec.id,saving=Studio.save(rec);actionEngine=ActionCore.create(rec);renderActions();draw();await saving;if(rec.id===id){const hs=Studio.historyState(id);$("btn-undo").disabled=!hs.undo;$("btn-redo").disabled=!hs.redo;}},
       redraw:()=>draw(),
       select:id=>{selectedId=id;renderList();renderPanel();draw();},
-      target:a=>{actionTarget=a;draw();cv().scrollIntoView({block:"center",behavior:"smooth"});msg("לחצי על היצירה כדי לקבוע את יעד התנועה. Escape לביטול; מיקום הבסיס לא משתנה");},
+      target:a=>{actionTarget=a;draw();cv().scrollIntoView({block:"center",behavior:"instant"});msg("לחצי על היצירה כדי לקבוע את יעד התנועה. Escape לביטול; מיקום הבסיס לא משתנה");},
       message:msg
     });
   }
