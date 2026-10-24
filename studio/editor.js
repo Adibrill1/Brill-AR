@@ -32,7 +32,7 @@
 
   // ---------- boot ----------
   async function boot() {
-    rec = await Studio.seedDemo(false);
+    const requested=location.hash.slice(1);rec = requested&&await Studio.load(requested)||await Studio.seedDemo(false);
     resetSeq();
     await hydrate();
     refreshExpSelect();

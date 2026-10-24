@@ -18,6 +18,7 @@
     if (!id) return fail("חסר מזהה ניסוי. <a href='index.html'>חזרה לעורך</a>");
     rec = await Studio.load(id);
   }
+  if(!window.__REMOTE_EXPERIENCE__&&rec&&document.getElementById("backlink"))document.getElementById("backlink").href="index.html#"+encodeURIComponent(rec.id);
   if (!rec || !rec.target) return fail("הניסוי לא נמצא במכשיר הזה.<br>אם ייצאת ממכשיר אחר - ייבאי קודם ב<a href='index.html'>עורך</a>.");
   rec.elements.forEach(Studio.normEl);
 

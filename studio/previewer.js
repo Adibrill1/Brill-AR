@@ -9,6 +9,7 @@
   const editMode=new URLSearchParams(location.search).get("edit")==="1";
   if (!id) return fail("חסר מזהה ניסוי. <a href='index.html'>חזרה לעורך</a>");
   const rec = await Studio.load(id);
+  document.querySelector("#topbar a").href="index.html#"+encodeURIComponent(id);
   if (!rec || !rec.target) return fail("הניסוי לא נמצא. <a href='index.html'>חזרה לעורך</a>");
   rec.elements.forEach(Studio.normEl);
 

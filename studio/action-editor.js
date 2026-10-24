@@ -46,13 +46,13 @@ const ActionEditor=(()=>{
     const a={id:Studio.newId(),layerId:el.id,type,start:0,duration:['show','hide','interaction','sequence'].includes(type)?0:Math.min(1,q.duration),ease:'linear',to};q.actions.push(a);selectedAction=a.id;if(!save()){q.actions=q.actions.filter(x=>x!==a);selectedAction=null;}},add);
   const a=q.actions.find(a=>a.id===selectedAction);
   if(a){const box=node('div');box.className='action-details';node('strong','עריכת '+names[a.type],box);
-    const layer=node('select',null,box);layer.setAttribute('aria-label','שכבת יעד');for(const e of rec.elements){const o=node('option',e.name||e.type,layer);o.value=e.id;}layer.value=a.layerId;layer.onchange=()=>{a.layerId=layer.value;save();};
+    const layer=node('select',null,box);layer.setAttribute('aria-label','שכבת יעד');for(const e of rec.elements){const o=node('option',e.name||e.type,layer);o.value=e.id;}layer.value=a.layerId;layer.onchange=()=>{const old=a.layerId;a.layerId=layer.value;if(!save()){a.layerId=old;layer.value=old;}};
     field('התחלה בשניות',a.start,v=>{a.start=Math.max(0,Math.min(q.duration-a.duration,v||0));save();},box);
     field('משך בשניות',a.duration,v=>{a.duration=Math.max(0,Math.min(q.duration-a.start,v||0));save();},box);
     const ease=node('select',null,box);ease.setAttribute('aria-label','עקומת מהירות');for(const type of ActionCore.eases){const o=node('option',({linear:'קבועה',easeIn:'האצה',easeOut:'האטה',easeInOut:'האצה והאטה',elastic:'אלסטית',bounce:'קפיצות'}[type]),ease);o.value=type;}ease.value=a.ease;ease.onchange=()=>{a.ease=ease.value;save();};
     for(const k of ActionCore.kinds[a.type])if(k==='sequence'){
       const target=node('select',null,box);target.setAttribute('aria-label','רצף להפעלה או עצירה');for(const s of seqs){const o=node('option',s.name,target);o.value=s.id;}target.value=a.to.sequenceId;target.onchange=()=>{const old=a.to.sequenceId;a.to.sequenceId=target.value;if(!save())a.to.sequenceId=old;};
-      const command=node('select',null,box);for(const [v,title]of [['start','הפעלת רצף'],['stop','עצירת רצף']]){const o=node('option',title,command);o.value=v;}command.value=a.to.command;command.onchange=()=>{const old=a.to.command;a.to.command=command.value;if(!save())a.to.command=old;};
+      const command=node('select',null,box);command.setAttribute('aria-label','פעולת הרצף');for(const [v,title]of [['start','הפעלת רצף'],['stop','עצירת רצף']]){const o=node('option',title,command);o.value=v;}command.value=a.to.command;command.onchange=()=>{const old=a.to.command;a.to.command=command.value;if(!save())a.to.command=old;};
     }else if(k==='model'){
       field('מספר אנימציה',a.to.clip,v=>{const old=a.to.clip;a.to.clip=Math.max(0,Math.floor(v||0));if(!save())a.to.clip=old;},box);
       field('מהירות',a.to.speed,v=>{a.to.speed=Math.max(.1,Math.min(4,v||1));save();},box);
