@@ -115,11 +115,45 @@ const Studio = (() => {
   }
 
 
+  async function validateModelBlob(blob) {
+    if(!blob||blob.size<20||blob.size>20*1024*1024)throw Error('מודל GLB חסר או גדול מדי (עד20MB).');
+    const bytes=await blob.arrayBuffer(),view=new DataView(bytes);
+    if(view.getUint32(0,true)!==0x46546c67||view.getUint32(4,true)!==2||view.getUint32(8,true)!==bytes.byteLength)throw Error('מבנה GLB לא תקין.');
+    let offset=12,doc=null;
+    while(offset<bytes.byteLength){
+      if(offset+8>bytes.byteLength)throw Error('מקטע GLB חסר.');
+      const length=view.getUint32(offset,true),type=view.getUint32(offset+4,true);
+      if(length%4||offset+8+length>bytes.byteLength)throw Error('אורך מקטע GLB לא תקין.');
+      if(!doc){if(type!==0x4e4f534a||length>4*1024*1024)throw Error('מקטע JSON חסר או גדול מדי.');doc=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(new Uint8Array(bytes,offset+8,length)));}
+      offset+=8+length;
+    }
+    if(!doc||!doc.asset||doc.asset.version!=='2.0')throw Error('נדרש glTF2.0.');
+    const visit=(node,depth)=>{if(depth>100)throw Error('מודל מורכב מדי.');if(!node||typeof node!=='object')return;for(const [key,value]of Object.entries(node)){if(key==='uri'&&typeof value==='string'&&!value.startsWith('data:'))throw Error('המודל מפנה לקובץ חיצוני. ארזו glTF וכל הקבצים יחד ב־ZIP או יצאו GLB עצמאי.');if(typeof value==='object')visit(value,depth+1);}};visit(doc,0);
+    return doc;
+  }
+  async function modelClipNames(blob) {
+    if (!blob || blob.size > 20*1024*1024 || blob.size < 20) return [];
+    const head=new DataView(await blob.slice(0,20).arrayBuffer());
+    if(head.getUint32(0,true)!==0x46546c67||head.getUint32(4,true)!==2||head.getUint32(16,true)!==0x4e4f534a)return [];
+    const length=head.getUint32(12,true);if(length>4*1024*1024||length+20>blob.size)return [];
+    try { const doc=JSON.parse(await blob.slice(20,20+length).text());return (doc.animations||[]).slice(0,100).map((a,i)=>typeof a.name==='string'?a.name.slice(0,120):'Animation '+i); }catch{return [];}
+  }
   // Embedded glTF clips: run the first authored clip. Freeze when hidden or the
   // image target is lost; wrapper timeline/group transforms remain independent.
   function ensureModelAnimationComponent() {
     if (!window.AFRAME || AFRAME.components["model-clips"]) return;
     AFRAME.registerComponent("model-clips", {
+      schema: { clip: {default:0}, speed: {default:1}, playing: {default:true}, loop: {default:true} },
+      update() { if(this.mixer)this.selectClip(); },
+      selectClip() {
+        const mesh=this.el.getObject3D("mesh"),clips=mesh&&mesh.animations;
+        if(!this.mixer||!clips||!clips.length)return;
+        this.mixer.stopAllAction();
+        const index=Math.max(0,Math.min(clips.length-1,Math.floor(this.data.clip)));
+        this.action=this.mixer.clipAction(clips[index]);this.action.reset();
+        this.action.setLoop(this.data.loop?THREE.LoopRepeat:THREE.LoopOnce,this.data.loop?Infinity:1);this.action.clampWhenFinished=!this.data.loop;this.action.play();
+        this.el.dataset.activeClip=String(index);
+      },
       init() {
         this.tracked = !this.el.sceneEl.hasAttribute("xrweb");
         this.onFound = () => { this.tracked = true; };
@@ -130,7 +164,7 @@ const Studio = (() => {
           const clips = mesh && mesh.animations;
           if (!clips || !clips.length) return;
           this.mixer = new THREE.AnimationMixer(mesh);
-          this.action = this.mixer.clipAction(clips[0]); this.action.play();
+          this.selectClip();
           this.el.dataset.clipCount = String(clips.length);
         };
         this.el.addEventListener("model-loaded", this.loaded);
@@ -139,9 +173,9 @@ const Studio = (() => {
         if (this.el.getObject3D("mesh")) this.loaded();
       },
       tick(t, dt) {
-        if (!this.mixer || !this.tracked) return;
+        if (!this.mixer || !this.tracked || !this.data.playing) return;
         for (let o = this.el.object3D; o; o = o.parent) if (!o.visible) return;
-        this.mixer.update(Math.min(0.25, (dt || 0) / 1000));
+        this.mixer.update(Math.min(0.25, (dt || 0) / 1000) * Math.max(.1,Math.min(4,this.data.speed)));
       },
       remove() {
         this.el.removeEventListener("model-loaded", this.loaded);
@@ -363,7 +397,7 @@ const Studio = (() => {
       if (blob) {
         const inner = document.createElement("a-entity");
         ensureModelAnimationComponent();
-        inner.setAttribute("model-clips", "");
+        inner.setAttribute("model-clips", {clip:el.modelClip||0,speed:el.modelSpeed||1,playing:el.modelPlaying!==false,loop:el.modelLoop!==false});
         inner.setAttribute("gltf-model", URL.createObjectURL(blob));
         inner.addEventListener("model-loaded", () => {
           const mesh = inner.getObject3D("mesh");
@@ -595,6 +629,40 @@ const Studio = (() => {
     }
     tl.keys.push(k); return k;
   }
+  function sampleVisual(rec,el,t) {
+    const out=sampleTimeline(el,t);
+    if(el.timeline&&Array.isArray(el.timeline.keys)&&el.timeline.keys.length)return out;
+    const phase=(duration)=>{const p=Math.max(0,t)%(duration*2)/duration;return (1-Math.cos(Math.PI*(p<=1?p:2-p)))/2;};
+    if(el.anim==='spin')out.rot+=Math.max(0,t)%14/14*360;
+    else if(el.anim==='float')out.y+=.03/geom(rec).artH*phase(2.6);
+    else if(el.anim==='pulse')out.scale=1+.08*phase(1.6);
+    return out;
+  }
+  // Canvas uses the same artwork-space samples and parent-base frame as runtime.
+  function sampleComposition(rec, el, t, seqId) {
+    const timeFor=typeof t==='function'?t:()=>t;
+    const out = sampleVisual(rec,el,timeFor(el));
+    out.visible = out.visible && elVisibleIn(el,seqId);
+    const group=rec.elements.find(g=>g.type==='group'&&(g.children||[]).includes(el.id));
+    if(group) {
+      const parent=sampleVisual(rec,group,timeFor(group)),ratio=geom(rec).artW/geom(rec).artH;
+      const angle=(parent.rot-(group.rot||0))*Math.PI/180;
+      const dx=(out.x-(group.x||0))*ratio*parent.scale,dy=(out.y-(group.y||0))*parent.scale;
+      out.x=parent.x+(dx*Math.cos(angle)-dy*Math.sin(angle))/ratio;
+      out.y=parent.y+dx*Math.sin(angle)+dy*Math.cos(angle);
+      out.z+=parent.z-(group.z||0);out.rot+=parent.rot-(group.rot||0);
+      out.scale*=parent.scale;out.opacity*=parent.opacity;
+      out.visible=out.visible&&parent.visible&&elVisibleIn(group,seqId);
+    }
+    return out;
+  }
+  function previewStateTime(rec,seqId,elapsed) {
+    const state=seqList(rec).find(s=>s.id===seqId);
+    if(!state||!state.loop)return elapsed;
+    const endings=rec.elements.filter(el=>!el.track&&el.timeline&&!(el.timeline.loop)).map(timelineDur).filter(t=>t>0);
+    const duration=endings.length?Math.max(...endings):0;
+    return duration&&elapsed>duration?elapsed%duration:elapsed;
+  }
   function timelineDur(el) {
     const tl = el.timeline;
     if (!tl || !Array.isArray(tl.keys) || !tl.keys.length) return 0;
@@ -608,7 +676,7 @@ const Studio = (() => {
     const tracks = [];
     for (const e of entities) {
       const el = rec.elements.find((x) => x.id === (e.dataset && e.dataset.elId));
-      if (!el || !timelineDur(el)) continue;
+      if (!el || !el.timeline || !Array.isArray(el.timeline.keys) || !el.timeline.keys.length) continue;
       const p0 = e.getAttribute("position");
       const ts0 = toTargetSpace(rec, el, el.aspect || 1);
       tracks.push({ el, e, elapsed: 0, startedAt: 0,
@@ -736,6 +804,12 @@ const Studio = (() => {
     rec.tracks = Array.isArray(o.tracks) ? o.tracks : [];
     rec.assets = {};
     for (const [k, durl] of Object.entries(o.assets || {})) rec.assets[k] = await dataURLtoBlob(durl);
+    // Whole-experience imports use the same model boundary as direct uploads.
+    // Validate before save, so rejected input never leaves a broken local record.
+    for(const el of rec.elements.filter(e=>e.type==='model')) {
+      if(!el.assetId||!rec.assets[el.assetId])throw new Error('model asset missing');
+      await validateModelBlob(rec.assets[el.assetId]);
+    }
     await save(rec);
     return rec;
   }
@@ -884,7 +958,7 @@ const Studio = (() => {
     toast._t = setTimeout(() => { toast.style.opacity = "0"; }, 1200);
   }
 
-  return { TARGET_W, TARGET_H, newId, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
-           geom, toTargetSpace, blankExperience, save, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
+  return { TARGET_W, TARGET_H, newId, validateModelBlob, modelClipNames, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
+           geom, toTargetSpace, blankExperience, save, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
            load: idbGet, all: idbAll, del: idbDel };
 })();

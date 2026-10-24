@@ -7,9 +7,18 @@
   const $ = (id) => document.getElementById(id);
   const msg = (t) => { $("msg").textContent = t; if (t) setTimeout(() => { if ($("msg").textContent === t) $("msg").textContent = ""; }, 6000); };
 
+  let experienceReady = Promise.resolve();
+  // Experience-changing and snapshot operations preserve the order of user actions.
+  // Keep the tail usable after a failed operation instead of poisoning later selections.
+  function queueExperience(work) {
+    const operation = experienceReady.then(work);
+    experienceReady = operation.catch(err => { msg("הפעולה לא הושלמה: " + err.message); });
+    return experienceReady;
+  }
   let rec = null;              // current experience record
   let selectedId = null;
   const checkedIds = new Set(); // multi-select for grouping
+  let canvasStart=performance.now(),canvasTracks={};
   let curSeq = null;           // active sequence-state id (null = single-state artwork)
   const media = {};            // assetId -> HTMLImageElement | HTMLVideoElement (for canvas drawing)
   const textCache = {};        // el.id -> {key, canvas, aspect}
@@ -28,7 +37,7 @@
     render();
   }
 
-  function resetSeq() { curSeq = Studio.seqList(rec).length ? Studio.seqList(rec)[0].id : null; }
+  function resetSeq() { canvasStart=performance.now();canvasTracks={};curSeq = Studio.seqList(rec).length ? Studio.seqList(rec)[0].id : null; }
 
   // Sequence-state tabs above the canvas: switch the state being edited, add/remove states.
   function renderSeqTabs() {
@@ -54,7 +63,7 @@
       const b = document.createElement("button");
       b.className = "seq-tab" + (sq.id === curSeq ? " sel" : "");
       b.textContent = sq.name;
-      b.onclick = () => { curSeq = sq.id; selectedId = null; renderSeqTabs(); renderList(); renderPanel(); draw(); };
+      b.onclick = () => { canvasStart=performance.now();curSeq = sq.id; selectedId = null; renderSeqTabs(); renderList(); renderPanel(); draw(); };
       bar.appendChild(b);
     });
     if (seqs.length < 6) {
@@ -68,12 +77,12 @@
     }
     { // parallel overlay tracks: independent mini-timelines that run at the same time as states
       let trow = document.createElement("div");
-      trow.style.cssText = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;font-size:12px;color:#aab;border-top:1px solid #333;padding-top:6px";
+      trow.style.cssText = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;font-size:12px;color:#3c374b;border-top:1px solid #d7d3e8;padding-top:6px";
       trow.appendChild(document.createTextNode("מסלולים במקביל:"));
       const tracks = Studio.trackList(rec);
       tracks.forEach((tr) => {
         const chip = document.createElement("span");
-        chip.style.cssText = "display:inline-flex;align-items:center;gap:4px;background:#223;padding:2px 8px;border-radius:999px";
+        chip.style.cssText = "display:inline-flex;align-items:center;gap:4px;background:#f0edf8;color:#292535;padding:2px 8px;border-radius:999px";
         chip.appendChild(document.createTextNode("🎞️ " + tr.name));
         const as = document.createElement("input");
         as.type = "checkbox"; as.checked = !!tr.autoStart; as.title = "מתחיל אוטומטית";
@@ -83,6 +92,11 @@
         lp.type = "checkbox"; lp.checked = !!tr.loop; lp.title = "חזרה";
         lp.onchange = async () => { tr.loop = lp.checked; await Studio.save(rec); };
         chip.appendChild(lp);
+        if(!canvasTracks[tr.id])canvasTracks[tr.id]={playing:!!tr.autoStart,start:performance.now()};
+        const preview=document.createElement('button');preview.dataset.previewTrack=tr.id;
+        const state=canvasTracks[tr.id];preview.style.cssText='background:#fff;color:#292535;border:1px solid #787087';preview.textContent=state.playing?'עצירה בתצוגה':'ניגון בתצוגה';
+        preview.onclick=()=>{state.playing=!state.playing;state.start=performance.now();renderSeqTabs();draw();};chip.append(preview);
+
         const del = document.createElement("button");
         del.textContent = "×"; del.title = "מחיקת המסלול";
         del.onclick = async () => {
@@ -108,7 +122,7 @@
       const sq = seqs.find((x) => x.id === curSeq);
       if (sq) {
         const row = document.createElement("div");
-        row.style.cssText = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;font-size:12px;color:#aab";
+        row.style.cssText = "display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px;font-size:12px;color:#3c374b";
         const loopL = document.createElement("label");
         loopL.style.cssText = "display:flex;align-items:center;gap:4px";
         const loopC = document.createElement("input");
@@ -158,6 +172,7 @@
   }
 
   async function hydrate() {
+    artworkImg = null;
     for (const k of Object.keys(media)) delete media[k];
     for (const k of Object.keys(textCache)) delete textCache[k];
     if (rec.assets.__artwork) {
@@ -180,7 +195,7 @@
   }
 
   function refreshExpSelect() {
-    Studio.all().then((list) => {
+    return Studio.all().then((list) => {
       const sel = $("exp-select");
       sel.innerHTML = "";
       list.sort((a, b) => b.updatedAt - a.updatedAt).forEach((r) => {
@@ -208,6 +223,7 @@
       const f = e.target.files[0]; e.target.value = "";
       if (!f) return;
       if (f.size > 8 * 1024 * 1024) { msg("תמונה גדולה מדי (מעל 8MB). נסי תמונה קטנה יותר."); return; }
+      return queueExperience(async () => {
       const img = await Studio.loadImage(await Studio.blobToDataURL(f));
       const t = await Studio.makeTarget(img);
       rec.target = { artRect: t.artRect, natural: { w: img.naturalWidth, h: img.naturalHeight } };
@@ -219,6 +235,7 @@
       else if (q.warn) msg("נשמרה. שימי לב: לתמונה מעט פרטים או ניגודיות - הזיהוי עלול להיות חלש. עדיפה תמונה עם הרבה פרטים.");
       else msg("תמונת היצירה נשמרה.");
       render();
+      });
     };
 
     document.querySelectorAll("[data-add]").forEach((b) => {
@@ -247,7 +264,7 @@
       box.appendChild(body); box.appendChild(row); wrap.appendChild(box);
       document.body.appendChild(wrap);
     });
-    const importAsset = async (kind, f, options = {}) => {
+    const importAssetNow = async (kind, f, options = {}) => {
       if (!f) return;
       let importNote = "";
       if (f.size > 20 * 1024 * 1024) { msg("קובץ גדול מדי (מעל 20MB) לגרסת הניסוי."); return; }
@@ -292,6 +309,15 @@
           if (!glb) { msg("קובץ ה־obj ריק או לא קריא - צריך קובץ עם קודקודים ופאות (שורות v ו־f)."); return; }
           f = new File([glb], f.name.replace(/\.obj$/i, ".glb"), { type: "model/gltf-binary" });
         }
+        if (/\.gltf$/i.test(f.name)) {
+          try {
+            // Reuse bounded dependency validator: a one-file archive can only
+            // resolve already embedded data URIs; relative files fail clearly.
+            const text=await f.text();
+            const packed=window.gltfZipToGlb(fflate.zipSync({'model.gltf':new TextEncoder().encode(text)}),fflate);
+            f=new File([packed.bytes],f.name.replace(/\.gltf$/i,'.glb'),{type:'model/gltf-binary'});
+          } catch(err) { msg('קובץ glTF לא נוסף: '+err.message+' קבצים נלווים יש לארוז יחד ב־ZIP.');return; }
+        }
         const head = new Uint8Array(await f.slice(0, 4).arrayBuffer());
         const isGlb = head[0] === 0x67 && head[1] === 0x6C && head[2] === 0x54 && head[3] === 0x46; // "glTF"
         if (!isGlb) {
@@ -305,6 +331,7 @@
           msg(bad); return;
         }
       }
+      if(kind==='model'){try{await Studio.validateModelBlob(f);}catch(err){msg('המודל לא נוסף: '+err.message);return;}}
       const assetId = Studio.newId();
       rec.assets[assetId] = f;
       const artRatio = rec.target.artRect.w / rec.target.artRect.h;
@@ -345,6 +372,11 @@
       msg(importNote || "האלמנט נוסף. אפשר לגרור אותו על התצוגה.");
       render();
     };
+    // Selection and imports share one queue, so a delayed conversion cannot
+    // attach its result to a different experience selected midway through it.
+    const importAsset = (kind, f, options = {}) => {
+      return queueExperience(() => importAssetNow(kind, f, options));
+    };
     const addFile = (kind) => async (e) => {
       const f = e.target.files[0]; e.target.value = "";
       await importAsset(kind, f);
@@ -378,37 +410,42 @@
       render();
     };
 
-    $("btn-new").onclick = async () => {
+    $("btn-new").onclick = () => queueExperience(async () => {
       rec = Studio.blankExperience();
-      selectedId = null; artworkImg = null;
+      selectedId = null; artworkImg = null; checkedIds.clear(); tlScrubT = null; resetSeq();
       await Studio.save(rec);
-      refreshExpSelect(); render();
+      await refreshExpSelect(); render();
       msg("ניסוי חדש - התחילי בהעלאת תמונת יצירה.");
-    };
+    });
     $("btn-del-exp").onclick = async () => {
       if (!confirm("למחוק את הניסוי הזה לגמרי?")) return;
+      return queueExperience(async () => {
       await Studio.del(rec.id);
       const all = await Studio.all();
       rec = all[0] || await Studio.seedDemo(true);
-      selectedId = null;
-      await hydrate(); refreshExpSelect(); render();
+      selectedId = null; checkedIds.clear(); tlScrubT = null; resetSeq();
+      await hydrate(); await refreshExpSelect(); render();
+      });
     };
-    $("exp-select").onchange = async (e) => {
-      const r = await Studio.load(e.target.value);
-      if (!r) return; // keep the current experience instead of wiping the editor
-      rec = r;
-      selectedId = null;
-      resetSeq();
-      await hydrate(); render();
+    $("exp-select").onchange = (e) => {
+      const id = e.target.value;
+      queueExperience(async () => {
+        const r = await Studio.load(id);
+        if (!r) return; // keep the current experience instead of wiping the editor
+        rec = r;
+        selectedId = null; checkedIds.clear(); tlScrubT = null;
+        resetSeq();
+        await hydrate(); await refreshExpSelect(); render();
+      });
     };
-    $("btn-export").onclick = async () => {
+    $("btn-export").onclick = () => queueExperience(async () => {
       const json = await Studio.exportJSON(rec);
       const a = document.createElement("a");
       a.href = URL.createObjectURL(new Blob([json], { type: "application/json" }));
       a.download = (rec.name || "ar-studio") + ".json";
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-    };
+    });
     $("btn-import").onclick = () => $("file-import").click();
 
     $("in-server").value = localStorage.getItem("ar-studio-server") || "";
@@ -440,13 +477,15 @@
     $("file-import").onchange = async (e) => {
       const f = e.target.files[0]; e.target.value = "";
       if (!f) return;
+      return queueExperience(async () => {
       try {
         rec = await Studio.importJSON(await f.text());
         rec.elements.forEach(Studio.normEl);
-        selectedId = null;
-        await hydrate(); refreshExpSelect(); render();
+        selectedId = null; checkedIds.clear(); tlScrubT = null; resetSeq();
+        await hydrate(); await refreshExpSelect(); render();
         msg("הייבוא הצליח.");
       } catch (err) { msg("הקובץ לא תקין לייבוא."); }
+      });
     };
     $("btn-edit-ar").onclick = () => { location.href = "play.html?edit=1#" + rec.id; };
     $("btn-play").onclick = () => { location.href = "play.html#" + rec.id; };
@@ -522,6 +561,7 @@
       if (!f) return;
       const el = rec.elements.find((x) => x.id === selectedId);
       if (!el || el.type !== "particles") return;
+      if(kind==='model'){try{await Studio.validateModelBlob(f);}catch(err){msg('המודל לא נוסף: '+err.message);return;}}
       const assetId = Studio.newId();
       rec.assets[assetId] = f;
       el.particles = Object.assign({}, el.particles, { spriteAssetId: assetId });
@@ -548,6 +588,11 @@
     for (const [key, min, max] of [["x",-.7,.7],["y",-.7,.7],["w",.05,2],["rot",-180,180],["z",0,.5]])
       num("num-"+key, min, max, (el,v) => transform(el,key,v));
     num("num-opacity", 0, 1, (el, v) => { el.opacity = v; });
+    $("sel-model-clip").onchange=e=>upd(el=>{el.modelClip=Number(e.target.value);});
+    num("num-model-clip",0,99,(el,v)=>{el.modelClip=Math.floor(v);});
+    num("num-model-speed",.1,4,(el,v)=>{el.modelSpeed=v;});
+    $("ck-model-playing").onchange=e=>upd(el=>{el.modelPlaying=e.target.checked;});
+    $("ck-model-loop").onchange=e=>upd(el=>{el.modelLoop=e.target.checked;});
     // text controls
     $("in-text").oninput = (e) => upd((el) => {
       el.text = e.target.value;
@@ -647,6 +692,20 @@
     $("panel").hidden = !el;
     if (!el) return;
     const isGroup = el.type === "group";
+    $("row-model").hidden=el.type!=="model";
+    if(el.type==='model') {
+      const select=$("sel-model-clip");select.replaceChildren();select.disabled=true;
+      const pending=document.createElement('option');pending.textContent='טעינת שמות...';select.append(pending);
+      Studio.modelClipNames(rec.assets[el.assetId]).then(names=>{
+        if(selectedId!==el.id)return;
+        select.replaceChildren();
+        if(!names.length){const option=document.createElement('option');option.textContent='אין אנימציות מובנות';select.append(option);return;}
+        names.forEach((name,i)=>{const option=document.createElement('option');option.value=i;option.textContent=i+' · '+name;select.append(option);});
+        select.disabled=false;select.value=Math.min(names.length-1,el.modelClip||0);
+      });
+    }
+    $("num-model-clip").value=el.modelClip||0;$("num-model-speed").value=el.modelSpeed||1;
+    $("ck-model-playing").checked=el.modelPlaying!==false;$("ck-model-loop").checked=el.modelLoop!==false;
     $("panel-name").textContent = (isGroup ? "📦 " : "") + el.name + (isGroup ? " (שינויים חלים על כל הפריטים בקבוצה)" : "");
     $("sl-scale").value = el.w;
     $("sl-rot").value = el.rot || 0;
@@ -815,6 +874,7 @@
       tlScrubT = null; $("tl-time").textContent = ""; $("btn-tl-live").hidden = true;
       const el = rec && rec.elements.find((x) => x.id === selectedId);
       if (el) { renderRuler(el); }
+      draw();
     };
   })();
 
@@ -838,25 +898,43 @@
     ctx.drawImage(artworkImg, 0, 0, W, H);
     boxes = {};
     const t0 = performance.now();
+    // autoNext chain simulation in live preview (mirrors previewer makeSeqRunner):
+    // at `at` seconds into the active state, advance to `to` and restart the state clock.
+    // Track clocks (canvasTracks) are independent and keep running across the switch.
+    if (tlScrubT == null && curSeq) {
+      const an = Studio.seqAutoNext(rec, curSeq);
+      if (an && (t0 - canvasStart) / 1000 >= an.at) {
+        const to = an.to || (Studio.seqList(rec)[0] && Studio.seqList(rec)[0].id);
+        if (to && to !== curSeq && Studio.seqList(rec).some((x) => x.id === to)) {
+          curSeq = to; canvasStart = t0; selectedId = null;
+          renderSeqTabs(); renderList(); renderPanel();
+        }
+      }
+    }
     let needsAnim = false;
     for (const el of rec.elements) {
       Studio.normEl(el);
       if (el.type === "group") continue; // children draw at their own positions; the group shows as a selection box
       if (!Studio.elVisibleIn(el, curSeq)) continue;
       // live timeline playback: sampled keyframe values override the element's base props
-      let ts = null;
-      if (Studio.timelineDur(el)) { ts = Studio.sampleTimeline(el, tlScrubT != null ? tlScrubT : t0 / 1000); needsAnim = tlScrubT == null; }
-      if (ts && ts.visible === false) continue;
+      const parent=rec.elements.find(g=>g.type==='group'&&(g.children||[]).includes(el.id));
+      const clock=element=>{
+        if(tlScrubT!=null)return tlScrubT;
+        if(element.track){const clock=canvasTracks[element.track];return clock&&clock.playing?(t0-clock.start)/1000:0;}
+        return Studio.previewStateTime(rec,curSeq,(t0-canvasStart)/1000);
+      };
+      const ts=Studio.sampleComposition(rec,el,clock,curSeq);
+      const trackStopped=element=>element&&element.track&&canvasTracks[element.track]&&!canvasTracks[element.track].playing;
+      if(tlScrubT==null&&(trackStopped(el)||trackStopped(parent)))continue;
+      if(Studio.timelineDur(el)||(parent&&Studio.timelineDur(parent)))needsAnim=tlScrubT==null;
+      if(tlScrubT==null&&curSeq&&Studio.seqAutoNext(rec,curSeq))needsAnim=true; // keep frames coming so the chain can advance
+      if(!ts.visible)continue;
       const sc = ts ? ts.scale : 1;
       let wpx = el.w * W * sc;
       let hpx = (el.h != null ? el.h * H : (el.w * W) / (el.aspect || 1)) * sc;
       let cx = ((ts ? ts.x : el.x) + 0.5) * W;
       let cy = (0.5 - (ts ? ts.y : el.y)) * H;
-      let extraRot = 0;
-      // animation previews (approximation of the player presets)
-      if (!ts && el.anim === "float") { cy += Math.sin(t0 / 1300) * H * 0.02; needsAnim = true; }
-      else if (!ts && el.anim === "pulse") { const f = 1 + 0.08 * Math.sin(t0 / 800); wpx *= f; hpx *= f; needsAnim = true; }
-      else if (!ts && el.anim === "spin") { extraRot = ((t0 / 14000) * 2 * Math.PI) % (2 * Math.PI); needsAnim = true; }
+      if(el.anim&&el.anim!=='none'||parent&&parent.anim&&parent.anim!=='none')needsAnim=tlScrubT==null;
       if (el.type === "video") needsAnim = true;
       const effRot = ts ? ts.rot : (el.rot || 0);
       boxes[el.id] = { cx, cy, w: wpx, h: hpx, rot: -effRot * Math.PI / 180 };
@@ -868,7 +946,6 @@
       if (el.type === "video" && m && m.readyState >= 2) {
         ctx.drawImage(m, -wpx / 2, -hpx / 2, wpx, hpx);
       } else if (el.type === "image" && m) {
-        ctx.rotate(extraRot);
         ctx.drawImage(m, -wpx / 2, -hpx / 2, wpx, hpx);
         if (m.tagName === "CANVAS") needsAnim = true; // animated gif canvas updates itself; keep repainting
       } else if (el.type === "text") {

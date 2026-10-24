@@ -21,11 +21,11 @@ Legend:
 | Trackability feedback on target (0-5 stars in Artivive) | Resolution + gradient-energy heuristic, plain Hebrew hint (non-blocking) | 🆕 round-D (binary-ish hint, not a 5-star scale; thresholds calibrated, not Artivive's algorithm) |
 | Multiple layers per artwork (video/image/sound) | Multiple elements, drag + sliders + numeric panel, element list (local UI has no count cap, publish server caps at60) | ✅ device/cloud |
 | Layer types: video, image, audio, 3D (glTF/GLB), text, particles | All six built | 🆕 rounds A/C |
-| File types: jpg/png/gif images; mp4/mov/gif video; glTF/GLB (+zip, .obj/.fbx) models | jpg/png/webp images + animated non-interlaced GIF image layers; mp4/webm video; mpeg/mp4/wav/m4a/ogg audio; single-file .glb models, plus model ZIP: one .glb, or one .gltf with relative buffer/image dependencies embedded into a self-contained GLB at import, with bounded decompression (20MB entry cap, 100-entry cap, no nested-zip recursion, in-memory only) - browser-verified (uploaded ZIP lands in IDB with glTF magic; bad ZIPs get clear Hebrew errors) | ⚠️ partial: ZIP glTF + external .bin/PNG texture is now browser-verified (real file-input import, stored GLB, 3-vertex mesh, 2px texture, red triangle in actual rendered scene). Core glTF document/materials/meshes preserved, external URIs in extensions rejected rather than fetched; unsupported runtime extensions and complex animated archives remain unverified. MOV conversion is implemented as an optional authenticated ffmpeg server route plus explicit fidelity/upload consent; local integration QA converts ProRes+PCM MOV to H264+AAC MP4 and verifies decoded pixels/duration. Not operational on static staging: needs a configured backend with ffmpeg/ffprobe. FBX static conversion is now experimental via local worker AssimpJS (20MB source/result,30s timeout,256MB WASM heap cap); original triangle positions/normals/purple diffuse material verified in GLB and actual rendered preview. Skin/animation and external texture URIs rejected after conversion, unknown importer losses remain possible; complex/embedded-texture/binary FBX fidelity and phone tests remain open. Not full FBX parity. GIF animation is built and cloud pixel-verified in the camera-free 3D preview (red/blue frames); interlaced GIFs use a tested frozen first-frame fallback with Hebrew notice, not animation parity. AR-on-device GIF testing remains open. .obj IS supported via editor-side transcode to GLB - PARTIAL FIDELITY: geometry only, materials/textures/UVs/normals are LOST on conversion; the editor detects mtllib/usemtl/vt/vn and shows a styled in-page warning before converting, recommending native glb export instead (cloud-verified both branches: cancel aborts with no import, accept imports geometry-only; plain cube.obj imports with no dialog). Zip extraction bounds: per-entry 20MB, 100 entries, 60MB total uncompressed, no nested-zip recursion; one model only, duplicate canonical names and unsafe/missing/network paths rejected, final self-contained GLB capped at 20MB. Bare .gltf with external files still needs ZIP packaging or native GLB export |
+| File types: jpg/png/gif images; mp4/mov/gif video; glTF/GLB (+zip, .obj/.fbx) models | jpg/png/webp images + animated non-interlaced GIF image layers; mp4/webm video; mpeg/mp4/wav/m4a/ogg audio; single-file .glb models, plus model ZIP: one .glb, or one .gltf with relative buffer/image dependencies embedded into a self-contained GLB at import, with bounded decompression (20MB entry cap, 100-entry cap, no nested-zip recursion, in-memory only) - browser-verified (uploaded ZIP lands in IDB with glTF magic; bad ZIPs get clear Hebrew errors) | ⚠️ partial: ZIP glTF + external .bin/PNG texture is now browser-verified (real file-input import, stored GLB, 3-vertex mesh, 2px texture, red triangle in actual rendered scene). Core glTF document/materials/meshes preserved, external URIs in extensions rejected rather than fetched; unsupported runtime extensions and complex animated archives remain unverified. MOV conversion is implemented as an optional authenticated ffmpeg server route plus explicit fidelity/upload consent; local integration QA converts ProRes+PCM MOV to H264+AAC MP4 and verifies decoded pixels/duration. Not operational on static staging: needs a configured backend with ffmpeg/ffprobe. FBX static conversion is now experimental via local worker AssimpJS (20MB source/result,30s timeout,256MB WASM heap cap); original triangle positions/normals/purple diffuse material verified in GLB and actual rendered preview. Skin/animation and external texture URIs rejected after conversion, unknown importer losses remain possible; complex/embedded-texture/binary FBX fidelity and phone tests remain open. Not full FBX parity. GIF animation is built and cloud pixel-verified in the camera-free 3D preview (red/blue frames); interlaced GIFs use a tested frozen first-frame fallback with Hebrew notice, not animation parity. AR-on-device GIF testing remains open. .obj IS supported via editor-side transcode to GLB - PARTIAL FIDELITY: geometry only, materials/textures/UVs/normals are LOST on conversion; the editor detects mtllib/usemtl/vt/vn and shows a styled in-page warning before converting, recommending native glb export instead (cloud-verified both branches: cancel aborts with no import, accept imports geometry-only; plain cube.obj imports with no dialog). Zip extraction bounds: per-entry 20MB, 100 entries, 60MB total uncompressed, no nested-zip recursion; one model only, duplicate canonical names and unsafe/missing/network paths rejected, final self-contained GLB capped at 20MB. Bare embedded .gltf converts through the same bounded dependency validator (round AP actual file-input/stored GLB proof); external files still need ZIP packaging or native GLB export. Rounds AQ/AR validate GLB container and reject external dependency URIs for direct-file and whole-JSON model imports before storage; this is not full mesh/extension semantic validation |
 | Transform layers (handles + numeric panel) | Drag + sliders + numeric x/y/w/rot/depth panel | 🆕 round-A |
 | 2D and 3D editor views | 2D canvas editor + separate 3D preview page (orbit/zoom) | 🆕 round-A |
 | Layer order control | z-order up/down buttons | 🆕 round-A |
-| Opacity per layer | Per-element opacity 0-1 | 🆕 round-A |
+| Opacity per layer | Per-element opacity 0-1; rendered overlap ordering/blend verified for flat image layers (round AV) | 🆕 round-A/AV |
 | Text layer | Content, size, color, bold | 🆕 round-A |
 | Animation presets | none / spin / float / pulse | 🆕 round-A |
 | Timeline: Move/Rotate/Scale/Transform actions | Keyframes capture x/y/z/rot/opacity/scale per element | 🆕 round-B |
@@ -38,9 +38,9 @@ Legend:
 | Sequences: multiple sequences overlay simultaneously | Parallel tracks: named tracks (loop + autoStart flags) independent of states; elements bind a track via tap toggle action; state driver excludes track-bound elements so tracks keep running across state switches. Cloud-verified on staging: tr1 autoStart+loop runs at boot, tr2 manual tap-toggle starts/stops its element (visibility + motion), autoNext chain and group state-filtering intact while a track runs | ✅ round I (implemented differently: tracks in place of Artivive's parallel overlay sequences; same viewer-facing capability) |
 | Sequences: Manage Sequence (chain/stop), Change Interaction over time | Sequence chaining: per-state auto-advance `autoNext {at,to}` with editor controls, runs in previewer and player. Change Interaction over time: keyframes capture the element's tap behavior; the timeline driver switches it live during playback (discrete channel, base onTap before the first key) | ✅ round H |
 | Sequences: loop/reset per sequence | Per-state loop setting: when on, the state's one-shot timelines replay together on completion (timeline driver); editor checkbox per state | ✅ round H |
-| Preview Mode (simulate viewer, sequence notifications) | 3D preview page + live timeline playback on the editor canvas + ruler/scrub + state-switch toast notifications on tap and chained switches (previewer) | 🆕 rounds A/F/H ✅ |
+| Preview Mode (simulate viewer, sequence notifications) | 3D preview page + live timeline playback on the editor canvas + ruler/scrub + state-switch toast notifications on tap and chained switches (previewer); 2D canvas now also advances the autoNext chain live (round AU, pixel-verified) | 🆕 rounds A/F/H/AU ✅ |
 | Timeline editor: ruler with drag scrub | Ruler with second ticks, keyframe markers, draggable playhead seeking the canvas | 🆕 round-F |
-| 3D models: auto-fit, multi-mesh, textures + embedded clips | Auto-fit + center, multi-mesh opacity, textures/MeshStandardMaterial verified; first embedded glTF clip loops via AnimationMixer, hidden/target-lost freeze | ⚠️ round R: original authored translation clip rendered at two positions (pixel centroids562→685), mixer advances and freezes when hidden; phone/skeletal/morph/multi-clip choice still unverified |
+| 3D models: auto-fit, multi-mesh, textures + embedded clips | Auto-fit + center, multi-mesh opacity, textures/MeshStandardMaterial verified; named embedded clip selector with speed/play/repeat controls, AnimationMixer with hidden/target-lost freeze | ⚠️ rounds AE-AI: original two-clip GLB rendered horizontal vs vertical motion; original one-morph and one-joint weighted triangles render deformation. Named selector and controls persist. Two-joint hierarchy with explicit inverse bind matrices and split weights rendered at the predicted 2:1 displacement ratio (round AX). Crossfade blending, >2 joints, joint rotation/scale channels, skin+morph combos and phone fidelity remain unverified |
 | Particle effects: presets + speed/direction/size/density, custom assets | Sparkle/confetti presets, count/density 10-500, size 2-60, speed 0.2-3x, color, custom PNG/WebP sprite upload (verified: textured round points), arbitrary direction 0-359deg overriding the preset direction (verified: dir=90 -> purely horizontal velocities) | ✅ round C+G+I |
 | 3D Sound: logarithmic mode (never fully muted) | PositionalAudio exponential rolloff, adjustable inner radius | 🆕 round-G |
 | 3D Sound: linear mode (silent beyond outer sphere) | PositionalAudio linear model, inner + outer radii | 🆕 round-G |
@@ -156,3 +156,96 @@ Tilted-target group drag and track-only full-player found/lost startup gate fixt
 
 ## Round AC import integrity
 JSON import rejects nonembedded asset URLs before fetch, unsafe/duplicate ids, malformed timeline keys/maps and group references; supported embedded media bounded20MB each/60MB total. Six malformed fixtures rejected by import and authenticated server, external fetch count0. All14browser and importer/conversion/stable-publish regressions green. Server remains undeployed.
+
+## Round AD canvas consistency
+2D creator now composes parent group timeline into children for move/rotation/scale/opacity/visibility at scrub/live time. Actual ruler-pointer0/1/2.1s red pixels235→59→0 with fixed blue B, contact sheet inspected; existing runtime group and whole-schema regression pass. Parent preset/independent-clock preview and3D-on2D limitations remain separate, no full preview-equivalence claim.
+
+## Round AE model controls
+Zero-based embedded clip/speed/play/repeat creator controls persist across whole-schema publish/update.390px UI inspected. Runtime original GLB plus synthetic cloned second clip verifies index selection/speed/pause/one-shot config/tracking freeze. Real authored multi-clip/skeletal/morph fidelity and named selector remain open; no new rendered/device proof claimed.
+
+## Round AF named multi-clips
+Named GLB clip dropdown from bounded metadata now available. Actual original two-authored-clip GLB renders index0horizontal X357.5→441.3 and index1vertical Y352.8→268.8; four frames inspected. Supersedes AE's cloned-second-clip-only limit for simple translation. Skeletal/morph/blending/phone still unverified.
+
+## Round AG deformation evidence
+Original one-morph triangle renders area199→967pixels; original one-joint weighted triangle renders centroidX357.5→441.3. Same-scale crops inspected. Confirms minimal morph/skinning through existing loader/mixer; complex rigs/inverse binds/multijoint/blending and phone remain open. No broad model-fidelity claim.
+
+## Round AH presets
+Canvas group/child spin/float/pulse now sampled at scrub/live time with runtime preset periods. Actual AFrame seek world-position comparison all3start/mid/end within.002; actual canvas parent-spin pixels move/rotate with fixedblueB and inspected sheet. Independent track clocks and device timing remain open.
+
+## Round AI zero-time boundary
+Single t=0timeline now gets runtime driver and suppresses presets consistently with canvas; actual driver hide/opacity/rotation fixture passes. Previously duration0caused omission. No device claim.
+
+## Round AJ local preview clocks
+Canvas now uses experience/state-relative time and session-only manual track preview play/stop clocks; state switch retains track state. Composition accepts independent element clocks, global scrub unchanged. Actual controls and clock routing tested, not full runtime/pixel equivalence. Local-only pending restored deployment access.
+
+## Round AK readability
+Inactive state-tab text and track/sequence label contrast fixed;390px image inspected, manual preview fixture passes. Local-only pending deployment recovery, stagingrc51 unchanged.
+
+## Round AL canvas track pixels
+Manual track actual canvas pixels absent→movingX194→248→277 across state switch→absent after stop; sheet inspected. Extends AJ controls to bounded live-clock visual proof. State-loop/auto-next and broad clock combinations remain open.
+
+## Round AM state loop
+Canvas live state-loop clock uses max nontrack one-shot duration; boundary samples pass and all26browser fixtures rerun green. Rendered loop timing/autoNext creator simulation remains unverified. Local-only.
+
+## Round AN publish durability
+Full experience-count store now permits existing-id stable updates; atomic private-temp rename avoids partial JSON replacement. One-slot isolated fixture200/507/200 and readback/private-file/no-temp passes, plus stable URL/schema. Backend still undeployed, backups/multiuser/sync remain open.
+
+## Round AO auth evidence
+Isolated server regression confirms disabled-without-token, wrong-token no write, public read and authenticated-only deletion with final404.26browser fixtures rerun green. Undeployed, no production change.
+
+## Round AP bare embedded glTF
+Bare.gltf with embedded buffer/image URIs now converts via bounded dependency validator to self-contained GLB. Actual file-input stored magic/type proof; missing external dependency rejects with ZIP guidance/no element addition. No new rendered/complex-extension fidelity claim. Local-only.
+
+## Round AQ model input boundary
+GLB file input final check validates size/header/chunks/JSON and rejects external core/extension URIs before storing. Four malformed file fixtures reject, valid authored GLB imports. Not full mesh/extension semantics; whole-experience JSON embedded model bytes not deeply validated. Local-only.
+
+## Round AR whole-import model boundary
+Whole JSON imports validate model container/dependencies before local save; bad embedded model/URI reject without new records or external fetch. Valid model imports. Schema regression uses actual model bytes.29browser fixtures green on full rerun after one intermittent embedded-glTF fixture read failure. Local-only.
+
+## Round AS selection/import race
+The previously intermittent embedded-glTF fixture failure was reproduced by delaying selected-experience load150ms: import began against the previous experience. Selection changes are now serialized and file imports wait for selection/hydration completion. The delayed real-input regression passes three isolated runs and all29browser fixtures pass together. This is one bounded race correction, not proof against every concurrent edit/new/delete workflow. Current staging rc52 through AR was recovered/deployed08:40; AS has not yet deployed at this checkpoint.
+
+## Round AT reverse ordering
+A delayed import followed by experience selection previously stored model on second record (reproduced against AS). Imports now join selection queue; actual input regression asserts originating record[1] and next record[0], next UI empty. Three isolated and all30browser fixtures pass. Concurrent new/delete/export/arbitrary editing still outside this bounded correction. Local-only after rc52.
+
+## Round AU canvas autoNext + rendered loop wrap
+2D editor canvas now simulates the sequence autoNext chain live (advance at configured
+second, state clock restart, tab UI follows), mirroring previewer makeSeqRunner; manual
+track clocks continue across the switch. Rendered-pixel fixture: red->blue switch with
+tab assertion, independent track green continuity (147.7->184.3->252.1->286.9), looping
+state one-shot timeline wrap (peak 462.2 -> drop past -40). Three canvas images inspected.
+All31browser fixtures plus node regressions green. Two-hop chain pixel-verified (round AW);
+tap-mid-chain interaction and device timing remain open.
+
+## Round AV transparent ordering evidence
+Flat image layers: transparent PNG hole shows the layer behind, z decides occlusion
+(swap hides red fully), 0.5 opacity blends to exactly[128,0,128]; three rendered scene
+images inspected. Particle emitters, chroma-video shaders, orbiting camera and models
+remain outside this bounded proof. All31browser fixtures rerun green.
+
+## Round AX multi-joint skinning evidence
+Original two-joint GLB (hierarchy, explicit inverse bind matrices, split weights):
+full-weight triangle displaces exactly twice the 0.5/0.5 split triangle (35.8 vs17.8px,
+ratio2.01, horizontal-only), both frames inspected. Clip crossfade/blending, >2joints,
+rotation/scale joint channels, skin+morph combinations and device remain open.
+All32browser fixtures rerun green (33 with the new fixture).
+
+## Round AY clip-switch residue evidence
+Clip0 drives translation+rotation, clip1 translation only: after playing clip0 to its
+end and selecting clip1, translation follows clip1's own keys and rotation returns to
+exact identity (no residue on the undriven channel); rotated end pose frame inspected.
+Crossfade blending remains an unresolved compatibility gap; mid-play device switching open.
+
+## Core experience concurrency follow-through
+On reconstructed AS-AY093b741, delayed import then New/confirmed Delete/Export each
+reproduced wrong-destination or incomplete-snapshot behavior; failed selection poisoned
+later selections. Recoverable shared queue now includes these operations plus artwork
+and wholeJSON import. Four old-failing browser cases pass; all35browser fixtures green.
+Fresh New UI inspected without stale artwork/element controls. Arbitrary panel edits,
+particle-sprite import, publish/navigation and dedicated artwork/wholeJSON races remain
+open; no full concurrency coverage claim.
+
+Core concurrency follow-through: delayed artwork/wholeJSON import -> selection tests
+now pass, including thumbnail clearing. WholeJSON test exposed selector UI refresh
+racing the next selection; selector refresh is awaited within experience switches.
+All36browser fixtures green. Other arbitrary panel/publish/navigation gaps remain.
