@@ -8,6 +8,13 @@
   const msg = (t) => { $("msg").textContent = t; if (t) setTimeout(() => { if ($("msg").textContent === t) $("msg").textContent = ""; }, 6000); };
 
   let experienceReady = Promise.resolve();
+  // Experience-changing and snapshot operations preserve the order of user actions.
+  // Keep the tail usable after a failed operation instead of poisoning later selections.
+  function queueExperience(work) {
+    const operation = experienceReady.then(work);
+    experienceReady = operation.catch(err => { msg("הפעולה לא הושלמה: " + err.message); });
+    return experienceReady;
+  }
   let rec = null;              // current experience record
   let selectedId = null;
   const checkedIds = new Set(); // multi-select for grouping
@@ -165,6 +172,7 @@
   }
 
   async function hydrate() {
+    artworkImg = null;
     for (const k of Object.keys(media)) delete media[k];
     for (const k of Object.keys(textCache)) delete textCache[k];
     if (rec.assets.__artwork) {
@@ -215,6 +223,7 @@
       const f = e.target.files[0]; e.target.value = "";
       if (!f) return;
       if (f.size > 8 * 1024 * 1024) { msg("תמונה גדולה מדי (מעל 8MB). נסי תמונה קטנה יותר."); return; }
+      return queueExperience(async () => {
       const img = await Studio.loadImage(await Studio.blobToDataURL(f));
       const t = await Studio.makeTarget(img);
       rec.target = { artRect: t.artRect, natural: { w: img.naturalWidth, h: img.naturalHeight } };
@@ -226,6 +235,7 @@
       else if (q.warn) msg("נשמרה. שימי לב: לתמונה מעט פרטים או ניגודיות - הזיהוי עלול להיות חלש. עדיפה תמונה עם הרבה פרטים.");
       else msg("תמונת היצירה נשמרה.");
       render();
+      });
     };
 
     document.querySelectorAll("[data-add]").forEach((b) => {
@@ -365,9 +375,7 @@
     // Selection and imports share one queue, so a delayed conversion cannot
     // attach its result to a different experience selected midway through it.
     const importAsset = (kind, f, options = {}) => {
-      const operation = experienceReady.then(() => importAssetNow(kind, f, options));
-      experienceReady = operation.catch(() => {});
-      return operation;
+      return queueExperience(() => importAssetNow(kind, f, options));
     };
     const addFile = (kind) => async (e) => {
       const f = e.target.files[0]; e.target.value = "";
@@ -402,40 +410,42 @@
       render();
     };
 
-    $("btn-new").onclick = async () => {
+    $("btn-new").onclick = () => queueExperience(async () => {
       rec = Studio.blankExperience();
-      selectedId = null; artworkImg = null;
+      selectedId = null; artworkImg = null; checkedIds.clear(); tlScrubT = null; resetSeq();
       await Studio.save(rec);
       refreshExpSelect(); render();
       msg("ניסוי חדש - התחילי בהעלאת תמונת יצירה.");
-    };
+    });
     $("btn-del-exp").onclick = async () => {
       if (!confirm("למחוק את הניסוי הזה לגמרי?")) return;
+      return queueExperience(async () => {
       await Studio.del(rec.id);
       const all = await Studio.all();
       rec = all[0] || await Studio.seedDemo(true);
-      selectedId = null;
+      selectedId = null; checkedIds.clear(); tlScrubT = null; resetSeq();
       await hydrate(); refreshExpSelect(); render();
+      });
     };
     $("exp-select").onchange = (e) => {
       const id = e.target.value;
-      experienceReady = experienceReady.then(async () => {
+      queueExperience(async () => {
         const r = await Studio.load(id);
         if (!r) return; // keep the current experience instead of wiping the editor
         rec = r;
-        selectedId = null;
+        selectedId = null; checkedIds.clear(); tlScrubT = null;
         resetSeq();
         await hydrate(); render();
       });
     };
-    $("btn-export").onclick = async () => {
+    $("btn-export").onclick = () => queueExperience(async () => {
       const json = await Studio.exportJSON(rec);
       const a = document.createElement("a");
       a.href = URL.createObjectURL(new Blob([json], { type: "application/json" }));
       a.download = (rec.name || "ar-studio") + ".json";
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-    };
+    });
     $("btn-import").onclick = () => $("file-import").click();
 
     $("in-server").value = localStorage.getItem("ar-studio-server") || "";
@@ -467,13 +477,15 @@
     $("file-import").onchange = async (e) => {
       const f = e.target.files[0]; e.target.value = "";
       if (!f) return;
+      return queueExperience(async () => {
       try {
         rec = await Studio.importJSON(await f.text());
         rec.elements.forEach(Studio.normEl);
-        selectedId = null;
+        selectedId = null; checkedIds.clear(); tlScrubT = null; resetSeq();
         await hydrate(); refreshExpSelect(); render();
         msg("הייבוא הצליח.");
       } catch (err) { msg("הקובץ לא תקין לייבוא."); }
+      });
     };
     $("btn-edit-ar").onclick = () => { location.href = "play.html?edit=1#" + rec.id; };
     $("btn-play").onclick = () => { location.href = "play.html#" + rec.id; };

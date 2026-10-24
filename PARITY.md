@@ -235,3 +235,12 @@ Clip0 drives translation+rotation, clip1 translation only: after playing clip0 t
 end and selecting clip1, translation follows clip1's own keys and rotation returns to
 exact identity (no residue on the undriven channel); rotated end pose frame inspected.
 Crossfade blending remains an unresolved compatibility gap; mid-play device switching open.
+
+## Core experience concurrency follow-through
+On reconstructed AS-AY093b741, delayed import then New/confirmed Delete/Export each
+reproduced wrong-destination or incomplete-snapshot behavior; failed selection poisoned
+later selections. Recoverable shared queue now includes these operations plus artwork
+and wholeJSON import. Four old-failing browser cases pass; all35browser fixtures green.
+Fresh New UI inspected without stale artwork/element controls. Arbitrary panel edits,
+particle-sprite import, publish/navigation and dedicated artwork/wholeJSON races remain
+open; no full concurrency coverage claim.
