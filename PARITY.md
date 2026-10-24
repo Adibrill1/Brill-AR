@@ -198,3 +198,6 @@ Bare.gltf with embedded buffer/image URIs now converts via bounded dependency va
 
 ## Round AQ model input boundary
 GLB file input final check validates size/header/chunks/JSON and rejects external core/extension URIs before storing. Four malformed file fixtures reject, valid authored GLB imports. Not full mesh/extension semantics; whole-experience JSON embedded model bytes not deeply validated. Local-only.
+
+## Round AR whole-import model boundary
+Whole JSON imports validate model container/dependencies before local save; bad embedded model/URI reject without new records or external fetch. Valid model imports. Schema regression uses actual model bytes.29browser fixtures green on full rerun after one intermittent embedded-glTF fixture read failure. Local-only.

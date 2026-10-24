@@ -804,6 +804,12 @@ const Studio = (() => {
     rec.tracks = Array.isArray(o.tracks) ? o.tracks : [];
     rec.assets = {};
     for (const [k, durl] of Object.entries(o.assets || {})) rec.assets[k] = await dataURLtoBlob(durl);
+    // Whole-experience imports use the same model boundary as direct uploads.
+    // Validate before save, so rejected input never leaves a broken local record.
+    for(const el of rec.elements.filter(e=>e.type==='model')) {
+      if(!el.assetId||!rec.assets[el.assetId])throw new Error('model asset missing');
+      await validateModelBlob(rec.assets[el.assetId]);
+    }
     await save(rec);
     return rec;
   }
