@@ -144,6 +144,16 @@
   runner.enter(curSeq);
   const actionRunner=Studio.startActionDriver(rec,rig,mediaEls);
   window.__actionRunner=actionRunner;
+  if(ActionCore.list(rec).length){
+    const panel=document.createElement('div');panel.id='action-runtime-panel';panel.dir='rtl';
+    const title=document.createElement('strong');title.textContent='רצפי פעולות';panel.append(title);
+    for(const q of ActionCore.list(rec)){
+      const play=document.createElement('button');play.textContent='▶ '+q.name;play.onclick=e=>{e.stopPropagation();actionRunner.start(q.id);};panel.append(play);
+      const stop=document.createElement('button');stop.textContent='■ '+q.name;stop.onclick=e=>{e.stopPropagation();actionRunner.stop(q.id);};panel.append(stop);
+    }
+    const status=document.createElement('p');status.id='action-runtime-status';panel.append(status);document.body.append(panel);
+  }
+
   window.__tlDrv = tlDrv; // test/debug handle
   if (videoFallbacks) {
     document.getElementById("hint").textContent = "שים לב: הדפדפן הזה לא מצליח להציג את הסרטון, והוא מוצג כמלבן אפור. נסו מכשיר אחר או קובץ וידאו בפורמט נתמך (mp4 / H.264).";

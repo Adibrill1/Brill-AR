@@ -2,7 +2,7 @@
 /* Independent action sequences. Original implementation, not Artivive source.
    Legacy keyframes/scenes/tracks are preserved. No migration runs implicitly. */
 const ActionCore = (() => {
-  const kinds={move:['x','y','z'],rotate:['rot'],scale:['scale'],opacity:['opacity'],show:['visible'],hide:['visible'],interaction:['tap']};
+  const kinds={move:['x','y','z'],rotate:['rot'],scale:['scale'],opacity:['opacity'],show:['visible'],hide:['visible'],interaction:['tap'],model:['model'],media:['media']};
   const eases=['linear','easeIn','easeOut','easeInOut','elastic','bounce'];
   const list=rec=>Array.isArray(rec.actionSequences)?rec.actionSequences:[];
   const base=el=>({x:el.x||0,y:el.y||0,z:el.z||0,rot:el.rot||0,scale:1,opacity:el.opacity==null?1:el.opacity,visible:true,tap:el.onTap||'none'});
@@ -31,9 +31,17 @@ const ActionCore = (() => {
         if(!Number.isFinite(a.start)||a.start<0||!Number.isFinite(a.duration)||a.duration<0||a.start+a.duration>q.duration)return 'פעולה מחוץ לאורך הרצף';
         if(!eases.includes(a.ease))return 'עקומת פעולה לא תקינה';
         if(!a.to||typeof a.to!=='object'||Array.isArray(a.to))return 'יעד פעולה חסר';
-        for(const k of kinds[a.type])if(['visible','tap'].includes(k))continue;else if(!Number.isFinite(a.to[k])||Math.abs(a.to[k])>10000)return 'ערך יעד לא תקין';
+        for(const k of kinds[a.type])if(['visible','tap','model','media'].includes(k))continue;else if(!Number.isFinite(a.to[k])||Math.abs(a.to[k])>10000)return 'ערך יעד לא תקין';
         if(a.type==='scale'&&a.to.scale<=0)return 'גודל חייב להיות חיובי';
         if(a.type==='opacity'&&(a.to.opacity<0||a.to.opacity>1))return 'שקיפות בין0ל1';
+        if(a.type==='model'){
+          const el=rec.elements.find(e=>e.id===a.layerId);if(el.type!=='model')return 'אנימציית מודל דורשת שכבת מודל';
+          if(!Number.isInteger(a.to.clip)||a.to.clip<0||a.to.clip>99||!Number.isFinite(a.to.speed)||a.to.speed<.1||a.to.speed>4||typeof a.to.loop!=='boolean')return 'הגדרות אנימציית מודל לא תקינות';
+        }
+        if(a.type==='media'){
+          const el=rec.elements.find(e=>e.id===a.layerId);if(!['video','sound'].includes(el.type))return 'פעולת ניגון דורשת צליל או וידאו';
+          if(!Number.isFinite(a.to.offset)||a.to.offset<0||a.to.offset>3600)return 'נקודת התחלת מדיה לא תקינה';
+        }
         if(a.type==='interaction'&&(typeof a.to.tap!=='string'||a.to.tap.length>160||!(/^(none|mute|sequence|seq:[A-Za-z0-9_-]+|track:[A-Za-z0-9_-]+|action:[A-Za-z0-9_-]+)$/.test(a.to.tap))))return 'פעולת הקשה לא תקינה';
       }
     }
@@ -55,6 +63,8 @@ const ActionCore = (() => {
       const {a,from}=winner;
       if(prop==='visible')return a.type==='show';
       if(prop==='tap')return a.to.tap;
+      if(prop==='model')return {clip:a.to.clip,speed:a.to.speed,loop:a.to.loop,time:Math.min(a.duration,Math.max(0,time-a.start))*a.to.speed};
+      if(prop==='media')return {time:a.to.offset+Math.min(a.duration,Math.max(0,time-a.start)),playing:time<a.start+a.duration};
       const f=a.duration>0?Math.min(1,Math.max(0,(time-a.start)/a.duration)):1;
       return from[prop]+(a.to[prop]-from[prop])*ease(f,a.ease);
     }
@@ -80,6 +90,7 @@ const ActionCore = (() => {
       pause(){if(!paused){pauseAt=now();paused=true;}},
       resume(){if(paused){const delta=now()-pauseAt;for(const r of runs.values())r.start+=delta;paused=false;}},
       seek(id,t){api.reset();const q=list(rec).find(q=>q.id===id);if(q){runs.set(id,{start:clock()-Math.min(q.duration,Math.max(0,t)),order:++serial,seek:true,seekTime:Math.min(q.duration,Math.max(0,t))});}},
+      isPaused(){return paused||[...runs.values()].some(r=>r.seek);},
       snapshot(){const out={};for(const q of list(rec)){const r=runs.get(q.id);if(r)out[q.id]={time:Math.max(0,clock()-r.start),playing:api.isPlaying(q.id)};}return out;},
       values(){const out={};for(const [id,r]of [...runs].sort((a,b)=>a[1].order-b[1].order)){
         const q=list(rec).find(q=>q.id===id);if(!q){runs.delete(id);continue;}

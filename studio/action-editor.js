@@ -1,6 +1,6 @@
 "use strict";
 const ActionEditor=(()=>{
- const names={move:'תנועה',rotate:'סיבוב',scale:'גודל',opacity:'שקיפות',show:'הצגה',hide:'הסתרה',interaction:'שינוי הקשה'};
+ const names={move:'תנועה',rotate:'סיבוב',scale:'גודל',opacity:'שקיפות',show:'הצגה',hide:'הסתרה',interaction:'שינוי הקשה',model:'אנימציית מודל',media:'ניגון צליל/וידאו'};
  let selected=null,selectedAction=null;
  function mount(root,ctx){
   const {rec,engine}=ctx,seqs=ActionCore.list(rec);if(!seqs.some(q=>q.id===selected))selected=seqs[0]?.id;
@@ -37,15 +37,20 @@ const ActionEditor=(()=>{
   }
   const add=node('div');add.className='row';
   const types=node('select',null,add);types.setAttribute('aria-label','סוג פעולה חדשה');for(const [value,title]of Object.entries(names)){const o=node('option',title,types);o.value=value;}
-  button('+ פעולה על השכבה שנבחרה',()=>{const el=rec.elements.find(e=>e.id===ctx.selectedId);if(!el)return ctx.message('בחרי שכבה ברשימה או על היצירה לפני הוספת פעולה');const type=types.value,b=ActionCore.base(el),to={};for(const k of ActionCore.kinds[type])to[k]=b[k];if(type==='interaction')to.tap='none';if(type==='move')to.x+=.15;
-    const a={id:Studio.newId(),layerId:el.id,type,start:0,duration:['show','hide','interaction'].includes(type)?0:Math.min(1,q.duration),ease:'linear',to};q.actions.push(a);selectedAction=a.id;save();},add);
+  button('+ פעולה על השכבה שנבחרה',()=>{const el=rec.elements.find(e=>e.id===ctx.selectedId);if(!el)return ctx.message('בחרי שכבה ברשימה או על היצירה לפני הוספת פעולה');const type=types.value,b=ActionCore.base(el),to={};for(const k of ActionCore.kinds[type])to[k]=b[k];if(type==='interaction')to.tap='none';if(type==='move')to.x+=.15;if(type==='model'){delete to.model;Object.assign(to,{clip:el.modelClip||0,speed:el.modelSpeed||1,loop:false});}if(type==='media'){delete to.media;to.offset=0;}
+    const a={id:Studio.newId(),layerId:el.id,type,start:0,duration:['show','hide','interaction'].includes(type)?0:Math.min(1,q.duration),ease:'linear',to};q.actions.push(a);selectedAction=a.id;if(!save()){q.actions=q.actions.filter(x=>x!==a);selectedAction=null;}},add);
   const a=q.actions.find(a=>a.id===selectedAction);
   if(a){const box=node('div');box.className='action-details';node('strong','עריכת '+names[a.type],box);
     const layer=node('select',null,box);layer.setAttribute('aria-label','שכבת יעד');for(const e of rec.elements){const o=node('option',e.name||e.type,layer);o.value=e.id;}layer.value=a.layerId;layer.onchange=()=>{a.layerId=layer.value;save();};
     field('התחלה בשניות',a.start,v=>{a.start=Math.max(0,Math.min(q.duration-a.duration,v||0));save();},box);
     field('משך בשניות',a.duration,v=>{a.duration=Math.max(0,Math.min(q.duration-a.start,v||0));save();},box);
-    const ease=node('select',null,box);ease.setAttribute('aria-label','עקומת מהירות');for(const type of ActionCore.eases){const o=node('option',type,ease);o.value=type;}ease.value=a.ease;ease.onchange=()=>{a.ease=ease.value;save();};
-    for(const k of ActionCore.kinds[a.type])if(k==='tap'){const tap=node('select',null,box);for(const [v,title]of [['none','ללא הקשה'],['mute','השתקה'],...seqs.map(s=>['action:'+s.id,'הפעלת '+s.name])]){const o=node('option',title,tap);o.value=v;}tap.value=a.to.tap;tap.onchange=()=>{a.to.tap=tap.value;save();};}else if(k!=='visible')field('יעד '+({x:'אופקי',y:'אנכי',z:'עומק',rot:'מעלות',scale:'גודל יחסי',opacity:'שקיפות'}[k]),a.to[k],v=>{const old=a.to[k];a.to[k]=v;if(!save())a.to[k]=old;},box);
+    const ease=node('select',null,box);ease.setAttribute('aria-label','עקומת מהירות');for(const type of ActionCore.eases){const o=node('option',({linear:'קבועה',easeIn:'האצה',easeOut:'האטה',easeInOut:'האצה והאטה',elastic:'אלסטית',bounce:'קפיצות'}[type]),ease);o.value=type;}ease.value=a.ease;ease.onchange=()=>{a.ease=ease.value;save();};
+    for(const k of ActionCore.kinds[a.type])if(k==='model'){
+      field('מספר אנימציה',a.to.clip,v=>{const old=a.to.clip;a.to.clip=Math.max(0,Math.floor(v||0));if(!save())a.to.clip=old;},box);
+      field('מהירות',a.to.speed,v=>{a.to.speed=Math.max(.1,Math.min(4,v||1));save();},box);
+      const l=node('label','חזרה בתוך הפעולה',box),c=node('input',null,l);c.type='checkbox';c.checked=a.to.loop;c.onchange=()=>{a.to.loop=c.checked;save();};
+    }else if(k==='media')field('התחלת קובץ בשניות',a.to.offset,v=>{a.to.offset=Math.max(0,Math.min(3600,v||0));save();},box);
+    else if(k==='tap'){const tap=node('select',null,box);for(const [v,title]of [['none','ללא הקשה'],['mute','השתקה'],...seqs.map(s=>['action:'+s.id,'הפעלת '+s.name])]){const o=node('option',title,tap);o.value=v;}tap.value=a.to.tap;tap.onchange=()=>{a.to.tap=tap.value;save();};}else if(k!=='visible')field('יעד '+({x:'אופקי',y:'אנכי',z:'עומק',rot:'מעלות',scale:'גודל יחסי',opacity:'שקיפות'}[k]),a.to[k],v=>{const old=a.to[k];a.to[k]=v;if(!save())a.to[k]=old;},box);
     button('מחיקת פעולה',()=>{q.actions=q.actions.filter(x=>x!==a);save();},box);
   }
   const note=node('p','כללי המימוש שלנו: הקשה חוזרת מתחילה מחדש. בחפיפה באותו רצף, הפעולה שמסתיימת מאוחר יותר גוברת; בשוויון, המאוחרת ברשימה. בין רצפים, ההפעלה האחרונה גוברת רק בערכים שהיא משנה. שכבה שיש עליה פעולות משתמשת במצב הבסיס במקום נקודות הזמן הישנות. איפוס משחרר את ערכי הרצף; ללא איפוס ערך הסיום נשמר. אלה בחירות תכנון שלנו, לא התנהגות Artivive שאומתה.');note.className='hint';

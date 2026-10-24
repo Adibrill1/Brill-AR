@@ -11,3 +11,6 @@ Shared pure evaluator, canvas/group composition, 3D and AR driver. AR clock paus
 Tests:14engine cases; action editor responsiveness/export-import/3D engine checks; server publish-readback and atomic rejection;36existing browser fixtures. Synthetic/local browser proof only, not phone/camera/sound proof.
 
 Remaining: timed media/model clip actions, duplicate layer/crop/undo, full integrated3Dmanipulation, particle lifetimes/curves/shapes, audio spheres, whole creator acceptance scenarios and real-device checks. Not Artivive parity.
+
+## Timed media/model follow-up
+Added timed model clip selection/speed/loop with the sequence-owned sampled clock, and timed video/sound playback with file offset and duration. Seek is silent; tracking pause holds clocks/media. Clip action duration is explicit, not inferred from a clip: waiting vs interruption is authored by action placement. Preview shows active sequence clocks and per-sequence play/stop controls. Browser tests verify real glTF mesh pose/clip clock, fake audio element timing/gating (not real sound), UI create/edit/duplicate/delete references, and full-player synthetic found/lost pause.39browserfixtures including36legacy cases passed after these changes.

@@ -175,6 +175,7 @@ const Studio = (() => {
       tick(t, dt) {
         if (!this.mixer || !this.tracked || !this.data.playing) return;
         for (let o = this.el.object3D; o; o = o.parent) if (!o.visible) return;
+        if(this.el._actionClock!=null){this.mixer.setTime(this.el._actionClock);return;}
         this.mixer.update(Math.min(0.25, (dt || 0) / 1000) * Math.max(.1,Math.min(4,this.data.speed)));
       },
       remove() {
@@ -397,7 +398,7 @@ const Studio = (() => {
       if (blob) {
         const inner = document.createElement("a-entity");
         ensureModelAnimationComponent();
-        inner.setAttribute("model-clips", {clip:el.modelClip||0,speed:el.modelSpeed||1,playing:el.modelPlaying!==false,loop:el.modelLoop!==false});
+        inner.setAttribute("model-clips", {clip:el.modelClip||0,speed:el.modelSpeed||1,playing:!ActionCore.list(rec).some(q=>q.actions.some(a=>a.type==='model'&&a.layerId===el.id))&&el.modelPlaying!==false,loop:el.modelLoop!==false});
         inner.setAttribute("gltf-model", URL.createObjectURL(blob));
         inner.addEventListener("model-loaded", () => {
           const mesh = inner.getObject3D("mesh");
@@ -557,7 +558,7 @@ const Studio = (() => {
   }
   function syncMedia(container, rec) {
     for (const m of container._studioMedia || []) {
-      let allowed = m._studioBaseAllowed !== false && !m._actionBlocked;
+      let allowed = m._studioBaseAllowed !== false && !m._actionBlocked && m._actionPlaying!==false;
       const node = container.querySelector('[data-el-id="' + m.el.id + '"]');
       let parent = node && node.object3D;
       while (parent) { if (!parent.visible) allowed = false; parent = parent.parent; }
@@ -748,9 +749,27 @@ const Studio = (() => {
         e._timelineVisible=s.visible!==false;e.object3D.visible=e._sequenceVisible!==false&&e._timelineVisible;
         e._tapOverride=s.tap;e.classList.toggle('cantap',!!s.tap&&s.tap!=='none');
       }
-      for(const m of mediaEls||[])m._actionBlocked=values[m.el.id]&&values[m.el.id].visible===false;
+      for(const {e,el}of entries){
+        const value=values[el.id],inner=e.querySelector('[model-clips]');
+        if(inner){const clip=value&&value.model;if(clip){
+          const signature=clip.clip+':'+clip.loop;
+          if(inner._actionSignature!==signature){inner._actionSignature=signature;inner.setAttribute('model-clips',{clip:clip.clip,speed:1,playing:true,loop:clip.loop});}
+          inner._actionClock=clip.time;
+          const component=inner.components&&inner.components['model-clips'];if(component&&component.mixer)component.mixer.setTime(clip.time);
+        }else if(ActionCore.list(rec).some(q=>q.actions.some(a=>a.type==='model'&&a.layerId===el.id))){inner._actionClock=0;const c=inner.components&&inner.components['model-clips'];if(c&&c.mixer)c.mixer.setTime(0);}}
+      }
+      for(const m of mediaEls||[]){
+        const value=values[m.el.id];m._actionBlocked=value&&value.visible===false;
+        if(ActionCore.list(rec).some(q=>q.actions.some(a=>a.type==='media'&&a.layerId===m.el.id))){
+          const clip=value&&value.media;m._actionPlaying=!!(clip&&clip.playing&&!engine.isPaused());
+          if(clip){let time=clip.time;if(Number.isFinite(m.node.duration)&&m.node.duration>0)time=Math.min(time,m.node.duration);if(Number.isFinite(time)&&Math.abs(m.node.currentTime-time)>.12)try{m.node.currentTime=time;}catch{}}
+          if(m._actionPlaying&&m.node.paused&&!m.node._studioBlocked){m.node.play().catch(()=>{});}
+        }
+      }
       syncMedia(container,rec);
-      container.dataset.actionSequences=JSON.stringify(engine.snapshot());requestAnimationFrame(frame);
+      container.dataset.actionSequences=JSON.stringify(engine.snapshot());
+      const status=document.getElementById('action-runtime-status');if(status){const states=engine.snapshot();status.textContent=ActionCore.list(rec).map(q=>q.name+': '+(states[q.id]?(states[q.id].playing?'מנגן ':'סיום ')+Math.min(q.duration,states[q.id].time% (q.loop?q.duration:Infinity)).toFixed(1)+'s':'עצור')).join(' · ');}
+      requestAnimationFrame(frame);
     }
     requestAnimationFrame(frame);engine.dispose=()=>{active=false;};return engine;
   }
