@@ -14,3 +14,6 @@ Remaining: timed media/model clip actions, duplicate layer/crop/undo, full integ
 
 ## Timed media/model follow-up
 Added timed model clip selection/speed/loop with the sequence-owned sampled clock, and timed video/sound playback with file offset and duration. Seek is silent; tracking pause holds clocks/media. Clip action duration is explicit, not inferred from a clip: waiting vs interruption is authored by action placement. Preview shows active sequence clocks and per-sequence play/stop controls. Browser tests verify real glTF mesh pose/clip clock, fake audio element timing/gating (not real sound), UI create/edit/duplicate/delete references, and full-player synthetic found/lost pause.39browserfixtures including36legacy cases passed after these changes.
+
+## Sequence management
+Action type sequence starts/stops another sequence at the authored time. Scrubbing does not execute commands. Runtime uses bounded event processing; imported/start-action cyclic graphs are rejected with a visible validation error instead of unbounded chaining. This is our safety/design choice.16pure-engine tests include event start/stop and silent scrub.

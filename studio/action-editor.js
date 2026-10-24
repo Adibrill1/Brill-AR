@@ -1,6 +1,6 @@
 "use strict";
 const ActionEditor=(()=>{
- const names={move:'תנועה',rotate:'סיבוב',scale:'גודל',opacity:'שקיפות',show:'הצגה',hide:'הסתרה',interaction:'שינוי הקשה',model:'אנימציית מודל',media:'ניגון צליל/וידאו'};
+ const names={move:'תנועה',rotate:'סיבוב',scale:'גודל',opacity:'שקיפות',show:'הצגה',hide:'הסתרה',interaction:'שינוי הקשה',model:'אנימציית מודל',media:'ניגון צליל/וידאו',sequence:'הפעלת/עצירת רצף'};
  let selected=null,selectedAction=null;
  function mount(root,ctx){
   const {rec,engine}=ctx,seqs=ActionCore.list(rec);if(!seqs.some(q=>q.id===selected))selected=seqs[0]?.id;
@@ -23,7 +23,7 @@ const ActionEditor=(()=>{
   button('ניגון מהתחלה',()=>{engine.start(q.id);ctx.redraw();},options);
   button('עצירה ושחרור',()=>{engine.stop(q.id);ctx.redraw();},options);
   button('שכפול רצף',()=>{if(seqs.length>=24)return;const copy=JSON.parse(JSON.stringify(q));copy.id=Studio.newId();copy.name=(q.name+' עותק').slice(0,120);copy.actions.forEach(a=>a.id=Studio.newId());rec.actionSequences.push(copy);selected=copy.id;save();},options);
-  button('מחיקת רצף',()=>{rec.actionSequences=seqs.filter(s=>s.id!==q.id);for(const s of rec.actionSequences)for(const a of s.actions)if(a.to.tap==='action:'+q.id)a.to.tap='none';for(const el of rec.elements)if(el.onTap==='action:'+q.id)el.onTap='none';engine.stop(q.id);save();},options);
+  button('מחיקת רצף',()=>{rec.actionSequences=seqs.filter(s=>s.id!==q.id);for(const s of rec.actionSequences)for(const a of s.actions)if(a.to.tap==='action:'+q.id)a.to.tap='none';for(const s of rec.actionSequences)s.actions=s.actions.filter(a=>a.type!=='sequence'||a.to.sequenceId!==q.id);for(const el of rec.elements)if(el.onTap==='action:'+q.id)el.onTap='none';engine.stop(q.id);save();},options);
   const playhead=field('בדיקה בזמן',0,v=>{engine.seek(q.id,v);ctx.redraw();});playhead.min=0;playhead.max=q.duration;playhead.dataset.actionSeek='true';
   const ruler=node('div');ruler.className='action-ruler';ruler.dir='ltr';ruler.textContent='0s';node('span',q.duration+'s',ruler);
   for(const a of q.actions){
@@ -37,15 +37,18 @@ const ActionEditor=(()=>{
   }
   const add=node('div');add.className='row';
   const types=node('select',null,add);types.setAttribute('aria-label','סוג פעולה חדשה');for(const [value,title]of Object.entries(names)){const o=node('option',title,types);o.value=value;}
-  button('+ פעולה על השכבה שנבחרה',()=>{const el=rec.elements.find(e=>e.id===ctx.selectedId);if(!el)return ctx.message('בחרי שכבה ברשימה או על היצירה לפני הוספת פעולה');const type=types.value,b=ActionCore.base(el),to={};for(const k of ActionCore.kinds[type])to[k]=b[k];if(type==='interaction')to.tap='none';if(type==='move')to.x+=.15;if(type==='model'){delete to.model;Object.assign(to,{clip:el.modelClip||0,speed:el.modelSpeed||1,loop:false});}if(type==='media'){delete to.media;to.offset=0;}
-    const a={id:Studio.newId(),layerId:el.id,type,start:0,duration:['show','hide','interaction'].includes(type)?0:Math.min(1,q.duration),ease:'linear',to};q.actions.push(a);selectedAction=a.id;if(!save()){q.actions=q.actions.filter(x=>x!==a);selectedAction=null;}},add);
+  button('+ פעולה על השכבה שנבחרה',()=>{const el=rec.elements.find(e=>e.id===ctx.selectedId);if(!el)return ctx.message('בחרי שכבה ברשימה או על היצירה לפני הוספת פעולה');const type=types.value,b=ActionCore.base(el),to={};for(const k of ActionCore.kinds[type])to[k]=b[k];if(type==='interaction')to.tap='none';if(type==='move')to.x+=.15;if(type==='model'){delete to.model;Object.assign(to,{clip:el.modelClip||0,speed:el.modelSpeed||1,loop:false});}if(type==='media'){delete to.media;to.offset=0;}if(type==='sequence'){delete to.sequence;to.command='start';to.sequenceId=seqs.find(s=>s.id!==q.id)?.id||q.id;}
+    const a={id:Studio.newId(),layerId:el.id,type,start:0,duration:['show','hide','interaction','sequence'].includes(type)?0:Math.min(1,q.duration),ease:'linear',to};q.actions.push(a);selectedAction=a.id;if(!save()){q.actions=q.actions.filter(x=>x!==a);selectedAction=null;}},add);
   const a=q.actions.find(a=>a.id===selectedAction);
   if(a){const box=node('div');box.className='action-details';node('strong','עריכת '+names[a.type],box);
     const layer=node('select',null,box);layer.setAttribute('aria-label','שכבת יעד');for(const e of rec.elements){const o=node('option',e.name||e.type,layer);o.value=e.id;}layer.value=a.layerId;layer.onchange=()=>{a.layerId=layer.value;save();};
     field('התחלה בשניות',a.start,v=>{a.start=Math.max(0,Math.min(q.duration-a.duration,v||0));save();},box);
     field('משך בשניות',a.duration,v=>{a.duration=Math.max(0,Math.min(q.duration-a.start,v||0));save();},box);
     const ease=node('select',null,box);ease.setAttribute('aria-label','עקומת מהירות');for(const type of ActionCore.eases){const o=node('option',({linear:'קבועה',easeIn:'האצה',easeOut:'האטה',easeInOut:'האצה והאטה',elastic:'אלסטית',bounce:'קפיצות'}[type]),ease);o.value=type;}ease.value=a.ease;ease.onchange=()=>{a.ease=ease.value;save();};
-    for(const k of ActionCore.kinds[a.type])if(k==='model'){
+    for(const k of ActionCore.kinds[a.type])if(k==='sequence'){
+      const target=node('select',null,box);target.setAttribute('aria-label','רצף להפעלה או עצירה');for(const s of seqs){const o=node('option',s.name,target);o.value=s.id;}target.value=a.to.sequenceId;target.onchange=()=>{const old=a.to.sequenceId;a.to.sequenceId=target.value;if(!save())a.to.sequenceId=old;};
+      const command=node('select',null,box);for(const [v,title]of [['start','הפעלת רצף'],['stop','עצירת רצף']]){const o=node('option',title,command);o.value=v;}command.value=a.to.command;command.onchange=()=>{const old=a.to.command;a.to.command=command.value;if(!save())a.to.command=old;};
+    }else if(k==='model'){
       field('מספר אנימציה',a.to.clip,v=>{const old=a.to.clip;a.to.clip=Math.max(0,Math.floor(v||0));if(!save())a.to.clip=old;},box);
       field('מהירות',a.to.speed,v=>{a.to.speed=Math.max(.1,Math.min(4,v||1));save();},box);
       const l=node('label','חזרה בתוך הפעולה',box),c=node('input',null,l);c.type='checkbox';c.checked=a.to.loop;c.onchange=()=>{a.to.loop=c.checked;save();};

@@ -2,7 +2,7 @@
 /* Independent action sequences. Original implementation, not Artivive source.
    Legacy keyframes/scenes/tracks are preserved. No migration runs implicitly. */
 const ActionCore = (() => {
-  const kinds={move:['x','y','z'],rotate:['rot'],scale:['scale'],opacity:['opacity'],show:['visible'],hide:['visible'],interaction:['tap'],model:['model'],media:['media']};
+  const kinds={move:['x','y','z'],rotate:['rot'],scale:['scale'],opacity:['opacity'],show:['visible'],hide:['visible'],interaction:['tap'],model:['model'],media:['media'],sequence:['sequence']};
   const eases=['linear','easeIn','easeOut','easeInOut','elastic','bounce'];
   const list=rec=>Array.isArray(rec.actionSequences)?rec.actionSequences:[];
   const base=el=>({x:el.x||0,y:el.y||0,z:el.z||0,rot:el.rot||0,scale:1,opacity:el.opacity==null?1:el.opacity,visible:true,tap:el.onTap||'none'});
@@ -31,9 +31,10 @@ const ActionCore = (() => {
         if(!Number.isFinite(a.start)||a.start<0||!Number.isFinite(a.duration)||a.duration<0||a.start+a.duration>q.duration)return 'פעולה מחוץ לאורך הרצף';
         if(!eases.includes(a.ease))return 'עקומת פעולה לא תקינה';
         if(!a.to||typeof a.to!=='object'||Array.isArray(a.to))return 'יעד פעולה חסר';
-        for(const k of kinds[a.type])if(['visible','tap','model','media'].includes(k))continue;else if(!Number.isFinite(a.to[k])||Math.abs(a.to[k])>10000)return 'ערך יעד לא תקין';
+        for(const k of kinds[a.type])if(['visible','tap','model','media','sequence'].includes(k))continue;else if(!Number.isFinite(a.to[k])||Math.abs(a.to[k])>10000)return 'ערך יעד לא תקין';
         if(a.type==='scale'&&a.to.scale<=0)return 'גודל חייב להיות חיובי';
         if(a.type==='opacity'&&(a.to.opacity<0||a.to.opacity>1))return 'שקיפות בין0ל1';
+        if(a.type==='sequence'&&(!['start','stop'].includes(a.to.command)||typeof a.to.sequenceId!=='string'))return 'פעולת רצף לא תקינה';
         if(a.type==='model'){
           const el=rec.elements.find(e=>e.id===a.layerId);if(el.type!=='model')return 'אנימציית מודל דורשת שכבת מודל';
           if(!Number.isInteger(a.to.clip)||a.to.clip<0||a.to.clip>99||!Number.isFinite(a.to.speed)||a.to.speed<.1||a.to.speed>4||typeof a.to.loop!=='boolean')return 'הגדרות אנימציית מודל לא תקינות';
@@ -46,6 +47,10 @@ const ActionCore = (() => {
       }
     }
     for(const q of rec.actionSequences)for(const a of q.actions)if(a.type==='interaction'&&a.to.tap.startsWith('action:')&&!ids.has(a.to.tap.slice(7)))return 'הפניה לרצף חסר';
+    for(const q of rec.actionSequences)for(const a of q.actions)if(a.type==='sequence'&&!ids.has(a.to.sequenceId))return 'הפניה לרצף חסר';
+    const edges=new Map(rec.actionSequences.map(q=>[q.id,q.actions.filter(a=>a.type==='sequence'&&a.to.command==='start').map(a=>a.to.sequenceId)])),visiting=new Set(),done=new Set();
+    function cycle(id){if(visiting.has(id))return true;if(done.has(id))return false;visiting.add(id);for(const to of edges.get(id)||[])if(cycle(to))return true;visiting.delete(id);done.add(id);return false;}
+    for(const id of edges.keys())if(cycle(id))return 'הפעלות מעגליות בין רצפים אינן מותרות';
     for(const e of rec.elements||[])if(e.onTap&&e.onTap.startsWith('action:')&&!ids.has(e.onTap.slice(7)))return 'הקשה מפנה לרצף חסר';
     return null;
   }
@@ -69,7 +74,7 @@ const ActionCore = (() => {
       return from[prop]+(a.to[prop]-from[prop])*ease(f,a.ease);
     }
     for(const a of sorted){
-      const el=rec.elements.find(e=>e.id===a.layerId);if(!el||!kinds[a.type])continue;
+      const el=rec.elements.find(e=>e.id===a.layerId);if(!el||!kinds[a.type]||a.type==='sequence')continue;
       const from=base(el),props=kinds[a.type];
       for(const p of props){const v=at(a.layerId,p,a.start,prepared.filter(p=>p.a.start<a.start));if(v!==undefined)from[p]=v;}
       prepared.push({a,props,from,end:a.start+a.duration});
@@ -81,7 +86,7 @@ const ActionCore = (() => {
     const runs=new Map();let serial=0,paused=false,pauseAt=0;
     const clock=()=>paused?pauseAt:now();
     const api={
-      start(id){const q=list(rec).find(q=>q.id===id);if(!q)return false;runs.set(id,{start:clock(),order:++serial});return true;},
+      start(id){const q=list(rec).find(q=>q.id===id);if(!q)return false;runs.set(id,{start:clock(),order:++serial,seen:new Set()});return true;},
       stop(id){runs.delete(id);},
       toggle(id){if(api.isPlaying(id))api.stop(id);else api.start(id);},
       isPlaying(id){const r=runs.get(id),q=list(rec).find(q=>q.id===id);return !!(r&&q&&(q.loop||clock()-r.start<q.duration));},
@@ -92,7 +97,25 @@ const ActionCore = (() => {
       seek(id,t){api.reset();const q=list(rec).find(q=>q.id===id);if(q){runs.set(id,{start:clock()-Math.min(q.duration,Math.max(0,t)),order:++serial,seek:true,seekTime:Math.min(q.duration,Math.max(0,t))});}},
       isPaused(){return paused||[...runs.values()].some(r=>r.seek);},
       snapshot(){const out={};for(const q of list(rec)){const r=runs.get(q.id);if(r)out[q.id]={time:Math.max(0,clock()-r.start),playing:api.isPlaying(q.id)};}return out;},
-      values(){const out={};for(const [id,r]of [...runs].sort((a,b)=>a[1].order-b[1].order)){
+      values(){
+        // Sequence-management events are consumed once per cycle, including t=0.
+        // A bounded generation prevents self-start/cyclic graphs from spinning.
+        let budget=64;const handled=new Set();
+        while(budget-->0){let found=false;
+          for(const [id,r]of [...runs]){const q=list(rec).find(q=>q.id===id);if(!q||r.seek)continue;
+            const elapsed=Math.max(0,clock()-r.start),cycle=q.loop?Math.floor(elapsed/q.duration):0,t=q.loop?elapsed%q.duration:elapsed;
+            r.seen||=new Set();
+            for(const a of q.actions){if(a.type!=='sequence'||a.start>t)continue;const key=cycle+':'+a.id;
+              if(r.seen.has(key))continue;r.seen.add(key);
+              const globalKey=id+':'+a.id;if(handled.has(globalKey))continue;handled.add(globalKey);found=true;
+              if(a.to.command==='start')api.start(a.to.sequenceId);else api.stop(a.to.sequenceId);
+            }
+            // Drop old-cycle markers to keep memory bounded through endless loops.
+            if(r.seen.size>600)r.seen=new Set([...r.seen].filter(k=>k.startsWith(cycle+':')));
+          }
+          if(!found)break;
+        }
+        const out={};for(const [id,r]of [...runs].sort((a,b)=>a[1].order-b[1].order)){
         const q=list(rec).find(q=>q.id===id);if(!q){runs.delete(id);continue;}
         let t=r.seek?r.seekTime:Math.max(0,clock()-r.start);
         if(!q.loop&&t>=q.duration&&q.reset&&!r.seek){runs.delete(id);continue;}

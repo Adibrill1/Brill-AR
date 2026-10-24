@@ -428,7 +428,7 @@ const Studio = (() => {
     e.setAttribute("rotation", rot);
     e.dataset.elId = el.id;
     e._studioFrame = { ox, oy, oz, angle, baseRotation: opts.baseRotation || 0, zTie: idx * 0.001 };
-    const hasTl = ActionCore.list(rec).some(q=>q.actions.some(a=>a.layerId===el.id)) || el.timeline && Array.isArray(el.timeline.keys) && el.timeline.keys.length;
+    const hasTl = ActionCore.list(rec).some(q=>q.actions.some(a=>a.type!=="sequence"&&a.layerId===el.id)) || el.timeline && Array.isArray(el.timeline.keys) && el.timeline.keys.length;
     if (el.anim === "spin" && !hasTl) e.setAttribute("animation__spin", `property: rotation; to: 0 0 ${(el.rot || 0) - (opts.baseRotation || 0) + 360}; loop: true; dur: 14000; easing: linear`);
     else if (el.anim === "float" && !hasTl) e.setAttribute("animation__float", `property: position; from: ${pos}; to: ${dx * Math.cos(angle) - dy * Math.sin(angle)} ${dx * Math.sin(angle) + dy * Math.cos(angle) + 0.03} ${z - oz}; dir: alternate; loop: true; dur: 2600; easing: easeInOutSine`);
     else if (el.anim === "pulse" && !hasTl) e.setAttribute("animation__pulse", `property: scale; to: 1.08 1.08 1; dir: alternate; loop: true; dur: 1600; easing: easeInOutSine`);
@@ -644,7 +644,7 @@ const Studio = (() => {
   // Canvas uses the same artwork-space samples and parent-base frame as runtime.
   function sampleComposition(rec, el, t, seqId) {
     const timeFor=typeof t==='function'?t:()=>t;
-    const owned=e=>ActionCore.list(rec).some(q=>q.actions.some(a=>a.layerId===e.id));
+    const owned=e=>ActionCore.list(rec).some(q=>q.actions.some(a=>a.type!=="sequence"&&a.layerId===e.id));
     const out = Object.assign(owned(el)?ActionCore.base(el):sampleVisual(rec,el,timeFor(el)),rec._actionValues&&rec._actionValues[el.id]);
     out.visible = out.visible && elVisibleIn(el,seqId);
     const group=rec.elements.find(g=>g.type==='group'&&(g.children||[]).includes(el.id));
@@ -680,7 +680,7 @@ const Studio = (() => {
     const tracks = [];
     for (const e of entities) {
       const el = rec.elements.find((x) => x.id === (e.dataset && e.dataset.elId));
-      if (!el || ActionCore.list(rec).some(q=>q.actions.some(a=>a.layerId===el.id)) || !el.timeline || !Array.isArray(el.timeline.keys) || !el.timeline.keys.length) continue;
+      if (!el || ActionCore.list(rec).some(q=>q.actions.some(a=>a.type!=="sequence"&&a.layerId===el.id)) || !el.timeline || !Array.isArray(el.timeline.keys) || !el.timeline.keys.length) continue;
       const p0 = e.getAttribute("position");
       const ts0 = toTargetSpace(rec, el, el.aspect || 1);
       tracks.push({ el, e, elapsed: 0, startedAt: 0,
@@ -732,7 +732,7 @@ const Studio = (() => {
   // One action engine drives shared layers in preview and AR. Releasing a sequence
   // restores base authoring values; legacy-only layers keep their existing drivers.
   function startActionDriver(rec,container,mediaEls,opts={}) {
-    const engine=ActionCore.create(rec),ids=new Set(ActionCore.list(rec).flatMap(q=>q.actions.map(a=>a.layerId)));
+    const engine=ActionCore.create(rec),ids=new Set(ActionCore.list(rec).flatMap(q=>q.actions.filter(a=>a.type!=="sequence").map(a=>a.layerId)));
     const entries=[...container.querySelectorAll('[data-el-id]')].filter(e=>ids.has(e.dataset.elId)).map(e=>{
       const el=rec.elements.find(el=>el.id===e.dataset.elId);return {e,el};
     });
