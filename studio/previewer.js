@@ -6,6 +6,7 @@
   const errBox = document.getElementById("err");
   const fail = (t) => { errBox.style.display = "grid"; errBox.innerHTML = t; };
   const id = location.hash.slice(1);
+  const editMode=new URLSearchParams(location.search).get("edit")==="1";
   if (!id) return fail("חסר מזהה ניסוי. <a href='index.html'>חזרה לעורך</a>");
   const rec = await Studio.load(id);
   if (!rec || !rec.target) return fail("הניסוי לא נמצא. <a href='index.html'>חזרה לעורך</a>");
@@ -130,21 +131,21 @@
   // taps bind per entity, including children inside group wrappers
   rig.querySelectorAll("[data-el-id]").forEach((n) => {
     const el = rec.elements.find((x) => x.id === n.dataset.elId);
-    if (el) Studio.bindTap(n, el, { onMuteToggle, onNextSequence, onSequence, onTrackToggle, onActionSequence: id=>actionRunner.start(id) });
+    if (el&&!editMode) Studio.bindTap(n, el, { onMuteToggle, onNextSequence, onSequence, onTrackToggle, onActionSequence: id=>actionRunner.start(id) });
   });
-  trackRunner.autoStart();
+  if(!editMode)trackRunner.autoStart();
   refreshVisibility();
   if (curSeq) { refreshVisibility(); Studio.renderSeqDots(rec, curSeq); }
   // the state driver drives only state-model elements; tracked elements run on their track's own driver
   tlDrv = Studio.startTimelineDriver(rec, [...rig.querySelectorAll("[data-el-id]")].filter((n) => {
     const el = rec.elements.find((x) => x.id === n.dataset.elId);
     return el && !el.track;
-  }));
+  }),{autostart:!editMode});
   if (tlDrv) tlDrv.stateLoop = !!(Studio.seqList(rec).find((x) => x.id === curSeq) || {}).loop;
-  runner.enter(curSeq);
-  const actionRunner=Studio.startActionDriver(rec,rig,mediaEls);
+  if(!editMode)runner.enter(curSeq);
+  const actionRunner=Studio.startActionDriver(rec,rig,mediaEls,{disabled:editMode});
   window.__actionRunner=actionRunner;
-  if(ActionCore.list(rec).length){
+  if(!editMode&&ActionCore.list(rec).length){
     const panel=document.createElement('div');panel.id='action-runtime-panel';panel.dir='rtl';
     const title=document.createElement('strong');title.textContent='רצפי פעולות';panel.append(title);
     for(const q of ActionCore.list(rec)){
@@ -177,11 +178,19 @@
   setTimeout(kick, 800);
   setTimeout(kick, 2500);
 
-  Studio.monitorMedia(rig, rec);
-  Studio.ensurePlayback(mediaEls.filter((m) => m.kind === "video"));
+  if(editMode){
+    rig.querySelectorAll('[animation__spin],[animation__float],[animation__pulse],[model-clips]').forEach(n=>{for(const attr of ['animation__spin','animation__float','animation__pulse','model-clips'])n.removeAttribute(attr);});
+    rig.querySelectorAll('[data-el-id]').forEach(n=>n.object3D.visible=true);
+    document.querySelector('#topbar span').textContent='עריכת תלת־ממד ללא מצלמה';
+    document.querySelector('#hint').textContent='מסגרת כתומה = הפריט הנבחר. כבו גרירת פריט כדי לסובב את המבט. השינויים מקומיים, רק שמירה שומרת.';
+    CameraEditor.mount({rec,container:rig,scene,isAR:false,composition:true});
+  }
+  if(!editMode)Studio.monitorMedia(rig, rec);
+  if(!editMode)Studio.ensurePlayback(mediaEls.filter((m) => m.kind === "video"));
 
   // First tap: unmute videos, start sound elements.
   window.addEventListener("pointerdown", () => {
+    if(editMode)return;
     for (const m of mediaEls) {
       if (m.node._studioBlocked) { m.resumeOnVisible = true; continue; }
       if (m.kind === "video") { if (!muted) m.node.muted = false; if (m.node.paused) m.node.play().catch(() => {}); }
@@ -191,9 +200,9 @@
 
   // Orbit by drag, zoom by wheel/pinch.
   let orb = null;
-  window.addEventListener("pointerdown", (e) => { orb = { x: e.clientX, y: e.clientY }; });
+  window.addEventListener("pointerdown", (e) => { if(e.defaultPrevented||e.target.closest("#camera-edit-panel,#action-runtime-panel,#topbar"))return;orb = { x: e.clientX, y: e.clientY }; });
   window.addEventListener("pointermove", (e) => {
-    if (!orb) return;
+    if (!orb||e.defaultPrevented) return;
     const rot = rig.getAttribute("rotation");
     rot.y += (e.clientX - orb.x) * 0.25;
     rot.x = Math.max(-35, Math.min(35, rot.x + (e.clientY - orb.y) * 0.25));
@@ -201,6 +210,7 @@
     orb = { x: e.clientX, y: e.clientY };
   });
   window.addEventListener("pointerup", () => { orb = null; });
+  window.addEventListener("pointercancel", () => {orb=null;});
   window.addEventListener("wheel", (e) => {
     const p = cam.getAttribute("position");
     p.z = Math.max(0.5, Math.min(2.2, p.z + e.deltaY * 0.001));

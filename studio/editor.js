@@ -490,6 +490,7 @@
       } catch (err) { msg("הקובץ לא תקין לייבוא."); }
       });
     };
+    $("btn-edit-3d").onclick=()=>queueExperience(async()=>{await Studio.save(rec);location.href="preview.html?edit=1#"+rec.id;});
     $("btn-edit-ar").onclick = () => { location.href = "play.html?edit=1#" + rec.id; };
     $("btn-play").onclick = () => { location.href = "play.html#" + rec.id; };
     $("btn-preview3d").onclick = () => { location.href = "preview.html#" + rec.id; };

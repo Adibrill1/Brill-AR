@@ -357,7 +357,7 @@ const Studio = (() => {
     const angle = -(opts.baseRotation || 0) * Math.PI / 180;
     const dx = ts.x - ox, dy = ts.y - oy;
     const pos = `${dx * Math.cos(angle) - dy * Math.sin(angle)} ${dx * Math.sin(angle) + dy * Math.cos(angle)} ${z - oz}`;
-    const rot = `0 0 ${(el.rot || 0) - (opts.baseRotation || 0)}`;
+    const rot = `${el.rotX||0} ${el.rotY||0} ${(el.rot || 0) - (opts.baseRotation || 0)}`;
     let e = null;
     if (el.type === "group") {
       // wrapper entity: timeline/anim presets/opacity act on the whole group; children sit inside, relative to it
@@ -862,7 +862,7 @@ const Studio = (() => {
       if (!el || !["video","image","sound","text","model","particles","group"].includes(el.type)) throw new Error("bad element type");
       if (typeof el.id !== "string" || !/^[a-zA-Z0-9_-]{1,128}$/.test(el.id) || ids.has(el.id)) throw new Error("bad or duplicate element id");
       ids.add(el.id);
-      for (const key of ["x","y","z","w","h","rot","opacity","aspect","volume"]) if (el[key] != null && (typeof el[key] !== "number" || !Number.isFinite(el[key]))) throw new Error("bad numeric field");
+      for (const key of ["x","y","z","w","h","rot","rotX","rotY","opacity","aspect","volume"]) if (el[key] != null && (typeof el[key] !== "number" || !Number.isFinite(el[key]))) throw new Error("bad numeric field");
       if(!validCrop(el))throw new Error('bad image crop');
       if (el.timeline != null) {
         const tl = el.timeline;
