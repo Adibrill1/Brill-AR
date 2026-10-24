@@ -269,9 +269,13 @@
     });
     const importAssetNow = async (kind, f, options = {}) => {
       if (!f) return;
-      let importNote = "";
-      if (f.size > 20 * 1024 * 1024) { msg("קובץ גדול מדי (מעל 20MB) לגרסת הניסוי."); return; }
-      if (kind === "video" && (/\.mov$/i.test(f.name) || f.type === "video/quicktime")) {
+      let importNote = "",videoInfo=null;
+      if (f.size > 20 * 1024 * 1024) { msg(kind === 'video' ? 'קובץ גדול מדי (מעל 20MB). נסי סרטון קצר יותר או דחיסה ל־MP4' : 'קובץ גדול מדי (מעל 20MB) לגרסת הניסוי.'); return; }
+      if(kind==='video'){
+        msg('בודק את הסרטון…');
+        try{videoInfo=await Studio.inspectVideo(f);}catch(error){if(!(/\.mov$/i.test(f.name)||f.type==='video/quicktime'))throw error;}
+      }
+      if (kind === "video" && !videoInfo && (/\.mov$/i.test(f.name) || f.type === "video/quicktime")) {
         const base = ($("in-server").value || "").trim().replace(/\/+$/, "");
         const token = ($("in-token").value || "").trim();
         if (!base || !token) { msg("המרת MOV דורשת שרת מוגדר עם כלי ffmpeg וסיסמה. אפשר גם לייצא MP4 מהתוכנה המקורית ולהעלות אותו."); return; }
@@ -285,6 +289,7 @@
           const blob = await response.blob();
           if (blob.size > 20 * 1024 * 1024 || !blob.size || !blob.type.startsWith("video/mp4")) throw Error("תוצאת המרה לא תקינה");
           f = new File([blob], f.name.replace(/\.mov$/i, "") + ".mp4", { type: "video/mp4" });
+          videoInfo=await Studio.inspectVideo(f);
           importNote = "MOV הומר ל־MP4 ונוסף. נשמר רק במכשיר; המקור אינו משתנה.";
         } catch (err) { msg("ההמרה לא הושלמה: " + err.message); return; }
       }
@@ -359,7 +364,7 @@
       } else if (kind === "video") {
         const v = document.createElement("video");
         v.muted = true; v.playsInline = true; v.src = durl;
-        el.aspect = await new Promise((res) => { v.onloadedmetadata = () => res(v.videoWidth / v.videoHeight || 9 / 16); v.onerror = () => res(9 / 16); });
+        el.aspect = videoInfo.width/videoInfo.height;
         el.h = 1.0;
         v.loop = true; v.play().catch(() => {});
         media[assetId] = v;
@@ -378,7 +383,11 @@
     // Selection and imports share one queue, so a delayed conversion cannot
     // attach its result to a different experience selected midway through it.
     const importAsset = (kind, f, options = {}) => {
-      return queueExperience(() => importAssetNow(kind, f, options));
+      return queueExperience(async()=>{
+        const status=$('video-upload-status');if(kind==='video'){status.hidden=false;status.textContent='בודק ומוסיף את הסרטון…';}
+        try{await importAssetNow(kind,f,options);if(kind==='video')status.textContent=$('msg').textContent;}
+        catch(error){if(kind!=='video')throw error;const message='הסרטון לא נוסף: '+error.message;msg(message);status.textContent=message;}
+      });
     };
     const addFile = (kind) => async (e) => {
       const f = e.target.files[0]; e.target.value = "";

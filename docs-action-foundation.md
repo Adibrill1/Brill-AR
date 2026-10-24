@@ -59,3 +59,6 @@ Move actions can open their destination in the camera-free3Dcomposition editor, 
 
 ## Viewport contrast
 Placement/target editor offers gray/dark/white work backdrops, separate from artwork or text color. Background is view-only and not saved/exported into the experience. White text outside artwork can be inspected on dark background without silently changing the creator's colors. UI test changes backdrop and still verifies only action target changed, base layer remains unchanged.
+
+## Video upload failure handling
+After user report, reproduced live valid MP4 success and same H264 content in MOV rejected solely by blanket conversion requirement. Native browser-decodable MOV now probes actual frame data and imports locally without conversion. Unsupported MOV still reports conversion requirement, no external upload without existing confirmation. All video loading has bounded8s metadata/data probe with persistent near-button status, unsupported files do not create broken layers, and QuickTime MIME survives export/import/publish validation.20MBcap remains; real user file/phone format not yet supplied, so no claim her particular failure is fixed.

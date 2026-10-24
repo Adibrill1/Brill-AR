@@ -138,6 +138,11 @@ const Studio = (() => {
     const length=head.getUint32(12,true);if(length>4*1024*1024||length+20>blob.size)return [];
     try { const doc=JSON.parse(await blob.slice(20,20+length).text());return (doc.animations||[]).slice(0,100).map((a,i)=>typeof a.name==='string'?a.name.slice(0,120):'Animation '+i); }catch{return [];}
   }
+  async function inspectVideo(blob,timeoutMs=8000){
+    const url=URL.createObjectURL(blob),video=document.createElement('video');video.preload='auto';video.muted=true;video.playsInline=true;
+    try{return await new Promise((resolve,reject)=>{let timer;const end=(error)=>{clearTimeout(timer);video.onloadeddata=null;video.onerror=null;error?reject(error):resolve({width:video.videoWidth,height:video.videoHeight,duration:video.duration});};video.onloadeddata=()=>video.videoWidth&&video.videoHeight?end():end(Error('לא ניתן לקרוא את ממדי הסרטון'));video.onerror=()=>end(Error('הדפדפן לא הצליח לקרוא את פורמט הסרטון'));timer=setTimeout(()=>end(Error('טעינת הסרטון לא הסתיימה. נסי קובץ שמור במכשיר או MP4 בפורמט H.264')),timeoutMs);video.src=url;video.load();});}
+    finally{video.removeAttribute('src');video.load();URL.revokeObjectURL(url);}
+  }
   async function modelClipInfo(blob){
     const doc=await validateModelBlob(blob);return (doc.animations||[]).slice(0,100).map((clip,i)=>{const ends=(clip.samplers||[]).map(s=>doc.accessors?.[s.input]?.max?.[0]);return {name:typeof clip.name==='string'?clip.name.slice(0,120):'Animation '+i,duration:ends.length&&ends.every(t=>Number.isFinite(t)&&t>=0)?Math.max(...ends):null};});
   }
@@ -914,7 +919,7 @@ const Studio = (() => {
     if(entries.length>121)throw new Error("too many assets");
     let total=0;
     for(const [key,value]of entries) {
-      if(typeof value!=="string"||!/^data:(image\/(png|jpeg|webp|gif)|video\/(mp4|webm)|audio\/(mpeg|wav|x-wav|mp4|x-m4a|ogg)|model\/gltf-binary|application\/octet-stream);base64,[A-Za-z0-9+/]*={0,2}$/.test(value))throw new Error("asset must be embedded supported media");
+      if(typeof value!=="string"||!/^data:(image\/(png|jpeg|webp|gif)|video\/(mp4|webm|quicktime)|audio\/(mpeg|wav|x-wav|mp4|x-m4a|ogg)|model\/gltf-binary|application\/octet-stream);base64,[A-Za-z0-9+/]*={0,2}$/.test(value))throw new Error("asset must be embedded supported media");
       const size=Math.floor(value.slice(value.indexOf(',')+1).length*.75);total+=size;
       if(size>20*1024*1024||total>60*1024*1024)throw new Error("import media too large");
     }
@@ -1079,7 +1084,7 @@ const Studio = (() => {
     toast._t = setTimeout(() => { toast.style.opacity = "0"; }, 1200);
   }
 
-  return { TARGET_W, TARGET_H, newId, validateModelBlob, modelClipNames, modelClipInfo, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
+  return { TARGET_W, TARGET_H, newId, inspectVideo, validateModelBlob, modelClipNames, modelClipInfo, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
            audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, historyState, restoreHistory, duplicateLayer, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
            load: id=>settledRead(id), all: ()=>settledRead(), del: idbDel };
 })();
