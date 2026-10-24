@@ -277,7 +277,7 @@ const Studio = (() => {
     const listener=scene.audioListener||(scene.audioListener=new THREE.AudioListener());
     const route=()=>{if(scene.camera&&!listener.parent)scene.camera.add(listener);for(const m of mediaEls){if(m.three)continue;const ent=m.el.spatial?container.querySelector('[data-el-id="'+m.el.id+'"]'):null;let audio;
       if(ent){audio=new THREE.PositionalAudio(listener);const d=audioDistances(m.el);audio.setDistanceModel(m.el.spatialMode==='linear'?'linear':'exponential');audio.setRefDistance(d.inner);audio.setMaxDistance(d.outer);audio.setRolloffFactor(m.el.spatialMode==='linear'?1:1.5);ent.object3D.add(audio);}else audio=new THREE.Audio(listener);
-      audio.setMediaElementSource(m.node);audio.gain.gain.value=m.el.volume==null?1:m.el.volume;m.three=audio;
+      audio.setMediaElementSource(m.node);audio.gain.gain.value=1;m.three=audio;
     }};if(scene.hasLoaded)route();else scene.addEventListener('loaded',route,{once:true});return listener;
   }
   function validParticles(el){const p=el.particles;if(!p)return true;if(typeof p!=='object'||Array.isArray(p))return false;for(const [k,min,max]of [['lifetime',0,60],['endSize',0,5],['count',10,500],['size',2,60],['speed',.2,3]])if(p[k]!=null&&(!Number.isFinite(p[k])||p[k]<min||p[k]>max))return false;if(p.emitter!=null&&!['box','disc','sphere'].includes(p.emitter))return false;if(p.endColor!=null&&!/^#[0-9a-f]{6}$/i.test(p.endColor))return false;if(p.fade!=null&&typeof p.fade!=='boolean')return false;return true;}
