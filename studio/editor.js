@@ -365,7 +365,7 @@
         const v = document.createElement("video");
         v.muted = true; v.playsInline = true; v.src = durl;
         el.aspect = videoInfo.width/videoInfo.height;
-        el.h = 1.0;
+        el.h = (el.w / el.aspect) * artRatio;
         v.loop = true; v.play().catch(() => {});
         media[assetId] = v;
       } else {
@@ -541,6 +541,10 @@
       if(Studio.validCrop({...el,crop:c}))Studio.setImageCrop(rec,el,c);else msg('החיתוך חייב להישאר בתוך התמונה ולכלול שטח');
     });
     $('crop-reset').onclick=()=>upd(el=>Studio.setImageCrop(rec,el,{x:0,y:0,w:1,h:1}));
+    $('video-aspect-reset').onclick=()=>queueExperience(async()=>{
+      const el=rec.elements.find(x=>x.id===selectedId);if(!el||el.type!=='video')return;
+      try{const info=await Studio.inspectVideo(rec.assets[el.assetId]),c=el.crop||{w:1,h:1};el.aspect=info.width/info.height*c.w/c.h;el.h=el.w/el.aspect*(rec.target.artRect.w/rec.target.artRect.h);await Studio.save(rec);renderPanel();draw();msg('פרופורציות הסרטון שוחזרו בלי לשנות את המקור');}catch(error){msg('לא ניתן לשחזר פרופורציות: '+error.message);}
+    });
     // panel bindings
     const cur = () => rec.elements.find((x) => x.id === selectedId);
     const transform = (el, key, value) => {
@@ -770,6 +774,7 @@
     $("sl-z").closest("label").hidden = false;
     $("num-z").closest("label").hidden = false;
     $("sel-tap").closest("label").hidden = isGroup;
+    $('row-video-aspect').hidden=el.type!=='video';
     $('row-crop').hidden=!['image','video'].includes(el.type);if(['image','video'].includes(el.type)){const c=el.crop||{x:0,y:0,w:1,h:1};for(const k of ['x','y','w','h'])$('crop-'+k).value=Math.round(c[k]*10000)/100;}
     $("row-chroma").hidden = el.type !== "video";
     $("row-particles").hidden = el.type !== "particles";

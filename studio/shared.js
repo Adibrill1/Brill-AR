@@ -416,6 +416,9 @@ const Studio = (() => {
     } else if (el.type === "image") {
       e = document.createElement("a-image");
       e.setAttribute("src", `#m-${el.id}`);
+      // Discard fully transparent texels before depth testing so they cannot
+      // punch rectangular holes through video/camera layers rendered later.
+      e.setAttribute("material", { transparent: true, alphaTest: 0.001 });
       e.setAttribute("width", ts.w); e.setAttribute("height", ts.h);
     } else if (el.type === "particles") {
       ensureParticlesComponent();
