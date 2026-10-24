@@ -138,6 +138,9 @@ const Studio = (() => {
     const length=head.getUint32(12,true);if(length>4*1024*1024||length+20>blob.size)return [];
     try { const doc=JSON.parse(await blob.slice(20,20+length).text());return (doc.animations||[]).slice(0,100).map((a,i)=>typeof a.name==='string'?a.name.slice(0,120):'Animation '+i); }catch{return [];}
   }
+  async function modelClipInfo(blob){
+    const doc=await validateModelBlob(blob);return (doc.animations||[]).slice(0,100).map((clip,i)=>{const ends=(clip.samplers||[]).map(s=>doc.accessors?.[s.input]?.max?.[0]);return {name:typeof clip.name==='string'?clip.name.slice(0,120):'Animation '+i,duration:ends.length&&ends.every(t=>Number.isFinite(t)&&t>=0)?Math.max(...ends):null};});
+  }
   // Embedded glTF clips: run the first authored clip. Freeze when hidden or the
   // image target is lost; wrapper timeline/group transforms remain independent.
   function ensureModelAnimationComponent() {
@@ -1075,7 +1078,7 @@ const Studio = (() => {
     toast._t = setTimeout(() => { toast.style.opacity = "0"; }, 1200);
   }
 
-  return { TARGET_W, TARGET_H, newId, validateModelBlob, modelClipNames, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
+  return { TARGET_W, TARGET_H, newId, validateModelBlob, modelClipNames, modelClipInfo, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
            audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, historyState, restoreHistory, duplicateLayer, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
            load: id=>settledRead(id), all: ()=>settledRead(), del: idbDel };
 })();

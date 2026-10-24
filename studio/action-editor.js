@@ -1,7 +1,7 @@
 "use strict";
 const ActionEditor=(()=>{
  const names={move:'תנועה',rotate:'סיבוב',scale:'גודל',opacity:'שקיפות',show:'הצגה',hide:'הסתרה',interaction:'שינוי הקשה',model:'אנימציית מודל',media:'ניגון צליל/וידאו',sequence:'הפעלת/עצירת רצף'};
- let selected=null,selectedAction=null;
+ let selected=null,selectedAction=null,addType='move';
  function mount(root,ctx){
   const {rec,engine}=ctx,seqs=ActionCore.list(rec);if(!seqs.some(q=>q.id===selected))selected=seqs[0]?.id;
   root.replaceChildren();
@@ -41,7 +41,7 @@ const ActionEditor=(()=>{
     }
   }
   const add=node('div');add.className='row';
-  const types=node('select',null,add);types.setAttribute('aria-label','סוג פעולה חדשה');for(const [value,title]of Object.entries(names)){const o=node('option',title,types);o.value=value;}
+  const types=node('select',null,add);types.setAttribute('aria-label','סוג פעולה חדשה');for(const [value,title]of Object.entries(names)){const o=node('option',title,types);o.value=value;}types.value=addType;types.onchange=()=>{addType=types.value;};
   button('+ פעולה על השכבה שנבחרה',()=>{const el=rec.elements.find(e=>e.id===ctx.selectedId);if(!el)return ctx.message('בחרי שכבה ברשימה או על היצירה לפני הוספת פעולה');const type=types.value,b=ActionCore.base(el),to={};for(const k of ActionCore.kinds[type])to[k]=b[k];if(type==='interaction')to.tap='none';if(type==='move')to.x+=.15;if(type==='model'){delete to.model;Object.assign(to,{clip:el.modelClip||0,speed:el.modelSpeed||1,loop:false});}if(type==='media'){delete to.media;to.offset=0;}if(type==='sequence'){delete to.sequence;to.command='start';to.sequenceId=seqs.find(s=>s.id!==q.id)?.id||q.id;}
     const a={id:Studio.newId(),layerId:el.id,type,start:0,duration:['show','hide','interaction','sequence'].includes(type)?0:Math.min(1,q.duration),ease:'linear',to};q.actions.push(a);selectedAction=a.id;if(!save()){q.actions=q.actions.filter(x=>x!==a);selectedAction=null;}},add);
   const a=q.actions.find(a=>a.id===selectedAction);
@@ -54,12 +54,18 @@ const ActionEditor=(()=>{
       const target=node('select',null,box);target.setAttribute('aria-label','רצף להפעלה או עצירה');for(const s of seqs){const o=node('option',s.name,target);o.value=s.id;}target.value=a.to.sequenceId;target.onchange=()=>{const old=a.to.sequenceId;a.to.sequenceId=target.value;if(!save())a.to.sequenceId=old;};
       const command=node('select',null,box);command.setAttribute('aria-label','פעולת הרצף');for(const [v,title]of [['start','הפעלת רצף'],['stop','עצירת רצף']]){const o=node('option',title,command);o.value=v;}command.value=a.to.command;command.onchange=()=>{const old=a.to.command;a.to.command=command.value;if(!save())a.to.command=old;};
     }else if(k==='model'){
+      const clips=node('select',null,box);clips.setAttribute('aria-label','אנימציה מתוך המודל');clips.disabled=true;node('option','טעינת שמות ומשך...',clips);let info=[];
+      const clipNote=node('span','משך הפעולה קובע מתי הקליפ נקטע; הפעולה הבאה יכולה להתחיל מיד או אחריו.',box);clipNote.className='hint';
+      const fit=button('התאמת משך הפעולה לקליפ',()=>{const clip=info[a.to.clip];if(!clip||clip.duration==null)return ctx.message('משך הקליפ אינו זמין במטא־נתונים. הזיני משך ידנית');const duration=Math.round(clip.duration/a.to.speed*1000)/1000;if(duration<=0||a.start+duration>3600)return ctx.message('משך הקליפ מחוץ לטווח');a.duration=duration;q.duration=Math.max(q.duration,a.start+duration);save();},box);fit.disabled=true;
+      const el=rec.elements.find(e=>e.id===a.layerId);Studio.modelClipInfo(rec.assets[el?.assetId]).then(items=>{if(!clips.isConnected)return;info=items;clips.replaceChildren();if(!items.length)node('option','אין קליפים במודל',clips);for(const [i,clip]of items.entries()){const option=node('option',i+' · '+clip.name+(clip.duration!=null?' · '+clip.duration.toFixed(2)+'s':''),clips);option.value=i;}clips.value=a.to.clip;clips.disabled=!items.length;fit.disabled=!items[a.to.clip]||items[a.to.clip].duration==null;}).catch(()=>{if(clips.isConnected){clips.replaceChildren();node('option','לא ניתן לקרוא את הקליפים',clips);}});
+      clips.onchange=()=>{a.to.clip=Number(clips.value);save();};
       field('מספר אנימציה',a.to.clip,v=>{const old=a.to.clip;a.to.clip=Math.max(0,Math.floor(v||0));if(!save())a.to.clip=old;},box);
       field('מהירות',a.to.speed,v=>{a.to.speed=Math.max(.1,Math.min(4,v||1));save();},box);
       const l=node('label','חזרה בתוך הפעולה',box),c=node('input',null,l);c.type='checkbox';c.checked=a.to.loop;c.onchange=()=>{a.to.loop=c.checked;save();};
     }else if(k==='media')field('התחלת קובץ בשניות',a.to.offset,v=>{a.to.offset=Math.max(0,Math.min(3600,v||0));save();},box);
     else if(k==='tap'){const tap=node('select',null,box);for(const [v,title]of [['none','ללא הקשה'],['mute','השתקה'],...seqs.map(s=>['action:'+s.id,'הפעלת '+s.name])]){const o=node('option',title,tap);o.value=v;}tap.value=a.to.tap;tap.onchange=()=>{a.to.tap=tap.value;save();};}else if(k!=='visible')field('יעד '+({x:'אופקי',y:'אנכי',z:'עומק',rot:'מעלות',scale:'גודל יחסי',opacity:'שקיפות'}[k]),a.to[k],v=>{const old=a.to[k];a.to[k]=v;if(!save())a.to[k]=old;},box);
     if(a.type==='move')button('בחירת יעד על היצירה',()=>ctx.target(a),box);
+    button('שכפול פעולה אחרי סיומה',()=>{if(q.actions.length>=300)return ctx.message('עד300פעולות ברצף');const copy=structuredClone(a);copy.id=Studio.newId();copy.start=a.start+a.duration;if(copy.start+copy.duration>3600)return ctx.message('הפעולה חורגת מאורך הרצף המרבי');q.duration=Math.max(q.duration,copy.start+copy.duration);q.actions.push(copy);selectedAction=copy.id;save();},box);
     button('מחיקת פעולה',()=>{q.actions=q.actions.filter(x=>x!==a);save();},box);
   }
   const note=node('p','כללי המימוש שלנו: הקשה חוזרת מתחילה מחדש. בחפיפה באותו רצף, הפעולה שמסתיימת מאוחר יותר גוברת; בשוויון, המאוחרת ברשימה. בין רצפים, ההפעלה האחרונה גוברת רק בערכים שהיא משנה. שכבה שיש עליה פעולות משתמשת במצב הבסיס במקום נקודות הזמן הישנות. איפוס משחרר את ערכי הרצף; ללא איפוס ערך הסיום נשמר. אלה בחירות תכנון שלנו, לא התנהגות Artivive שאומתה.');note.className='hint';
