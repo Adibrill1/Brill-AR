@@ -64,7 +64,7 @@ const ActionEditor=(()=>{
       const l=node('label','חזרה בתוך הפעולה',box),c=node('input',null,l);c.type='checkbox';c.checked=a.to.loop;c.onchange=()=>{a.to.loop=c.checked;save();};
     }else if(k==='media')field('התחלת קובץ בשניות',a.to.offset,v=>{a.to.offset=Math.max(0,Math.min(3600,v||0));save();},box);
     else if(k==='tap'){const tap=node('select',null,box);for(const [v,title]of [['none','ללא הקשה'],['mute','השתקה'],...seqs.map(s=>['action:'+s.id,'הפעלת '+s.name])]){const o=node('option',title,tap);o.value=v;}tap.value=a.to.tap;tap.onchange=()=>{a.to.tap=tap.value;save();};}else if(k!=='visible')field('יעד '+({x:'אופקי',y:'אנכי',z:'עומק',rot:'מעלות',scale:'גודל יחסי',opacity:'שקיפות'}[k]),a.to[k],v=>{const old=a.to[k];a.to[k]=v;if(!save())a.to[k]=old;},box);
-    if(a.type==='move')button('בחירת יעד על היצירה',()=>ctx.target(a),box);
+    if(a.type==='move'){button('בחירת יעד על היצירה',()=>ctx.target(a),box);button('עריכת יעד בתלת־ממד',()=>ctx.target3d(q,a),box);}
     button('שכפול פעולה אחרי סיומה',()=>{if(q.actions.length>=300)return ctx.message('עד300פעולות ברצף');const copy=structuredClone(a);copy.id=Studio.newId();copy.start=a.start+a.duration;if(copy.start+copy.duration>3600)return ctx.message('הפעולה חורגת מאורך הרצף המרבי');q.duration=Math.max(q.duration,copy.start+copy.duration);q.actions.push(copy);selectedAction=copy.id;save();},box);
     button('מחיקת פעולה',()=>{q.actions=q.actions.filter(x=>x!==a);save();},box);
   }

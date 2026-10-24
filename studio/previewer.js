@@ -8,7 +8,13 @@
   const id = location.hash.slice(1);
   const editMode=new URLSearchParams(location.search).get("edit")==="1";
   if (!id) return fail("חסר מזהה ניסוי. <a href='index.html'>חזרה לעורך</a>");
-  const rec = await Studio.load(id);
+  const savedRec=await Studio.load(id);let rec=savedRec;
+  const params=new URLSearchParams(location.search);let targetAction=null;
+  if(editMode&&params.has('action')){
+    targetAction=ActionCore.list(savedRec||{}).find(q=>q.id===params.get('sequence'))?.actions.find(a=>a.id===params.get('action')&&a.type==='move');
+    if(!targetAction)return fail('פעולת התנועה לא נמצאה. חזרי לעורך ובחרי שוב.');
+    rec=structuredClone(savedRec);const layer=rec.elements.find(el=>el.id===targetAction.layerId);if(layer.type==='group')Studio.transformGroup(rec,layer,targetAction.to);else Object.assign(layer,targetAction.to);
+  }
   document.querySelector("#topbar a").href="index.html#"+encodeURIComponent(id);
   if (!rec || !rec.target) return fail("הניסוי לא נמצא. <a href='index.html'>חזרה לעורך</a>");
   rec.elements.forEach(Studio.normEl);
@@ -184,7 +190,9 @@
     rig.querySelectorAll('[data-el-id]').forEach(n=>n.object3D.visible=true);
     document.querySelector('#topbar span').textContent='עריכת תלת־ממד ללא מצלמה';
     document.querySelector('#hint').textContent='מסגרת כתומה = הפריט הנבחר. כבו גרירת פריט כדי לסובב את המבט. השינויים מקומיים, רק שמירה שומרת.';
-    CameraEditor.mount({rec,container:rig,scene,isAR:false,composition:true});
+    CameraEditor.mount({rec,container:rig,scene,isAR:false,composition:true,
+      ...(targetAction?{heading:'עריכת יעד פעולה בתלת־ממד · מיקום הבסיס לא משתנה',editKeys:['x','y','z'],selectedLayer:targetAction.layerId,
+      saveChanges:async edited=>{const layer=edited.elements.find(el=>el.id===targetAction.layerId);for(const key of ['x','y','z'])targetAction.to[key]=layer[key]||0;const error=ActionCore.validate(savedRec);if(error)throw Error(error);await Studio.save(savedRec);}}:{})});
   }
   if(!editMode){Studio.connectSpatialAudio(scene,rig,mediaEls);Studio.monitorMedia(rig, rec);}
   if(!editMode)Studio.ensurePlayback(mediaEls.filter((m) => m.kind === "video"));

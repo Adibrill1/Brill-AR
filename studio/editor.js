@@ -633,6 +633,7 @@
       changed:async()=>{const id=rec.id,saving=Studio.save(rec);actionEngine=ActionCore.create(rec);renderActions();draw();await saving;if(rec.id===id){const hs=Studio.historyState(id);$("btn-undo").disabled=!hs.undo;$("btn-redo").disabled=!hs.redo;}},
       redraw:()=>draw(),
       select:id=>{selectedId=id;renderList();renderPanel();draw();},
+      target3d:(q,a)=>queueExperience(async()=>{await Studio.save(rec);location.href="preview.html?edit=1&sequence="+encodeURIComponent(q.id)+"&action="+encodeURIComponent(a.id)+"#"+rec.id;}),
       target:a=>{actionTarget=a;draw();cv().scrollIntoView({block:"center",behavior:"instant"});msg("לחצי על היצירה כדי לקבוע את יעד התנועה. Escape לביטול; מיקום הבסיס לא משתנה");},
       message:msg
     });

@@ -53,3 +53,6 @@ A new browser acceptance workflow starts a blank experience, uploads artwork, cr
 
 ## Video crop
 The same non-destructive source rectangle now supports video, with canvas, plain video plane, nested chroma-key shader mesh and the shared AR entity path. Original bytes remain embedded and unchanged. New browser UI fixture uploads a generated red/blue H264 sample, crops half, verifies roundtrip byte identity, actual decoded video texture dimensions and crop UVs for both plain and chroma routes. Actual preview pixels show only red. Existing demo video may show the unsupported-codec notice independently of the new decoded sample; no actual iPhone camera/AR video-crop proof.
+
+## Timeline destination in the composition editor
+Move actions can open their destination in the camera-free3Dcomposition editor, not only the2Dcanvas. Position/depth edits change a working copy; explicit save writes only action target XYZ, never layer base placement. Reset restores the last saved target, backlink returns to the same experience. Unrelated size/rotation controls are hidden and selected layer is locked in this mode. UI browser test covers timeline button→3DXYZedit→unsaved readback→explicit save/base invariance→reset→editor readback. Not phone/ARproof; rotations/scales remain exact action fields, not3Dtarget manipulation yet.
