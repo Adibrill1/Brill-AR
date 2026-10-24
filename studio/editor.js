@@ -7,6 +7,7 @@
   const $ = (id) => document.getElementById(id);
   const msg = (t) => { $("msg").textContent = t; if (t) setTimeout(() => { if ($("msg").textContent === t) $("msg").textContent = ""; }, 6000); };
 
+  let experienceReady = Promise.resolve();
   let rec = null;              // current experience record
   let selectedId = null;
   const checkedIds = new Set(); // multi-select for grouping
@@ -253,7 +254,7 @@
       box.appendChild(body); box.appendChild(row); wrap.appendChild(box);
       document.body.appendChild(wrap);
     });
-    const importAsset = async (kind, f, options = {}) => {
+    const importAssetNow = async (kind, f, options = {}) => {
       if (!f) return;
       let importNote = "";
       if (f.size > 20 * 1024 * 1024) { msg("קובץ גדול מדי (מעל 20MB) לגרסת הניסוי."); return; }
@@ -361,6 +362,13 @@
       msg(importNote || "האלמנט נוסף. אפשר לגרור אותו על התצוגה.");
       render();
     };
+    // Selection and imports share one queue, so a delayed conversion cannot
+    // attach its result to a different experience selected midway through it.
+    const importAsset = (kind, f, options = {}) => {
+      const operation = experienceReady.then(() => importAssetNow(kind, f, options));
+      experienceReady = operation.catch(() => {});
+      return operation;
+    };
     const addFile = (kind) => async (e) => {
       const f = e.target.files[0]; e.target.value = "";
       await importAsset(kind, f);
@@ -409,13 +417,16 @@
       selectedId = null;
       await hydrate(); refreshExpSelect(); render();
     };
-    $("exp-select").onchange = async (e) => {
-      const r = await Studio.load(e.target.value);
-      if (!r) return; // keep the current experience instead of wiping the editor
-      rec = r;
-      selectedId = null;
-      resetSeq();
-      await hydrate(); render();
+    $("exp-select").onchange = (e) => {
+      const id = e.target.value;
+      experienceReady = experienceReady.then(async () => {
+        const r = await Studio.load(id);
+        if (!r) return; // keep the current experience instead of wiping the editor
+        rec = r;
+        selectedId = null;
+        resetSeq();
+        await hydrate(); render();
+      });
     };
     $("btn-export").onclick = async () => {
       const json = await Studio.exportJSON(rec);
@@ -875,6 +886,19 @@
     ctx.drawImage(artworkImg, 0, 0, W, H);
     boxes = {};
     const t0 = performance.now();
+    // autoNext chain simulation in live preview (mirrors previewer makeSeqRunner):
+    // at `at` seconds into the active state, advance to `to` and restart the state clock.
+    // Track clocks (canvasTracks) are independent and keep running across the switch.
+    if (tlScrubT == null && curSeq) {
+      const an = Studio.seqAutoNext(rec, curSeq);
+      if (an && (t0 - canvasStart) / 1000 >= an.at) {
+        const to = an.to || (Studio.seqList(rec)[0] && Studio.seqList(rec)[0].id);
+        if (to && to !== curSeq && Studio.seqList(rec).some((x) => x.id === to)) {
+          curSeq = to; canvasStart = t0; selectedId = null;
+          renderSeqTabs(); renderList(); renderPanel();
+        }
+      }
+    }
     let needsAnim = false;
     for (const el of rec.elements) {
       Studio.normEl(el);
@@ -891,6 +915,7 @@
       const trackStopped=element=>element&&element.track&&canvasTracks[element.track]&&!canvasTracks[element.track].playing;
       if(tlScrubT==null&&(trackStopped(el)||trackStopped(parent)))continue;
       if(Studio.timelineDur(el)||(parent&&Studio.timelineDur(parent)))needsAnim=tlScrubT==null;
+      if(tlScrubT==null&&curSeq&&Studio.seqAutoNext(rec,curSeq))needsAnim=true; // keep frames coming so the chain can advance
       if(!ts.visible)continue;
       const sc = ts ? ts.scale : 1;
       let wpx = el.w * W * sc;
