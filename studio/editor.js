@@ -874,7 +874,7 @@
       const clock=element=>{
         if(tlScrubT!=null)return tlScrubT;
         if(element.track){const clock=canvasTracks[element.track];return clock&&clock.playing?(t0-clock.start)/1000:0;}
-        return (t0-canvasStart)/1000;
+        return Studio.previewStateTime(rec,curSeq,(t0-canvasStart)/1000);
       };
       const ts=Studio.sampleComposition(rec,el,clock,curSeq);
       const trackStopped=element=>element&&element.track&&canvasTracks[element.track]&&!canvasTracks[element.track].playing;

@@ -183,3 +183,6 @@ Inactive state-tab text and track/sequence label contrast fixed;390px image insp
 
 ## Round AL canvas track pixels
 Manual track actual canvas pixels absent→movingX194→248→277 across state switch→absent after stop; sheet inspected. Extends AJ controls to bounded live-clock visual proof. State-loop/auto-next and broad clock combinations remain open.
+
+## Round AM state loop
+Canvas live state-loop clock uses max nontrack one-shot duration; boundary samples pass and all26browser fixtures rerun green. Rendered loop timing/autoNext creator simulation remains unverified. Local-only.

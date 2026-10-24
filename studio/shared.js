@@ -640,6 +640,13 @@ const Studio = (() => {
     }
     return out;
   }
+  function previewStateTime(rec,seqId,elapsed) {
+    const state=seqList(rec).find(s=>s.id===seqId);
+    if(!state||!state.loop)return elapsed;
+    const endings=rec.elements.filter(el=>!el.track&&el.timeline&&!(el.timeline.loop)).map(timelineDur).filter(t=>t>0);
+    const duration=endings.length?Math.max(...endings):0;
+    return duration&&elapsed>duration?elapsed%duration:elapsed;
+  }
   function timelineDur(el) {
     const tl = el.timeline;
     if (!tl || !Array.isArray(tl.keys) || !tl.keys.length) return 0;
@@ -930,6 +937,6 @@ const Studio = (() => {
   }
 
   return { TARGET_W, TARGET_H, newId, modelClipNames, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
-           geom, toTargetSpace, blankExperience, save, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
+           geom, toTargetSpace, blankExperience, save, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
            load: idbGet, all: idbAll, del: idbDel };
 })();
