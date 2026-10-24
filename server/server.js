@@ -72,6 +72,7 @@ function validateExport(o) {
     if (typeof el.id!=="string"||!/^[a-zA-Z0-9_-]{1,128}$/.test(el.id)||o.elements.slice(0,i).some(e=>e.id===el.id))return "bad or duplicate element id";
     if (!EL_TYPES.has(el.type)) return "element " + i + ": unsupported type " + JSON.stringify(el.type);
     for (const f of NUM_FIELDS) if (el[f] != null && (typeof el[f] !== "number" || !Number.isFinite(el[f]))) return "element " + i + ": bad " + f;
+    if(el.particles){const p=el.particles;if(typeof p!=='object'||Array.isArray(p))return 'bad particles';for(const [k,min,max]of [['lifetime',0,60],['endSize',0,5],['count',10,500],['size',2,60],['speed',.2,3]])if(p[k]!=null&&(!Number.isFinite(p[k])||p[k]<min||p[k]>max))return 'bad particles';if(p.emitter!=null&&!['box','disc','sphere'].includes(p.emitter)||p.endColor!=null&&!/^#[0-9a-f]{6}$/i.test(p.endColor)||p.fade!=null&&typeof p.fade!=='boolean')return 'bad particles';}
     if(el.crop){const c=el.crop;if(el.type!=='image'||!['x','y','w','h'].every(k=>Number.isFinite(c[k]))||c.x<0||c.y<0||c.w<.01||c.h<.01||c.x+c.w>1.000001||c.y+c.h>1.000001)return 'bad image crop';}
     if (el.timeline != null) {
       const tl=el.timeline;

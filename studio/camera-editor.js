@@ -2,6 +2,7 @@
    Editing is a separate mode: no recording or viewer tap actions, no auto-save/upload. */
 window.CameraEditor = {
   mount({rec,container,scene,isAR,composition=false}) {
+    container.setAttribute('data-studio-editing','');
     const panel=document.createElement('section');panel.id='camera-edit-panel';panel.dir='rtl';
     panel.style.cssText='position:fixed;bottom:12px;left:12px;right:12px;box-sizing:border-box;margin:auto;max-width:520px;padding:12px;background:#fff;color:#17202b;border-radius:14px;z-index:10001;font:14px/1.5 sans-serif;box-shadow:0 3px 22px #0005';
     const title=document.createElement('strong');title.textContent=composition?'עריכת מיקום בתלת־ממד · ההרכב כולו מוצג':'עריכה מקומית · מוצג הפריט הנבחר בלבד';panel.append(title);

@@ -191,15 +191,20 @@ const Studio = (() => {
   function ensureParticlesComponent() {
     if (!window.AFRAME || AFRAME.components["particles"]) return;
     AFRAME.registerComponent("particles", {
-      schema: { preset: { default: "sparkle" }, count: { default: 120 }, color: { default: "#ffd94d" }, width: { default: 0.5 }, height: { default: 0.5 }, size: { default: 12 }, speed: { default: 1 }, sprite: { default: "" }, direction: { default: -1 } }, // direction: degrees (0=up,90=right,180=down,270=left); -1 = preset's fixed direction
+      schema: { preset: { default: "sparkle" }, count: { default: 120 }, color: { default: "#ffd94d" }, width: { default: 0.5 }, height: { default: 0.5 }, size: { default: 12 }, speed: { default: 1 }, sprite: { default: "" }, direction: { default: -1 },lifetime:{default:0},emitter:{default:"box"},endColor:{default:"#ffffff"},endSize:{default:1},fade:{default:false} }, // direction: degrees (0=up,90=right,180=down,270=left); -1 = preset's fixed direction
       init() {
         const n = Math.min(500, Math.max(10, this.data.count | 0));
         const pos = new Float32Array(n * 3);
         this.vel = new Float32Array(n * 3);
+        this.ages=new Float32Array(n);this.sizes=new Float32Array(n);this.alphas=new Float32Array(n);const colors=new Float32Array(n*3);
+        this.spawn=(i)=>{const d=this.data;if(d.emitter==='disc'||d.emitter==='sphere'){const angle=Math.random()*Math.PI*2,r=Math.sqrt(Math.random());pos[i*3]=Math.cos(angle)*r*d.width/2;pos[i*3+1]=Math.sin(angle)*r*d.height/2;pos[i*3+2]=d.emitter==='sphere'?(Math.random()-.5)*Math.sqrt(Math.max(0,1-r*r))*Math.min(d.width,d.height):0;}else{pos[i*3]=(Math.random()-.5)*d.width;pos[i*3+1]=(Math.random()-.5)*d.height;pos[i*3+2]=(Math.random()-.5)*.05;}};
+        this.startColor=new THREE.Color(this.data.color);this.endColor=new THREE.Color(this.data.endColor);
         for (let i = 0; i < n; i++) {
           pos[i * 3] = (Math.random() - 0.5) * this.data.width;
           pos[i * 3 + 1] = (Math.random() - 0.5) * this.data.height;
           pos[i * 3 + 2] = (Math.random() - 0.5) * 0.05;
+          this.spawn(i);this.ages[i]=this.data.lifetime>0?Math.random()*this.data.lifetime:0;this.sizes[i]=1;this.alphas[i]=1;
+          this.startColor.toArray(colors,i*3);
           const sp = this.data.speed > 0 ? this.data.speed : 1;
           const m = (0.05 + Math.random() * 0.12) * sp;
           if (this.data.direction >= 0) { // arbitrary direction control (round I)
@@ -213,26 +218,33 @@ const Studio = (() => {
         }
         const geo = new THREE.BufferGeometry();
         geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
-        const matOpts = { color: new THREE.Color(this.data.color), size: Math.min(0.06, Math.max(0.002, this.data.size / 1000)), transparent: true, opacity: 0.9, depthWrite: false };
+        geo.setAttribute('color',new THREE.BufferAttribute(colors,3));geo.setAttribute('particleSize',new THREE.BufferAttribute(this.sizes,1));geo.setAttribute('particleAlpha',new THREE.BufferAttribute(this.alphas,1));
+        const matOpts = { color: new THREE.Color("#ffffff"),vertexColors:true, size: Math.min(0.06, Math.max(0.002, this.data.size / 1000)), transparent: true, opacity: 0.9, depthWrite: false };
         if (this.data.sprite) { matOpts.map = new THREE.TextureLoader().load(this.data.sprite); matOpts.alphaTest = 0.05; } // custom sprite texture (PNG with alpha)
-        this.points = new THREE.Points(geo, new THREE.PointsMaterial(matOpts));
+        const material=new THREE.PointsMaterial(matOpts);
+        material.onBeforeCompile=shader=>{shader.vertexShader='attribute float particleSize; attribute float particleAlpha; varying float vParticleAlpha;\n'+shader.vertexShader;shader.vertexShader=shader.vertexShader.replace('gl_PointSize = size;', 'gl_PointSize = size * particleSize; vParticleAlpha = particleAlpha;');shader.fragmentShader='varying float vParticleAlpha;\n'+shader.fragmentShader;shader.fragmentShader=shader.fragmentShader.replace('#include <color_fragment>','#include <color_fragment>\ndiffuseColor.a *= vParticleAlpha;');};
+        this.points = new THREE.Points(geo,material);
         this.el.object3D.add(this.points);
       },
       tick(time, dt) {
+        if(!this.points||this.el.closest("[data-studio-editing]"))return;
         const dtS = Math.min(0.1, (dt || 16) / 1000);
         const arr = this.points.geometry.attributes.position.array;
         const half = this.data.height / 2;
         for (let i = 0; i < arr.length; i += 3) {
+          const index=i/3,d=this.data;if(d.lifetime>0){this.ages[index]+=dtS;if(this.ages[index]>=d.lifetime){this.ages[index]%=d.lifetime;this.spawn(index);}const f=this.ages[index]/d.lifetime;this.sizes[index]=1+(d.endSize-1)*f;this.alphas[index]=d.fade?Math.sin(Math.PI*f):1;this.ageColor=this.ageColor||new THREE.Color();this.ageColor.copy(this.startColor).lerp(this.endColor,f).toArray(this.points.geometry.attributes.color.array,i);}
           arr[i] += this.vel[i] * dtS;
           arr[i + 1] += this.vel[i + 1] * dtS;
           const halfW = this.data.width / 2;
-          if (this.vel[i] > 0 && arr[i] > halfW) arr[i] = -halfW;
-          if (this.vel[i] < 0 && arr[i] < -halfW) arr[i] = halfW;
-          if (this.vel[i + 1] > 0 && arr[i + 1] > half) arr[i + 1] = -half;
-          if (this.vel[i + 1] < 0 && arr[i + 1] < -half) arr[i + 1] = half;
+          if (this.data.lifetime<=0&&this.vel[i] > 0 && arr[i] > halfW) arr[i] = -halfW;
+          if (this.data.lifetime<=0&&this.vel[i] < 0 && arr[i] < -halfW) arr[i] = halfW;
+          if (this.data.lifetime<=0&&this.vel[i + 1] > 0 && arr[i + 1] > half) arr[i + 1] = -half;
+          if (this.data.lifetime<=0&&this.vel[i + 1] < 0 && arr[i + 1] < -half) arr[i + 1] = half;
         }
         this.points.geometry.attributes.position.needsUpdate = true;
-      }
+        for(const name of ['color','particleSize','particleAlpha'])this.points.geometry.attributes[name].needsUpdate=true;
+      },
+      remove(){if(this.points){this.el.object3D.remove(this.points);this.points.geometry.dispose();if(this.points.material.map)this.points.material.map.dispose();this.points.material.dispose();}}
     });
   }
 
@@ -260,6 +272,7 @@ const Studio = (() => {
     });
   }
 
+  function validParticles(el){const p=el.particles;if(!p)return true;if(typeof p!=='object'||Array.isArray(p))return false;for(const [k,min,max]of [['lifetime',0,60],['endSize',0,5],['count',10,500],['size',2,60],['speed',.2,3]])if(p[k]!=null&&(!Number.isFinite(p[k])||p[k]<min||p[k]>max))return false;if(p.emitter!=null&&!['box','disc','sphere'].includes(p.emitter))return false;if(p.endColor!=null&&!/^#[0-9a-f]{6}$/i.test(p.endColor))return false;if(p.fade!=null&&typeof p.fade!=='boolean')return false;return true;}
   function validCrop(el){const c=el.crop;return !c||el.type==='image'&&['x','y','w','h'].every(k=>Number.isFinite(c[k]))&&c.x>=0&&c.y>=0&&c.w>=.01&&c.h>=.01&&c.x+c.w<=1.000001&&c.y+c.h<=1.000001;}
   function setImageCrop(rec,el,crop){
     const old=el.crop||{x:0,y:0,w:1,h:1};const sourceAspect=(el.aspect||1)/(old.w/old.h);
@@ -394,7 +407,7 @@ const Studio = (() => {
       e = document.createElement("a-entity");
       let spriteAttr = "";
       if (pc.preset === "custom" && pc.spriteAssetId && rec.assets && rec.assets[pc.spriteAssetId]) spriteAttr = `; sprite: ${URL.createObjectURL(rec.assets[pc.spriteAssetId])}`;
-      e.setAttribute("particles", `preset: ${pc.preset || "sparkle"}; count: ${pc.count || 120}; color: ${pc.color || "#ffd94d"}; size: ${pc.size || 12}; speed: ${pc.speed || 1}; width: ${ts.w}; height: ${ts.h}${spriteAttr}${pc.direction != null && pc.direction >= 0 ? "; direction: " + (pc.direction | 0) : ""}`);
+      e.setAttribute("particles", `preset: ${pc.preset || "sparkle"}; count: ${pc.count || 120}; color: ${pc.color || "#ffd94d"}; size: ${pc.size || 12}; speed: ${pc.speed || 1}; width: ${ts.w}; height: ${ts.h}; lifetime: ${pc.lifetime||0}; emitter: ${pc.emitter||"box"}; endColor: ${pc.endColor||pc.color||"#ffd94d"}; endSize: ${pc.endSize==null?1:pc.endSize}; fade: ${!!pc.fade}${spriteAttr}${pc.direction != null && pc.direction >= 0 ? "; direction: " + (pc.direction | 0) : ""}`);
     } else if (el.type === "model") {
       // glTF/GLB: wrapper carries placement (timeline/tap target); inner child carries the
       // normalized model scale so timeline scale keys don't fight the fit-to-size normalization.
@@ -863,6 +876,7 @@ const Studio = (() => {
       if (typeof el.id !== "string" || !/^[a-zA-Z0-9_-]{1,128}$/.test(el.id) || ids.has(el.id)) throw new Error("bad or duplicate element id");
       ids.add(el.id);
       for (const key of ["x","y","z","w","h","rot","rotX","rotY","opacity","aspect","volume"]) if (el[key] != null && (typeof el[key] !== "number" || !Number.isFinite(el[key]))) throw new Error("bad numeric field");
+      if(!validParticles(el))throw new Error('bad particles');
       if(!validCrop(el))throw new Error('bad image crop');
       if (el.timeline != null) {
         const tl = el.timeline;
@@ -1054,6 +1068,6 @@ const Studio = (() => {
   }
 
   return { TARGET_W, TARGET_H, newId, validateModelBlob, modelClipNames, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
-           validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, historyState, restoreHistory, duplicateLayer, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
+           validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, historyState, restoreHistory, duplicateLayer, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
            load: id=>settledRead(id), all: ()=>settledRead(), del: idbDel };
 })();

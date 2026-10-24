@@ -576,12 +576,15 @@
       if (!f) return;
       const el = rec.elements.find((x) => x.id === selectedId);
       if (!el || el.type !== "particles") return;
-      if(kind==='model'){try{await Studio.validateModelBlob(f);}catch(err){msg('המודל לא נוסף: '+err.message);return;}}
       const assetId = Studio.newId();
       rec.assets[assetId] = f;
       el.particles = Object.assign({}, el.particles, { spriteAssetId: assetId });
       await Studio.save(rec); renderPanel();
     };
+    for(const [id,key,min,max]of [['num-plife','lifetime',0,60],['num-pendsize','endSize',0,5]])$(id).onchange=e=>upd(el=>{el.particles={...el.particles,[key]:Math.max(min,Math.min(max,Number(e.target.value)||0))};});
+    $('sel-pemitter').onchange=e=>upd(el=>{el.particles={...el.particles,emitter:e.target.value};});
+    $('in-pendcolor').onchange=e=>upd(el=>{el.particles={...el.particles,endColor:e.target.value};});
+    $('ck-pfade').onchange=e=>upd(el=>{el.particles={...el.particles,fade:e.target.checked};});
     $("num-pcount").onchange = (e) => upd((el) => { el.particles = Object.assign({}, el.particles, { count: Math.max(10, Math.min(500, parseInt(e.target.value) || 120)) }); });
     $("num-psize").onchange = (e) => upd((el) => { el.particles = Object.assign({}, el.particles, { size: Math.max(2, Math.min(60, parseInt(e.target.value) || 12)) }); });
     $("num-pspeed").onchange = (e) => upd((el) => { el.particles = Object.assign({}, el.particles, { speed: Math.max(0.2, Math.min(3, parseFloat(e.target.value) || 1)) }); });
@@ -762,6 +765,7 @@
     $("row-particles").hidden = el.type !== "particles";
     if (el.type === "particles") {
       const pc = el.particles || {};
+      $('num-plife').value=pc.lifetime||0;$('num-pendsize').value=pc.endSize==null?1:pc.endSize;$('sel-pemitter').value=pc.emitter||'box';$('in-pendcolor').value=pc.endColor||pc.color||'#ffd94d';$('ck-pfade').checked=!!pc.fade;
       $("sel-preset").value = pc.preset || "sparkle";
       $("num-pcount").value = pc.count || 120;
       $("num-psize").value = pc.size || 12;
