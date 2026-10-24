@@ -20,3 +20,6 @@ Action type sequence starts/stops another sequence at the authored time. Scrubbi
 
 ## Layer copies and bounded undo
 Layer/group duplication uses fresh layer and action ids, copies dependent actions and retains shared media assets. Deleting one copy does not delete media used by another. Per-experience undo/redo keeps20snapshots while this editor session is open, with serialized snapshot saves and redo invalidated on a new edit. UI create/edit/duplicate/undo/redo/reference-deletion test passed3consecutive runs, and all39browserfixtures passed. Undo history is not durable across reloads and does not restore deleted entire experiences. No claim of vendor-equivalent undo semantics.
+
+## Timeline authoring ergonomics
+Action duration can also be changed by dragging the bar's end handle. Exact duration fields remain. Move action target can be chosen by clicking the artwork; the layer base is unchanged, and Escape cancels. A target marker is shown while choosing. Engine tests17; browser suite39. These are independently designed controls, not proof of vendor behavior.

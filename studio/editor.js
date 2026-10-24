@@ -21,6 +21,7 @@
   let canvasStart=performance.now(),canvasTracks={};
   let actionEngine=null;
   let actionUI=null;
+  let actionTarget=null;
   let curSeq = null;           // active sequence-state id (null = single-state artwork)
   const media = {};            // assetId -> HTMLImageElement | HTMLVideoElement (for canvas drawing)
   const textCache = {};        // el.id -> {key, canvas, aspect}
@@ -614,12 +615,14 @@
 
   function renderActions(){
     const root=$('action-editor');if(!root)return;
+    if(actionTarget&&!ActionCore.list(rec).some(q=>q.actions.includes(actionTarget)))actionTarget=null;
     root.hidden=!rec.target;
     actionUI=ActionEditor.mount(root,{
       rec, selectedId, engine:actionEngine,
       changed:async()=>{const id=rec.id,saving=Studio.save(rec);actionEngine=ActionCore.create(rec);renderActions();draw();await saving;if(rec.id===id){const hs=Studio.historyState(id);$("btn-undo").disabled=!hs.undo;$("btn-redo").disabled=!hs.redo;}},
       redraw:()=>draw(),
       select:id=>{selectedId=id;renderList();renderPanel();draw();},
+      target:a=>{actionTarget=a;draw();cv().scrollIntoView({block:"center",behavior:"smooth"});msg("לחצי על היצירה כדי לקבוע את יעד התנועה. Escape לביטול; מיקום הבסיס לא משתנה");},
       message:msg
     });
   }
@@ -1027,11 +1030,16 @@
         ctx.restore();
       }
     }
+    if(actionTarget&&actionTarget.type==='move'){
+      const a=actionTarget;ctx.save();ctx.strokeStyle='#ff4f00';ctx.lineWidth=3;ctx.setLineDash([6,4]);
+      const x=(a.to.x+.5)*W,y=(.5-a.to.y)*H;ctx.beginPath();ctx.arc(x,y,14,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#ff4f00';ctx.font='14px sans-serif';ctx.fillText('יעד תנועה',x+18,y);ctx.restore();
+    }
     if (needsAnim) requestAnimationFrame(draw);
   }
 
   function bindCanvas() {
     const c = cv();
+    window.addEventListener('keydown',e=>{if(e.key==='Escape'&&actionTarget){actionTarget=null;draw();msg('בחירת היעד בוטלה');}});
     const pos = (e) => { const r = c.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
     const hit = (p) => {
       for (let i = rec.elements.length - 1; i >= 0; i--) {
@@ -1046,6 +1054,14 @@
     };
     c.addEventListener("pointerdown", (e) => {
       const p = pos(e);
+      if(actionTarget){
+        const a=actionTarget,layer=rec.elements.find(el=>el.id===a.layerId);
+        if(layer&&a.type==='move'){
+          a.to.x=Math.round((p.x/c.clientWidth-.5)*1000)/1000;
+          a.to.y=Math.round((.5-p.y/c.clientHeight)*1000)/1000;
+          actionTarget=null;Studio.save(rec).then(()=>{renderActions();draw();});msg('יעד התנועה עודכן; מיקום הבסיס לא שונה');
+        }return;
+      }
       const sel = rec.elements.find((x) => x.id === selectedId);
       if (sel && boxes[sel.id]) {
         const b = boxes[sel.id];

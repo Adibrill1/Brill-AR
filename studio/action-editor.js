@@ -32,8 +32,13 @@ const ActionEditor=(()=>{
     const label=button(names[a.type]+' · '+(el?.name||el?.type||'שכבה חסרה'),()=>{selectedAction=a.id;ctx.select(a.layerId);mount(root,ctx);},row);label.className='action-label';
     const rail=node('div',null,row);rail.className='action-rail';rail.dir='ltr';
     const bar=button(a.start+'s · '+a.duration+'s',()=>{selectedAction=a.id;mount(root,ctx);},rail);bar.className='action-bar';bar.style.left=(a.start/q.duration*100)+'%';bar.style.width=Math.max(5,a.duration/q.duration*100)+'%';
-    // Drag translates the action as a whole; resize remains exact via duration field.
-    bar.onpointerdown=e=>{const x=e.clientX,start=a.start,w=rail.getBoundingClientRect().width;let moved=false;bar.setPointerCapture(e.pointerId);bar.onpointermove=ev=>{const delta=(ev.clientX-x)/w*q.duration;if(Math.abs(delta)>.02)moved=true;a.start=Math.round(Math.max(0,Math.min(q.duration-a.duration,start+delta))*10)/10;bar.style.left=a.start/q.duration*100+'%';bar.textContent=a.start+'s · '+a.duration+'s';};bar.onpointerup=()=>{bar.onpointermove=null;if(moved)save();};};
+    // Drag the bar to move start time, or its end handle to resize. Exact fields remain available.
+    bar.onpointerdown=e=>{const x=e.clientX,start=a.start,w=rail.getBoundingClientRect().width;let moved=false;bar.setPointerCapture(e.pointerId);bar.onpointermove=ev=>{const delta=(ev.clientX-x)/w*q.duration;if(Math.abs(delta)>.02)moved=true;a.start=Math.round(Math.max(0,Math.min(q.duration-a.duration,start+delta))*10)/10;bar.style.left=a.start/q.duration*100+'%';bar.textContent=a.start+'s · '+a.duration+'s';};bar.onpointerup=()=>{bar.onpointermove=null;if(moved)save();};bar.onpointercancel=()=>{bar.onpointermove=null;a.start=start;mount(root,ctx);};};
+    if(a.duration>0){const handle=node('span','↔',bar);handle.className='action-resize';handle.title='גרירה לשינוי משך';handle.setAttribute('aria-label','שינוי משך הפעולה');
+      handle.onpointerdown=e=>{e.stopPropagation();const x=e.clientX,initial=a.duration,w=rail.getBoundingClientRect().width;handle.setPointerCapture(e.pointerId);
+        handle.onpointermove=ev=>{a.duration=Math.min(q.duration-a.start,Math.round(Math.max(.1,initial+(ev.clientX-x)/w*q.duration)*10)/10);bar.style.width=Math.max(5,a.duration/q.duration*100)+'%';};
+        handle.onpointerup=()=>{handle.onpointermove=null;save();};handle.onpointercancel=()=>{a.duration=initial;handle.onpointermove=null;mount(root,ctx);};};
+    }
   }
   const add=node('div');add.className='row';
   const types=node('select',null,add);types.setAttribute('aria-label','סוג פעולה חדשה');for(const [value,title]of Object.entries(names)){const o=node('option',title,types);o.value=value;}
@@ -54,6 +59,7 @@ const ActionEditor=(()=>{
       const l=node('label','חזרה בתוך הפעולה',box),c=node('input',null,l);c.type='checkbox';c.checked=a.to.loop;c.onchange=()=>{a.to.loop=c.checked;save();};
     }else if(k==='media')field('התחלת קובץ בשניות',a.to.offset,v=>{a.to.offset=Math.max(0,Math.min(3600,v||0));save();},box);
     else if(k==='tap'){const tap=node('select',null,box);for(const [v,title]of [['none','ללא הקשה'],['mute','השתקה'],...seqs.map(s=>['action:'+s.id,'הפעלת '+s.name])]){const o=node('option',title,tap);o.value=v;}tap.value=a.to.tap;tap.onchange=()=>{a.to.tap=tap.value;save();};}else if(k!=='visible')field('יעד '+({x:'אופקי',y:'אנכי',z:'עומק',rot:'מעלות',scale:'גודל יחסי',opacity:'שקיפות'}[k]),a.to[k],v=>{const old=a.to[k];a.to[k]=v;if(!save())a.to[k]=old;},box);
+    if(a.type==='move')button('בחירת יעד על היצירה',()=>ctx.target(a),box);
     button('מחיקת פעולה',()=>{q.actions=q.actions.filter(x=>x!==a);save();},box);
   }
   const note=node('p','כללי המימוש שלנו: הקשה חוזרת מתחילה מחדש. בחפיפה באותו רצף, הפעולה שמסתיימת מאוחר יותר גוברת; בשוויון, המאוחרת ברשימה. בין רצפים, ההפעלה האחרונה גוברת רק בערכים שהיא משנה. שכבה שיש עליה פעולות משתמשת במצב הבסיס במקום נקודות הזמן הישנות. איפוס משחרר את ערכי הרצף; ללא איפוס ערך הסיום נשמר. אלה בחירות תכנון שלנו, לא התנהגות Artivive שאומתה.');note.className='hint';
