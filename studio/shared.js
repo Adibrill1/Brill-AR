@@ -451,11 +451,11 @@ const Studio = (() => {
       return null; // sound: no visual node
     }
     if(el.type==='image'&&el.crop){
-      const applyCrop=()=>{const mesh=e.getObject3D('mesh'),uv=mesh&&mesh.geometry.attributes.uv;if(!uv||!mesh.geometry)return;const c=el.crop;
+      const applyCrop=()=>{const mesh=e.getObject3D('mesh');if(!mesh||!mesh.geometry)return;if(!mesh.geometry._studioCropOwned){mesh.geometry=mesh.geometry.clone();mesh.geometry._studioCropOwned=true;}const uv=mesh.geometry.attributes.uv;if(!uv)return;const c=el.crop;
         // Always map canonical plane UVs. Do not compound repeated object3d events.
-        const values=[c.x,1-c.y,c.x+c.w,1-c.y,c.x,1-c.y-c.h,c.x+c.w,1-c.y-c.h];
+        const image=mesh.material?.map?.image,iw=image&&(image.naturalWidth||image.width),ih=image&&(image.naturalHeight||image.height),ix=iw?.5/iw:0,iy=ih?.5/ih:0;const x1=c.x+ix,x2=c.x+c.w-ix,y1=1-c.y-iy,y2=1-c.y-c.h+iy;const values=[x1,y1,x2,y1,x1,y2,x2,y2];
         for(let i=0;i<Math.min(4,uv.count);i++)uv.setXY(i,values[i*2],values[i*2+1]);uv.needsUpdate=true;
-      };e.addEventListener('object3dset',applyCrop);e.addEventListener('loaded',applyCrop);
+      };e.addEventListener('object3dset',applyCrop);e.addEventListener('loaded',applyCrop);e.addEventListener('materialtextureloaded',applyCrop);const started=performance.now();const awaitCrop=()=>{applyCrop();const image=e.getObject3D('mesh')?.material?.map?.image;if(!(image&&(image.naturalWidth||image.width))&&performance.now()-started<5000)requestAnimationFrame(awaitCrop);};requestAnimationFrame(awaitCrop);
     }
     e.setAttribute("position", pos);
     e.setAttribute("rotation", rot);

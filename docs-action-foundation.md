@@ -44,3 +44,6 @@ Added two end-to-end runtime scenarios with original fixture assets (not vendor 
 
 ## Return-path and invalid-edit safety
 Preview and local AR backlinks carry the originating experience id, and editor boot honors that id, so saving placement then returning does not select an unrelated first record. UI layer retargeting rolls back invalid media/model layer types instead of leaving unsaved invalid state in memory. Still missing: action-channel3Dtilt animation and a tilt-projected2Dcanvas representation.
+
+## Independent crop textures and GIF evidence
+Each cropped plane now owns a cloned geometry rather than modifying A-Frame's shared cached plane geometry. Duplicate left/right crops remain independent. GPU crop UVs inset half a source pixel to prevent linear-filter bleed at the cut edge, including animated GIF. New generated two-frame GIF fixture verifies actual GPU center pixels alternate red/green from the left half, never right-half blue; edge bleed found in first visual inspection was fixed and re-inspected.46browserfixtures total.
