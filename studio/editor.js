@@ -524,6 +524,13 @@
     $("btn-layer-up").onclick = moveEl(1);
     $("btn-layer-down").onclick = moveEl(-1);
 
+    // Non-destructive image region; original embedded bytes stay unchanged.
+    for(const k of ['x','y','w','h'])$('crop-'+k).onchange=()=>upd(el=>{
+      const c={...(el.crop||{x:0,y:0,w:1,h:1})};c[k]=Math.max(k==='w'||k==='h'?1:0,Math.min(100,Number($('crop-'+k).value)||0))/100;
+      c.w=Math.min(c.w,1-c.x);c.h=Math.min(c.h,1-c.y);
+      if(Studio.validCrop({...el,crop:c}))Studio.setImageCrop(rec,el,c);else msg('החיתוך חייב להישאר בתוך התמונה ולכלול שטח');
+    });
+    $('crop-reset').onclick=()=>upd(el=>Studio.setImageCrop(rec,el,{x:0,y:0,w:1,h:1}));
     // panel bindings
     const cur = () => rec.elements.find((x) => x.id === selectedId);
     const transform = (el, key, value) => {
@@ -749,6 +756,7 @@
     $("sl-z").closest("label").hidden = false;
     $("num-z").closest("label").hidden = false;
     $("sel-tap").closest("label").hidden = isGroup;
+    $('row-crop').hidden=el.type!=='image';if(el.type==='image'){const c=el.crop||{x:0,y:0,w:1,h:1};for(const k of ['x','y','w','h'])$('crop-'+k).value=Math.round(c[k]*10000)/100;}
     $("row-chroma").hidden = el.type !== "video";
     $("row-particles").hidden = el.type !== "particles";
     if (el.type === "particles") {
@@ -971,7 +979,8 @@
       if (el.type === "video" && m && m.readyState >= 2) {
         ctx.drawImage(m, -wpx / 2, -hpx / 2, wpx, hpx);
       } else if (el.type === "image" && m) {
-        ctx.drawImage(m, -wpx / 2, -hpx / 2, wpx, hpx);
+        const c=el.crop||{x:0,y:0,w:1,h:1},iw=m.naturalWidth||m.width,ih=m.naturalHeight||m.height;
+        ctx.drawImage(m,c.x*iw,c.y*ih,c.w*iw,c.h*ih,-wpx/2,-hpx/2,wpx,hpx);
         if (m.tagName === "CANVAS") needsAnim = true; // animated gif canvas updates itself; keep repainting
       } else if (el.type === "text") {
         const tb = textBitmap(el);

@@ -26,3 +26,6 @@ Action duration can also be changed by dragging the bar's end handle. Exact dura
 
 ## Sparse-frame correctness
 Timed sequence commands are processed in authored chronological order with original timestamps, not list order or render-arrival time. Child clocks retain the elapsed time when frames are sparse; previous-loop events are not dropped. Bounded512-command batches preserve pending commands rather than discard them. Pause shifts authored command deadlines.20engine tests cover these boundaries. Undo includes same-key/same-size media-only replacements by comparing bytes as well as metadata.
+
+## Non-destructive image crop
+Image layers support a normalized source rectangle, including animated GIF image textures, in the editor canvas and shared AR/3Dentity factory. Original embedded media bytes are retained. Crop changes aspect and height while keeping layer width/position, can be independently adjusted on duplicate layers, restored to full source and undone. UI uses exact left/top/width/height percentages. Video crop is not yet implemented. New browser fixture checks original byte equality, export/import region, invalid-region rejection, canvas red/blue source selection, actual3Dplane UVs, full-source restore and mobile overflow. Server publish/readback rejects invalid bounds.40browserfixtures total. Not a phone camera proof.

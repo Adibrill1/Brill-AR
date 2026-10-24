@@ -260,6 +260,11 @@ const Studio = (() => {
     });
   }
 
+  function validCrop(el){const c=el.crop;return !c||el.type==='image'&&['x','y','w','h'].every(k=>Number.isFinite(c[k]))&&c.x>=0&&c.y>=0&&c.w>=.01&&c.h>=.01&&c.x+c.w<=1.000001&&c.y+c.h<=1.000001;}
+  function setImageCrop(rec,el,crop){
+    const old=el.crop||{x:0,y:0,w:1,h:1};const sourceAspect=(el.aspect||1)/(old.w/old.h);
+    el.crop={...crop};el.aspect=sourceAspect*crop.w/crop.h;el.h=el.w/el.aspect*geom(rec).artW/geom(rec).artH;
+  }
   // ---------- round A: element defaults + text textures ----------
   // Backward-compatible normalization: records saved before round A lack these fields.
   function normEl(el) {
@@ -423,6 +428,13 @@ const Studio = (() => {
       e = document.createElement("a-entity"); // invisible carrier for PositionalAudio
     } else {
       return null; // sound: no visual node
+    }
+    if(el.type==='image'&&el.crop){
+      const applyCrop=()=>{const mesh=e.getObject3D('mesh'),uv=mesh&&mesh.geometry.attributes.uv;if(!uv||!mesh.geometry)return;const c=el.crop;
+        // Always map canonical plane UVs. Do not compound repeated object3d events.
+        const values=[c.x,1-c.y,c.x+c.w,1-c.y,c.x,1-c.y-c.h,c.x+c.w,1-c.y-c.h];
+        for(let i=0;i<Math.min(4,uv.count);i++)uv.setXY(i,values[i*2],values[i*2+1]);uv.needsUpdate=true;
+      };e.addEventListener('object3dset',applyCrop);e.addEventListener('loaded',applyCrop);
     }
     e.setAttribute("position", pos);
     e.setAttribute("rotation", rot);
@@ -851,6 +863,7 @@ const Studio = (() => {
       if (typeof el.id !== "string" || !/^[a-zA-Z0-9_-]{1,128}$/.test(el.id) || ids.has(el.id)) throw new Error("bad or duplicate element id");
       ids.add(el.id);
       for (const key of ["x","y","z","w","h","rot","opacity","aspect","volume"]) if (el[key] != null && (typeof el[key] !== "number" || !Number.isFinite(el[key]))) throw new Error("bad numeric field");
+      if(!validCrop(el))throw new Error('bad image crop');
       if (el.timeline != null) {
         const tl = el.timeline;
         if (!Array.isArray(tl.keys) || tl.keys.length > 1000) throw new Error("bad timeline keys");
@@ -1041,6 +1054,6 @@ const Studio = (() => {
   }
 
   return { TARGET_W, TARGET_H, newId, validateModelBlob, modelClipNames, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
-           geom, toTargetSpace, blankExperience, save, historyState, restoreHistory, duplicateLayer, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
+           validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, historyState, restoreHistory, duplicateLayer, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
            load: id=>settledRead(id), all: ()=>settledRead(), del: idbDel };
 })();

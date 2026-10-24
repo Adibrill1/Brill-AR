@@ -72,6 +72,12 @@
         <button id="btn-layer-down" class="ghost small">מטה (מכוסה)</button>
         <button id="btn-layer-up" class="ghost small">מעלה (מכסה)</button>
       </div>
+      <div id="row-crop" hidden>
+        <strong>חיתוך תמונה ללא מחיקת המקור</strong>
+        <div class="row"><label>משמאל % <input id="crop-x" type="number" min="0" max="99" step="1"></label><label>מלמעלה % <input id="crop-y" type="number" min="0" max="99" step="1"></label><label>רוחב % <input id="crop-w" type="number" min="1" max="100" step="1"></label><label>גובה % <input id="crop-h" type="number" min="1" max="100" step="1"></label></div>
+        <button id="crop-reset" class="ghost">שחזור התמונה המלאה</button>
+        <p class="hint">התמונה המקורית נשמרת; רק האזור המוצג משתנה. אפשר לשכפל ולחתוך כל עותק בנפרד. תמונות בלבד, כולל GIF; וידאו עדיין ללא חיתוך.</p>
+      </div>
       <div id="row-model" hidden>
         <label>בחירת אנימציה <select id="sel-model-clip"><option value="0">טעינת שמות...</option></select></label>
         <label>מספר אנימציה (מתחיל מ־0) <input id="num-model-clip" type="number" min="0" max="99" step="1" value="0"></label>

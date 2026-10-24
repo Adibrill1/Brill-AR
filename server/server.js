@@ -72,6 +72,7 @@ function validateExport(o) {
     if (typeof el.id!=="string"||!/^[a-zA-Z0-9_-]{1,128}$/.test(el.id)||o.elements.slice(0,i).some(e=>e.id===el.id))return "bad or duplicate element id";
     if (!EL_TYPES.has(el.type)) return "element " + i + ": unsupported type " + JSON.stringify(el.type);
     for (const f of NUM_FIELDS) if (el[f] != null && (typeof el[f] !== "number" || !Number.isFinite(el[f]))) return "element " + i + ": bad " + f;
+    if(el.crop){const c=el.crop;if(el.type!=='image'||!['x','y','w','h'].every(k=>Number.isFinite(c[k]))||c.x<0||c.y<0||c.w<.01||c.h<.01||c.x+c.w>1.000001||c.y+c.h>1.000001)return 'bad image crop';}
     if (el.timeline != null) {
       const tl=el.timeline;
       if(!Array.isArray(tl.keys)||tl.keys.length>1000)return "bad timeline keys";
