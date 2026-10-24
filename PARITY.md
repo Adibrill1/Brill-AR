@@ -189,3 +189,6 @@ Canvas live state-loop clock uses max nontrack one-shot duration; boundary sampl
 
 ## Round AN publish durability
 Full experience-count store now permits existing-id stable updates; atomic private-temp rename avoids partial JSON replacement. One-slot isolated fixture200/507/200 and readback/private-file/no-temp passes, plus stable URL/schema. Backend still undeployed, backups/multiuser/sync remain open.
+
+## Round AO auth evidence
+Isolated server regression confirms disabled-without-token, wrong-token no write, public read and authenticated-only deletion with final404.26browser fixtures rerun green. Undeployed, no production change.
