@@ -815,6 +815,7 @@ const Studio = (() => {
     }
     rec.updatedAt = Date.now(); await idbPut(rec.id, rec);
   }
+  async function settledRead(id){let pending;do{pending=id?saveQueues.get(id):Promise.all([...saveQueues.values()]);await (pending||Promise.resolve()).catch(()=>{});}while(id&&pending!==saveQueues.get(id));return id?idbGet(id):idbAll();}
   function historyState(id){const h=history.get(id);return {undo:!!h?.undo.length,redo:!!h?.redo.length};}
   async function restoreHistory(id,direction){
     await (saveQueues.get(id)||Promise.resolve()).catch(()=>{});
@@ -1041,5 +1042,5 @@ const Studio = (() => {
 
   return { TARGET_W, TARGET_H, newId, validateModelBlob, modelClipNames, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
            geom, toTargetSpace, blankExperience, save, historyState, restoreHistory, duplicateLayer, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
-           load: idbGet, all: idbAll, del: idbDel };
+           load: id=>settledRead(id), all: ()=>settledRead(), del: idbDel };
 })();
