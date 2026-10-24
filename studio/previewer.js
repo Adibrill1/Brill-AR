@@ -185,12 +185,13 @@
     document.querySelector('#hint').textContent='מסגרת כתומה = הפריט הנבחר. כבו גרירת פריט כדי לסובב את המבט. השינויים מקומיים, רק שמירה שומרת.';
     CameraEditor.mount({rec,container:rig,scene,isAR:false,composition:true});
   }
-  if(!editMode)Studio.monitorMedia(rig, rec);
+  if(!editMode){Studio.connectSpatialAudio(scene,rig,mediaEls);Studio.monitorMedia(rig, rec);}
   if(!editMode)Studio.ensurePlayback(mediaEls.filter((m) => m.kind === "video"));
 
   // First tap: unmute videos, start sound elements.
   window.addEventListener("pointerdown", () => {
     if(editMode)return;
+    const context=scene.audioListener&&scene.audioListener.context;if(context&&context.state==='suspended')context.resume().catch(()=>{});
     for (const m of mediaEls) {
       if (m.node._studioBlocked) { m.resumeOnVisible = true; continue; }
       if (m.kind === "video") { if (!muted) m.node.muted = false; if (m.node.paused) m.node.play().catch(() => {}); }

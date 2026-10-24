@@ -180,33 +180,7 @@
   const setup = () => {
     const route = () => {
       if (window.__routed) return; window.__routed = true;
-      const listener = scene.audioListener || (scene.audioListener = new THREE.AudioListener());
-      if (scene.camera && !listener.parent) scene.camera.add(listener); // positional audio is relative to the camera
-      for (const m of mediaEls) {
-        const ent = m.el.spatial ? scene.querySelector(`[data-el-id="${m.el.id}"]`) : null;
-        let a;
-        if (ent) {
-          a = new THREE.PositionalAudio(listener);
-          const inner = m.el.spatialInner > 0 ? m.el.spatialInner : 0.35;
-          const mode = m.el.spatialMode || "log";
-          if (mode === "linear") {
-            a.setDistanceModel("linear");
-            a.setRefDistance(inner);
-            a.setMaxDistance(m.el.spatialOuter > inner ? m.el.spatialOuter : inner * 4); // silent beyond the outer sphere
-            a.setRolloffFactor(1);
-          } else {
-            a.setDistanceModel("exponential"); // never fully muted, like Artivive's logarithmic mode
-            a.setRefDistance(inner);
-            a.setRolloffFactor(1.5);
-          }
-          ent.object3D.add(a);
-        } else {
-          a = new THREE.Audio(listener);
-        }
-        a.setMediaElementSource(m.node);
-        a.gain.gain.value = m.el.volume == null ? 1 : m.el.volume;
-        m.three = a;
-      }
+      Studio.connectSpatialAudio(scene,target,mediaEls);
     };
     if (scene.hasLoaded) route(); else scene.addEventListener("loaded", route);
     XR8.XrController.configure({ imageTargetData: [targetData] });

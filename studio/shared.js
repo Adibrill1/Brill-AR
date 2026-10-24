@@ -272,6 +272,14 @@ const Studio = (() => {
     });
   }
 
+  function audioDistances(el){const inner=Math.max(.05,Math.min(5,Number(el.spatialInner)||.35)),outer=Math.max(inner+.01,Math.min(20,Number(el.spatialOuter)||1.4));return {inner,outer};}
+  function connectSpatialAudio(scene,container,mediaEls){
+    const listener=scene.audioListener||(scene.audioListener=new THREE.AudioListener());
+    const route=()=>{if(scene.camera&&!listener.parent)scene.camera.add(listener);for(const m of mediaEls){if(m.three)continue;const ent=m.el.spatial?container.querySelector('[data-el-id="'+m.el.id+'"]'):null;let audio;
+      if(ent){audio=new THREE.PositionalAudio(listener);const d=audioDistances(m.el);audio.setDistanceModel(m.el.spatialMode==='linear'?'linear':'exponential');audio.setRefDistance(d.inner);audio.setMaxDistance(d.outer);audio.setRolloffFactor(m.el.spatialMode==='linear'?1:1.5);ent.object3D.add(audio);}else audio=new THREE.Audio(listener);
+      audio.setMediaElementSource(m.node);audio.gain.gain.value=m.el.volume==null?1:m.el.volume;m.three=audio;
+    }};if(scene.hasLoaded)route();else scene.addEventListener('loaded',route,{once:true});return listener;
+  }
   function validParticles(el){const p=el.particles;if(!p)return true;if(typeof p!=='object'||Array.isArray(p))return false;for(const [k,min,max]of [['lifetime',0,60],['endSize',0,5],['count',10,500],['size',2,60],['speed',.2,3]])if(p[k]!=null&&(!Number.isFinite(p[k])||p[k]<min||p[k]>max))return false;if(p.emitter!=null&&!['box','disc','sphere'].includes(p.emitter))return false;if(p.endColor!=null&&!/^#[0-9a-f]{6}$/i.test(p.endColor))return false;if(p.fade!=null&&typeof p.fade!=='boolean')return false;return true;}
   function validCrop(el){const c=el.crop;return !c||el.type==='image'&&['x','y','w','h'].every(k=>Number.isFinite(c[k]))&&c.x>=0&&c.y>=0&&c.w>=.01&&c.h>=.01&&c.x+c.w<=1.000001&&c.y+c.h<=1.000001;}
   function setImageCrop(rec,el,crop){
@@ -1068,6 +1076,6 @@ const Studio = (() => {
   }
 
   return { TARGET_W, TARGET_H, newId, validateModelBlob, modelClipNames, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
-           validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, historyState, restoreHistory, duplicateLayer, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
+           audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, historyState, restoreHistory, duplicateLayer, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
            load: id=>settledRead(id), all: ()=>settledRead(), del: idbDel };
 })();
