@@ -115,6 +115,22 @@ const Studio = (() => {
   }
 
 
+  async function validateModelBlob(blob) {
+    if(!blob||blob.size<20||blob.size>20*1024*1024)throw Error('מודל GLB חסר או גדול מדי (עד20MB).');
+    const bytes=await blob.arrayBuffer(),view=new DataView(bytes);
+    if(view.getUint32(0,true)!==0x46546c67||view.getUint32(4,true)!==2||view.getUint32(8,true)!==bytes.byteLength)throw Error('מבנה GLB לא תקין.');
+    let offset=12,doc=null;
+    while(offset<bytes.byteLength){
+      if(offset+8>bytes.byteLength)throw Error('מקטע GLB חסר.');
+      const length=view.getUint32(offset,true),type=view.getUint32(offset+4,true);
+      if(length%4||offset+8+length>bytes.byteLength)throw Error('אורך מקטע GLB לא תקין.');
+      if(!doc){if(type!==0x4e4f534a||length>4*1024*1024)throw Error('מקטע JSON חסר או גדול מדי.');doc=JSON.parse(new TextDecoder('utf-8',{fatal:true}).decode(new Uint8Array(bytes,offset+8,length)));}
+      offset+=8+length;
+    }
+    if(!doc||!doc.asset||doc.asset.version!=='2.0')throw Error('נדרש glTF2.0.');
+    const visit=(node,depth)=>{if(depth>100)throw Error('מודל מורכב מדי.');if(!node||typeof node!=='object')return;for(const [key,value]of Object.entries(node)){if(key==='uri'&&typeof value==='string'&&!value.startsWith('data:'))throw Error('המודל מפנה לקובץ חיצוני. ארזו glTF וכל הקבצים יחד ב־ZIP או יצאו GLB עצמאי.');if(typeof value==='object')visit(value,depth+1);}};visit(doc,0);
+    return doc;
+  }
   async function modelClipNames(blob) {
     if (!blob || blob.size > 20*1024*1024 || blob.size < 20) return [];
     const head=new DataView(await blob.slice(0,20).arrayBuffer());
@@ -936,7 +952,7 @@ const Studio = (() => {
     toast._t = setTimeout(() => { toast.style.opacity = "0"; }, 1200);
   }
 
-  return { TARGET_W, TARGET_H, newId, modelClipNames, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
+  return { TARGET_W, TARGET_H, newId, validateModelBlob, modelClipNames, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
            geom, toTargetSpace, blankExperience, save, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
            load: idbGet, all: idbAll, del: idbDel };
 })();

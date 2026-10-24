@@ -195,3 +195,6 @@ Isolated server regression confirms disabled-without-token, wrong-token no write
 
 ## Round AP bare embedded glTF
 Bare.gltf with embedded buffer/image URIs now converts via bounded dependency validator to self-contained GLB. Actual file-input stored magic/type proof; missing external dependency rejects with ZIP guidance/no element addition. No new rendered/complex-extension fidelity claim. Local-only.
+
+## Round AQ model input boundary
+GLB file input final check validates size/header/chunks/JSON and rejects external core/extension URIs before storing. Four malformed file fixtures reject, valid authored GLB imports. Not full mesh/extension semantics; whole-experience JSON embedded model bytes not deeply validated. Local-only.
