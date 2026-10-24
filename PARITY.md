@@ -244,3 +244,8 @@ and wholeJSON import. Four old-failing browser cases pass; all35browser fixtures
 Fresh New UI inspected without stale artwork/element controls. Arbitrary panel edits,
 particle-sprite import, publish/navigation and dedicated artwork/wholeJSON races remain
 open; no full concurrency coverage claim.
+
+Core concurrency follow-through: delayed artwork/wholeJSON import -> selection tests
+now pass, including thumbnail clearing. WholeJSON test exposed selector UI refresh
+racing the next selection; selector refresh is awaited within experience switches.
+All36browser fixtures green. Other arbitrary panel/publish/navigation gaps remain.

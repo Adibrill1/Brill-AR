@@ -21,3 +21,10 @@ Bounded scope: does not claim every panel edit, async particle-sprite import, pu
 snapshot or navigation action is serialized. Broad arbitrary-edit concurrency remains
 open. Artwork/wholeJSON ordering use the shared path but lack dedicated delayed tests.
 No device or production backend claim.
+
+Follow-through: dedicated delayed artwork and wholeJSON import -> selection tests added.
+Artwork saves only on its originating record and the next artwork-less record has no
+stale thumbnail. WholeJSON import initially exposed a second bug: asynchronous selector
+refresh left its dropdown on the imported record while the canvas had switched to the
+later selected record. Selector refresh now returns a promise and is awaited within
+queued experience switches. Both delayed tests pass; all36browser fixtures pass.

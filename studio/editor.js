@@ -195,7 +195,7 @@
   }
 
   function refreshExpSelect() {
-    Studio.all().then((list) => {
+    return Studio.all().then((list) => {
       const sel = $("exp-select");
       sel.innerHTML = "";
       list.sort((a, b) => b.updatedAt - a.updatedAt).forEach((r) => {
@@ -414,7 +414,7 @@
       rec = Studio.blankExperience();
       selectedId = null; artworkImg = null; checkedIds.clear(); tlScrubT = null; resetSeq();
       await Studio.save(rec);
-      refreshExpSelect(); render();
+      await refreshExpSelect(); render();
       msg("ניסוי חדש - התחילי בהעלאת תמונת יצירה.");
     });
     $("btn-del-exp").onclick = async () => {
@@ -424,7 +424,7 @@
       const all = await Studio.all();
       rec = all[0] || await Studio.seedDemo(true);
       selectedId = null; checkedIds.clear(); tlScrubT = null; resetSeq();
-      await hydrate(); refreshExpSelect(); render();
+      await hydrate(); await refreshExpSelect(); render();
       });
     };
     $("exp-select").onchange = (e) => {
@@ -435,7 +435,7 @@
         rec = r;
         selectedId = null; checkedIds.clear(); tlScrubT = null;
         resetSeq();
-        await hydrate(); render();
+        await hydrate(); await refreshExpSelect(); render();
       });
     };
     $("btn-export").onclick = () => queueExperience(async () => {
@@ -482,7 +482,7 @@
         rec = await Studio.importJSON(await f.text());
         rec.elements.forEach(Studio.normEl);
         selectedId = null; checkedIds.clear(); tlScrubT = null; resetSeq();
-        await hydrate(); refreshExpSelect(); render();
+        await hydrate(); await refreshExpSelect(); render();
         msg("הייבוא הצליח.");
       } catch (err) { msg("הקובץ לא תקין לייבוא."); }
       });
