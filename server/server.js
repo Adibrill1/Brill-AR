@@ -13,12 +13,12 @@ const path = require("path");
 const crypto = require("crypto");
 
 const ROOT = path.join(__dirname, "..");
-const DATA = path.join(__dirname, "data");
+const DATA = process.env.STORAGE_DIR || path.join(__dirname, "data");
 const STUDIO = path.join(ROOT, "studio");
 const PORT = process.env.PORT || 8787;
 const MAX_BODY = 40 * 1024 * 1024;        // export JSON embeds media as data URLs
 const MAX_ASSET_BYTES = 15 * 1024 * 1024; // per decoded asset
-const MAX_EXPERIENCES = 500;
+const MAX_EXPERIENCES = Math.max(1,Math.min(500,Number(process.env.MAX_EXPERIENCES)||500));
 const MAX_ELEMENTS = 60;
 const PUBLISH_TOKEN = process.env.PUBLISH_TOKEN || "";
 const RATE_WINDOW_MS = 60 * 60 * 1000;
@@ -140,9 +140,12 @@ const server = http.createServer(async (req, res) => {
       try { o = JSON.parse(raw.toString("utf8")); } catch { return send(res, 400, { error: "bad json" }); }
       const err = validateExport(o);
       if (err) return send(res, 400, { error: err });
-      if (fs.readdirSync(DATA).length >= MAX_EXPERIENCES) return send(res, 507, { error: "store full" });
       const id = safeId(o.id) || safeId(o.slug) || crypto.randomBytes(5).toString("hex");
-      fs.writeFileSync(path.join(DATA, id + ".json"), JSON.stringify(o));
+      const destination=path.join(DATA,id+'.json');
+      if(!fs.existsSync(destination)&&fs.readdirSync(DATA).filter(f=>f.endsWith('.json')).length>=MAX_EXPERIENCES)return send(res,507,{error:"store full"});
+      const temp=path.join(DATA,'.'+id+'.'+crypto.randomBytes(6).toString('hex')+'.tmp');
+      try { fs.writeFileSync(temp,JSON.stringify(o),{flag:'wx',mode:0o600});fs.renameSync(temp,destination); }
+      finally { if(fs.existsSync(temp))fs.unlinkSync(temp); }
       return send(res, 200, { id, url: "/e/" + id });
     }
     if (req.method === "DELETE" && u.pathname.startsWith("/api/experiences/")) {

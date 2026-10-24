@@ -186,3 +186,6 @@ Manual track actual canvas pixels absent→movingX194→248→277 across state s
 
 ## Round AM state loop
 Canvas live state-loop clock uses max nontrack one-shot duration; boundary samples pass and all26browser fixtures rerun green. Rendered loop timing/autoNext creator simulation remains unverified. Local-only.
+
+## Round AN publish durability
+Full experience-count store now permits existing-id stable updates; atomic private-temp rename avoids partial JSON replacement. One-slot isolated fixture200/507/200 and readback/private-file/no-temp passes, plus stable URL/schema. Backend still undeployed, backups/multiuser/sync remain open.
