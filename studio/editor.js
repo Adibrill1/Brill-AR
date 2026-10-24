@@ -760,7 +760,7 @@
     $("sl-z").closest("label").hidden = false;
     $("num-z").closest("label").hidden = false;
     $("sel-tap").closest("label").hidden = isGroup;
-    $('row-crop').hidden=el.type!=='image';if(el.type==='image'){const c=el.crop||{x:0,y:0,w:1,h:1};for(const k of ['x','y','w','h'])$('crop-'+k).value=Math.round(c[k]*10000)/100;}
+    $('row-crop').hidden=!['image','video'].includes(el.type);if(['image','video'].includes(el.type)){const c=el.crop||{x:0,y:0,w:1,h:1};for(const k of ['x','y','w','h'])$('crop-'+k).value=Math.round(c[k]*10000)/100;}
     $("row-chroma").hidden = el.type !== "video";
     $("row-particles").hidden = el.type !== "particles";
     if (el.type === "particles") {
@@ -982,7 +982,7 @@
       ctx.globalAlpha = 0.92 * (ts ? ts.opacity : (el.opacity == null ? 1 : el.opacity));
       const m = el.assetId && media[el.assetId];
       if (el.type === "video" && m && m.readyState >= 2) {
-        ctx.drawImage(m, -wpx / 2, -hpx / 2, wpx, hpx);
+        const c=el.crop||{x:0,y:0,w:1,h:1},iw=m.videoWidth,ih=m.videoHeight;ctx.drawImage(m,c.x*iw,c.y*ih,c.w*iw,c.h*ih,-wpx/2,-hpx/2,wpx,hpx);
       } else if (el.type === "image" && m) {
         const c=el.crop||{x:0,y:0,w:1,h:1},iw=m.naturalWidth||m.width,ih=m.naturalHeight||m.height;
         ctx.drawImage(m,c.x*iw,c.y*ih,c.w*iw,c.h*ih,-wpx/2,-hpx/2,wpx,hpx);

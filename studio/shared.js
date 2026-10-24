@@ -284,7 +284,7 @@ const Studio = (() => {
     }};if(scene.hasLoaded)route();else scene.addEventListener('loaded',route,{once:true});return listener;
   }
   function validParticles(el){const p=el.particles;if(!p)return true;if(typeof p!=='object'||Array.isArray(p))return false;for(const [k,min,max]of [['lifetime',0,60],['endSize',0,5],['count',10,500],['size',2,60],['speed',.2,3]])if(p[k]!=null&&(!Number.isFinite(p[k])||p[k]<min||p[k]>max))return false;if(p.emitter!=null&&!['box','disc','sphere'].includes(p.emitter))return false;if(p.endColor!=null&&!/^#[0-9a-f]{6}$/i.test(p.endColor))return false;if(p.fade!=null&&typeof p.fade!=='boolean')return false;return true;}
-  function validCrop(el){const c=el.crop;return !c||el.type==='image'&&['x','y','w','h'].every(k=>Number.isFinite(c[k]))&&c.x>=0&&c.y>=0&&c.w>=.01&&c.h>=.01&&c.x+c.w<=1.000001&&c.y+c.h<=1.000001;}
+  function validCrop(el){const c=el.crop;return !c||['image','video'].includes(el.type)&&['x','y','w','h'].every(k=>Number.isFinite(c[k]))&&c.x>=0&&c.y>=0&&c.w>=.01&&c.h>=.01&&c.x+c.w<=1.000001&&c.y+c.h<=1.000001;}
   function setImageCrop(rec,el,crop){
     const old=el.crop||{x:0,y:0,w:1,h:1};const sourceAspect=(el.aspect||1)/(old.w/old.h);
     el.crop={...crop};el.aspect=sourceAspect*crop.w/crop.h;el.h=el.w/el.aspect*geom(rec).artW/geom(rec).artH;
@@ -453,13 +453,14 @@ const Studio = (() => {
     } else {
       return null; // sound: no visual node
     }
-    if(el.type==='image'&&el.crop){
-      const applyCrop=()=>{const mesh=e.getObject3D('mesh');if(!mesh||!mesh.geometry)return;if(!mesh.geometry._studioCropOwned){mesh.geometry=mesh.geometry.clone();mesh.geometry._studioCropOwned=true;}const uv=mesh.geometry.attributes.uv;if(!uv)return;const c=el.crop;
-        // Always map canonical plane UVs. Do not compound repeated object3d events.
-        const image=mesh.material?.map?.image,iw=image&&(image.naturalWidth||image.width),ih=image&&(image.naturalHeight||image.height),ix=iw?.5/iw:0,iy=ih?.5/ih:0;const x1=c.x+ix,x2=c.x+c.w-ix,y1=1-c.y-iy,y2=1-c.y-c.h+iy;const values=[x1,y1,x2,y1,x1,y2,x2,y2];
-        for(let i=0;i<Math.min(4,uv.count);i++)uv.setXY(i,values[i*2],values[i*2+1]);uv.needsUpdate=true;
-      };e.addEventListener('object3dset',applyCrop);e.addEventListener('loaded',applyCrop);e.addEventListener('materialtextureloaded',applyCrop);const started=performance.now();const awaitCrop=()=>{applyCrop();const image=e.getObject3D('mesh')?.material?.map?.image;if(!(image&&(image.naturalWidth||image.width))&&performance.now()-started<5000)requestAnimationFrame(awaitCrop);};requestAnimationFrame(awaitCrop);
+    if(['image','video'].includes(el.type)&&el.crop){
+      const applyCrop=()=>{let ready=false;e.object3D.traverse(mesh=>{if(!mesh.geometry?.attributes.uv)return;if(!mesh.geometry._studioCropOwned){mesh.geometry=mesh.geometry.clone();mesh.geometry._studioCropOwned=true;}const uv=mesh.geometry.attributes.uv,c=el.crop;
+        const materials=Array.isArray(mesh.material)?mesh.material:[mesh.material],image=materials[0]?.map?.image||materials[0]?.uniforms?.map?.value?.image,iw=image&&(image.videoWidth||image.naturalWidth||image.width),ih=image&&(image.videoHeight||image.naturalHeight||image.height),ix=iw?.5/iw:0,iy=ih?.5/ih:0;const x1=c.x+ix,x2=c.x+c.w-ix,y1=1-c.y-iy,y2=1-c.y-c.h+iy;const values=[x1,y1,x2,y1,x1,y2,x2,y2];
+        for(let i=0;i<Math.min(4,uv.count);i++)uv.setXY(i,values[i*2],values[i*2+1]);uv.needsUpdate=true;if(iw&&ih)ready=true;
+      });return ready;};
+      for(const event of ['object3dset','loaded','materialtextureloaded'])e.addEventListener(event,applyCrop);const started=performance.now();const awaitCrop=()=>{if(!applyCrop()&&performance.now()-started<5000)requestAnimationFrame(awaitCrop);};requestAnimationFrame(awaitCrop);
     }
+
     e.setAttribute("position", pos);
     e.setAttribute("rotation", rot);
     e.dataset.elId = el.id;
