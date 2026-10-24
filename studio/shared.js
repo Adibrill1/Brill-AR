@@ -427,7 +427,7 @@ const Studio = (() => {
     e.setAttribute("rotation", rot);
     e.dataset.elId = el.id;
     e._studioFrame = { ox, oy, oz, angle, baseRotation: opts.baseRotation || 0, zTie: idx * 0.001 };
-    const hasTl = el.timeline && Array.isArray(el.timeline.keys) && el.timeline.keys.length;
+    const hasTl = ActionCore.list(rec).some(q=>q.actions.some(a=>a.layerId===el.id)) || el.timeline && Array.isArray(el.timeline.keys) && el.timeline.keys.length;
     if (el.anim === "spin" && !hasTl) e.setAttribute("animation__spin", `property: rotation; to: 0 0 ${(el.rot || 0) - (opts.baseRotation || 0) + 360}; loop: true; dur: 14000; easing: linear`);
     else if (el.anim === "float" && !hasTl) e.setAttribute("animation__float", `property: position; from: ${pos}; to: ${dx * Math.cos(angle) - dy * Math.sin(angle)} ${dx * Math.sin(angle) + dy * Math.cos(angle) + 0.03} ${z - oz}; dir: alternate; loop: true; dur: 2600; easing: easeInOutSine`);
     else if (el.anim === "pulse" && !hasTl) e.setAttribute("animation__pulse", `property: scale; to: 1.08 1.08 1; dir: alternate; loop: true; dur: 1600; easing: easeInOutSine`);
@@ -467,7 +467,7 @@ const Studio = (() => {
   // Tap behavior shared by AR player and preview. hooks.onMuteToggle handles 'mute'.
   function bindTap(entity, el, hooks) {
     const hasKeyedTap = el.timeline && Array.isArray(el.timeline.keys) && el.timeline.keys.some((k) => k.tap != null && k.tap !== "none");
-    if ((!el.onTap || el.onTap === "none") && !hasKeyedTap) return;
+    // Action sequences may enable an interaction after loading. Always bind once.
     entity.addEventListener("click", () => {
       const tap = entity._tapOverride != null ? entity._tapOverride : el.onTap;
       if (tap === "link" && el.tapUrl) {
@@ -479,6 +479,8 @@ const Studio = (() => {
         hooks.onNextSequence();
       } else if (tap && tap.indexOf("seq:") === 0 && hooks && hooks.onSequence) {
         hooks.onSequence(tap.slice(4));
+      } else if (tap && tap.indexOf("action:")===0 && hooks && hooks.onActionSequence) {
+        hooks.onActionSequence(tap.slice(7));
       } else if (tap && tap.indexOf("track:") === 0 && hooks && hooks.onTrackToggle) {
         hooks.onTrackToggle(tap.slice(6));
       }
@@ -555,7 +557,7 @@ const Studio = (() => {
   }
   function syncMedia(container, rec) {
     for (const m of container._studioMedia || []) {
-      let allowed = m._studioBaseAllowed !== false;
+      let allowed = m._studioBaseAllowed !== false && !m._actionBlocked;
       const node = container.querySelector('[data-el-id="' + m.el.id + '"]');
       let parent = node && node.object3D;
       while (parent) { if (!parent.visible) allowed = false; parent = parent.parent; }
@@ -641,11 +643,12 @@ const Studio = (() => {
   // Canvas uses the same artwork-space samples and parent-base frame as runtime.
   function sampleComposition(rec, el, t, seqId) {
     const timeFor=typeof t==='function'?t:()=>t;
-    const out = sampleVisual(rec,el,timeFor(el));
+    const owned=e=>ActionCore.list(rec).some(q=>q.actions.some(a=>a.layerId===e.id));
+    const out = Object.assign(owned(el)?ActionCore.base(el):sampleVisual(rec,el,timeFor(el)),rec._actionValues&&rec._actionValues[el.id]);
     out.visible = out.visible && elVisibleIn(el,seqId);
     const group=rec.elements.find(g=>g.type==='group'&&(g.children||[]).includes(el.id));
     if(group) {
-      const parent=sampleVisual(rec,group,timeFor(group)),ratio=geom(rec).artW/geom(rec).artH;
+      const parent=Object.assign(owned(group)?ActionCore.base(group):sampleVisual(rec,group,timeFor(group)),rec._actionValues&&rec._actionValues[group.id]),ratio=geom(rec).artW/geom(rec).artH;
       const angle=(parent.rot-(group.rot||0))*Math.PI/180;
       const dx=(out.x-(group.x||0))*ratio*parent.scale,dy=(out.y-(group.y||0))*parent.scale;
       out.x=parent.x+(dx*Math.cos(angle)-dy*Math.sin(angle))/ratio;
@@ -676,7 +679,7 @@ const Studio = (() => {
     const tracks = [];
     for (const e of entities) {
       const el = rec.elements.find((x) => x.id === (e.dataset && e.dataset.elId));
-      if (!el || !el.timeline || !Array.isArray(el.timeline.keys) || !el.timeline.keys.length) continue;
+      if (!el || ActionCore.list(rec).some(q=>q.actions.some(a=>a.layerId===el.id)) || !el.timeline || !Array.isArray(el.timeline.keys) || !el.timeline.keys.length) continue;
       const p0 = e.getAttribute("position");
       const ts0 = toTargetSpace(rec, el, el.aspect || 1);
       tracks.push({ el, e, elapsed: 0, startedAt: 0,
@@ -725,6 +728,33 @@ const Studio = (() => {
     return drv;
   }
 
+  // One action engine drives shared layers in preview and AR. Releasing a sequence
+  // restores base authoring values; legacy-only layers keep their existing drivers.
+  function startActionDriver(rec,container,mediaEls,opts={}) {
+    const engine=ActionCore.create(rec),ids=new Set(ActionCore.list(rec).flatMap(q=>q.actions.map(a=>a.layerId)));
+    const entries=[...container.querySelectorAll('[data-el-id]')].filter(e=>ids.has(e.dataset.elId)).map(e=>{
+      const el=rec.elements.find(el=>el.id===e.dataset.elId);return {e,el};
+    });
+    if(opts.disabled)return engine;
+    engine.autoStart();if(opts.paused)engine.pause();
+    let active=true;
+    function frame(){if(!active)return;const values=engine.values();
+      for(const {e,el}of entries){
+        const s=Object.assign(ActionCore.base(el),values[el.id]),ts=toTargetSpace(rec,{...el,x:s.x,y:s.y,z:s.z},el.aspect||1),f=e._studioFrame;
+        if(f){const dx=ts.x-f.ox,dy=ts.y-f.oy;e.object3D.position.set(dx*Math.cos(f.angle)-dy*Math.sin(f.angle),dx*Math.sin(f.angle)+dy*Math.cos(f.angle),(ts.z||0)+f.zTie-f.oz);}
+        else { const tie=rec.elements.indexOf(el)*.0001;e.object3D.position.set(ts.x,ts.y,(ts.z||0)+tie); }
+        e.object3D.rotation.z=(s.rot-(f?f.baseRotation:0))*Math.PI/180;
+        e.object3D.scale.set(s.scale,s.scale,1);applyOpacity(e,s.opacity);
+        e._timelineVisible=s.visible!==false;e.object3D.visible=e._sequenceVisible!==false&&e._timelineVisible;
+        e._tapOverride=s.tap;e.classList.toggle('cantap',!!s.tap&&s.tap!=='none');
+      }
+      for(const m of mediaEls||[])m._actionBlocked=values[m.el.id]&&values[m.el.id].visible===false;
+      syncMedia(container,rec);
+      container.dataset.actionSequences=JSON.stringify(engine.snapshot());requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);engine.dispose=()=>{active=false;};return engine;
+  }
+
   // Small state-position dots shown when an artwork has more than one state.
   function renderSeqDots(rec, curSeq) {
     let bar = document.getElementById("seq-dots");
@@ -751,7 +781,7 @@ const Studio = (() => {
   }
   async function save(rec) { rec.updatedAt = Date.now(); await idbPut(rec.id, rec); }
   async function exportJSON(rec) {
-    const out = { format: "ar-studio/1", id: rec.id, name: rec.name, createdAt: rec.createdAt, target: rec.target, elements: rec.elements.map((e) => ({ ...e })), sequences: (rec.sequences || []).map((q) => ({ ...q })), tracks: (rec.tracks || []).map((t) => ({ ...t })) };
+    const out = { format: "ar-studio/1", id: rec.id, name: rec.name, createdAt: rec.createdAt, target: rec.target, elements: rec.elements.map((e) => ({ ...e })), sequences: (rec.sequences || []).map((q) => ({ ...q })), tracks: (rec.tracks || []).map((t) => ({ ...t })), actionSequences: JSON.parse(JSON.stringify(rec.actionSequences || [])) };
     out.assets = {};
     for (const el of rec.elements) {
       for (const id of [el.assetId, el.particles && el.particles.spriteAssetId]) {
@@ -784,6 +814,7 @@ const Studio = (() => {
         }
       }
     }
+    const actionError=ActionCore.validate(o);if(actionError)throw new Error(actionError);
     const member = new Set();
     for (const el of o.elements.filter(e=>e.type === "group")) {
       if (!Array.isArray(el.children)||!el.children.length) throw new Error("bad group children");
@@ -802,6 +833,7 @@ const Studio = (() => {
     rec.target = o.target; rec.elements = o.elements || []; rec.createdAt = o.createdAt || Date.now();
     rec.sequences = Array.isArray(o.sequences) ? o.sequences : [];
     rec.tracks = Array.isArray(o.tracks) ? o.tracks : [];
+    rec.actionSequences = o.actionSequences || [];
     rec.assets = {};
     for (const [k, durl] of Object.entries(o.assets || {})) rec.assets[k] = await dataURLtoBlob(durl);
     // Whole-experience imports use the same model boundary as direct uploads.
@@ -959,6 +991,6 @@ const Studio = (() => {
   }
 
   return { TARGET_W, TARGET_H, newId, validateModelBlob, modelClipNames, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
-           geom, toTargetSpace, blankExperience, save, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
+           geom, toTargetSpace, blankExperience, save, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
            load: idbGet, all: idbAll, del: idbDel };
 })();

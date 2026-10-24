@@ -1,0 +1,20 @@
+const assert=require('node:assert/strict'),A=require('../studio/actions.js');
+const layer={id:'fish',type:'text',x:0,y:0,z:0,rot:0,name:'דג'},action=(id,type,to,start=0,duration=2)=>({id,layerId:'fish',type,to,start,duration,ease:'linear'});
+const q=(id,actions,opts={})=>({id,name:id,duration:4,loop:false,reset:true,autoStart:false,actions,...opts});
+let count=0;function test(name,fn){fn();count++;console.log('PASS',name);}
+const rec={elements:[layer],actionSequences:[q('swim',[action('move','move',{x:1,y:0,z:.1}),action('turn','rotate',{rot:90},0,4)]),q('glow',[action('fade','opacity',{opacity:.2},0,4)])]};
+test('new schema valid',()=>assert.equal(A.validate(rec),null));
+test('legacy schema accepted',()=>assert.equal(A.validate({elements:[layer]}),null));
+test('independent simultaneous channels',()=>{let now=0,e=A.create(rec,()=>now);e.start('swim');e.start('glow');now=1;const s=e.values().fish;assert.equal(s.x,.5);assert.equal(s.rot,22.5);assert.equal(s.opacity,.8);});
+test('reset one sequence leaves another playing',()=>{let now=0,e=A.create(rec,()=>now);e.start('swim');now=2;e.start('glow');now=4;const s=e.values().fish;assert.equal(s.x,undefined);assert.ok(Math.abs(s.opacity-.6)<1e-9);assert.ok(e.isPlaying('glow'));});
+test('repeat starts over, no stacked clocks',()=>{let now=0,e=A.create(rec,()=>now);e.start('swim');now=1;e.start('swim');now=2;assert.equal(e.values().fish.x,.5);assert.equal(Object.keys(e.snapshot()).length,1);});
+test('no reset holds end; stop releases',()=>{const r=structuredClone(rec);r.actionSequences[0].reset=false;let now=0,e=A.create(r,()=>now);e.start('swim');now=10;assert.equal(e.values().fish.x,1);assert.equal(e.isPlaying('swim'),false);e.stop('swim');assert.deepEqual(e.values(),{});});
+test('loop wraps and pauses on tracking loss',()=>{const r=structuredClone(rec);r.actionSequences[0].loop=true;let now=0,e=A.create(r,()=>now);e.start('swim');now=5;assert.equal(e.values().fish.x,.5);e.pause();now=100;assert.equal(e.values().fish.x,.5);e.resume();now=101;assert.equal(e.values().fish.x,1);});
+test('seek end shows end even reset enabled',()=>{let now=0,e=A.create(rec,()=>now);e.seek('swim',4);assert.equal(e.values().fish.x,1);});
+test('latest started shared-property sequence wins without stealing other channels',()=>{const r=structuredClone(rec);r.actionSequences.push(q('other',[action('m2','move',{x:-1,y:0,z:0})]));let now=0,e=A.create(r,()=>now);e.start('swim');now=.5;e.start('other');now=1.5;assert.equal(e.values().fish.x,-.5);assert.equal(e.values().fish.rot,33.75);e.stop('other');assert.equal(e.values().fish.x,.75);});
+test('overlap end precedence and equal-end list tie',()=>{const r={elements:[layer]},s=q('s',[action('a','rotate',{rot:80},0,4),action('b','rotate',{rot:200},1,1)]);assert.equal(A.sampleSequence(r,s,2).fish.rot,40);s.actions[1].duration=3;assert.equal(A.sampleSequence(r,s,2).fish.rot,80);});
+test('sequential actions inherit prior value at start',()=>{const s=q('s',[action('a','rotate',{rot:90},0,1),action('b','rotate',{rot:180},2,2)]);assert.equal(A.sampleSequence({elements:[layer]},s,3).fish.rot,135);});
+test('show hide discrete and changed tap',()=>{const s=q('s',[action('a','hide',{},1,0),action('b','show',{},3,0),action('c','interaction',{tap:'none'},2,0)]);assert.equal(A.sampleSequence({elements:[layer]},s,2).fish.visible,false);assert.equal(A.sampleSequence({elements:[layer]},s,3).fish.visible,true);});
+test('invalid/orphan/out-of-range data rejected',()=>{for(const mutate of [r=>r.actionSequences[0].actions[0].layerId='missing',r=>r.actionSequences[0].actions[0].start=-1,r=>r.actionSequences[0].actions[0].to.x=Infinity,r=>r.actionSequences[0].actions.push(r.actionSequences[0].actions[0]),r=>r.actionSequences[0].actions[0].type='__proto__',r=>r.actionSequences[0].actions[0].duration=20]){const r=structuredClone(rec);mutate(r);assert.ok(A.validate(r));}});
+test('all easing curves preserve endpoints',()=>{for(const e of A.eases){assert.equal(A.ease(0,e),0);assert.equal(A.ease(1,e),1);}});
+console.log(count+' action tests passed');

@@ -130,7 +130,7 @@
   // taps bind per entity, including children inside group wrappers
   rig.querySelectorAll("[data-el-id]").forEach((n) => {
     const el = rec.elements.find((x) => x.id === n.dataset.elId);
-    if (el) Studio.bindTap(n, el, { onMuteToggle, onNextSequence, onSequence, onTrackToggle });
+    if (el) Studio.bindTap(n, el, { onMuteToggle, onNextSequence, onSequence, onTrackToggle, onActionSequence: id=>actionRunner.start(id) });
   });
   trackRunner.autoStart();
   refreshVisibility();
@@ -142,6 +142,8 @@
   }));
   if (tlDrv) tlDrv.stateLoop = !!(Studio.seqList(rec).find((x) => x.id === curSeq) || {}).loop;
   runner.enter(curSeq);
+  const actionRunner=Studio.startActionDriver(rec,rig,mediaEls);
+  window.__actionRunner=actionRunner;
   window.__tlDrv = tlDrv; // test/debug handle
   if (videoFallbacks) {
     document.getElementById("hint").textContent = "שים לב: הדפדפן הזה לא מצליח להציג את הסרטון, והוא מוצג כמלבן אפור. נסו מכשיר אחר או קובץ וידאו בפורמט נתמך (mp4 / H.264).";

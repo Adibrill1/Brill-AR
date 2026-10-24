@@ -1,3 +1,4 @@
+const ActionCore = require("../studio/actions.js");
 // Brill-AR publish server: per-artwork stable links.
 // Plain Node.js (>=18), zero dependencies. Storage: JSON files under ./data.
 //
@@ -115,6 +116,7 @@ function validateExport(o) {
       if (q.autoNext != null && (typeof q.autoNext !== "object" || typeof q.autoNext.at !== "number" || q.autoNext.at < 0 || q.autoNext.at > 3600 || (q.autoNext.to != null && typeof q.autoNext.to !== "string"))) return "bad sequence autoNext";
     }
   }
+  const actionError=ActionCore.validate(o);if(actionError)return actionError;
   const assets = o.assets || {};
   for (const [k, v] of Object.entries(assets)) {
     if (typeof v !== "string") return "asset " + k + " not a data URL";

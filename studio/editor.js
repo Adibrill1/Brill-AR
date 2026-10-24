@@ -19,6 +19,8 @@
   let selectedId = null;
   const checkedIds = new Set(); // multi-select for grouping
   let canvasStart=performance.now(),canvasTracks={};
+  let actionEngine=null;
+  let actionUI=null;
   let curSeq = null;           // active sequence-state id (null = single-state artwork)
   const media = {};            // assetId -> HTMLImageElement | HTMLVideoElement (for canvas drawing)
   const textCache = {};        // el.id -> {key, canvas, aspect}
@@ -37,7 +39,7 @@
     render();
   }
 
-  function resetSeq() { canvasStart=performance.now();canvasTracks={};curSeq = Studio.seqList(rec).length ? Studio.seqList(rec)[0].id : null; }
+  function resetSeq() { actionEngine=ActionCore.create(rec);actionEngine.autoStart();canvasStart=performance.now();canvasTracks={};curSeq = Studio.seqList(rec).length ? Studio.seqList(rec)[0].id : null; }
 
   // Sequence-state tabs above the canvas: switch the state being edited, add/remove states.
   function renderSeqTabs() {
@@ -494,6 +496,7 @@
       const i = rec.elements.findIndex((x) => x.id === selectedId);
       if (i < 0) return;
       const [gone] = rec.elements.splice(i, 1);
+      for(const q of ActionCore.list(rec))q.actions=q.actions.filter(a=>a.layerId!==gone.id);
       for (const g of rec.elements) if (g.type === "group" && Array.isArray(g.children)) g.children = g.children.filter((cid) => cid !== gone.id);
       checkedIds.delete(gone.id);
       if (gone.assetId) { delete rec.assets[gone.assetId]; delete media[gone.assetId]; }
@@ -606,6 +609,17 @@
     bindCanvas();
   }
 
+  function renderActions(){
+    const root=$('action-editor');if(!root)return;
+    root.hidden=!rec.target;
+    actionUI=ActionEditor.mount(root,{
+      rec, selectedId, engine:actionEngine,
+      changed:async()=>{await Studio.save(rec);actionEngine=ActionCore.create(rec);renderActions();draw();},
+      redraw:()=>draw(),
+      select:id=>{selectedId=id;renderList();renderPanel();draw();},
+      message:msg
+    });
+  }
   // ---------- rendering ----------
   function render() {
     const hasTarget = !!rec.target;
@@ -615,12 +629,14 @@
     const th = $("artwork-thumb");
     if (artworkImg) { th.src = artworkImg.src; th.hidden = false; } else th.hidden = true;
     renderSeqTabs();
+    renderActions();
     renderList();
     renderPanel();
     draw();
   }
 
   function renderList() {
+    renderActions();
     const ul = $("element-list");
     ul.innerHTML = "";
     $("btn-group").disabled = checkedIds.size < 2;
@@ -763,6 +779,7 @@
       o.textContent = "הפעל/עצור מסלול: " + (tr.name || tr.id);
       tapSel.appendChild(o);
     }
+    for(const q of ActionCore.list(rec)){const option=document.createElement('option');option.value='action:'+q.id;option.dataset.seq='1';option.textContent='הפעלת רצף פעולות: '+q.name;tapSel.appendChild(option);}
     tapSel.value = el.onTap || "none";
     if (tapSel.value !== (el.onTap || "none")) { el.onTap = "none"; tapSel.value = "none"; }
     const tracks = Studio.trackList(rec);
@@ -911,7 +928,8 @@
         }
       }
     }
-    let needsAnim = false;
+    Object.defineProperty(rec,"_actionValues",{value:actionEngine?actionEngine.values():{},writable:true,configurable:true,enumerable:false});
+    let needsAnim = ActionCore.list(rec).length>0;
     for (const el of rec.elements) {
       Studio.normEl(el);
       if (el.type === "group") continue; // children draw at their own positions; the group shows as a selection box

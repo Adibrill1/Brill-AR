@@ -128,7 +128,7 @@
   // taps bind per entity, including children inside group wrappers
   target.querySelectorAll("[data-el-id]").forEach((n) => {
     const el = rec.elements.find((x) => x.id === n.dataset.elId);
-    if (el && !editMode) Studio.bindTap(n, el, { onMuteToggle, onNextSequence, onSequence, onTrackToggle });
+    if (el && !editMode) Studio.bindTap(n, el, { onMuteToggle, onNextSequence, onSequence, onTrackToggle, onActionSequence: id=>actionRunner.start(id) });
   });
   if (!editMode) { trackRunner.autoStart(); trackRunner.pauseAll(); }
   refreshVisibility();
@@ -143,11 +143,13 @@
   }), { autostart: false });
   if (tlDrv) tlDrv.stateLoop = !!(Studio.seqList(rec).find((x) => x.id === curSeq) || {}).loop;
   if (!editMode) runner.enter(curSeq);
+  const actionRunner=Studio.startActionDriver(rec,target,mediaEls, {paused:true,disabled:editMode});
+  window.__actionRunner=actionRunner;
   window.__tlDrv = tlDrv; // test/debug handle
   if (editMode && tlDrv) tlDrv.pause();
   if (!editMode) {
-    scene.addEventListener("xrimagefound", () => { if (tlDrv) tlDrv.play(); trackRunner.resumeAll(); });
-    scene.addEventListener("xrimagelost", () => { if (tlDrv) tlDrv.pause(); trackRunner.pauseAll(); });
+    scene.addEventListener("xrimagefound", () => { if (tlDrv) tlDrv.play(); trackRunner.resumeAll(); actionRunner.resume(); });
+    scene.addEventListener("xrimagelost", () => { if (tlDrv) tlDrv.pause(); trackRunner.pauseAll(); actionRunner.pause(); });
   }
   document.body.appendChild(scene);
 
