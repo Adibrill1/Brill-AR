@@ -59,11 +59,13 @@
   <section class="card" id="sec-arrange" hidden>
     <h2><span class="step">3</span> סידור על היצירה</h2>
     <p class="hint">גוררים אלמנט כדי להזיז, ומהידית בפינה כדי להקטין ולהגדיל. נגיעה באלמנט בוחרת אותו.</p>
+    <div class="row"><button id="btn-undo" class="ghost small" disabled>ביטול שינוי</button><button id="btn-redo" class="ghost small" disabled>ביצוע חוזר</button><span class="hint">עד20שינויים בניסוי הזה, כל עוד העורך פתוח</span></div>
     <div id="seq-tabs" hidden></div>
     <section id="action-editor" class="action-editor" hidden></section>
     <div id="canvas-wrap"><canvas id="preview"></canvas></div>
     <div id="panel" hidden>
       <div class="row spread"><strong id="panel-name"></strong>
+        <button id="btn-duplicate-el" class="ghost small">שכפול שכבה</button>
         <button id="btn-del-el" class="ghost danger">מחיקת אלמנט</button></div>
       <div class="row" id="row-order">
         <span class="mini-label">סדר:</span>

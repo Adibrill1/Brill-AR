@@ -798,7 +798,34 @@ const Studio = (() => {
     return { id: newId(), name: name || "ניסוי חדש", createdAt: Date.now(), updatedAt: Date.now(),
              target: null, elements: [], assets: {} };
   }
-  async function save(rec) { rec.updatedAt = Date.now(); await idbPut(rec.id, rec); }
+  const history=new Map(),saveQueues=new Map();
+  function save(rec,options={}) {
+    rec.updatedAt=Date.now();const snapshot=structuredClone(rec),tail=saveQueues.get(rec.id)||Promise.resolve();
+    const work=tail.catch(()=>{}).then(()=>saveSnapshot(snapshot,options));saveQueues.set(rec.id,work);return work;
+  }
+  async function saveSnapshot(rec,options={}) {
+    const before=await idbGet(rec.id);
+    if(before&&!options.noHistory){
+      let h=history.get(rec.id);if(!h){h={undo:[],redo:[]};history.set(rec.id,h);}
+      const content=r=>JSON.stringify({...r,updatedAt:0,assets:Object.keys(r.assets||{}).sort()});
+      if(content(before)!==content(rec)){h.undo.push(before);if(h.undo.length>20)h.undo.shift();h.redo=[];}
+    }
+    rec.updatedAt = Date.now(); await idbPut(rec.id, rec);
+  }
+  function historyState(id){const h=history.get(id);return {undo:!!h?.undo.length,redo:!!h?.redo.length};}
+  async function restoreHistory(id,direction){
+    await (saveQueues.get(id)||Promise.resolve()).catch(()=>{});
+    const h=history.get(id);if(!h||!h[direction].length)return null;
+    const current=await idbGet(id),next=h[direction].pop();h[direction==='undo'?'redo':'undo'].push(current);await save(next,{noHistory:true});return next;
+  }
+  function duplicateLayer(rec,id){
+    const original=rec.elements.find(e=>e.id===id);if(!original)return null;
+    const originals=original.type==='group'?[original,...groupChildren(rec,original)]:[original],mapping=new Map(originals.map(e=>[e.id,newId()]));
+    const copies=originals.map(e=>{const copy=structuredClone(e);copy.id=mapping.get(e.id);copy.name=(e.name||e.type)+' עותק';if(copy.children)copy.children=copy.children.map(id=>mapping.get(id));return copy;});
+    rec.elements.push(...copies);
+    for(const q of ActionCore.list(rec))q.actions.push(...q.actions.filter(a=>mapping.has(a.layerId)).map(a=>({...structuredClone(a),id:newId(),layerId:mapping.get(a.layerId)})));
+    return copies[0].id;
+  }
   async function exportJSON(rec) {
     const out = { format: "ar-studio/1", id: rec.id, name: rec.name, createdAt: rec.createdAt, target: rec.target, elements: rec.elements.map((e) => ({ ...e })), sequences: (rec.sequences || []).map((q) => ({ ...q })), tracks: (rec.tracks || []).map((t) => ({ ...t })), actionSequences: JSON.parse(JSON.stringify(rec.actionSequences || [])) };
     out.assets = {};
@@ -1010,6 +1037,6 @@ const Studio = (() => {
   }
 
   return { TARGET_W, TARGET_H, newId, validateModelBlob, modelClipNames, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
-           geom, toTargetSpace, blankExperience, save, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
+           geom, toTargetSpace, blankExperience, save, historyState, restoreHistory, duplicateLayer, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
            load: idbGet, all: idbAll, del: idbDel };
 })();

@@ -17,3 +17,6 @@ Added timed model clip selection/speed/loop with the sequence-owned sampled cloc
 
 ## Sequence management
 Action type sequence starts/stops another sequence at the authored time. Scrubbing does not execute commands. Runtime uses bounded event processing; imported/start-action cyclic graphs are rejected with a visible validation error instead of unbounded chaining. This is our safety/design choice.16pure-engine tests include event start/stop and silent scrub.
+
+## Layer copies and bounded undo
+Layer/group duplication uses fresh layer and action ids, copies dependent actions and retains shared media assets. Deleting one copy does not delete media used by another. Per-experience undo/redo keeps20snapshots while this editor session is open, with serialized snapshot saves and redo invalidated on a new edit. UI create/edit/duplicate/undo/redo/reference-deletion test passed3consecutive runs, and all39browserfixtures passed. Undo history is not durable across reloads and does not restore deleted entire experiences. No claim of vendor-equivalent undo semantics.

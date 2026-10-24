@@ -492,6 +492,9 @@
     $("btn-edit-ar").onclick = () => { location.href = "play.html?edit=1#" + rec.id; };
     $("btn-play").onclick = () => { location.href = "play.html#" + rec.id; };
     $("btn-preview3d").onclick = () => { location.href = "preview.html#" + rec.id; };
+    $('btn-duplicate-el').onclick=()=>queueExperience(async()=>{const id=Studio.duplicateLayer(rec,selectedId);if(!id)return;selectedId=id;await Studio.save(rec);await hydrate();render();});
+    const restore=direction=>queueExperience(async()=>{const restored=await Studio.restoreHistory(rec.id,direction);if(!restored)return;rec=restored;selectedId=null;checkedIds.clear();tlScrubT=null;resetSeq();await hydrate();render();});
+    $('btn-undo').onclick=()=>restore('undo');$('btn-redo').onclick=()=>restore('redo');
     $("btn-del-el").onclick = async () => {
       const i = rec.elements.findIndex((x) => x.id === selectedId);
       if (i < 0) return;
@@ -499,7 +502,7 @@
       for(const q of ActionCore.list(rec))q.actions=q.actions.filter(a=>a.layerId!==gone.id);
       for (const g of rec.elements) if (g.type === "group" && Array.isArray(g.children)) g.children = g.children.filter((cid) => cid !== gone.id);
       checkedIds.delete(gone.id);
-      if (gone.assetId) { delete rec.assets[gone.assetId]; delete media[gone.assetId]; }
+      if (gone.assetId && !rec.elements.some(el=>el.assetId===gone.assetId)) { delete rec.assets[gone.assetId]; delete media[gone.assetId]; }
       delete textCache[gone.id];
       selectedId = null;
       await Studio.save(rec);
@@ -614,7 +617,7 @@
     root.hidden=!rec.target;
     actionUI=ActionEditor.mount(root,{
       rec, selectedId, engine:actionEngine,
-      changed:async()=>{await Studio.save(rec);actionEngine=ActionCore.create(rec);renderActions();draw();},
+      changed:async()=>{const id=rec.id,saving=Studio.save(rec);actionEngine=ActionCore.create(rec);renderActions();draw();await saving;if(rec.id===id){const hs=Studio.historyState(id);$("btn-undo").disabled=!hs.undo;$("btn-redo").disabled=!hs.redo;}},
       redraw:()=>draw(),
       select:id=>{selectedId=id;renderList();renderPanel();draw();},
       message:msg
@@ -637,6 +640,7 @@
 
   function renderList() {
     renderActions();
+    const hs=Studio.historyState(rec.id);$('btn-undo').disabled=!hs.undo;$('btn-redo').disabled=!hs.redo;
     const ul = $("element-list");
     ul.innerHTML = "";
     $("btn-group").disabled = checkedIds.size < 2;
