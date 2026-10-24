@@ -298,6 +298,15 @@
           if (!glb) { msg("קובץ ה־obj ריק או לא קריא - צריך קובץ עם קודקודים ופאות (שורות v ו־f)."); return; }
           f = new File([glb], f.name.replace(/\.obj$/i, ".glb"), { type: "model/gltf-binary" });
         }
+        if (/\.gltf$/i.test(f.name)) {
+          try {
+            // Reuse bounded dependency validator: a one-file archive can only
+            // resolve already embedded data URIs; relative files fail clearly.
+            const text=await f.text();
+            const packed=window.gltfZipToGlb(fflate.zipSync({'model.gltf':new TextEncoder().encode(text)}),fflate);
+            f=new File([packed.bytes],f.name.replace(/\.gltf$/i,'.glb'),{type:'model/gltf-binary'});
+          } catch(err) { msg('קובץ glTF לא נוסף: '+err.message+' קבצים נלווים יש לארוז יחד ב־ZIP.');return; }
+        }
         const head = new Uint8Array(await f.slice(0, 4).arrayBuffer());
         const isGlb = head[0] === 0x67 && head[1] === 0x6C && head[2] === 0x54 && head[3] === 0x46; // "glTF"
         if (!isGlb) {

@@ -192,3 +192,6 @@ Full experience-count store now permits existing-id stable updates; atomic priva
 
 ## Round AO auth evidence
 Isolated server regression confirms disabled-without-token, wrong-token no write, public read and authenticated-only deletion with final404.26browser fixtures rerun green. Undeployed, no production change.
+
+## Round AP bare embedded glTF
+Bare.gltf with embedded buffer/image URIs now converts via bounded dependency validator to self-contained GLB. Actual file-input stored magic/type proof; missing external dependency rejects with ZIP guidance/no element addition. No new rendered/complex-extension fidelity claim. Local-only.
