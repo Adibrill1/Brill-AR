@@ -9,7 +9,7 @@
 window.Editor3D = (() => {
   let wrapEl, sceneEl, rig, cam, host;
   let getRec, getSelected, onSelect, onChange;
-  let sampleEl = null, clockFor = null, freezeAt = null, beginFrame = null;
+  let sampleEl = null, clockFor = null, freezeAt = null, beginFrame = null, onGate = null;
   let active = false, mounted = false, orb = null, gizmo = null, helper = null;
   let gizmoDrag = null, busy = false, gizmoMode = "move";
   let toolRow = null;
@@ -19,6 +19,7 @@ window.Editor3D = (() => {
     onSelect = opts.onSelect; onChange = opts.onChange;
     sampleEl = opts.sampleEl || null; clockFor = opts.clockFor || null;
     freezeAt = opts.freezeAt || null; beginFrame = opts.beginFrame || null;
+    onGate = opts.onGate || null;
   }
 
   function geomOf(rec) { return Studio.geom(rec); }
@@ -186,11 +187,29 @@ window.Editor3D = (() => {
     return k;
   }
 
-  // Sets up timeline-aware editing at drag start: returns keyT (rounded 0.1s) or null.
-  function prepareKeyedDrag(el) {
-    if (!hasKeys(el) || !clockFor || (el.timeline.xyMap)) return null; // curve-mapped timelines: base edits (no keyed write)
+  // Editing semantics per gizmo part (decided BEFORE the drag starts, so an edit the
+  // timeline would silently override is refused with a message instead of silently
+  // landing on base props):
+  //  - rotX/rotY have no timeline channels anywhere in the editor: base edit, no freeze.
+  //  - keyed element: move (x/y/z) and in-plane rotate (rot) write a key at the frozen
+  //    playhead - EXCEPT curve-mapped (xyMap) position channels and keyed groups, where
+  //    we cannot write safely; those drags are gated with a message.
+  //  - unkeyed element: base edit, no freeze.
+  // Returns the keyT (rounded 0.1s), or null for base-edit; returns "gate" when the
+  // manipulation must be refused.
+  function prepareKeyedDrag(el, part) {
+    if (part === "rotX" || part === "rotY") return null;
+    if (!hasKeys(el) || !clockFor) return null;
+    if ((part === "x" || part === "y") && (el.timeline.xyMap || el.type === "group")) return "gate";
+    if (part === "z" && el.type === "group") return "gate";
     if (freezeAt) freezeAt(clockFor(el)); // freeze the playhead so the edit lands on a stable frame
     return Math.round(clockFor(el) * 10) / 10;
+  }
+
+  function gateMsg(el) {
+    return el.type === "group"
+      ? "תנועה של קבוצה עם מסגרות מפתח נערכת בציר הזמן, לא בחצי התלת־ממד"
+      : "אלמנט עם מסלול תנועה נערך בציר הזמן, לא בחצי התלת־ממד";
   }
 
   function refreshGizmo() {
@@ -329,7 +348,8 @@ window.Editor3D = (() => {
             if (axis.x) return Math.atan2(v.z, v.y);
             return Math.atan2(v.x, v.z);
           };
-          const keyT = prepareKeyedDrag(el);
+          const keyT = prepareKeyedDrag(el, o.userData.gizmoPart);
+          if (keyT === "gate") { if (onGate) onGate(gateMsg(el)); e.preventDefault(); e.stopPropagation(); return; }
           const rot0 = (keyT != null && o.userData.gizmoPart === "rot" && sampleEl) ? sampleEl(el).rot : el.rot || 0;
           gizmoDrag = { id: e.pointerId, el, axis, plane, angleOf, a0: angleOf(hit), rot0, rotX0: el.rotX || 0, rotY0: el.rotY || 0, part: o.userData.gizmoPart, keyT };
           if (sceneEl.canvas.setPointerCapture) sceneEl.canvas.setPointerCapture(e.pointerId);
@@ -349,7 +369,8 @@ window.Editor3D = (() => {
           const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(normal, center);
           const hit = new THREE.Vector3();
           if (!lr.intersectPlane(plane, hit)) return;
-          const keyT = prepareKeyedDrag(el);
+          const keyT = prepareKeyedDrag(el, o.userData.gizmoPart);
+          if (keyT === "gate") { if (onGate) onGate(gateMsg(el)); e.preventDefault(); e.stopPropagation(); return; }
           const s0 = (keyT != null && sampleEl) ? sampleEl(el) : null;
           gizmoDrag = { id: e.pointerId, el, axis, plane, start: hit.clone(), x0: s0 ? s0.x : el.x || 0, y0: s0 ? s0.y : el.y || 0, z0: s0 ? s0.z : el.z || 0, keyT };
           if (sceneEl.canvas.setPointerCapture) sceneEl.canvas.setPointerCapture(e.pointerId);

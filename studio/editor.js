@@ -511,7 +511,8 @@
       beginFrame:()=>{if(rec)Object.defineProperty(rec,"_actionValues",{value:actionEngine?actionEngine.values():{},writable:true,configurable:true,enumerable:false});},
       sampleEl:(el)=>rec?Studio.sampleComposition(rec,el,(e2)=>editorClock3D(e2),curSeq):null,
       clockFor:(el)=>editorClock3D(el),
-      freezeAt:(t)=>{tlScrubT=t;$("tl-time").textContent="t="+t.toFixed(1)+"s";$("btn-tl-live").hidden=false;const sel=rec&&rec.elements.find(x=>x.id===selectedId);if(sel)renderRuler(sel);draw();}});
+      freezeAt:(t)=>{tlScrubT=t;$("tl-time").textContent="t="+t.toFixed(1)+"s";$("btn-tl-live").hidden=false;const sel=rec&&rec.elements.find(x=>x.id===selectedId);if(sel)renderRuler(sel);draw();},
+      onGate:(text)=>msg(text)});
     new IntersectionObserver(es=>{wrapOnScreen=es[0].isIntersecting;sync3d();}).observe($("canvas-wrap"));
     $('btn-duplicate-el').onclick=()=>queueExperience(async()=>{const id=Studio.duplicateLayer(rec,selectedId);if(!id)return;selectedId=id;await Studio.save(rec);await hydrate();render();});
     const restore=direction=>queueExperience(async()=>{const restored=await Studio.restoreHistory(rec.id,direction);if(!restored)return;rec=restored;selectedId=null;checkedIds.clear();tlScrubT=null;resetSeq();await hydrate();render();});
