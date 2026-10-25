@@ -56,7 +56,7 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
  assert.ok(Math.abs(parseFloat(await p.locator('#num-rot').inputValue())-rot)<2,'panel rotation synced on live');
  await p.screenshot({path:'/downloads/live63-3d-rings.png'});
  const rev=await p.evaluate(async()=>(await (await fetch('revision.txt')).text()).trim());
- assert.ok(rev.startsWith('759c2f6'),'live revision is rc90: '+rev);
+ assert.ok(rev.startsWith('b56a5c5'),'live revision is rc93: '+rev);
  // back to 2D: canvas visible again, same composition
  await p.tap('#btn-2d');await p.waitForTimeout(300);
  assert.ok(await p.evaluate(()=>getComputedStyle(document.querySelector('#preview')).visibility==='visible'),'2D canvas back');
