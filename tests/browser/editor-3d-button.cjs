@@ -40,8 +40,8 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
  await p.screenshot({path:'/downloads/rc62-unified-3d.png'});
  // --- rotate rings: tool toggle, Z-ring drag rotates in-plane, persists, panel syncs
  await p.tap('#btn-3d-rotate');await p.waitForTimeout(300);
- const ringInfo=await p.evaluate(()=>{const g=Editor3D._test.gizmo();return {n:g?g.children.length:0,torus:g?g.children.map(c=>c.geometry&&c.geometry.type):[]};});
- assert.strictEqual(ringInfo.n,3,'three rotation rings');
+ const ringInfo=await p.evaluate(()=>{const g=Editor3D._test.gizmo();const vis=g?g.children.filter(c=>!c.userData.proxy):[];return {n:vis.length,torus:vis.map(c=>c.geometry&&c.geometry.type)};});
+ assert.strictEqual(ringInfo.n,3,'three rotation rings (plus invisible fat hit proxies)');
  assert.ok(ringInfo.torus.every(t=>t==='TorusGeometry'),'rings are torus geometries: '+ringInfo.torus);
  const ringAnglePt=async(k,a)=>p.evaluate(([k,a])=>{const g=Editor3D._test.gizmo();const ring=g.children[k];const R=ring.geometry.parameters.radius;const v=new THREE.Vector3(Math.cos(a)*R,Math.sin(a)*R,0);ring.localToWorld(v);v.project(Editor3D._test.scene().camera);const r=Editor3D._test.scene().canvas.getBoundingClientRect();return {x:r.left+(v.x+1)/2*r.width,y:r.top+(-v.y+1)/2*r.height};},[k,a]);
  await p.evaluate(()=>Editor3D._test.scene().object3D.updateMatrixWorld(true));

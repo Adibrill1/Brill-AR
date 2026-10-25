@@ -6,6 +6,23 @@
 (() => {
   const $ = (id) => document.getElementById(id);
   const msg = (t) => { $("msg").textContent = t; if (t) setTimeout(() => { if ($("msg").textContent === t) $("msg").textContent = ""; }, 6000); };
+  // Editing-semantics guard, shared by the 2D canvas and the embedded 3D view: a drag the
+  // timeline would silently override is refused with a message; supported channels write a
+  // key at the frozen playhead instead of touching base props. Same strings as editor-3d.js.
+  const elKeyed = (el) => !!(el && el.timeline && Array.isArray(el.timeline.keys) && el.timeline.keys.length);
+  const keyAtT = (el, t) => { let k = el.timeline.keys.find((k) => Math.abs(k.t - t) < 1e-6); if (!k) k = Studio.addTimelineKey(el, { t }); return k; };
+  const GATE_CURVE = "אלמנט עם מסלול תנועה נערך בציר הזמן, לא בגרירה ישירה";
+  const GATE_GROUP = "קבוצה עם נקודות מפתח נערכת בציר הזמן, לא בגרירה ישירה";
+  const freezePlayhead = (t) => { tlScrubT = t; $("tl-time").textContent = "t=" + t.toFixed(1) + "s"; $("btn-tl-live").hidden = false; const sel = rec && rec.elements.find((x) => x.id === selectedId); if (sel) renderRuler(sel); draw(); };
+  // Returns the frozen key time, null for a plain base edit, or a gate message string.
+  const prepare2DKeyedDrag = (el, part) => {
+    if (!elKeyed(el)) return null;
+    if (el.type === "group") return GATE_GROUP;
+    if (part === "move" && el.timeline.xyMap) return GATE_CURVE;
+    const t0 = editorClock3D(el);
+    freezePlayhead(t0);
+    return Math.round(t0 * 10) / 10;
+  };
 
   let experienceReady = Promise.resolve();
   // Experience-changing and snapshot operations preserve the order of user actions.
@@ -511,7 +528,7 @@
       beginFrame:()=>{if(rec)Object.defineProperty(rec,"_actionValues",{value:actionEngine?actionEngine.values():{},writable:true,configurable:true,enumerable:false});},
       sampleEl:(el)=>rec?Studio.sampleComposition(rec,el,(e2)=>editorClock3D(e2),curSeq):null,
       clockFor:(el)=>editorClock3D(el),
-      freezeAt:(t)=>{tlScrubT=t;$("tl-time").textContent="t="+t.toFixed(1)+"s";$("btn-tl-live").hidden=false;const sel=rec&&rec.elements.find(x=>x.id===selectedId);if(sel)renderRuler(sel);draw();},
+      freezeAt:(t)=>freezePlayhead(t),
       onGate:(text)=>msg(text)});
     new IntersectionObserver(es=>{wrapOnScreen=es[0].isIntersecting;sync3d();}).observe($("canvas-wrap"));
     $('btn-duplicate-el').onclick=()=>queueExperience(async()=>{const id=Studio.duplicateLayer(rec,selectedId);if(!id)return;selectedId=id;await Studio.save(rec);await hydrate();render();});
@@ -1149,14 +1166,19 @@
         const hx = b.cx + Math.cos(b.rot) * (b.w / 2) - Math.sin(b.rot) * (b.h / 2);
         const hy = b.cy + Math.sin(b.rot) * (b.w / 2) + Math.cos(b.rot) * (b.h / 2);
         if (Math.hypot(p.x - hx, p.y - hy) < 24) {
+          const keyT = prepare2DKeyedDrag(sel, "scale");
+          if (typeof keyT === "string") { msg(keyT); return; }
           drag = { mode: "scale", id: sel.id, start: p, origW: sel.w, cx: b.cx, cy: b.cy };
           if (sel.type === "group") drag.gorigs = Studio.groupChildren(rec, sel).map((k) => ({ id: k.id, w: k.w, h: k.h, x: k.x || 0, y: k.y || 0 }));
+          if (keyT != null) { drag.keyT = keyT; drag.s0 = Studio.sampleTimeline(sel, editorClock3D(sel)).scale; }
           c.setPointerCapture(e.pointerId); return;
         }
       }
       if (sel && sel.type === "group" && boxes[sel.id]) {
         const b = boxes[sel.id];
         if (Math.abs(p.x - b.cx) <= b.w / 2 && Math.abs(p.y - b.cy) <= b.h / 2) {
+          const keyT = prepare2DKeyedDrag(sel, "gmove");
+          if (typeof keyT === "string") { msg(keyT); return; }
           drag = { mode: "gmove", id: sel.id, start: p, origGX: sel.x || 0, origGY: sel.y || 0,
                    origs: Studio.groupChildren(rec, sel).map((k) => ({ id: k.id, x: k.x || 0, y: k.y || 0 })) };
           c.setPointerCapture(e.pointerId); return;
@@ -1165,7 +1187,14 @@
       const el = hit(p);
       if (el) {
         selectedId = el.id; renderList(); renderPanel();
+        const keyT = prepare2DKeyedDrag(el, "move");
+        if (typeof keyT === "string") { msg(keyT); draw(); return; }
         drag = { mode: "move", id: el.id, start: p, origX: el.x, origY: el.y };
+        if (keyT != null) {
+          drag.keyT = keyT;
+          const s0 = Studio.sampleTimeline(el, editorClock3D(el));
+          drag.origX = s0.x; drag.origY = s0.y; // start from the sampled frame, not base - no jump
+        }
         c.setPointerCapture(e.pointerId);
         draw();
       } else if (selectedId) { selectedId = null; renderList(); renderPanel(); draw(); }
@@ -1183,20 +1212,25 @@
           y: Math.max(-.7, Math.min(.7, drag.origGY + dy))
         });
       } else if (drag.mode === "move") {
-        el.x = Math.max(-0.7, Math.min(0.7, drag.origX + (p.x - drag.start.x) / W));
-        el.y = Math.max(-0.7, Math.min(0.7, drag.origY - (p.y - drag.start.y) / H));
+        const nx = Math.max(-0.7, Math.min(0.7, drag.origX + (p.x - drag.start.x) / W));
+        const ny = Math.max(-0.7, Math.min(0.7, drag.origY - (p.y - drag.start.y) / H));
+        if (drag.keyT != null) { const k = keyAtT(el, drag.keyT); k.x = nx; k.y = ny; }
+        else { el.x = nx; el.y = ny; }
       } else {
         const d0 = Math.hypot(drag.start.x - drag.cx, drag.start.y - drag.cy) || 1;
         const d1 = Math.hypot(p.x - drag.cx, p.y - drag.cy);
-        const w = Math.max(.05, Math.min(2, drag.origW * (d1 / d0)));
-        if (el.type === "group") Studio.transformGroup(rec, el, {w});
-        else { const f = w / el.w; el.w = w; if (el.h != null) el.h = Math.max(.02,el.h*f); }
+        if (drag.keyT != null) { keyAtT(el, drag.keyT).scale = Math.max(.05, Math.min(4, (drag.s0 || 1) * (d1 / d0))); }
+        else {
+          const w = Math.max(.05, Math.min(2, drag.origW * (d1 / d0)));
+          if (el.type === "group") Studio.transformGroup(rec, el, {w});
+          else { const f = w / el.w; el.w = w; if (el.h != null) el.h = Math.max(.02,el.h*f); }
+        }
 
       }
       draw();
       renderPanel();
     });
-    const end = async () => { if (drag) { drag = null; await Studio.save(rec); } };
+    const end = async () => { if (drag) { const d = drag; drag = null; await Studio.save(rec); if (d.keyT != null) { const el = rec.elements.find((x) => x.id === d.id); if (el && el.id === selectedId) renderRuler(el); draw(); } } };
     c.addEventListener("pointerup", end);
     c.addEventListener("pointercancel", end);
   }

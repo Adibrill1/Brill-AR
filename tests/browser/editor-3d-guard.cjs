@@ -53,6 +53,7 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
  const fx=await ringPt(0,Math.PI/4),tx=await ringPt(0,3*Math.PI/4);
  await p.mouse.move(fx.x,fx.y);await p.mouse.down();await p.mouse.move(tx.x,tx.y,{steps:6});await p.mouse.up();await p.waitForTimeout(400);
  const s5=await state();
+ assert.ok(s5.msg.includes('הטיה'),'base-mode notice shown BEFORE/DURING the tilt drag: "'+s5.msg+'"');
  assert.ok(Math.abs((s5.tilt.rotX||0)-90)<25,'rotX ring tilted the element (base edit): rotX='+s5.tilt.rotX);
  assert.strictEqual(s5.tilt.timeline.keys.length,2,'no timeline key written for a channel-less tilt');
  assert.ok(s5.liveHidden,'tilt edit did NOT freeze the playhead');

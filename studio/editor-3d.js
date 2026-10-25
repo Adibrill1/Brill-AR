@@ -208,8 +208,34 @@ window.Editor3D = (() => {
 
   function gateMsg(el) {
     return el.type === "group"
-      ? "תנועה של קבוצה עם מסגרות מפתח נערכת בציר הזמן, לא בחצי התלת־ממד"
-      : "אלמנט עם מסלול תנועה נערך בציר הזמן, לא בחצי התלת־ממד";
+      ? "קבוצה עם נקודות מפתח נערכת בציר הזמן, לא בגרירה ישירה"
+      : "אלמנט עם מסלול תנועה נערך בציר הזמן, לא בגרירה ישירה";
+  }
+
+  // rotX/rotY have no timeline channels, so on a keyed element a tilt drag is a base
+  // edit that applies across the whole timeline - say so BEFORE the drag mutates.
+  const TILT_NOTE = "שינוי הטיה הוא ערך בסיס: חל על כל נקודות הזמן של האלמנט";
+
+  // Keep the handles at a usable screen size whatever the element size or zoom:
+  // arrows/rings stay inside the viewport even for full-frame media, and touch
+  // targets stay grabbable for small stickers. View-only - element data never changes.
+  function fitGizmoToView() {
+    if (!gizmo || !cam || !sceneEl || !sceneEl.object3D) return;
+    const camObj = cam.getObject3D("camera") || sceneEl.camera;
+    if (!camObj) return;
+    sceneEl.object3D.updateMatrixWorld(true);
+    const cw = new THREE.Vector3(); camObj.getWorldPosition(cw);
+    const gw = new THREE.Vector3(); gizmo.getWorldPosition(gw);
+    const d = Math.max(0.25, cw.distanceTo(gw));
+    const base = gizmo.userData.baseL || 0.2;
+    const rect = sceneEl.canvas ? sceneEl.canvas.getBoundingClientRect() : null;
+    const visH = 2 * d * Math.tan((25 * Math.PI) / 180); // camera fov is 50
+    const visW = rect && rect.height ? visH * (rect.width / rect.height) : visH;
+    // edge-aware cap: handles must not run off the viewport when the element sits near a side
+    const ndc = gw.clone().project(camObj);
+    const margin = Math.min((1 - Math.abs(ndc.x)) * visW, (1 - Math.abs(ndc.y)) * visH) / 2;
+    const s = Math.max(0.18, Math.min(1.6, Math.min((0.26 * visH) / base, (0.85 * Math.max(margin, 0.05 * visH)) / base)));
+    gizmo.scale.setScalar(s);
   }
 
   function refreshGizmo() {
@@ -244,6 +270,7 @@ window.Editor3D = (() => {
     gizmo = new THREE.Group();
     gizmo.name = "editor-3d-gizmo";
     if (gizmoMode === "rotate") {
+      const ringProxies = [];
       const mkRing = (axis, color, name, rotEuler) => {
         const mat = new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.95, side: THREE.DoubleSide });
         const ring = new THREE.Mesh(new THREE.TorusGeometry(L * 0.75, 0.02, 10, 48), mat);
@@ -251,13 +278,22 @@ window.Editor3D = (() => {
         ring.rotation.set(rotEuler[0], rotEuler[1], rotEuler[2]);
         ring.userData = { axis, gizmoPart: name };
         gizmo.add(ring);
+        const hitRing = new THREE.Mesh(new THREE.TorusGeometry(L * 0.75, 0.07, 8, 48),
+          new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
+        hitRing.renderOrder = 10000;
+        hitRing.rotation.set(rotEuler[0], rotEuler[1], rotEuler[2]);
+        hitRing.userData = { axis, gizmoPart: name, proxy: true };
+        ringProxies.push(hitRing); // appended after all rings: gizmo.children[0..2] stay the visible rings
       };
       // rotX: ring in the YZ plane (normal +X); rotY: XZ plane (normal +Y); rot: XY plane (normal +Z)
       mkRing(new THREE.Vector3(1, 0, 0), 0xe03131, "rotX", [0, Math.PI / 2, 0]);
       mkRing(new THREE.Vector3(0, 1, 0), 0x2f9e44, "rotY", [Math.PI / 2, 0, 0]);
       mkRing(new THREE.Vector3(0, 0, 1), 0x1971c2, "rot", [0, 0, 0]);
+      ringProxies.forEach((h) => gizmo.add(h));
       gizmo.position.copy(center);
+      gizmo.userData.baseL = L * 0.75 + 0.07; // ring radius + tube
       rig.object3D.add(gizmo);
+      fitGizmoToView();
       return;
     }
     const mk = (axis, color, name) => {
@@ -274,13 +310,22 @@ window.Editor3D = (() => {
       if (name === "z") grp.rotation.x = Math.PI / 2;
       grp.userData.axis = axis; grp.userData.gizmoPart = name;
       cyl.userData = { axis, gizmoPart: name }; tip.userData = { axis, gizmoPart: name };
+      // fat invisible hit proxy: visuals may shrink to fit the view, the grab zone stays
+      const hitMat = new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false });
+      const hitCyl = new THREE.Mesh(new THREE.CylinderGeometry(L * 0.09, L * 0.09, L, 6), hitMat);
+      hitCyl.position.y = L / 2; hitCyl.userData = { axis, gizmoPart: name, proxy: true };
+      const hitTip = new THREE.Mesh(new THREE.SphereGeometry(L * 0.14, 8, 8), hitMat);
+      hitTip.position.y = L + 0.03; hitTip.userData = { axis, gizmoPart: name, proxy: true };
+      grp.add(hitCyl); grp.add(hitTip);
       gizmo.add(grp);
     };
     mk(new THREE.Vector3(1, 0, 0), 0xe03131, "x");
     mk(new THREE.Vector3(0, 1, 0), 0x2f9e44, "y");
     mk(new THREE.Vector3(0, 0, 1), 0x1971c2, "z");
     gizmo.position.copy(center);
+    gizmo.userData.baseL = L + 0.06; // shaft + cone tip
     rig.object3D.add(gizmo);
+    fitGizmoToView();
   }
 
   function syncToolButtons() {
@@ -321,6 +366,7 @@ window.Editor3D = (() => {
       const p = cam.getAttribute("position");
       p.z = Math.max(0.5, Math.min(2.4, p.z + e.deltaY * 0.001));
       cam.setAttribute("position", p);
+      fitGizmoToView();
     }, { passive: true });
   }
 
@@ -330,8 +376,10 @@ window.Editor3D = (() => {
     const ray = rayFromEvent(e);
     // gizmo handles first
     if (gizmo) {
-      const hits = ray.intersectObjects(gizmo.children, true);
+      let hits = ray.intersectObjects(gizmo.children, true);
       if (hits.length) {
+        const exact = hits.filter((h) => !h.object.userData.proxy);
+        if (exact.length) hits = exact;
         let o = hits[0].object;
         while (o && !o.userData.gizmoPart) o = o.parent;
         if (o && o.userData.gizmoPart.startsWith("rot")) {
@@ -350,6 +398,7 @@ window.Editor3D = (() => {
           };
           const keyT = prepareKeyedDrag(el, o.userData.gizmoPart);
           if (keyT === "gate") { if (onGate) onGate(gateMsg(el)); e.preventDefault(); e.stopPropagation(); return; }
+          if ((o.userData.gizmoPart === "rotX" || o.userData.gizmoPart === "rotY") && hasKeys(el) && onGate) onGate(TILT_NOTE);
           const rot0 = (keyT != null && o.userData.gizmoPart === "rot" && sampleEl) ? sampleEl(el).rot : el.rot || 0;
           gizmoDrag = { id: e.pointerId, el, axis, plane, angleOf, a0: angleOf(hit), rot0, rotX0: el.rotX || 0, rotY0: el.rotY || 0, part: o.userData.gizmoPart, keyT };
           if (sceneEl.canvas.setPointerCapture) sceneEl.canvas.setPointerCapture(e.pointerId);
@@ -446,6 +495,7 @@ window.Editor3D = (() => {
       rot.y += (e.clientX - orb.x) * 0.25;
       rot.x = Math.max(-35, Math.min(35, rot.x + (e.clientY - orb.y) * 0.25));
       rig.setAttribute("rotation", rot);
+      fitGizmoToView();
       orb = { x: e.clientX, y: e.clientY };
     }
   }
