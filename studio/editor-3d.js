@@ -1,12 +1,15 @@
 "use strict";
 /* Unified 3D workspace inside the editor: the 2D/3D pill swaps the flat canvas for
    an embedded scene of the same composition (Artivive Bridge pattern: one editor,
-   bottom-center 2D/3D toggle). Static arrangement view like the camera edit mode:
-   no animations, everything visible. Selection is linked to the element list and
-   panel; a move gizmo (axis arrows) drags the selected element in x/y/z. */
+   bottom-center 2D/3D toggle). The scene is timeline-linked: it samples the same
+   playhead as the 2D canvas (live playback, scrubbed frame, sequence state), and
+   gizmo edits on a keyframed element write timeline keys at the frozen playhead
+   instead of fighting the keys with base-prop edits. Selection is linked to the
+   element list and panel; move arrows drag x/y/z, rotation rings drag rot/rotX/rotY. */
 window.Editor3D = (() => {
   let wrapEl, sceneEl, rig, cam, host;
   let getRec, getSelected, onSelect, onChange;
+  let sampleEl = null, clockFor = null, freezeAt = null, beginFrame = null;
   let active = false, mounted = false, orb = null, gizmo = null, helper = null;
   let gizmoDrag = null, busy = false, gizmoMode = "move";
   let toolRow = null;
@@ -14,6 +17,8 @@ window.Editor3D = (() => {
   function init(opts) {
     wrapEl = opts.wrap; getRec = opts.getRec; getSelected = opts.getSelected;
     onSelect = opts.onSelect; onChange = opts.onChange;
+    sampleEl = opts.sampleEl || null; clockFor = opts.clockFor || null;
+    freezeAt = opts.freezeAt || null; beginFrame = opts.beginFrame || null;
   }
 
   function geomOf(rec) { return Studio.geom(rec); }
@@ -131,6 +136,7 @@ window.Editor3D = (() => {
       stripAnim(e);
       rig.appendChild(e);
       if (e.dataset.opacity) Studio.applyOpacity(e, parseFloat(e.dataset.opacity));
+      applySampled(rec, el, e, idx);
     });
     refreshGizmo();
   }
@@ -143,6 +149,50 @@ window.Editor3D = (() => {
 
   function elNode(id) { return rig.querySelector('[data-el-root="' + id + '"]'); }
 
+  function hasKeys(el) { return !!(el.timeline && Array.isArray(el.timeline.keys) && el.timeline.keys.length); }
+
+  // Effective on-screen transform: sampled timeline/playhead values when the editor
+  // samples them, base props otherwise. Mirrors what the 2D canvas draws.
+  function sampledTs(rec, el) {
+    const s = sampleEl ? sampleEl(el) : null;
+    const eff = s ? Object.assign({}, el, { x: s.x, y: s.y, z: s.z, rot: s.rot }) : el;
+    return { ts: Studio.toTargetSpace(rec, eff, el.aspect || 1), s };
+  }
+
+  function placementCenter(rec, ts) {
+    const g = geomOf(rec); const r = rec.target.artRect;
+    const acx = ((r.x + r.w / 2) / Studio.TARGET_W - 0.5) * g.tw;
+    const acy = 0.5 - (r.y + r.h / 2) / Studio.TARGET_H;
+    return new THREE.Vector3(acx + ts.x, acy + ts.y, ts.z);
+  }
+
+  function applySampled(rec, el, node, idx) {
+    if (!node || !node.object3D) return;
+    const { ts, s } = sampledTs(rec, el);
+    node.object3D.position.set(ts.x, ts.y, (ts.z || 0) + idx * 0.001);
+    node.object3D.rotation.set((el.rotX || 0) * Math.PI / 180, (el.rotY || 0) * Math.PI / 180, ((s ? s.rot : el.rot || 0)) * Math.PI / 180);
+    const sc = s ? s.scale : 1;
+    node.object3D.scale.set(sc, sc, sc);
+    const vis = s ? !!s.visible : true;
+    if (node.object3D.visible !== vis) node.object3D.visible = vis;
+    const op = s ? s.opacity : (el.opacity == null ? 1 : el.opacity);
+    if (node.__op3d !== op) { Studio.applyOpacity(node, op); node.__op3d = op; }
+  }
+
+  // Keyframed gizmo edits write keys at the frozen playhead, not base props.
+  function keyAt(el, t) {
+    let k = el.timeline.keys.find((k) => Math.abs(k.t - t) < 1e-6);
+    if (!k) k = Studio.addTimelineKey(el, { t });
+    return k;
+  }
+
+  // Sets up timeline-aware editing at drag start: returns keyT (rounded 0.1s) or null.
+  function prepareKeyedDrag(el) {
+    if (!hasKeys(el) || !clockFor || (el.timeline.xyMap)) return null; // curve-mapped timelines: base edits (no keyed write)
+    if (freezeAt) freezeAt(clockFor(el)); // freeze the playhead so the edit lands on a stable frame
+    return Math.round(clockFor(el) * 10) / 10;
+  }
+
   function refreshGizmo() {
     clearGizmo();
     const rec = getRec(); if (!rec || !active) return;
@@ -150,12 +200,11 @@ window.Editor3D = (() => {
     const el = rec.elements.find((x) => x.id === id);
     const node = elNode(id);
     if (!el || !node) return;
-    const ts = Studio.toTargetSpace(rec, el, el.aspect || 1);
+    const ts = sampledTs(rec, el).ts;
     const g = geomOf(rec);
     const r = rec.target.artRect;
-    const acx = ((r.x + r.w / 2) / Studio.TARGET_W - 0.5) * g.tw;
-    const acy = 0.5 - (r.y + r.h / 2) / Studio.TARGET_H;
-    const center = new THREE.Vector3(acx + ts.x, acy + ts.y, ts.z);
+    const center = placementCenter(rec, ts);
+    const acx = center.x - ts.x, acy = center.y - ts.y;
     // Selection box from the known element geometry (rig-local -> world): the DOM
     // node's object3D lags attribute writes, so setFromObject would misplace or
     // empty the box right after edits/rebuilds.
@@ -280,7 +329,9 @@ window.Editor3D = (() => {
             if (axis.x) return Math.atan2(v.z, v.y);
             return Math.atan2(v.x, v.z);
           };
-          gizmoDrag = { id: e.pointerId, el, axis, plane, angleOf, a0: angleOf(hit), rot0: el.rot || 0, rotX0: el.rotX || 0, rotY0: el.rotY || 0, part: o.userData.gizmoPart };
+          const keyT = prepareKeyedDrag(el);
+          const rot0 = (keyT != null && o.userData.gizmoPart === "rot" && sampleEl) ? sampleEl(el).rot : el.rot || 0;
+          gizmoDrag = { id: e.pointerId, el, axis, plane, angleOf, a0: angleOf(hit), rot0, rotX0: el.rotX || 0, rotY0: el.rotY || 0, part: o.userData.gizmoPart, keyT };
           if (sceneEl.canvas.setPointerCapture) sceneEl.canvas.setPointerCapture(e.pointerId);
           e.preventDefault(); e.stopPropagation();
           return;
@@ -298,7 +349,9 @@ window.Editor3D = (() => {
           const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(normal, center);
           const hit = new THREE.Vector3();
           if (!lr.intersectPlane(plane, hit)) return;
-          gizmoDrag = { id: e.pointerId, el, axis, plane, start: hit.clone(), x0: el.x || 0, y0: el.y || 0, z0: el.z || 0 };
+          const keyT = prepareKeyedDrag(el);
+          const s0 = (keyT != null && sampleEl) ? sampleEl(el) : null;
+          gizmoDrag = { id: e.pointerId, el, axis, plane, start: hit.clone(), x0: s0 ? s0.x : el.x || 0, y0: s0 ? s0.y : el.y || 0, z0: s0 ? s0.z : el.z || 0, keyT };
           if (sceneEl.canvas.setPointerCapture) sceneEl.canvas.setPointerCapture(e.pointerId);
           e.preventDefault(); e.stopPropagation();
           return;
@@ -327,9 +380,13 @@ window.Editor3D = (() => {
       let deg = (gizmoDrag.angleOf(hit) - gizmoDrag.a0) * 180 / Math.PI;
       const el = gizmoDrag.el, key = gizmoDrag.part;
       const val = Math.round(((key === "rot" ? gizmoDrag.rot0 : key === "rotX" ? gizmoDrag.rotX0 : gizmoDrag.rotY0) + deg) * 10) / 10;
-      el[key] = val;
-      const node = elNode(el.id);
-      if (node) node.setAttribute("rotation", `${el.rotX || 0} ${el.rotY || 0} ${el.rot || 0}`);
+      if (key === "rot" && gizmoDrag.keyT != null) {
+        keyAt(el, gizmoDrag.keyT).rot = val; // timeline key at the frozen playhead; the sampler renders it
+      } else {
+        el[key] = val;
+        const node = elNode(el.id);
+        if (node) node.setAttribute("rotation", `${el.rotX || 0} ${el.rotY || 0} ${el.rot || 0}`);
+      }
       refreshGizmo();
       e.preventDefault();
       return;
@@ -347,13 +404,17 @@ window.Editor3D = (() => {
       if (Math.abs(ax.x) > 0.5) patch.x = Math.min(2, Math.max(-2, gizmoDrag.x0 + d / g.artW));
       if (Math.abs(ax.y) > 0.5) patch.y = Math.min(2, Math.max(-2, gizmoDrag.y0 + d / g.artH));
       if (Math.abs(ax.z) > 0.5) patch.z = Math.min(2, Math.max(-0.5, gizmoDrag.z0 + d));
-      if (el.type === "group") Studio.transformGroup(rec, el, patch); else Object.assign(el, patch);
-      // live-update the entity transform without a rebuild
-      const node = elNode(el.id);
-      if (node) {
-        const ts = Studio.toTargetSpace(rec, el, el.aspect || 1);
-        const idx = Studio.topLevelElements(rec).indexOf(el);
-        node.setAttribute("position", `${ts.x} ${ts.y} ${(ts.z || 0) + idx * 0.001}`);
+      if (gizmoDrag.keyT != null && el.type !== "group") {
+        Object.assign(keyAt(el, gizmoDrag.keyT), patch); // timeline key at the frozen playhead; the sampler renders it
+      } else {
+        if (el.type === "group") Studio.transformGroup(rec, el, patch); else Object.assign(el, patch);
+        // live-update the entity transform without a rebuild
+        const node = elNode(el.id);
+        if (node) {
+          const ts = Studio.toTargetSpace(rec, el, el.aspect || 1);
+          const idx = Studio.topLevelElements(rec).indexOf(el);
+          node.setAttribute("position", `${ts.x} ${ts.y} ${(ts.z || 0) + idx * 0.001}`);
+        }
       }
       refreshGizmo();
       e.preventDefault();
@@ -391,15 +452,49 @@ window.Editor3D = (() => {
       host.style.display = "block";
       active = true;
       refreshGizmo();
+      cancelAnimationFrame(sampleRaf); sampleRaf = requestAnimationFrame(sampleLoop);
     } finally { busy = false; }
   }
 
   function hide() {
     active = false;
+    cancelAnimationFrame(sampleRaf);
     if (host) host.style.display = "none";
     const c = wrapEl && wrapEl.querySelector("#preview");
     if (c) c.style.visibility = "visible";
     clearGizmo();
+  }
+
+  // Timeline linkage: every frame, mirror the 2D canvas's sampled world into the 3D
+  // scene (live playback, frozen playhead, sequence state) and keep the gizmo on it.
+  let sampleRaf = 0;
+  function sampleLoop() {
+    if (!active) return;
+    const rec = getRec();
+    if (rec && sampleEl) {
+      if (beginFrame) beginFrame();
+      Studio.topLevelElements(rec).forEach((el, idx) => applySampled(rec, el, elNode(el.id), idx));
+      const selId = getSelected && getSelected();
+      if (gizmo && selId && !gizmoDrag) {
+        const el = rec.elements.find((x) => x.id === selId);
+        const node = el && elNode(selId);
+        if (el && node) {
+          const { ts } = sampledTs(rec, el);
+          gizmo.position.copy(placementCenter(rec, ts));
+          if (helper) {
+            const centerWorld = gizmo.position.clone().applyMatrix4(rig.object3D.matrixWorld);
+            const q = new THREE.Quaternion(); rig.object3D.getWorldQuaternion(q);
+            const geo = node.getAttribute("geometry") || {};
+            const half = new THREE.Vector3(Math.max(geo.width || ts.w, 0.03) / 2, Math.max(geo.height || ts.h, 0.03) / 2, 0.012);
+            const box = new THREE.Box3();
+            for (const sx of [-1, 1]) for (const sy of [-1, 1]) for (const sz of [-1, 1])
+              box.expandByPoint(new THREE.Vector3(half.x * sx, half.y * sy, half.z * sz).applyQuaternion(q).add(centerWorld));
+            helper.box.copy(box);
+          }
+        }
+      }
+    }
+    sampleRaf = requestAnimationFrame(sampleLoop);
   }
 
   let syncTimer = null, lastSync = 0;

@@ -507,7 +507,11 @@
     $("btn-3d").onclick=()=>setViewMode("3d");
     Editor3D.init({wrap:$("canvas-wrap"),getRec:()=>rec,getSelected:()=>selectedId,
       onSelect:(id)=>{selectedId=id;renderList();renderPanel();draw();Editor3D.refreshGizmo();},
-      onChange:()=>{Studio.save(rec).then(()=>{renderPanel();draw();renderList();});}});
+      onChange:()=>{Studio.save(rec).then(()=>{renderPanel();draw();renderList();});},
+      beginFrame:()=>{if(rec)Object.defineProperty(rec,"_actionValues",{value:actionEngine?actionEngine.values():{},writable:true,configurable:true,enumerable:false});},
+      sampleEl:(el)=>rec?Studio.sampleComposition(rec,el,(e2)=>editorClock3D(e2),curSeq):null,
+      clockFor:(el)=>editorClock3D(el),
+      freezeAt:(t)=>{tlScrubT=t;$("tl-time").textContent="t="+t.toFixed(1)+"s";$("btn-tl-live").hidden=false;const sel=rec&&rec.elements.find(x=>x.id===selectedId);if(sel)renderRuler(sel);draw();}});
     new IntersectionObserver(es=>{wrapOnScreen=es[0].isIntersecting;sync3d();}).observe($("canvas-wrap"));
     $('btn-duplicate-el').onclick=()=>queueExperience(async()=>{const id=Studio.duplicateLayer(rec,selectedId);if(!id)return;selectedId=id;await Studio.save(rec);await hydrate();render();});
     const restore=direction=>queueExperience(async()=>{const restored=await Studio.restoreHistory(rec.id,direction);if(!restored)return;rec=restored;selectedId=null;checkedIds.clear();tlScrubT=null;resetSeq();await hydrate();render();});
@@ -862,6 +866,14 @@
 
   // ---------- timeline editor ----------
   let tlScrubT = null; // null = live playback; number = frozen playhead seconds
+
+  // The exact same clock draw() samples with, exposed for the embedded 3D workspace.
+  function editorClock3D(element){
+    if(!rec)return 0;
+    if(tlScrubT!=null)return tlScrubT;
+    if(element&&element.track){const c=canvasTracks[element.track];return c&&c.playing?(performance.now()-c.start)/1000:0;}
+    return Studio.previewStateTime(rec,curSeq,(performance.now()-canvasStart)/1000);
+  }
 
   function renderRuler(el) {
     const c = $("tl-ruler");
