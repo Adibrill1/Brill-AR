@@ -12,6 +12,10 @@ window.Editor3D = (() => {
   let sampleEl = null, clockFor = null, freezeAt = null, beginFrame = null, onGate = null;
   let active = false, mounted = false, orb = null, gizmo = null, helper = null;
   let gizmoDrag = null, busy = false, gizmoMode = "move";
+  // Two-finger pinch zooms the embedded 3D view (camera dolly, same range as the wheel):
+  // the second finger cancels any gizmo drag (persisting it) and takes over until a finger lifts.
+  const pinchPtrs = new Map(); // pointerId -> client coords
+  let pinch3d = null;          // {d0, z0}
   let toolRow = null;
 
   function init(opts) {
@@ -373,6 +377,16 @@ window.Editor3D = (() => {
   }
 
   function down(e) {
+    pinchPtrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinchPtrs.size === 2) {
+      if (gizmoDrag) { gizmoDrag = null; onChange(); }
+      orb = null;
+      const [a, b] = [...pinchPtrs.values()];
+      pinch3d = { d0: Math.hypot(a.x - b.x, a.y - b.y) || 1, z0: cam.getAttribute("position").z };
+      if (sceneEl.canvas.setPointerCapture) try { sceneEl.canvas.setPointerCapture(e.pointerId); } catch (_) {}
+      e.preventDefault(); e.stopPropagation();
+      return;
+    }
     if (!active) return;
     const rec = getRec(); if (!rec) return;
     const ray = rayFromEvent(e);
@@ -444,6 +458,19 @@ window.Editor3D = (() => {
   }
 
   function move(e) {
+    if (pinchPtrs.has(e.pointerId)) pinchPtrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (pinch3d) {
+      if (pinchPtrs.size >= 2) {
+        const [a, b] = [...pinchPtrs.values()];
+        const d1 = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+        const p = cam.getAttribute("position");
+        p.z = Math.max(0.5, Math.min(2.4, pinch3d.z0 * pinch3d.d0 / d1)); // spread = closer, pinch = farther
+        cam.setAttribute("position", p);
+        fitGizmoToView();
+      }
+      e.preventDefault();
+      return;
+    }
     if (gizmoDrag && e.pointerId === gizmoDrag.id && gizmoDrag.part) {
       const rec = getRec(); if (!rec) return;
       const lr = localRay(rayFromEvent(e));
@@ -502,7 +529,8 @@ window.Editor3D = (() => {
     }
   }
 
-  function up() {
+  function up(e) {
+    if (e && pinchPtrs.has(e.pointerId)) { pinchPtrs.delete(e.pointerId); if (pinch3d && pinchPtrs.size < 2) pinch3d = null; }
     if (gizmoDrag) { gizmoDrag = null; onChange(); }
     orb = null;
   }

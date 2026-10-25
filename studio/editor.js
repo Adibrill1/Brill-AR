@@ -1001,7 +1001,11 @@
   // margin around it (user request: see the space surrounding the image while editing).
   // All canvas coordinates derive from view = {W,H,mx,my} - artwork size + margin offset.
   const MARGIN_FRAC = 0.25;
-  let view = { W: 0, H: 0, mx: 0, my: 0 };
+  let view = { W: 0, H: 0, mx: 0, my: 0, cw: 0, ch: 0 };
+  // View zoom (two-finger pinch): scales the editing view around its center without touching
+  // the artwork, elements or world coordinates - pos() maps pointer events back to world px.
+  let viewZoom = 1;
+  const VIEW_ZOOM_MIN = 0.5, VIEW_ZOOM_MAX = 4;
   let wrapOnScreen = false;
   function sync3d() { $("view-pill").hidden = !rec || !rec.target || !wrapOnScreen; place3d(); }
   let viewMode = "2d";
@@ -1030,12 +1034,14 @@
     const H = Math.round(W * (artH / artW));
     const mx = Math.round(W * MARGIN_FRAC), my = Math.round(H * MARGIN_FRAC);
     const cw = W + 2 * mx, ch = H + 2 * my;
-    view = { W, H, mx, my };
+    view = { W, H, mx, my, cw, ch };
     const dpr = window.devicePixelRatio || 1;
     c.width = cw * dpr; c.height = ch * dpr;
     c.style.width = cw + "px"; c.style.height = ch + "px";
+    c.dataset.zoom = viewZoom.toFixed(3); // observable view-zoom level (a11y/debug/tests)
     const ctx = c.getContext("2d");
     ctx.scale(dpr, dpr);
+    if (viewZoom !== 1) { ctx.translate(cw / 2, ch / 2); ctx.scale(viewZoom, viewZoom); ctx.translate(-cw / 2, -ch / 2); }
     // surrounding workspace: neutral stage, artwork on top, hairline artwork boundary
     ctx.fillStyle = "#e6e3ee"; ctx.fillRect(0, 0, cw, ch);
     ctx.fillStyle = "#fff"; ctx.fillRect(mx, my, W, H);
@@ -1164,7 +1170,29 @@
   function bindCanvas() {
     const c = cv();
     window.addEventListener('keydown',e=>{if(e.key==='Escape'&&actionTarget){actionTarget=null;draw();msg('בחירת היעד בוטלה');}});
-    const pos = (e) => { const r = c.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+    const pos = (e) => {
+      const r = c.getBoundingClientRect();
+      let x = e.clientX - r.left, y = e.clientY - r.top;
+      if (viewZoom !== 1) { x = r.width / 2 + (x - r.width / 2) / viewZoom; y = r.height / 2 + (y - r.height / 2) / viewZoom; }
+      return { x, y };
+    };
+    // Two-finger pinch zooms the editing view: the second finger cancels any element drag
+    // (persisting what landed so far) and takes over until a finger lifts.
+    const pinchPtrs = new Map(); // pointerId -> client coords
+    let pinch2d = null;          // {d0, zoom0}
+    const pinchStart = (e) => {
+      if (drag) { const d = drag; drag = null; Studio.save(rec); }
+      const [a, b] = [...pinchPtrs.values()];
+      pinch2d = { d0: Math.hypot(a.x - b.x, a.y - b.y) || 1, zoom0: viewZoom };
+      try { c.setPointerCapture(e.pointerId); } catch (_) {}
+      e.preventDefault();
+    };
+    const pinchMove = () => {
+      const [a, b] = [...pinchPtrs.values()];
+      const d1 = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+      const z = Math.max(VIEW_ZOOM_MIN, Math.min(VIEW_ZOOM_MAX, pinch2d.zoom0 * d1 / pinch2d.d0));
+      if (z !== viewZoom) { viewZoom = z; draw(); }
+    };
     const hit = (p) => {
       for (let i = rec.elements.length - 1; i >= 0; i--) {
         const el = rec.elements[i], b = boxes[el.id];
@@ -1177,6 +1205,8 @@
       return null;
     };
     c.addEventListener("pointerdown", (e) => {
+      pinchPtrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pinchPtrs.size === 2) { pinchStart(e); return; }
       const p = pos(e);
       if(actionTarget){
         const a=actionTarget,layer=rec.elements.find(el=>el.id===a.layerId);
@@ -1226,6 +1256,8 @@
       } else if (selectedId) { selectedId = null; renderList(); renderPanel(); draw(); }
     });
     c.addEventListener("pointermove", (e) => {
+      if (pinchPtrs.has(e.pointerId)) pinchPtrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pinch2d) { if (pinchPtrs.size >= 2) pinchMove(); e.preventDefault(); return; }
       if (!drag) return;
       const p = pos(e);
       const el = rec.elements.find((x) => x.id === drag.id);
@@ -1256,7 +1288,7 @@
       draw();
       renderPanel();
     });
-    const end = async () => { if (drag) { const d = drag; drag = null; await Studio.save(rec); if (d.keyT != null) { const el = rec.elements.find((x) => x.id === d.id); if (el && el.id === selectedId) renderRuler(el); draw(); } } };
+    const end = async (e) => { if (e && pinchPtrs.has(e.pointerId)) { pinchPtrs.delete(e.pointerId); if (pinch2d && pinchPtrs.size < 2) pinch2d = null; } if (drag) { const d = drag; drag = null; await Studio.save(rec); if (d.keyT != null) { const el = rec.elements.find((x) => x.id === d.id); if (el && el.id === selectedId) renderRuler(el); draw(); } } };
     c.addEventListener("pointerup", end);
     c.addEventListener("pointercancel", end);
   }
