@@ -903,11 +903,25 @@ const Studio = (() => {
              target: null, elements: [], assets: {} };
   }
   const history=new Map(),saveQueues=new Map();
+  // Save-state tracking: every queued save is counted until it settles, so the UI can
+  // show "saving/saved/failed" truthfully and warn before a navigation that would drop
+  // an in-flight write. lastError stays sticky until a save succeeds (the failed edit
+  // is still in memory and rides the next successful save of the same record).
+  const saveWatchers=new Set(),saveInfo={pending:0,lastSavedAt:0,lastError:null};
+  let saveHold=null,failSave=null; // test-only seams: hold a settled save open / force a failure
+  function noteSave(){const s={...saveInfo};for(const cb of saveWatchers)try{cb(s);}catch{}}
+  function onSaveState(cb){saveWatchers.add(cb);cb({...saveInfo});return()=>saveWatchers.delete(cb);}
+  function installSaveGuard(win){const handler=e=>{if(saveInfo.pending>0||saveInfo.lastError){e.preventDefault();e.returnValue='';}};win.addEventListener('beforeunload',handler);return handler;}
   function save(rec,options={}) {
     rec.updatedAt=Date.now();const snapshot=structuredClone(rec),tail=saveQueues.get(rec.id)||Promise.resolve();
-    const work=tail.catch(()=>{}).then(()=>saveSnapshot(snapshot,options));saveQueues.set(rec.id,work);return work;
+    saveInfo.pending++;noteSave();
+    const work=tail.catch(()=>{}).then(()=>saveSnapshot(snapshot,options)).then(()=>saveHold)
+      .then(()=>{saveInfo.lastSavedAt=Date.now();saveInfo.lastError=null;},err=>{saveInfo.lastError=(err&&err.message)||String(err);throw err;})
+      .finally(()=>{saveInfo.pending--;noteSave();});
+    saveQueues.set(rec.id,work);return work;
   }
   async function saveSnapshot(rec,options={}) {
+    if(failSave)throw Error(failSave);
     const before=await idbGet(rec.id);
     if(before&&!options.noHistory){
       let h=history.get(rec.id);if(!h){h={undo:[],redo:[]};history.set(rec.id,h);}
@@ -1148,5 +1162,7 @@ const Studio = (() => {
 
   return { TARGET_W, TARGET_H, newId, inspectVideo, validateModelBlob, modelClipNames, modelClipInfo, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
            audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, historyState, restoreHistory, duplicateLayer, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
-           load: id=>settledRead(id), all: ()=>settledRead(), del: idbDel };
+           load: id=>settledRead(id), all: ()=>settledRead(), del: idbDel,
+           onSaveState, installSaveGuard, saveState:()=>({...saveInfo}),
+           _testHoldSave:p=>{saveHold=p;}, _testFailSave:m=>{failSave=m;} };
 })();

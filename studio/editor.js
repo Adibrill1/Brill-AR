@@ -65,6 +65,10 @@
   let experienceReady = Promise.resolve();
   // Experience-changing and snapshot operations preserve the order of user actions.
   // Keep the tail usable after a failed operation instead of poisoning later selections.
+  // Single chokepoint for experience writes: surfaces failures (the save-state pill
+  // reflects them too) instead of silent unhandled rejections; the in-memory edit is
+  // kept and persists on the next successful save.
+  const saveGuarded = (r) => Studio.save(r).catch(() => msg("השמירה נכשלה. השינוי האחרון לא נשמר - נסי שוב."));
   function queueExperience(work) {
     const operation = experienceReady.then(work);
     experienceReady = operation.catch(err => { msg("הפעולה לא הושלמה: " + err.message); });
@@ -111,7 +115,7 @@
       b.onclick = async () => {
         rec.sequences = [{ id: Studio.newId(), name: "מצב 1" }, { id: Studio.newId(), name: "מצב 2" }];
         curSeq = rec.sequences[0].id;
-        await Studio.save(rec);
+        await saveGuarded(rec);
         selectedId = null; renderSeqTabs(); renderList(); renderPanel(); draw();
       };
       bar.appendChild(b);
@@ -129,7 +133,7 @@
       add.className = "seq-add"; add.textContent = "+ מצב";
       add.onclick = async () => {
         rec.sequences.push({ id: Studio.newId(), name: "מצב " + (seqs.length + 1) });
-        await Studio.save(rec); renderSeqTabs(); renderPanel();
+        await saveGuarded(rec); renderSeqTabs(); renderPanel();
       };
       bar.appendChild(add);
     }
@@ -144,11 +148,11 @@
         chip.appendChild(document.createTextNode("🎞️ " + tr.name));
         const as = document.createElement("input");
         as.type = "checkbox"; as.checked = !!tr.autoStart; as.title = "מתחיל אוטומטית";
-        as.onchange = async () => { tr.autoStart = as.checked; await Studio.save(rec); };
+        as.onchange = async () => { tr.autoStart = as.checked; await saveGuarded(rec); };
         chip.appendChild(as);
         const lp = document.createElement("input");
         lp.type = "checkbox"; lp.checked = !!tr.loop; lp.title = "חזרה";
-        lp.onchange = async () => { tr.loop = lp.checked; await Studio.save(rec); };
+        lp.onchange = async () => { tr.loop = lp.checked; await saveGuarded(rec); };
         chip.appendChild(lp);
         if(!canvasTracks[tr.id])canvasTracks[tr.id]={playing:!!tr.autoStart,start:performance.now()};
         const preview=document.createElement('button');preview.dataset.previewTrack=tr.id;
@@ -160,7 +164,7 @@
         del.onclick = async () => {
           rec.tracks = tracks.filter((x) => x.id !== tr.id);
           for (const el of rec.elements) if (el.track === tr.id) el.track = null;
-          await Studio.save(rec); renderSeqTabs(); renderList(); renderPanel();
+          await saveGuarded(rec); renderSeqTabs(); renderList(); renderPanel();
         };
         chip.appendChild(del);
         trow.appendChild(chip);
@@ -170,7 +174,7 @@
         add.className = "seq-add"; add.textContent = "+ מסלול";
         add.onclick = async () => {
           rec.tracks = tracks.concat([{ id: Studio.newId(), name: "מסלול " + (tracks.length + 1), loop: true, autoStart: true }]);
-          await Studio.save(rec); renderSeqTabs(); renderPanel();
+          await saveGuarded(rec); renderSeqTabs(); renderPanel();
         };
         trow.appendChild(add);
       }
@@ -185,7 +189,7 @@
         loopL.style.cssText = "display:flex;align-items:center;gap:4px";
         const loopC = document.createElement("input");
         loopC.type = "checkbox"; loopC.checked = !!sq.loop;
-        loopC.onchange = async () => { sq.loop = loopC.checked; await Studio.save(rec); };
+        loopC.onchange = async () => { sq.loop = loopC.checked; await saveGuarded(rec); };
         loopL.appendChild(loopC);
         loopL.appendChild(document.createTextNode("חזרה על אנימציות המצב"));
         row.appendChild(loopL);
@@ -208,9 +212,9 @@
         }
         sel.onchange = async () => {
           sq.autoNext = sel.value ? { at: Math.max(0.5, Number(at.value) || 3), to: sel.value } : null;
-          await Studio.save(rec);
+          await saveGuarded(rec);
         };
-        at.onchange = async () => { if (sq.autoNext) { sq.autoNext.at = Math.max(0.5, Number(at.value) || 3); await Studio.save(rec); } };
+        at.onchange = async () => { if (sq.autoNext) { sq.autoNext.at = Math.max(0.5, Number(at.value) || 3); await saveGuarded(rec); } };
         row.appendChild(sel);
         bar.appendChild(row);
       }
@@ -222,7 +226,7 @@
         rec.sequences = seqs.filter((x) => x.id !== curSeq);
         for (const el of rec.elements) if (el.seq === curSeq) el.seq = null; // orphans become visible everywhere
         curSeq = rec.sequences[0].id;
-        await Studio.save(rec);
+        await saveGuarded(rec);
         selectedId = null; renderSeqTabs(); renderList(); renderPanel(); draw();
       };
       bar.appendChild(del);
@@ -287,7 +291,7 @@
       rec.target = { artRect: t.artRect, natural: { w: img.naturalWidth, h: img.naturalHeight } };
       rec.assets.__artwork = f;
       artworkImg = img;
-      await Studio.save(rec);
+      await saveGuarded(rec);
       const q = Studio.assessTargetQuality(img);
       if (q.warn && q.reason === "small") msg("נשמרה. שימי לב: התמונה קטנה (מתחת ל-480 פיקסלים בצד הקצר) - הזיהוי עלול להיות חלש. עדיפה תמונה גדולה וחדה.");
       else if (q.warn) msg("נשמרה. שימי לב: לתמונה מעט פרטים או ניגודיות - הזיהוי עלול להיות חלש. עדיפה תמונה עם הרבה פרטים.");
@@ -431,7 +435,7 @@
       if (options.loop != null) el.loop = options.loop;
       rec.elements.push(el);
       selectedId = el.id;
-      await Studio.save(rec);
+      await saveGuarded(rec);
       msg(importNote || "האלמנט נוסף. אפשר לגרור אותו על התצוגה.");
       render();
     };
@@ -459,7 +463,7 @@
                    x: 0, y: 0, w: 0.6, h: 0.6, rot: 0, z: 0.12, seq: curSeq, particles: { preset: "sparkle", count: 120, color: "#ffd94d" } });
       rec.elements.push(el);
       selectedId = el.id;
-      await Studio.save(rec);
+      await saveGuarded(rec);
       msg("נוספו חלקיקים. בחרי סגנון בלוח למטה.");
       render();
     };
@@ -472,7 +476,7 @@
       el.h = (el.w / el.aspect) * (rec.target.artRect.w / rec.target.artRect.h);
       rec.elements.push(el);
       selectedId = el.id;
-      await Studio.save(rec);
+      await saveGuarded(rec);
       msg("נוסף טקסט. ערכי את התוכן בלוח למטה.");
       render();
     };
@@ -480,7 +484,7 @@
     $("btn-new").onclick = () => queueExperience(async () => {
       rec = Studio.blankExperience();
       selectedId = null; artworkImg = null; checkedIds.clear(); tlScrubT = null; resetSeq();
-      await Studio.save(rec);
+      await saveGuarded(rec);
       await refreshExpSelect(); render();
       msg("ניסוי חדש - התחילי בהעלאת תמונת יצירה.");
     });
@@ -554,7 +558,7 @@
       } catch (err) { msg("הקובץ לא תקין לייבוא."); }
       });
     };
-    $("btn-edit-3d").onclick=()=>queueExperience(async()=>{await Studio.save(rec);location.href="preview.html?edit=1#"+rec.id;});
+    $("btn-edit-3d").onclick=()=>queueExperience(async()=>{await saveGuarded(rec);location.href="preview.html?edit=1#"+rec.id;});
     $("btn-edit-ar").onclick = () => { location.href = "play.html?edit=1#" + rec.id; };
     $("btn-play").onclick = () => { location.href = "play.html#" + rec.id; };
     $("btn-preview3d").onclick = () => { location.href = "preview.html#" + rec.id; };
@@ -562,7 +566,7 @@
     $("btn-3d").onclick=()=>setViewMode("3d");
     Editor3D.init({wrap:$("canvas-wrap"),getRec:()=>rec,getSelected:()=>selectedId,
       onSelect:(id)=>{selectedId=id;renderList();renderPanel();draw();Editor3D.refreshGizmo();},
-      onChange:()=>{Studio.save(rec).then(()=>{renderPanel();draw();renderList();});},
+      onChange:()=>{saveGuarded(rec).then(()=>{renderPanel();draw();renderList();});},
       beginFrame:()=>{if(rec)Object.defineProperty(rec,"_actionValues",{value:actionEngine?actionEngine.values():{},writable:true,configurable:true,enumerable:false});},
       sampleEl:(el)=>rec?Studio.sampleComposition(rec,el,(e2)=>editorClock3D(e2),curSeq):null,
       clockFor:(el)=>editorClock3D(el),
@@ -571,8 +575,14 @@
       restoreFrozen:(t)=>restoreFrozen(t),
       onGate:(text)=>msg(text)});
     new IntersectionObserver(es=>{wrapOnScreen=es[0].isIntersecting;sync3d();}).observe($("canvas-wrap"));
-    $('btn-duplicate-el').onclick=()=>queueExperience(async()=>{const id=Studio.duplicateLayer(rec,selectedId);if(!id)return;selectedId=id;await Studio.save(rec);await hydrate();render();});
+    $('btn-duplicate-el').onclick=()=>queueExperience(async()=>{const id=Studio.duplicateLayer(rec,selectedId);if(!id)return;selectedId=id;await saveGuarded(rec);await hydrate();render();});
     const restore=direction=>queueExperience(async()=>{const restored=await Studio.restoreHistory(rec.id,direction);if(!restored)return;rec=restored;selectedId=null;checkedIds.clear();tlScrubT=null;resetSeq();await hydrate();render();});
+    const saveStateEl=$("save-state");
+    Studio.onSaveState(st=>{if(!st.pending&&!st.lastError&&!st.lastSavedAt){saveStateEl.hidden=true;return;}saveStateEl.hidden=false;
+      if(st.pending>0){saveStateEl.textContent="שומר…";saveStateEl.className="save-state saving";}
+      else if(st.lastError){saveStateEl.textContent="השמירה נכשלה - השינוי האחרון לא נשמר. נסי שוב.";saveStateEl.className="save-state error";}
+      else{saveStateEl.textContent="נשמר";saveStateEl.className="save-state saved";}});
+    Studio.installSaveGuard(window);
     $('btn-undo').onclick=()=>restore('undo');$('btn-redo').onclick=()=>restore('redo');
     $("btn-del-el").onclick = async () => {
       const i = rec.elements.findIndex((x) => x.id === selectedId);
@@ -584,7 +594,7 @@
       if (gone.assetId && !rec.elements.some(el=>el.assetId===gone.assetId)) { delete rec.assets[gone.assetId]; delete media[gone.assetId]; }
       delete textCache[gone.id];
       selectedId = null;
-      await Studio.save(rec);
+      await saveGuarded(rec);
       render();
     };
 
@@ -594,7 +604,7 @@
       const j = i + dir;
       if (i < 0 || j < 0 || j >= rec.elements.length) return;
       [rec.elements[i], rec.elements[j]] = [rec.elements[j], rec.elements[i]];
-      await Studio.save(rec);
+      await saveGuarded(rec);
       renderList(); draw();
     };
     $("btn-group").onclick = groupChecked;
@@ -611,12 +621,12 @@
     $('crop-reset').onclick=()=>upd(el=>Studio.setImageCrop(rec,el,{x:0,y:0,w:1,h:1}));
     $('video-aspect-reset').onclick=()=>queueExperience(async()=>{
       const el=rec.elements.find(x=>x.id===selectedId);if(!el||el.type!=='video')return;
-      try{const info=await Studio.inspectVideo(rec.assets[el.assetId]),c=el.crop||{w:1,h:1};el.aspect=info.width/info.height*c.w/c.h;el.h=el.w/el.aspect*(rec.target.artRect.w/rec.target.artRect.h);await Studio.save(rec);renderPanel();draw();msg('פרופורציות הסרטון שוחזרו בלי לשנות את המקור');}catch(error){msg('לא ניתן לשחזר פרופורציות: '+error.message);}
+      try{const info=await Studio.inspectVideo(rec.assets[el.assetId]),c=el.crop||{w:1,h:1};el.aspect=info.width/info.height*c.w/c.h;el.h=el.w/el.aspect*(rec.target.artRect.w/rec.target.artRect.h);await saveGuarded(rec);renderPanel();draw();msg('פרופורציות הסרטון שוחזרו בלי לשנות את המקור');}catch(error){msg('לא ניתן לשחזר פרופורציות: '+error.message);}
     });
     // panel bindings
     const cur = () => rec.elements.find((x) => x.id === selectedId);
     const transform = applyBaseProp;
-    const upd = async (fn) => { const el = cur(); if (!el) return; fn(el); await Studio.save(rec); renderPanel(); draw(); renderList(); };
+    const upd = (fn) => { const el = cur(); if (!el) return; fn(el); saveGuarded(rec).finally(() => { renderPanel(); draw(); renderList(); }); };
     const num = (id, min, max, fn) => { $(id).onchange = (e) => { const v = parseFloat(e.target.value); if (isNaN(v)) { renderPanel(); return; } upd((el) => fn(el, Math.max(min, Math.min(max, v)))); }; };
     $("sl-scale").oninput = e => upd(el => panelWrite(el, "w", parseFloat(e.target.value)));
     $("sl-rot").oninput = e => upd(el => panelWrite(el, "rot", parseFloat(e.target.value)));
@@ -657,7 +667,7 @@
       const assetId = Studio.newId();
       rec.assets[assetId] = f;
       el.particles = Object.assign({}, el.particles, { spriteAssetId: assetId });
-      await Studio.save(rec); renderPanel();
+      await saveGuarded(rec); renderPanel();
     };
     for(const [id,key,min,max]of [['num-plife','lifetime',0,60],['num-pendsize','endSize',0,5]])$(id).onchange=e=>upd(el=>{el.particles={...el.particles,[key]:Math.max(min,Math.min(max,Number(e.target.value)||0))};});
     $('sel-pemitter').onchange=e=>upd(el=>{el.particles={...el.particles,emitter:e.target.value};});
@@ -708,10 +718,10 @@
     root.hidden=!rec.target;
     actionUI=ActionEditor.mount(root,{
       rec, selectedId, engine:actionEngine,
-      changed:async()=>{const id=rec.id,saving=Studio.save(rec);actionEngine=ActionCore.create(rec);renderActions();draw();await saving;if(rec.id===id){const hs=Studio.historyState(id);$("btn-undo").disabled=!hs.undo;$("btn-redo").disabled=!hs.redo;}},
+      changed:()=>{const id=rec.id,saving=saveGuarded(rec);actionEngine=ActionCore.create(rec);renderActions();draw();saving.then(()=>{if(rec.id===id){const hs=Studio.historyState(id);$("btn-undo").disabled=!hs.undo;$("btn-redo").disabled=!hs.redo;}});},
       redraw:()=>draw(),
       select:id=>{selectedId=id;renderList();renderPanel();draw();},
-      target3d:(q,a)=>queueExperience(async()=>{await Studio.save(rec);location.href="preview.html?edit=1&sequence="+encodeURIComponent(q.id)+"&action="+encodeURIComponent(a.id)+"#"+rec.id;}),
+      target3d:(q,a)=>queueExperience(async()=>{await saveGuarded(rec);location.href="preview.html?edit=1&sequence="+encodeURIComponent(q.id)+"&action="+encodeURIComponent(a.id)+"#"+rec.id;}),
       target:a=>{actionTarget=a;draw();cv().scrollIntoView({block:"center",behavior:"instant"});msg("לחצי על היצירה כדי לקבוע את יעד התנועה. Escape לביטול; מיקום הבסיס לא משתנה");},
       message:msg
     });
@@ -790,7 +800,7 @@
     rec.elements.splice(topIdx + 1, 0, g);
     checkedIds.clear();
     selectedId = g.id;
-    Studio.save(rec).then(() => { renderList(); renderPanel(); draw(); });
+    saveGuarded(rec).then(() => { renderList(); renderPanel(); draw(); });
   }
 
   function ungroupSelected() {
@@ -798,7 +808,7 @@
     if (i < 0) return;
     rec.elements.splice(i, 1); // children stay as independent elements
     selectedId = null;
-    Studio.save(rec).then(() => { renderList(); renderPanel(); draw(); });
+    saveGuarded(rec).then(() => { renderList(); renderPanel(); draw(); });
   }
 
   function renderPanel() {
@@ -1234,7 +1244,7 @@
         if(layer&&a.type==='move'){
           a.to.x=Math.round(((p.x-view.mx)/view.W-.5)*1000)/1000;
           a.to.y=Math.round((.5-(p.y-view.my)/view.H)*1000)/1000;
-          actionTarget=null;Studio.save(rec).then(()=>{renderActions();draw();});msg('יעד התנועה עודכן; מיקום הבסיס לא שונה');
+          actionTarget=null;saveGuarded(rec).then(()=>{renderActions();draw();});msg('יעד התנועה עודכן; מיקום הבסיס לא שונה');
         }return;
       }
       const sel = rec.elements.find((x) => x.id === selectedId);
@@ -1309,7 +1319,7 @@
       draw();
       renderPanel();
     });
-    const end = async (e) => { if (e && pinchPtrs.has(e.pointerId)) { pinchPtrs.delete(e.pointerId); if (pinch2d && pinchPtrs.size < 2) pinch2d = null; } if (drag) { const d = drag; drag = null; await Studio.save(rec); if (d.keyT != null) { const el = rec.elements.find((x) => x.id === d.id); if (el && el.id === selectedId) renderRuler(el); draw(); } } };
+    const end = async (e) => { if (e && pinchPtrs.has(e.pointerId)) { pinchPtrs.delete(e.pointerId); if (pinch2d && pinchPtrs.size < 2) pinch2d = null; } if (drag) { const d = drag; drag = null; await saveGuarded(rec); if (d.keyT != null) { const el = rec.elements.find((x) => x.id === d.id); if (el && el.id === selectedId) renderRuler(el); draw(); } } };
     c.addEventListener("pointerup", end);
     c.addEventListener("pointercancel", end);
   }
