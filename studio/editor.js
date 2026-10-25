@@ -933,21 +933,33 @@
   // ---------- canvas preview ----------
   const cv = () => $("preview");
   let boxes = {};
+  // Editing-surface layout: the artwork is shown centered with a visible workspace
+  // margin around it (user request: see the space surrounding the image while editing).
+  // All canvas coordinates derive from view = {W,H,mx,my} - artwork size + margin offset.
+  const MARGIN_FRAC = 0.25;
+  let view = { W: 0, H: 0, mx: 0, my: 0 };
 
   function draw() {
     if (!rec || !rec.target || !artworkImg) return;
     const c = cv();
     const wrap = $("canvas-wrap");
-    const W = wrap.clientWidth || 320;
     const artW = rec.target.artRect.w, artH = rec.target.artRect.h;
+    const W = Math.round((wrap.clientWidth || 320) / (1 + 2 * MARGIN_FRAC));
     const H = Math.round(W * (artH / artW));
+    const mx = Math.round(W * MARGIN_FRAC), my = Math.round(H * MARGIN_FRAC);
+    const cw = W + 2 * mx, ch = H + 2 * my;
+    view = { W, H, mx, my };
     const dpr = window.devicePixelRatio || 1;
-    c.width = W * dpr; c.height = H * dpr;
-    c.style.width = W + "px"; c.style.height = H + "px";
+    c.width = cw * dpr; c.height = ch * dpr;
+    c.style.width = cw + "px"; c.style.height = ch + "px";
     const ctx = c.getContext("2d");
     ctx.scale(dpr, dpr);
-    ctx.fillStyle = "#fff"; ctx.fillRect(0, 0, W, H);
-    ctx.drawImage(artworkImg, 0, 0, W, H);
+    // surrounding workspace: neutral stage, artwork on top, hairline artwork boundary
+    ctx.fillStyle = "#e6e3ee"; ctx.fillRect(0, 0, cw, ch);
+    ctx.fillStyle = "#fff"; ctx.fillRect(mx, my, W, H);
+    ctx.drawImage(artworkImg, mx, my, W, H);
+    ctx.strokeStyle = "rgba(41,37,53,0.55)"; ctx.lineWidth = 1;
+    ctx.strokeRect(mx + 0.5, my + 0.5, W - 1, H - 1);
     boxes = {};
     const t0 = performance.now();
     // autoNext chain simulation in live preview (mirrors previewer makeSeqRunner):
@@ -985,8 +997,8 @@
       const sc = ts ? ts.scale : 1;
       let wpx = el.w * W * sc;
       let hpx = (el.h != null ? el.h * H : (el.w * W) / (el.aspect || 1)) * sc;
-      let cx = ((ts ? ts.x : el.x) + 0.5) * W;
-      let cy = (0.5 - (ts ? ts.y : el.y)) * H;
+      let cx = mx + ((ts ? ts.x : el.x) + 0.5) * W;
+      let cy = my + (0.5 - (ts ? ts.y : el.y)) * H;
       if(el.anim&&el.anim!=='none'||parent&&parent.anim&&parent.anim!=='none')needsAnim=tlScrubT==null;
       if (el.type === "video") needsAnim = true;
       const effRot = ts ? ts.rot : (el.rot || 0);
@@ -1061,7 +1073,7 @@
     }
     if(actionTarget&&actionTarget.type==='move'){
       const a=actionTarget;ctx.save();ctx.strokeStyle='#ff4f00';ctx.lineWidth=3;ctx.setLineDash([6,4]);
-      const x=(a.to.x+.5)*W,y=(.5-a.to.y)*H;ctx.beginPath();ctx.arc(x,y,14,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#ff4f00';ctx.font='14px sans-serif';ctx.fillText('יעד תנועה',x+18,y);ctx.restore();
+      const x=view.mx+(a.to.x+.5)*view.W,y=view.my+(.5-a.to.y)*view.H;ctx.beginPath();ctx.arc(x,y,14,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#ff4f00';ctx.font='14px sans-serif';ctx.fillText('יעד תנועה',x+18,y);ctx.restore();
     }
     if (needsAnim) requestAnimationFrame(draw);
   }
@@ -1086,8 +1098,8 @@
       if(actionTarget){
         const a=actionTarget,layer=rec.elements.find(el=>el.id===a.layerId);
         if(layer&&a.type==='move'){
-          a.to.x=Math.round((p.x/c.clientWidth-.5)*1000)/1000;
-          a.to.y=Math.round((.5-p.y/c.clientHeight)*1000)/1000;
+          a.to.x=Math.round(((p.x-view.mx)/view.W-.5)*1000)/1000;
+          a.to.y=Math.round((.5-(p.y-view.my)/view.H)*1000)/1000;
           actionTarget=null;Studio.save(rec).then(()=>{renderActions();draw();});msg('יעד התנועה עודכן; מיקום הבסיס לא שונה');
         }return;
       }
@@ -1123,7 +1135,7 @@
       const p = pos(e);
       const el = rec.elements.find((x) => x.id === drag.id);
       if (!el) return;
-      const W = c.clientWidth, H = c.clientHeight;
+      const W = view.W, H = view.H;
       if (drag.mode === "gmove") {
         const dx = (p.x - drag.start.x) / W, dy = -(p.y - drag.start.y) / H;
         Studio.transformGroup(rec, el, {
