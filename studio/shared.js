@@ -52,7 +52,14 @@ const Studio = (() => {
   // ---------- helpers ----------
   const newId = () => (crypto.randomUUID ? crypto.randomUUID() : "id-" + Date.now() + "-" + Math.random().toString(36).slice(2, 10));
   const loadImage = (src) => new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; });
-  const blobToDataURL = (blob) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(blob); });
+  const blobToDataURL = (blob) => new Promise((res, rej) => {
+    const r = new FileReader();
+    r.onload = () => res(r.result);
+    // Never reject with the raw ProgressEvent: it has no .message and surfaced to the
+    // user as "undefined" on iOS when a large asset read failed. Always an Error.
+    r.onerror = () => rej(new Error("blob read failed (" + Math.round(((blob && blob.size) || 0) / 1024) + "KB " + ((blob && blob.type) || "?") + "): " + ((r.error && r.error.name) || "unknown")));
+    r.readAsDataURL(blob);
+  });
   async function dataURLtoBlob(durl) { return (await fetch(durl)).blob(); }
 
   // ---------- image-target generation (runtime equivalent of the proven v4 offline pipeline) ----------

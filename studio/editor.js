@@ -649,7 +649,10 @@
         a.href = URL.createObjectURL(new Blob([body], { type: "application/json" }));
         a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
         msg("חלון השיתוף לא נפתח כאן, אז הקובץ ירד. שלחי אותו אליי בוואטסאפ.");
-      } catch (err) { msg("ההכנה לשליחה נכשלה: " + err.message); }
+      } catch (err) {
+        const why = (err && err.message) || String(err) || "שגיאה לא ידועה";
+        msg("ההכנה לשליחה נכשלה: " + why + ". היצירה נשמרה אצלך - נסי גם ״ייצוא לקובץ״ ושלחי את הקובץ כאן.");
+      }
       finally { btn.disabled = false; }
     };
     $("btn-publish").onclick = async () => {
