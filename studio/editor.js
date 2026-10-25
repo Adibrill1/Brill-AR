@@ -14,6 +14,16 @@
   const GATE_CURVE = "אלמנט עם מסלול תנועה נערך בציר הזמן, לא בגרירה ישירה";
   const GATE_GROUP = "קבוצה עם נקודות מפתח נערכת בציר הזמן, לא בגרירה ישירה";
   const freezePlayhead = (t) => { tlScrubT = t; $("tl-time").textContent = "t=" + t.toFixed(1) + "s"; $("btn-tl-live").hidden = false; const sel = rec && rec.elements.find((x) => x.id === selectedId); if (sel) renderRuler(sel); draw(); };
+  // Restore the exact pre-drag playhead state (live, or a deliberate frozen scrub) after a
+  // cancelled drag - a two-finger pinch must leave no freeze behind but keep the user's own.
+  const restoreFrozen = (t) => {
+    tlScrubT = (t != null) ? t : null;
+    $("tl-time").textContent = tlScrubT != null ? "t=" + tlScrubT.toFixed(1) + "s" : "";
+    $("btn-tl-live").hidden = tlScrubT == null;
+    const sel = rec && rec.elements.find((x) => x.id === selectedId);
+    if (sel) renderRuler(sel);
+    draw();
+  };
   // Same contract for the numeric panel / sliders: an edit the timeline would silently
   // override writes a key at the frozen playhead; unsupported cases are refused with a
   // message. Group rot/opacity stay writable (sampled channels); group geometry is gated.
@@ -557,6 +567,8 @@
       sampleEl:(el)=>rec?Studio.sampleComposition(rec,el,(e2)=>editorClock3D(e2),curSeq):null,
       clockFor:(el)=>editorClock3D(el),
       freezeAt:(t)=>freezePlayhead(t),
+      getFrozen:()=>tlScrubT,
+      restoreFrozen:(t)=>restoreFrozen(t),
       onGate:(text)=>msg(text)});
     new IntersectionObserver(es=>{wrapOnScreen=es[0].isIntersecting;sync3d();}).observe($("canvas-wrap"));
     $('btn-duplicate-el').onclick=()=>queueExperience(async()=>{const id=Studio.duplicateLayer(rec,selectedId);if(!id)return;selectedId=id;await Studio.save(rec);await hydrate();render();});
@@ -1187,9 +1199,8 @@
         const d = drag; drag = null;
         if (d.snap) {
           rec.elements = JSON.parse(d.snap);
-          const sel = rec.elements.find((x) => x.id === selectedId);
-          if (sel) renderRuler(sel);
-          draw(); renderPanel(); renderList();
+          restoreFrozen(d.snapT);
+          renderPanel(); renderList();
         }
       }
       const [a, b] = [...pinchPtrs.values()];
@@ -1232,9 +1243,9 @@
         const hx = b.cx + Math.cos(b.rot) * (b.w / 2) - Math.sin(b.rot) * (b.h / 2);
         const hy = b.cy + Math.sin(b.rot) * (b.w / 2) + Math.cos(b.rot) * (b.h / 2);
         if (Math.hypot(p.x - hx, p.y - hy) < 24) {
-          const keyT = prepare2DKeyedDrag(sel, "scale");
+          const preT = tlScrubT, keyT = prepare2DKeyedDrag(sel, "scale");
           if (typeof keyT === "string") { msg(keyT); return; }
-          drag = { mode: "scale", id: sel.id, start: p, origW: sel.w, cx: b.cx, cy: b.cy, snap: JSON.stringify(rec.elements) };
+          drag = { mode: "scale", id: sel.id, start: p, origW: sel.w, cx: b.cx, cy: b.cy, snap: JSON.stringify(rec.elements), snapT: preT };
           if (sel.type === "group") drag.gorigs = Studio.groupChildren(rec, sel).map((k) => ({ id: k.id, w: k.w, h: k.h, x: k.x || 0, y: k.y || 0 }));
           if (keyT != null) { drag.keyT = keyT; drag.s0 = Studio.sampleTimeline(sel, editorClock3D(sel)).scale; }
           c.setPointerCapture(e.pointerId); return;
@@ -1243,19 +1254,19 @@
       if (sel && sel.type === "group" && boxes[sel.id]) {
         const b = boxes[sel.id];
         if (Math.abs(p.x - b.cx) <= b.w / 2 && Math.abs(p.y - b.cy) <= b.h / 2) {
-          const keyT = prepare2DKeyedDrag(sel, "gmove");
+          const preT = tlScrubT, keyT = prepare2DKeyedDrag(sel, "gmove");
           if (typeof keyT === "string") { msg(keyT); return; }
           drag = { mode: "gmove", id: sel.id, start: p, origGX: sel.x || 0, origGY: sel.y || 0,
-                   origs: Studio.groupChildren(rec, sel).map((k) => ({ id: k.id, x: k.x || 0, y: k.y || 0 })), snap: JSON.stringify(rec.elements) };
+                   origs: Studio.groupChildren(rec, sel).map((k) => ({ id: k.id, x: k.x || 0, y: k.y || 0 })), snap: JSON.stringify(rec.elements), snapT: preT };
           c.setPointerCapture(e.pointerId); return;
         }
       }
       const el = hit(p);
       if (el) {
         selectedId = el.id; renderList(); renderPanel();
-        const keyT = prepare2DKeyedDrag(el, "move");
+        const preT = tlScrubT, keyT = prepare2DKeyedDrag(el, "move");
         if (typeof keyT === "string") { msg(keyT); draw(); return; }
-        drag = { mode: "move", id: el.id, start: p, origX: el.x, origY: el.y, snap: JSON.stringify(rec.elements) };
+        drag = { mode: "move", id: el.id, start: p, origX: el.x, origY: el.y, snap: JSON.stringify(rec.elements), snapT: preT };
         if (keyT != null) {
           drag.keyT = keyT;
           const s0 = Studio.sampleTimeline(el, editorClock3D(el));

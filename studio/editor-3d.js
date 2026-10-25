@@ -9,7 +9,7 @@
 window.Editor3D = (() => {
   let wrapEl, sceneEl, rig, cam, host;
   let getRec, getSelected, onSelect, onChange;
-  let sampleEl = null, clockFor = null, freezeAt = null, beginFrame = null, onGate = null;
+  let sampleEl = null, clockFor = null, freezeAt = null, beginFrame = null, onGate = null, getFrozen = null, restoreFrozen = null;
   let active = false, mounted = false, orb = null, gizmo = null, helper = null;
   let gizmoDrag = null, busy = false, gizmoMode = "move";
   // Two-finger pinch zooms the embedded 3D view (camera dolly, same range as the wheel):
@@ -22,7 +22,7 @@ window.Editor3D = (() => {
     wrapEl = opts.wrap; getRec = opts.getRec; getSelected = opts.getSelected;
     onSelect = opts.onSelect; onChange = opts.onChange;
     sampleEl = opts.sampleEl || null; clockFor = opts.clockFor || null;
-    freezeAt = opts.freezeAt || null; beginFrame = opts.beginFrame || null;
+    freezeAt = opts.freezeAt || null; beginFrame = opts.beginFrame || null; getFrozen = opts.getFrozen || null; restoreFrozen = opts.restoreFrozen || null;
     onGate = opts.onGate || null;
   }
 
@@ -384,7 +384,7 @@ window.Editor3D = (() => {
       if (gizmoDrag) {
         const gd = gizmoDrag; gizmoDrag = null;
         const r = getRec();
-        if (gd.snap && r) { r.elements = JSON.parse(gd.snap); rebuildElements(); refreshGizmo(); }
+        if (gd.snap && r) { r.elements = JSON.parse(gd.snap); rebuildElements(); refreshGizmo(); if (restoreFrozen) restoreFrozen(gd.snapT); }
       }
       orb = null;
       const [a, b] = [...pinchPtrs.values()];
@@ -418,11 +418,12 @@ window.Editor3D = (() => {
             if (axis.x) return Math.atan2(v.z, v.y);
             return Math.atan2(v.x, v.z);
           };
+          const frozen0 = getFrozen ? getFrozen() : null;
           const keyT = prepareKeyedDrag(el, o.userData.gizmoPart);
           if (keyT === "gate") { if (onGate) onGate(gateMsg(el)); e.preventDefault(); e.stopPropagation(); return; }
           if ((o.userData.gizmoPart === "rotX" || o.userData.gizmoPart === "rotY") && hasKeys(el) && onGate) onGate(TILT_NOTE);
           const rot0 = (keyT != null && o.userData.gizmoPart === "rot" && sampleEl) ? sampleEl(el).rot : el.rot || 0;
-          gizmoDrag = { id: e.pointerId, el, axis, plane, angleOf, a0: angleOf(hit), rot0, rotX0: el.rotX || 0, rotY0: el.rotY || 0, part: o.userData.gizmoPart, keyT, snap: JSON.stringify(rec.elements) };
+          gizmoDrag = { id: e.pointerId, el, axis, plane, angleOf, a0: angleOf(hit), rot0, rotX0: el.rotX || 0, rotY0: el.rotY || 0, part: o.userData.gizmoPart, keyT, snap: JSON.stringify(rec.elements), snapT: frozen0 };
           if (sceneEl.canvas.setPointerCapture) sceneEl.canvas.setPointerCapture(e.pointerId);
           e.preventDefault(); e.stopPropagation();
           return;
@@ -440,10 +441,11 @@ window.Editor3D = (() => {
           const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(normal, center);
           const hit = new THREE.Vector3();
           if (!lr.intersectPlane(plane, hit)) return;
+          const frozen0 = getFrozen ? getFrozen() : null;
           const keyT = prepareKeyedDrag(el, o.userData.gizmoPart);
           if (keyT === "gate") { if (onGate) onGate(gateMsg(el)); e.preventDefault(); e.stopPropagation(); return; }
           const s0 = (keyT != null && sampleEl) ? sampleEl(el) : null;
-          gizmoDrag = { id: e.pointerId, el, axis, plane, start: hit.clone(), x0: s0 ? s0.x : el.x || 0, y0: s0 ? s0.y : el.y || 0, z0: s0 ? s0.z : el.z || 0, keyT, snap: JSON.stringify(rec.elements) };
+          gizmoDrag = { id: e.pointerId, el, axis, plane, start: hit.clone(), x0: s0 ? s0.x : el.x || 0, y0: s0 ? s0.y : el.y || 0, z0: s0 ? s0.z : el.z || 0, keyT, snap: JSON.stringify(rec.elements), snapT: frozen0 };
           if (sceneEl.canvas.setPointerCapture) sceneEl.canvas.setPointerCapture(e.pointerId);
           e.preventDefault(); e.stopPropagation();
           return;

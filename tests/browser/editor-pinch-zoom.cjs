@@ -64,6 +64,28 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
  let s5=await state();
  assert.strictEqual(s5.keyd.timeline.keys.length,2,'cancelled keyed drag left no key behind: '+JSON.stringify(s5.keyd.timeline.keys.map(k=>k.t)));
  assert.strictEqual(s5.keyd.x,-.25,'cancelled keyed drag left base x untouched');
+ // playhead state is part of the rollback: started live -> back to live (no freeze left behind)
+ const tlState=()=>p.evaluate(()=>({liveHidden:document.querySelector('#btn-tl-live').hidden,time:document.querySelector('#tl-time').textContent}));
+ let tl1=await tlState();
+ assert.ok(tl1.liveHidden&&tl1.time==='','cancelled keyed drag left no freeze behind: '+JSON.stringify(tl1));
+ // ...but a deliberate pre-drag freeze survives the cancelled gesture
+ await p.evaluate(()=>{document.querySelectorAll('#element-list li').forEach(li=>{if(li.textContent.includes('KD'))li.click();});});
+ await p.waitForTimeout(400);
+ await p.evaluate(()=>{document.querySelector('#tl-ruler').scrollIntoView({block:'center'});});await p.waitForTimeout(300);
+ const rb=await p.locator('#tl-ruler').boundingBox();
+ await p.mouse.move(rb.x+rb.width*0.6,rb.y+rb.height/2);await p.mouse.down();await p.mouse.up();await p.waitForTimeout(300);
+ let tl2=await tlState();
+ assert.ok(!tl2.liveHidden&&tl2.time!=='','scrub froze the playhead: '+JSON.stringify(tl2));
+ await p.evaluate(()=>{const w=document.querySelector('#canvas-wrap');scrollTo(0,w.getBoundingClientRect().top+scrollY-8);});await p.waitForTimeout(300);
+ box=await p.locator('#preview').boundingBox();
+ const kdS2={x:box.x+box.width*(0.5-(0.25/0.75)*0.5*parseFloat((await state()).zoom)),y:box.y+box.height/2};
+ await dragPinch(kdS2.x,kdS2.y,kdS2.x+60,kdS2.y);
+ let tl3=await tlState();
+ assert.strictEqual(tl3.time,tl2.time,'deliberate freeze survived the cancelled drag: '+JSON.stringify(tl3));
+ assert.ok(!tl3.liveHidden,'live-resume button still visible for the preserved freeze');
+ let s5b=await state();
+ assert.strictEqual(s5b.keyd.timeline.keys.length,2,'frozen-scrub cancelled drag left no key behind');
+ await p.locator('#btn-tl-live').click();await p.waitForTimeout(200);
  // 3. 3D: spread dollies the camera in, pinch dollies it back out, inside the wheel range
  await p.evaluate(()=>{const w=document.querySelector('#canvas-wrap');scrollTo(0,w.getBoundingClientRect().top+scrollY-8);});await p.waitForTimeout(300);
  await p.tap('#btn-3d');await p.waitForSelector('[data-el-root]',{state:'attached',timeout:20000});
@@ -88,5 +110,14 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
  let s6=await state();
  assert.strictEqual(s6.free.x,.3,'pinch cancelled the first-finger gizmo drag: FR.x rolled back, got '+s6.free.x);
  assert.ok(!s6.free.timeline||!s6.free.timeline.keys,'cancelled gizmo drag created no timeline');
+ // 3D keyed rollback also restores the playhead: gizmo-drag KD, pinch, back to live, no key
+ await p.evaluate(()=>{document.querySelectorAll('#element-list li').forEach(li=>{if(li.textContent.includes('KD'))li.click();});});
+ await p.waitForTimeout(500);
+ const tipK=await p.evaluate(()=>{Editor3D._test.scene().object3D.updateMatrixWorld(true);const g=Editor3D._test.gizmo();const cone=g.children[0].children[1];const v=new THREE.Vector3();cone.getWorldPosition(v);v.project(Editor3D._test.scene().camera);const r=Editor3D._test.scene().canvas.getBoundingClientRect();return {x:r.left+(v.x+1)/2*r.width,y:r.top+(-v.y+1)/2*r.height};});
+ await dragPinch(tipK.x,tipK.y,sbox.x+sbox.width/2,sbox.y+sbox.height*0.8);
+ let s7=await state();
+ assert.strictEqual(s7.keyd.timeline.keys.length,2,'cancelled 3D keyed gizmo drag left no key behind');
+ const tl4=await p.evaluate(()=>({liveHidden:document.querySelector('#btn-tl-live').hidden,time:document.querySelector('#tl-time').textContent}));
+ assert.ok(tl4.liveHidden&&tl4.time==='','cancelled 3D keyed drag left no freeze behind: '+JSON.stringify(tl4));
  console.log('PASS pinch zoom: two-finger spread/pinch zooms the 2D editing view and the 3D camera, mapping stays correct while zoomed, elements untouched');
 }finally{await b.close();await new Promise(r=>server.close(r));}})().catch(e=>{console.error(e);process.exit(1)});
