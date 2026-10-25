@@ -202,8 +202,9 @@ window.Editor3D = (() => {
     if (!hasKeys(el) || !clockFor) return null;
     if ((part === "x" || part === "y") && (el.timeline.xyMap || el.type === "group")) return "gate";
     if (part === "z" && el.type === "group") return "gate";
-    if (freezeAt) freezeAt(clockFor(el)); // freeze the playhead so the edit lands on a stable frame
-    return Math.round(clockFor(el) * 10) / 10;
+    const keyT = Math.round(clockFor(el) * 10) / 10;
+    if (freezeAt) freezeAt(keyT); // freeze exactly ON the key time so the sampled frame equals the key
+    return keyT;
   }
 
   function gateMsg(el) {

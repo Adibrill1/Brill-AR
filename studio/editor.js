@@ -14,14 +14,42 @@
   const GATE_CURVE = "אלמנט עם מסלול תנועה נערך בציר הזמן, לא בגרירה ישירה";
   const GATE_GROUP = "קבוצה עם נקודות מפתח נערכת בציר הזמן, לא בגרירה ישירה";
   const freezePlayhead = (t) => { tlScrubT = t; $("tl-time").textContent = "t=" + t.toFixed(1) + "s"; $("btn-tl-live").hidden = false; const sel = rec && rec.elements.find((x) => x.id === selectedId); if (sel) renderRuler(sel); draw(); };
+  // Same contract for the numeric panel / sliders: an edit the timeline would silently
+  // override writes a key at the frozen playhead; unsupported cases are refused with a
+  // message. Group rot/opacity stay writable (sampled channels); group geometry is gated.
+  const preparePanelEdit = (el, channel) => {
+    if (!elKeyed(el)) return null;
+    if (el.type === "group" && channel !== "rot" && channel !== "opacity") return GATE_GROUP;
+    if ((channel === "x" || channel === "y") && el.timeline.xyMap) return GATE_CURVE;
+    const keyT = Math.round(editorClock3D(el) * 10) / 10;
+    freezePlayhead(keyT); // freeze exactly ON the key time so the sampled frame equals the key
+    return keyT;
+  };
+  // Base-prop write shared by the numeric panel and the drag path; kept at module scope so
+  // panelWrite (module scope) can reach it - a ReferenceError here used to silently drop edits.
+  const applyBaseProp = (el, key, value) => {
+    if (el.type === "group") Studio.transformGroup(rec, el, { [key]: value });
+    else { const f = key === "w" ? value / el.w : 1; el[key] = value; if (key === "w" && el.h != null) el.h = Math.max(.02, el.h * f); }
+  };
+  const panelWrite = (el, channel, v) => {
+    const keyT = preparePanelEdit(el, channel);
+    if (typeof keyT === "string") { msg(keyT); return; }
+    if (keyT != null) {
+      const k = keyAtT(el, keyT);
+      if (channel === "w") k.scale = Math.max(.05, Math.min(4, v / el.w));
+      else k[channel] = v;
+      return;
+    }
+    if (channel === "opacity") el.opacity = v; else applyBaseProp(el, channel, v);
+  };
   // Returns the frozen key time, null for a plain base edit, or a gate message string.
   const prepare2DKeyedDrag = (el, part) => {
     if (!elKeyed(el)) return null;
     if (el.type === "group") return GATE_GROUP;
     if (part === "move" && el.timeline.xyMap) return GATE_CURVE;
-    const t0 = editorClock3D(el);
-    freezePlayhead(t0);
-    return Math.round(t0 * 10) / 10;
+    const keyT = Math.round(editorClock3D(el) * 10) / 10;
+    freezePlayhead(keyT); // freeze exactly ON the key time so the sampled frame equals the key
+    return keyT;
   };
 
   let experienceReady = Promise.resolve();
@@ -575,17 +603,14 @@
     });
     // panel bindings
     const cur = () => rec.elements.find((x) => x.id === selectedId);
-    const transform = (el, key, value) => {
-      if (el.type === "group") Studio.transformGroup(rec, el, { [key]: value });
-      else { const f = key === "w" ? value / el.w : 1; el[key] = value; if (key === "w" && el.h != null) el.h = Math.max(.02, el.h * f); }
-    };
+    const transform = applyBaseProp;
     const upd = async (fn) => { const el = cur(); if (!el) return; fn(el); await Studio.save(rec); renderPanel(); draw(); renderList(); };
     const num = (id, min, max, fn) => { $(id).onchange = (e) => { const v = parseFloat(e.target.value); if (isNaN(v)) { renderPanel(); return; } upd((el) => fn(el, Math.max(min, Math.min(max, v)))); }; };
-    $("sl-scale").oninput = e => upd(el => transform(el, "w", parseFloat(e.target.value)));
-    $("sl-rot").oninput = e => upd(el => transform(el, "rot", parseFloat(e.target.value)));
-    $("sl-z").oninput = e => upd(el => transform(el, "z", parseFloat(e.target.value)));
+    $("sl-scale").oninput = e => upd(el => panelWrite(el, "w", parseFloat(e.target.value)));
+    $("sl-rot").oninput = e => upd(el => panelWrite(el, "rot", parseFloat(e.target.value)));
+    $("sl-z").oninput = e => upd(el => panelWrite(el, "z", parseFloat(e.target.value)));
     $("sl-vol").oninput = (e) => upd((el) => { el.volume = parseFloat(e.target.value); });
-    $("sl-opacity").oninput = (e) => upd((el) => { el.opacity = parseFloat(e.target.value); });
+    $("sl-opacity").oninput = (e) => upd((el) => panelWrite(el, "opacity", parseFloat(e.target.value)));
     $("ck-loop").onchange = (e) => upd((el) => { el.loop = e.target.checked; });
     $("sel-anim").onchange = (e) => upd((el) => { el.anim = e.target.value; el.spin = el.anim === "spin"; });
     $("sel-tap").onchange = (e) => upd((el) => { el.onTap = e.target.value; });
@@ -645,8 +670,8 @@
     $("in-tapurl").onchange = (e) => upd((el) => { el.tapUrl = e.target.value.trim(); });
     // numeric panel
     for (const [key, min, max] of [["x",-.7,.7],["y",-.7,.7],["w",.05,2],["rot",-180,180],["z",0,.5]])
-      num("num-"+key, min, max, (el,v) => transform(el,key,v));
-    num("num-opacity", 0, 1, (el, v) => { el.opacity = v; });
+      num("num-"+key, min, max, (el,v) => panelWrite(el, key, v));
+    num("num-opacity", 0, 1, (el, v) => panelWrite(el, "opacity", v));
     $("sel-model-clip").onchange=e=>upd(el=>{el.modelClip=Number(e.target.value);});
     num("num-model-clip",0,99,(el,v)=>{el.modelClip=Math.floor(v);});
     num("num-model-speed",.1,4,(el,v)=>{el.modelSpeed=v;});
@@ -784,10 +809,11 @@
     $("num-model-clip").value=el.modelClip||0;$("num-model-speed").value=el.modelSpeed||1;
     $("ck-model-playing").checked=el.modelPlaying!==false;$("ck-model-loop").checked=el.modelLoop!==false;
     $("panel-name").textContent = (isGroup ? "📦 " : "") + el.name + (isGroup ? " (שינויים חלים על כל הפריטים בקבוצה)" : "");
-    $("sl-scale").value = el.w;
-    $("sl-rot").value = el.rot || 0;
-    $("sl-z").value = el.z || 0;
-    $("sl-opacity").value = el.opacity == null ? 1 : el.opacity;
+    const sv = elKeyed(el) ? Studio.sampleTimeline(el, editorClock3D(el)) : null; // panel mirrors the canvas: sampled frame when keyed
+    $("sl-scale").value = sv ? el.w * (sv.scale || 1) : el.w;
+    $("sl-rot").value = sv ? sv.rot || 0 : el.rot || 0;
+    $("sl-z").value = sv ? sv.z || 0 : el.z || 0;
+    $("sl-opacity").value = sv ? (sv.opacity == null ? 1 : sv.opacity) : el.opacity == null ? 1 : el.opacity;
     $("row-volume").hidden = el.type !== "video" && el.type !== "sound";
     $("sl-vol").value = el.volume == null ? 1 : el.volume;
     $("row-loop").hidden = el.type !== "video" && el.type !== "sound";
@@ -873,12 +899,12 @@
       $("in-color").value = el.color || "#ffffff";
       $("ck-bold").checked = el.bold !== false;
     }
-    $("num-x").value = (Math.round((el.x || 0) * 100) / 100).toFixed(2);
-    $("num-y").value = (Math.round((el.y || 0) * 100) / 100).toFixed(2);
-    $("num-w").value = (Math.round(el.w * 100) / 100).toFixed(2);
-    $("num-rot").value = Math.round(el.rot || 0);
-    $("num-z").value = (Math.round((el.z || 0) * 1000) / 1000);
-    $("num-opacity").value = el.opacity == null ? 1 : el.opacity;
+    $("num-x").value = (Math.round(((sv ? sv.x : el.x) || 0) * 100) / 100).toFixed(2);
+    $("num-y").value = (Math.round(((sv ? sv.y : el.y) || 0) * 100) / 100).toFixed(2);
+    $("num-w").value = (Math.round((sv ? el.w * (sv.scale || 1) : el.w) * 100) / 100).toFixed(2);
+    $("num-rot").value = Math.round((sv ? sv.rot : el.rot) || 0);
+    $("num-z").value = (Math.round(((sv ? sv.z : el.z) || 0) * 1000) / 1000);
+    $("num-opacity").value = sv ? (sv.opacity == null ? 1 : sv.opacity) : el.opacity == null ? 1 : el.opacity;
     if (typeof Editor3D !== "undefined") Editor3D.refreshGizmo();
   }
 
