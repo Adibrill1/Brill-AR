@@ -52,6 +52,24 @@ const Studio = (() => {
   // ---------- helpers ----------
   const newId = () => (crypto.randomUUID ? crypto.randomUUID() : "id-" + Date.now() + "-" + Math.random().toString(36).slice(2, 10));
   const loadImage = (src) => new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; });
+  // Copy a picked File into page-owned bytes. iOS hands picker files backed by temporary
+  // assets that WebKit can evict after the picker closes or the page reloads; storing the raw
+  // File leaves an unreadable "dead" blob behind (export then fails with a bare error event).
+  const ownBlob = async (blob) => {
+    try { return new Blob([await blob.arrayBuffer()], { type: blob.type || "" }); }
+    catch (e) { throw new Error("הקובץ לא נקרא מהמכשיר (" + Math.round((blob.size || 0) / 1024) + "KB) - בחרי אותו שוב"); }
+  };
+  // Which stored assets are still readable? Distinguishes dead/missing backing from healthy data.
+  async function assetHealth(rec) {
+    const out = [];
+    for (const [id, b] of Object.entries((rec && rec.assets) || {})) {
+      if (!b || typeof b.slice !== "function") { out.push({ id, ok: false, reason: "missing" }); continue; }
+      try { await b.slice(0, 1).arrayBuffer(); out.push({ id, ok: true, size: b.size, type: b.type }); }
+      catch (e) { out.push({ id, ok: false, size: b.size, type: b.type, reason: (e && e.name) || "unreadable" }); }
+    }
+    return out;
+  }
+
   const blobToDataURL = (blob) => new Promise((res, rej) => {
     const r = new FileReader();
     r.onload = () => res(r.result);
@@ -1288,7 +1306,7 @@ const Studio = (() => {
   }
 
   return { TARGET_W, TARGET_H, newId, inspectVideo, validateModelBlob, prepareModelBlob, modelCompressionKinds, DECODER_DRACO_PATH, DECODER_MESHOPT_PATH, modelClipNames, modelClipInfo, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
-           audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, historyState, restoreHistory, duplicateLayer, exportJSON, importJSON, fetchPublished, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
+           audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, historyState, restoreHistory, duplicateLayer, exportJSON, importJSON, fetchPublished, ownBlob, assetHealth, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
            load: id=>settledRead(id), all: ()=>settledRead(), del: idbDel,
            onSaveState, installSaveGuard, saveState,
            _testHoldSave:p=>{saveHold=p;}, _testFailSave:m=>{failSave=m;} };

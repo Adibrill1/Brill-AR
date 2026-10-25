@@ -324,23 +324,30 @@
     artworkImg = null;
     for (const k of Object.keys(media)) delete media[k];
     for (const k of Object.keys(textCache)) delete textCache[k];
+    const badAssets = [];
     if (rec.assets.__artwork) {
-      artworkImg = await Studio.loadImage(await Studio.blobToDataURL(rec.assets.__artwork));
+      // A stored blob can be unreadable ("dead" picker backing evicted by the OS). Keep the
+      // editor usable and say exactly what is lost instead of failing the whole load.
+      try { artworkImg = await Studio.loadImage(await Studio.blobToDataURL(rec.assets.__artwork)); }
+      catch (err) { badAssets.push("תמונת היצירה"); }
     }
     for (const el of rec.elements) {
       Studio.normEl(el);
       if (!el.assetId || !rec.assets[el.assetId]) continue;
-      const durl = await Studio.blobToDataURL(rec.assets[el.assetId]);
-      if (el.type === "video") {
-        const v = document.createElement("video");
-        v.muted = true; v.loop = el.loop !== false; v.playsInline = true; v.src = durl;
-        v.play().catch(() => {});
-        media[el.assetId] = v;
-      } else if (el.type === "image") {
-        const mm = await Studio.makeImageMedia(rec.assets[el.assetId], "m-" + el.id, null);
-        media[el.assetId] = (mm.animated || mm.staticFallback) ? mm.node : await Studio.loadImage(durl);
-      }
+      try {
+        const durl = await Studio.blobToDataURL(rec.assets[el.assetId]);
+        if (el.type === "video") {
+          const v = document.createElement("video");
+          v.muted = true; v.loop = el.loop !== false; v.playsInline = true; v.src = durl;
+          v.play().catch(() => {});
+          media[el.assetId] = v;
+        } else if (el.type === "image") {
+          const mm = await Studio.makeImageMedia(rec.assets[el.assetId], "m-" + el.id, null);
+          media[el.assetId] = (mm.animated || mm.staticFallback) ? mm.node : await Studio.loadImage(durl);
+        }
+      } catch (err) { badAssets.push(el.name || el.type); }
     }
+    if (badAssets.length) msg("חלק מהקבצים לא נקראו מהמכשיר (" + [...new Set(badAssets)].join(", ") + ") - ייבאי אותם שוב כדי לשחזר.");
   }
 
   function refreshExpSelect() {
@@ -377,7 +384,7 @@
       const img = await Studio.loadImage(await Studio.blobToDataURL(f));
       const t = await Studio.makeTarget(img);
       rec.target = { artRect: t.artRect, natural: { w: img.naturalWidth, h: img.naturalHeight } };
-      rec.assets.__artwork = f;
+      rec.assets.__artwork = await Studio.ownBlob(f);
       artworkImg = img;
       await saveGuarded(rec);
       const q = Studio.assessTargetQuality(img);
@@ -489,7 +496,7 @@
       }
       if(kind==='model'){try{f=await Studio.prepareModelBlob(f);}catch(err){msg('המודל לא נוסף: '+err.message);return;}}
       const assetId = Studio.newId();
-      rec.assets[assetId] = f;
+      rec.assets[assetId] = await Studio.ownBlob(f);
       const artRatio = rec.target.artRect.w / rec.target.artRect.h;
       const el = Studio.normEl({ id: Studio.newId(), type: kind, name: { video: "סרטון", image: "תמונה", sound: "צליל", model: "מודל 3D" }[kind] + " " + (rec.elements.filter((x) => x.type === kind).length + 1),
                    assetId, x: 0, y: 0, w: kind === "video" ? 1.0 : 0.3, h: null, rot: 0, z: kind === "image" ? 0.1 : 0.01, seq: curSeq });
@@ -626,6 +633,13 @@
       try {
         // Start the export synchronously inside the tap and share as early as possible:
         // Safari ties navigator.share to the tap's transient user activation.
+        const health = await Studio.assetHealth(rec);
+        const dead = health.filter((h) => !h.ok);
+        if (dead.length) {
+          const names = dead.map((h) => h.id === "__artwork" ? "תמונת היצירה" : ((rec.elements.find((x) => x.assetId === h.id || (x.particles && x.particles.spriteAssetId === h.id)) || {}).name || h.id));
+          msg("חלק מהקבצים לא קריאים יותר בטלפון (" + names.join(", ") + ") - ייבאי אותם שוב ואז שלחי. שום דבר לא נשלח.");
+          return;
+        }
         const bodyP = Studio.exportJSON(rec);
         let shared = false;
         if (navigator.canShare && navigator.share) {
@@ -801,7 +815,7 @@
       const el = rec.elements.find((x) => x.id === selectedId);
       if (!el || el.type !== "particles") return;
       const assetId = Studio.newId();
-      rec.assets[assetId] = f;
+      rec.assets[assetId] = await Studio.ownBlob(f);
       el.particles = Object.assign({}, el.particles, { spriteAssetId: assetId });
       await saveGuarded(rec); renderPanel();
     };
