@@ -16,7 +16,7 @@ assert.equal(copy.life2,0.2);assert.equal(copy.color2,'#0000ff');assert.equal(co
 const rej=await p.evaluate(async id=>{const r=await Studio.load(id);const out=[];for(const mut of [p=>{p.life2=99;},p=>{p.color2='red';}]){const o=JSON.parse(await Studio.exportJSON(r));mut(o.elements[0].particles);try{await Studio.importJSON(JSON.stringify(o));out.push('accepted');}catch(e){out.push('rejected');}}return out;},id);
 assert.deepEqual(rej,['rejected','rejected']);
 // 4. 390px panel layout
-await p.setViewportSize({width:390,height:844});await p.locator('#row-particles').screenshot({path:'/downloads/particle-range-390.png'});
+await p.setViewportSize({width:390,height:844});await p.locator('#row-particles').screenshot({path:'/downloads/particle-range-390.png'});await p.screenshot({path:'/downloads/particle-range-390-full.png',fullPage:false});
 assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
 // 5. preview: per-particle life + color ranges
 await p.setViewportSize({width:900,height:800});await p.goto(base+'/preview.html#'+id);
