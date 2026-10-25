@@ -56,5 +56,10 @@ const env = { BRILL_AR_REGISTER_URL: register, PUB_DIR: pub };
   r = await run("scripts/pub-recover.cjs", { BRILL_AR_REGISTER_URL: reg2, PUB_DIR: pub2 });
   assert.equal(r.code, 0, "empty register recovers clean: " + r.out);
   console.log("PASS empty register + empty local is a clean no-op");
+  // a stale manifest.json left in the pub dir is NOT a scene and never blocks recovery
+  fs.writeFileSync(path.join(pub2, "manifest.json"), "{\"stale\":true}\n");
+  r = await run("scripts/pub-recover.cjs", { BRILL_AR_REGISTER_URL: reg2, PUB_DIR: pub2 });
+  assert.equal(r.code, 0, "stale manifest.json is ignored: " + r.out);
+  console.log("PASS stale manifest.json in the pub dir is not treated as a scene");
   fs.rmSync(tmp, { recursive: true, force: true });
 })().catch((e) => { console.error(e); process.exit(1); });

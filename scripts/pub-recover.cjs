@@ -15,7 +15,7 @@ const { recoverFromRegister } = require("./pub-register.cjs");
 const pubDir = process.env.PUB_DIR || path.join(__dirname, "../studio/pub");
 const REGISTER_URL = process.env.BRILL_AR_REGISTER_URL || "https://x@github.com/adibrill-instinct/brill-ar-published.git";
 (async () => {
-  const localScenes = fs.existsSync(pubDir) ? fs.readdirSync(pubDir).filter((f) => /^[a-zA-Z0-9_-]{1,64}\.json$/.test(f)) : [];
+  const localScenes = fs.existsSync(pubDir) ? fs.readdirSync(pubDir).filter((f) => f !== "manifest.json" && /^[a-zA-Z0-9_-]{1,64}\.json$/.test(f)) : [];
   let r;
   try { r = await recoverFromRegister(REGISTER_URL); }
   catch (e) { console.error("ABORT: private register unreadable (" + e.message + "). Restore the credential (vault Allow) or fix the register; refusing to deploy without the authoritative publication state."); process.exit(1); }
