@@ -613,6 +613,21 @@
     $("in-server").onchange = (e) => localStorage.setItem("ar-studio-server", e.target.value.trim());
     $("in-token").value = localStorage.getItem("ar-studio-token") || "";
     $("in-token").onchange = (e) => localStorage.setItem("ar-studio-token", e.target.value.trim());
+    $("btn-send-publish").onclick = async () => {
+      try {
+        const body = await Studio.exportJSON(rec);
+        const file = new File([body], (rec.name || "ar-studio") + ".json", { type: "application/json" });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          await navigator.share({ files: [file], title: rec.name || "ar-studio" });
+          msg("אם השליחה בוצעה, הקובץ בדרך אליי. אחזיר קישור אחרי שתאשרי פרסום.");
+        } else {
+          const a = document.createElement("a");
+          a.href = URL.createObjectURL(new Blob([body], { type: "application/json" }));
+          a.download = file.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+          msg("הדפדפן הזה לא תומך בשיתוף ישיר, אז הקובץ ירד. שלחי אותו אליי בוואטסאפ.");
+        }
+      } catch (err) { if (err && err.name === "AbortError") msg("השיתוף בוטל - שום דבר לא נשלח."); else msg("ההכנה לשליחה נכשלה: " + err.message); }
+    };
     $("btn-publish").onclick = async () => {
       const base = ($("in-server").value || "").trim().replace(/\/+$/, "");
       if (!base) { msg("כדי לפרסם צריך שרת קטן שמחזיק את הקישורים. כרגע אפשר לייצא לקובץ ולשתף ידנית."); return; }
