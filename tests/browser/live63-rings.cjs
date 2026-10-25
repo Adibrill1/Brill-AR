@@ -42,8 +42,11 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
  assert.ok(await p.locator('#btn-3d-move').isVisible(),'move tool button visible');
  assert.ok(await p.locator('#btn-3d-rotate').isVisible(),'rotate tool button visible');
  await p.tap('#btn-3d-rotate');await p.waitForTimeout(400);
- const rings=await p.evaluate(()=>{const g=Editor3D._test.gizmo();return g?g.children.map(c=>c.geometry&&c.geometry.type):[];});
- assert.deepStrictEqual(rings,['TorusGeometry','TorusGeometry','TorusGeometry'],'three rotation rings on live: '+rings);
+ // rc66 added invisible fat hit proxies (userData.proxy) around each visible ring
+ const rings=await p.evaluate(()=>{const g=Editor3D._test.gizmo();return g?g.children.filter(c=>!(c.userData&&c.userData.proxy)).map(c=>c.geometry&&c.geometry.type):[];});
+ assert.deepStrictEqual(rings,['TorusGeometry','TorusGeometry','TorusGeometry'],'three visible rotation rings on live: '+rings);
+ const proxies=await p.evaluate(()=>{const g=Editor3D._test.gizmo();return g?g.children.filter(c=>c.userData&&c.userData.proxy).length:0;});
+ assert.strictEqual(proxies,3,'each visible ring has a fat hit proxy on live');
  await p.evaluate(()=>Editor3D._test.scene().object3D.updateMatrixWorld(true));
  const ringPt=async a=>p.evaluate(a=>{const g=Editor3D._test.gizmo();const ring=g.children[2];const R=ring.geometry.parameters.radius;const v=new THREE.Vector3(Math.cos(a)*R,Math.sin(a)*R,0);ring.localToWorld(v);v.project(Editor3D._test.scene().camera);const r=Editor3D._test.scene().canvas.getBoundingClientRect();return {x:r.left+(v.x+1)/2*r.width,y:r.top+(-v.y+1)/2*r.height};},a);
  const f=await ringPt(Math.PI/4),t=await ringPt(3*Math.PI/4);

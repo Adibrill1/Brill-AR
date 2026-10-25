@@ -363,11 +363,12 @@ window.Editor3D = (() => {
     };
     bind(); sceneEl.addEventListener("renderstart", bind); sceneEl.addEventListener("loaded", bind);
     sceneEl.addEventListener("wheel", (e) => {
+      e.preventDefault(); // zoom the 3D view, never scroll the page under the cursor
       const p = cam.getAttribute("position");
       p.z = Math.max(0.5, Math.min(2.4, p.z + e.deltaY * 0.001));
       cam.setAttribute("position", p);
       fitGizmoToView();
-    }, { passive: true });
+    }, { passive: false });
   }
 
   function down(e) {
