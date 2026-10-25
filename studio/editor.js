@@ -87,7 +87,9 @@
     if (!st.lastError) return true;
     return confirm("יש שינויים בניסוי הזה שהשמירה שלהם נכשלה. מעבר ימחק אותם. לעבור בכל זאת?");
   };
+  let prepared = null;
   function queueExperience(work) {
+    prepared = null; // any edit/switch/delete invalidates a prepared share file
     if (window.__flushSlider) window.__flushSlider();
     const operation = experienceReady.then(work);
     experienceReady = operation.catch(err => { msg("הפעולה לא הושלמה: " + err.message); });
@@ -669,14 +671,15 @@
     $("in-token").onchange = (e) => localStorage.setItem("ar-studio-token", e.target.value.trim());
     // Prepared share file: if the first tap loses Safari's transient activation (big export took too long),
     // keep the built file and let the NEXT tap call navigator.share synchronously, with no await before it.
-    let prepared = null;
     const prepKey = (zip) => rec.id + ":" + rec.updatedAt + ":" + (zip ? "z" : "j");
     $("btn-send-publish").onclick = async () => {
       const btn = $("btn-send-publish"); if (btn.disabled) return;
-      if (prepared && prepared.key === prepKey($("send-zip").checked) && navigator.share) {
+      if (window.__flushSlider) window.__flushSlider(); // an unsaved slider edit bumps updatedAt, so a stale prepared file is dropped below
+      if (prepared && prepared.key !== prepKey($("send-zip").checked)) { prepared = null; msg("היצירה השתנתה מאז שהקובץ הוכן. מכין מחדש..."); }
+      if (prepared && navigator.share) {
         const p = prepared; prepared = null; btn.disabled = true;
         let ok = false;
-        try { navigator.share({ files: [p.file], title: rec.name || "ar-studio" }).then(() => { msg("אם השליחה בוצעה, הקובץ בדרך אליי. אחזיר קישור אחרי שתאשרי פרסום."); }, (err) => { if (err && err.name === "AbortError") msg("השיתוף בוטל - שום דבר לא נשלח."); else { prepared = p; msg("חלון השיתוף לא נפתח. לחצי שוב, או השתמשי ב״ייצוא לקובץ״ ושלחי את הקובץ ידנית."); } }).finally(() => { btn.disabled = false; }); ok = true; }
+        try { navigator.share({ files: [p.file], title: rec.name || "ar-studio" }).then(() => { msg("אם השליחה בוצעה, הקובץ בדרך אליי. אחזיר קישור אחרי שתאשרי פרסום."); }, (err) => { if (err && err.name === "AbortError") { prepared = p; msg("השיתוף בוטל - שום דבר לא נשלח. הקובץ עדיין מוכן."); } else { prepared = p; msg("חלון השיתוף לא נפתח. לחצי שוב, או השתמשי ב״ייצוא לקובץ״ ושלחי את הקובץ ידנית."); } }).finally(() => { btn.disabled = false; }); ok = true; }
         catch { prepared = p; }
         if (ok) return;
         btn.disabled = false;
@@ -693,7 +696,7 @@
           return;
         }
         const pb = Studio.publishBlocker(rec), warn = [pb && (pb + " אפשר לשלוח אליי כגיבוי, אבל לא אפשר יהיה לפרסם אותה כך."), Studio.exportWarning(rec)].filter(Boolean).join(" "), tail = warn ? " " + warn : "";
-        const useZip = $("send-zip").checked;
+        const useZip = $("send-zip").checked, startKey = prepKey(useZip);
         const bodyP = useZip ? Studio.exportZIP(rec) : Studio.exportJSON(rec);
         let shared = false, file = null;
         if (navigator.canShare && navigator.share) {
@@ -707,7 +710,7 @@
             }
           } catch (err) {
             if (err && err.name === "AbortError") { msg("השיתוף בוטל - שום דבר לא נשלח."); return; }
-            if (err && err.name === "NotAllowedError" && file) { prepared = { key: prepKey(useZip), file }; msg("הקובץ מוכן. לחצי שוב על ״שליחה״ כדי לפתוח את חלון השיתוף." + tail); return; }
+            if (err && err.name === "NotAllowedError" && file) { prepared = { key: startKey, file }; msg("הקובץ מוכן. לחצי שוב על ״שליחה״ כדי לפתוח את חלון השיתוף." + tail); return; }
             // Any other share failure falls through to download.
           }
         }
@@ -760,8 +763,8 @@
     $("file-import").onchange = (e) => { const f = e.target.files[0]; e.target.value = ""; if (f) return doImport(f, false); };
     // Recovery import: only for an over-limit backup made before the guards existed. Always a NEW copy; larger caps
     // (300 layers / 60MB per file / 300MB total) can run out of memory on a phone, so the user must confirm.
-    $("btn-import-recovery").onclick = () => { if (confirm("ייבוא שחזור מיועד לגיבוי גדול מהרגיל. הוא נשמר כעותק חדש ולא נוגע במקור, אבל בטלפון עלול להיגמר הזיכרון. עדיף ממחשב. להמשיך?")) $("file-import-recovery").click(); };
-    $("file-import-recovery").onchange = (e) => { const f = e.target.files[0]; e.target.value = ""; if (f) return doImport(f, true); };
+    $("btn-import-recovery").onclick = () => { if (confirm("ייבוא שחזור מיועד לגיבוי גדול מהרגיל. הוא נשמר כעותק חדש ולא נוגע במקור, אבל בטלפון עלול להיגמר הזיכרון והדפדפן להיתקע. מומלץ מאוד לעשות את זה במחשב. להמשיך?")) $("file-import-recovery").click(); };
+    $("file-import-recovery").onchange = (e) => { const f = e.target.files[0]; e.target.value = ""; if (!f) return; if (f.size > 100 * 1024 * 1024 && navigator.maxTouchPoints > 0 && !confirm("הקובץ גדול (" + Math.round(f.size / 1048576) + "MB) ואת בטלפון. קריאה שלו עלולה לתקוע את הדפדפן. מומלץ לפתוח את העורך במחשב. לקרוא בכל זאת?")) return; return doImport(f, true); };
     $("btn-edit-3d").onclick=()=>queueExperience(async()=>{await saveGuarded(rec);location.href="preview.html?edit=1#"+rec.id;});
     $("btn-edit-ar").onclick = () => { location.href = "play.html?edit=1#" + rec.id; };
     $("btn-play").onclick = () => { location.href = "play.html#" + rec.id; };

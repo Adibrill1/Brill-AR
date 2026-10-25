@@ -21,3 +21,9 @@ Test: tests/browser/data-safety.cjs
 - Share: first tap that loses Safari activation (NotAllowedError) keeps the built file; the next tap calls navigator.share synchronously. Verified with a stub only; real iOS behavior unverified.
 - Recovery import: explicit button, confirm dialog, always imports a COPY, caps 300 layers / 60MB per file / 300MB total / 400 files; normal limits restored after. Tested 80-layer ZIP and JSON. Memory on a phone unmeasured; prefer a computer.
 - send-ZIP default is ZIP; publish-send tests updated to cover default ZIP and unchecked JSON.
+
+## Follow-up 3
+- Cross-tab existence check and put are one IDB readwrite transaction (requireExists); a 15-round racing delete/save test shows 0 resurrected, and the same test with the atomic check disabled resurrected 1 (so it detects the race).
+- Import limits are per call (no global): concurrent normal + recovery imports keep their own; malformed input still refused under recovery.
+- Share prepared file: key = record id + updatedAt + zip/json taken BEFORE the export; cleared on any queued edit/switch/delete; slider flushed first; user cancel (AbortError) keeps the file and says so, activation loss (NotAllowedError) is a separate message.
+- Recovery boundary tested on desktop headless: 150 layers + 3x30MiB (90MiB ZIP) round trip, bytes intact, new id. 165MiB hit headless QuotaExceededError (storage quota of the test browser), so the 300MB cap is UNTESTED; phone memory untested. Phone + file >100MB asks a second confirmation recommending a computer.

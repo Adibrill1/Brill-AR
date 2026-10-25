@@ -14,6 +14,29 @@ const {chromium}=require('playwright-core'),assert=require('assert/strict'),serv
  console.log('PASS multi-tab delete not resurrected');
  // a brand-new record in the same tab still saves (first save has no before)
  assert.equal(await B.evaluate(async()=>{const r=Studio.blankExperience('חדש');await Studio.save(r);return !!(await Studio.load(r.id));}),true);
+
+ // delete/save race across tabs, repeated: B's save racing A's delete must never resurrect
+ let resurrected=0;
+ for(let i=0;i<15;i++){
+  const rid=await A.evaluate(async()=>{const r=Studio.blankExperience('מרוץ');await Studio.save(r);return r.id;});
+  await B.evaluate(async id=>{window.__r=await Studio.load(id);},rid);
+  await Promise.all([A.evaluate(async id=>{await Studio.del(id);},rid),B.evaluate(async()=>{for(let k=0;k<3;k++)try{await Studio.save({...window.__r,name:'r'+k});}catch{}})]);
+  await A.waitForTimeout(30);
+  if(await A.evaluate(async id=>!!(await Studio.load(id)),rid))resurrected++;
+ }
+ assert.equal(resurrected,0,'15 racing delete/save rounds across tabs: resurrected '+resurrected);
+ console.log('PASS 15 racing cross-tab delete/save rounds, 0 resurrected');
+ // concurrent normal + recovery imports: each call keeps its own limits
+ const conc=await A.evaluate(async()=>{
+  const r=Studio.blankExperience('מקביל');r.target={artRect:{x:0,y:0,w:768,h:1024},natural:{w:768,h:1024}};
+  r.elements=Array.from({length:80},(_,i)=>Studio.normEl({id:'e'+i,type:'text',name:'t'+i,text:'x',x:0,y:0,w:.3,h:.1,rot:0,z:.1,color:'#fff',bold:true}));
+  const zip=await Studio.exportZIP(r);
+  const [a,b]=await Promise.allSettled([Studio.importZIP(zip,{save:false}),Studio.importZIP(zip,{save:false,recovery:true})]);
+  // malformed under recovery still validated
+  let bad;try{await Studio.importJSON('{"format":"ar-studio/1","elements":"x","assets":{}}',{save:false,recovery:true});bad='accepted';}catch{bad='refused';}
+  return {normal:a.status,recovery:b.status,bad};});
+ assert.deepEqual(conc,{normal:'rejected',recovery:'fulfilled',bad:'refused'});
+ console.log('PASS concurrent imports keep own limits; malformed input refused under recovery');
  // recovery import: 80-layer backup refused normally, imported as copy with recovery; original untouched
  const rv=await A.evaluate(async()=>{
   const r=Studio.blankExperience('גדול');r.target={artRect:{x:0,y:0,w:768,h:1024},natural:{w:768,h:1024}};
@@ -38,4 +61,18 @@ const {chromium}=require('playwright-core'),assert=require('assert/strict'),serv
  const sync=await A.evaluate(()=>{const btn=document.querySelector('#btn-send-publish');window.__inClick=true;btn.click();const calledSync=window.__calls.length===2;window.__inClick=false;return calledSync;});
  assert.ok(sync,'second tap calls navigator.share synchronously (no await before it)');
  console.log('PASS share: activation-lost first tap keeps the built file, second tap shares synchronously');
+
+ // stale cache: edit after the file was prepared -> second tap must NOT share the old file
+ await A.reload();await A.waitForSelector('#exp-select option',{state:'attached'});
+ await A.evaluate(()=>{window.__calls=[];navigator.canShare=()=>true;let n=0;navigator.share=async d=>{window.__calls.push({name:d.files[0].name,size:d.files[0].size});if(n++===0){const e=new Error('x');e.name='NotAllowedError';throw e;}};});
+ await A.evaluate(()=>document.querySelector('#btn-send-publish').click());
+ await A.waitForFunction(()=>document.querySelector('#msg').textContent.includes('הקובץ מוכן'),undefined,{timeout:15000});
+ await A.evaluate(async()=>{const id=document.querySelector('#exp-select').value;const r=await Studio.load(id);r.name='שונה אחרי הכנה';await Studio.save(r);}); // external save bumps updatedAt of stored record; editor rec must also change:
+ await A.evaluate(()=>{const n=document.querySelector('#in-exp-name');n.value='שם חדש אחרי הכנה';n.dispatchEvent(new Event('change',{bubbles:true}));});
+ await A.waitForTimeout(800);
+ await A.evaluate(()=>document.querySelector('#btn-send-publish').click());
+ await A.waitForFunction(()=>window.__calls.length===2,undefined,{timeout:15000});
+ const names=await A.evaluate(()=>window.__calls.map(c=>c.name));
+ assert.ok(names[1].includes('שם חדש אחרי הכנה'),'second share carries the edited scene, not the stale file: '+names);
+ console.log('PASS share cache invalidated by edit:',JSON.stringify(names));
 }finally{await b.close();await new Promise(r=>server.close(r));}})().catch(e=>{console.error(e);process.exit(1)});

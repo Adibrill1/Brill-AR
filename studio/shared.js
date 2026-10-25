@@ -14,11 +14,13 @@ const Studio = (() => {
       r.onerror = () => rej(r.error);
     });
   }
-  async function idbPut(id, rec) {
+  // requireExists: check and put happen inside ONE readwrite transaction, so a delete from another tab cannot land between them.
+  async function idbPut(id, rec, requireExists) {
     const db = await openDB();
     return new Promise((res, rej) => {
       const tx = db.transaction("experiences", "readwrite");
-      tx.objectStore("experiences").put(rec, id);
+      if (requireExists) { const g = tx.objectStore("experiences").get(id); g.onsuccess = () => { if (g.result === undefined) { const e = new Error('deleted in another tab'); e.deletedElsewhere = true; rej(e); try { tx.abort(); } catch {} } else tx.objectStore("experiences").put(rec, id); }; }
+      else tx.objectStore("experiences").put(rec, id);
       tx.oncomplete = () => res();
       tx.onerror = () => rej(tx.error);
       tx.onabort = () => rej(tx.error || new Error("storage write aborted (storage may be full)"));
@@ -1097,7 +1099,9 @@ const Studio = (() => {
       if(assetChanged||content(before)!==content(rec)){h.undo.push(before);if(h.undo.length>20)h.undo.shift();h.redo=[];}
     }
     if(!before&&knownPersisted.has(rec.id)){tombstones.set(rec.id,Date.now());const e=new Error('deleted in another tab');e.deletedElsewhere=true;throw e;}
-    rec.updatedAt = Date.now(); await idbPut(rec.id, rec); knownPersisted.add(rec.id);
+    rec.updatedAt = Date.now();
+    try{await idbPut(rec.id, rec, knownPersisted.has(rec.id));}catch(e){if(e&&e.deletedElsewhere)tombstones.set(rec.id,Date.now());throw e;}
+    knownPersisted.add(rec.id);
   }
   async function settledRead(id){const r=await settledRead0(id);if(id){if(r)knownPersisted.add(id);}else for(const x of r||[])knownPersisted.add(x.id);return r;}
   async function settledRead0(id){let pending;do{pending=id?saveQueues.get(id):Promise.all([...saveQueues.values()]);await (pending||Promise.resolve()).catch(()=>{});}while(id&&pending!==saveQueues.get(id));return id?idbGet(id):idbAll();}
@@ -1167,9 +1171,8 @@ const Studio = (() => {
   // explicitly picks "recovery import" for an over-limit backup made before the editor guards; import is always a COPY.
   const NORMAL_LIM = { layers: 60, file: 20 * 1024 * 1024, total: 60 * 1024 * 1024, assets: 121, entries: 130 };
   const RECOVERY_LIM = { layers: 300, file: 60 * 1024 * 1024, total: 300 * 1024 * 1024, assets: 400, entries: 410 };
-  let LIM = NORMAL_LIM;
-  async function withLimits(opts, fn) { const prev = LIM; LIM = opts && opts.recovery ? RECOVERY_LIM : NORMAL_LIM; try { return await fn(); } finally { LIM = prev; } }
-  function unzipCapped(u8) {
+  const limsFor = (opts) => (opts && opts.recovery ? RECOVERY_LIM : NORMAL_LIM); // per call, never global: concurrent imports cannot see each other's limits
+  function unzipCapped(u8, LIM) {
     return new Promise((res, rej) => {
       let total = 0, count = 0, rejected = null;
       fflate.unzip(u8, {
@@ -1188,15 +1191,15 @@ const Studio = (() => {
       }, (err, data) => err ? rej(err) : rejected ? rej(new Error("zip entry rejected: " + rejected)) : res(data));
     });
   }
-  function importZIP(blob, opts) { return withLimits(opts, () => importZIPInner(blob, opts)); }
-  async function importZIPInner(blob, opts) {
+  async function importZIP(blob, opts) {
+    const LIM = limsFor(opts);
     if (typeof fflate === "undefined") throw new Error("zip support not loaded");
     const persist = !opts || opts.save !== false;
-    const files = await unzipCapped(new Uint8Array(await blob.arrayBuffer()));
+    const files = await unzipCapped(new Uint8Array(await blob.arrayBuffer()), LIM);
     const metaBytes = files["experience.json"];
     if (!metaBytes) throw new Error("bad format");
     const o = JSON.parse(fflate.strFromU8(metaBytes));
-    validateExportObject(o);
+    validateExportObject(o, LIM);
     if (!o.assets || typeof o.assets !== "object") throw new Error("bad format");
     const entries = Object.entries(o.assets);
     if (entries.length > LIM.assets) throw new Error("too many assets");
@@ -1219,7 +1222,7 @@ const Studio = (() => {
     for (const [id, b] of Object.entries(rec.assets)) out.assets[id] = await blobToDataURL(b);
     return JSON.stringify(out);
   }
-  function validateExportObject(o) {
+  function validateExportObject(o, LIM = NORMAL_LIM) {
     if (!o || o.format !== "ar-studio/1") throw new Error("bad format");
     if (!Array.isArray(o.elements) || o.elements.length > LIM.layers) throw new Error("bad elements (maximum" + LIM.layers + ")");
     const ids = new Set();
@@ -1271,11 +1274,11 @@ const Studio = (() => {
     }
     return rec;
   }
-  function importJSON(text, opts) { return withLimits(opts, () => importJSONInner(text, opts)); }
-  async function importJSONInner(text, opts) {
+  async function importJSON(text, opts) {
+    const LIM = limsFor(opts);
     const o = JSON.parse(text);
     const persist = !opts || opts.save !== false;
-    validateExportObject(o);
+    validateExportObject(o, LIM);
     // JSON imports are self-contained. Never fetch an arbitrary URL from a file.
     const entries=Object.entries(o.assets || {});
     if(entries.length>LIM.assets)throw new Error("too many assets");
