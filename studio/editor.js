@@ -73,11 +73,11 @@
   try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().then(ok => { window.__storagePersisted = ok; }).catch(() => {}); } catch {}
   function importErrorMessage(err) {
     const m = String((err && err.message) || err);
-    if (/maximum ?60|too many entries|bad elements/i.test(m)) return "הקובץ לא יובא: יותר מ־60 שכבות. הסירי שכבות ונסי שוב.";
-    if (/too large|too many assets|archive too large|entry too large/i.test(m)) return "הקובץ לא יובא: גודל הקבצים חורג מהמגבלה (60MB בסך הכול, 20MB לקובץ).";
+    if (/maximum ?60|too many entries|bad elements/i.test(m)) return "הקובץ לא יובא: יותר מ־60 שכבות. הסירי שכבות ונסי שוב. אם זה גיבוי ישן וגדול, נסי ״ייבוא שחזור״.";
+    if (/too large|too many assets|archive too large|entry too large/i.test(m)) return "הקובץ לא יובא: גודל הקבצים חורג מהמגבלה (60MB בסך הכול, 20MB לקובץ). אם זה גיבוי ישן וגדול, נסי ״ייבוא שחזור״.";
     return "הקובץ לא תקין לייבוא.";
   }
-  const saveGuarded = (r, o) => Studio.save(r, o).catch(() => msg(SAVE_FAIL_MSG));
+  const saveGuarded = (r, o) => Studio.save(r, o).catch((err) => msg(err && err.deletedElsewhere ? "היצירה הזו נמחקה בחלון אחר, ולכן לא נשמרה. פתחי יצירה אחרת מהרשימה." : SAVE_FAIL_MSG));
   // In-app record switching drops unsaved in-memory edits after a failed save. Block it
   // explicitly instead of losing the work silently. (In-flight saves are safe: save()
   // snapshots at call time.)
@@ -667,8 +667,21 @@
     $("in-server").onchange = (e) => localStorage.setItem("ar-studio-server", e.target.value.trim());
     $("in-token").value = localStorage.getItem("ar-studio-token") || "";
     $("in-token").onchange = (e) => localStorage.setItem("ar-studio-token", e.target.value.trim());
+    // Prepared share file: if the first tap loses Safari's transient activation (big export took too long),
+    // keep the built file and let the NEXT tap call navigator.share synchronously, with no await before it.
+    let prepared = null;
+    const prepKey = (zip) => rec.id + ":" + rec.updatedAt + ":" + (zip ? "z" : "j");
     $("btn-send-publish").onclick = async () => {
-      const btn = $("btn-send-publish"); if (btn.disabled) return; btn.disabled = true;
+      const btn = $("btn-send-publish"); if (btn.disabled) return;
+      if (prepared && prepared.key === prepKey($("send-zip").checked) && navigator.share) {
+        const p = prepared; prepared = null; btn.disabled = true;
+        let ok = false;
+        try { navigator.share({ files: [p.file], title: rec.name || "ar-studio" }).then(() => { msg("אם השליחה בוצעה, הקובץ בדרך אליי. אחזיר קישור אחרי שתאשרי פרסום."); }, (err) => { if (err && err.name === "AbortError") msg("השיתוף בוטל - שום דבר לא נשלח."); else { prepared = p; msg("חלון השיתוף לא נפתח. לחצי שוב, או השתמשי ב״ייצוא לקובץ״ ושלחי את הקובץ ידנית."); } }).finally(() => { btn.disabled = false; }); ok = true; }
+        catch { prepared = p; }
+        if (ok) return;
+        btn.disabled = false;
+      }
+      btn.disabled = true;
       try {
         // Start the export synchronously inside the tap and share as early as possible:
         // Safari ties navigator.share to the tap's transient user activation.
@@ -682,11 +695,11 @@
         const pb = Studio.publishBlocker(rec), warn = [pb && (pb + " אפשר לשלוח אליי כגיבוי, אבל לא אפשר יהיה לפרסם אותה כך."), Studio.exportWarning(rec)].filter(Boolean).join(" "), tail = warn ? " " + warn : "";
         const useZip = $("send-zip").checked;
         const bodyP = useZip ? Studio.exportZIP(rec) : Studio.exportJSON(rec);
-        let shared = false;
+        let shared = false, file = null;
         if (navigator.canShare && navigator.share) {
           try {
             const body = await bodyP;
-            const file = new File([body], (rec.name || "ar-studio") + (useZip ? ".zip" : ".json"), { type: useZip ? "application/zip" : "application/json" });
+            file = new File([body], (rec.name || "ar-studio") + (useZip ? ".zip" : ".json"), { type: useZip ? "application/zip" : "application/json" });
             if (navigator.canShare({ files: [file] })) {
               await navigator.share({ files: [file], title: rec.name || "ar-studio" });
               shared = true;
@@ -694,7 +707,8 @@
             }
           } catch (err) {
             if (err && err.name === "AbortError") { msg("השיתוף בוטל - שום דבר לא נשלח."); return; }
-            // NotAllowedError (activation lost) or any share failure falls through to download.
+            if (err && err.name === "NotAllowedError" && file) { prepared = { key: prepKey(useZip), file }; msg("הקובץ מוכן. לחצי שוב על ״שליחה״ כדי לפתוח את חלון השיתוף." + tail); return; }
+            // Any other share failure falls through to download.
           }
         }
         if (shared) return;
@@ -733,19 +747,21 @@
         msg("הפרסום נכשל: " + err.message);
       }
     };
-    $("file-import").onchange = async (e) => {
-      const f = e.target.files[0]; e.target.value = "";
-      if (!f) return;
-      return queueExperience(async () => {
+    const doImport = (f, recovery) => queueExperience(async () => {
       try {
-        rec = (/\.zip$/i.test(f.name) || f.type === "application/zip") ? await Studio.importZIP(f) : await Studio.importJSON(await f.text());
+        const o = recovery ? { recovery: true } : undefined;
+        rec = (/\.zip$/i.test(f.name) || f.type === "application/zip") ? await Studio.importZIP(f, o) : await Studio.importJSON(await f.text(), o);
         rec.elements.forEach(Studio.normEl);
         selectedId = null; checkedIds.clear(); tlScrubT = null; resetSeq();
         await hydrate(); await refreshExpSelect(); render();
-        msg("הייבוא הצליח.");
-      } catch (err) { msg(importErrorMessage(err)); }
-      });
-    };
+        msg(recovery ? "יובא כעותק חדש. המקור לא שונה. היצירה גדולה מהמגבלות, אז ייצוא נוסף יציג אזהרה." : "הייבוא הצליח.");
+      } catch (err) { msg(importErrorMessage(err) + (recovery ? "" : "")); }
+    });
+    $("file-import").onchange = (e) => { const f = e.target.files[0]; e.target.value = ""; if (f) return doImport(f, false); };
+    // Recovery import: only for an over-limit backup made before the guards existed. Always a NEW copy; larger caps
+    // (300 layers / 60MB per file / 300MB total) can run out of memory on a phone, so the user must confirm.
+    $("btn-import-recovery").onclick = () => { if (confirm("ייבוא שחזור מיועד לגיבוי גדול מהרגיל. הוא נשמר כעותק חדש ולא נוגע במקור, אבל בטלפון עלול להיגמר הזיכרון. עדיף ממחשב. להמשיך?")) $("file-import-recovery").click(); };
+    $("file-import-recovery").onchange = (e) => { const f = e.target.files[0]; e.target.value = ""; if (f) return doImport(f, true); };
     $("btn-edit-3d").onclick=()=>queueExperience(async()=>{await saveGuarded(rec);location.href="preview.html?edit=1#"+rec.id;});
     $("btn-edit-ar").onclick = () => { location.href = "play.html?edit=1#" + rec.id; };
     $("btn-play").onclick = () => { location.href = "play.html#" + rec.id; };

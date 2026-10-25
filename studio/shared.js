@@ -1032,13 +1032,13 @@ const Studio = (() => {
   function saveState(id){const i=saveInfos.get(id);return i?{...i}:{pending:0,lastSavedAt:0,lastError:null};}
   function installSaveGuard(win){const handler=e=>{for(const i of saveInfos.values())if(i.pending>0||i.lastError){e.preventDefault();e.returnValue='';return;}};win.addEventListener('beforeunload',handler);return handler;}
   // Deleted ids stay tombstoned for the whole page session so no in-flight, queued or late save can resurrect them.
-  const tombstones=new Map();
+  const tombstones=new Map(), knownPersisted=new Set(); // knownPersisted: ids this tab has loaded or saved; if one is later missing, another tab deleted it
   const isTombstoned=id=>tombstones.has(id); // for the page lifetime: imports always mint a new id, and after a reload no timer/queue from this page can exist
   async function delExperience(id){
     tombstones.set(id,Date.now());
     await (saveQueues.get(id)||Promise.resolve()).catch(()=>{});
     await idbDel(id);
-    saveQueues.delete(id);history.delete(id);saveInfos.delete(id);
+    saveQueues.delete(id);history.delete(id);saveInfos.delete(id);knownPersisted.delete(id);
   }
   // Limits shared by editor, export and import so a backup is always restorable.
   const LIMITS={maxLayers:60,maxEntryBytes:20*1024*1024,maxMediaBytes:60*1024*1024,maxPublishBytes:40*1024*1024,maxAssets:121};
@@ -1054,7 +1054,7 @@ const Studio = (() => {
     if(mediaBytes(rec)>LIMITS.maxMediaBytes)return 'סך המדיה מעל 60MB';
     return null;
   }
-  const exportWarning=rec=>{const r=restoreBlocker(rec);return r?'שימי לב: '+r+', ולכן הגרסה הנוכחית לא תוכל לשחזר את הקובץ הזה בייבוא. הקובץ נשמר במלואו ולא נחתך. הקטיני את היצירה לפני שתסתמכי עליו כגיבוי.':null;};
+  const exportWarning=rec=>{const r=restoreBlocker(rec);return r?'שימי לב: '+r+', ולכן הגרסה הנוכחית לא תוכל לשחזר את הקובץ הזה בייבוא. הקובץ נשמר במלואו ולא נחתך. הקובץ ניתן לשחזור דרך ״ייבוא שחזור״ (עדיף במחשב). הקטיני את היצירה לפני שתסתמכי עליו כגיבוי.':null;};
   function exportObject(rec){
     const out = { format: "ar-studio/1", id: rec.id, name: rec.name, createdAt: rec.createdAt, target: rec.target, elements: (rec.elements || []).map((e) => ({ ...e })), sequences: (rec.sequences || []).map((q) => ({ ...q })), tracks: (rec.tracks || []).map((t) => ({ ...t })), actionSequences: JSON.parse(JSON.stringify(rec.actionSequences || [])) };
     out.assets = {};
@@ -1081,7 +1081,7 @@ const Studio = (() => {
     rec.updatedAt=Date.now();const snapshot=structuredClone(rec),tail=saveQueues.get(rec.id)||Promise.resolve(),info=infoFor(rec.id);
     info.pending++;noteSave();
     const work=tail.catch(()=>{}).then(()=>saveSnapshot(snapshot,options)).then(()=>saveHold)
-      .then(()=>{info.lastSavedAt=Date.now();info.lastError=null;},err=>{info.lastError=(err&&err.message)||String(err);throw err;})
+      .then(()=>{info.lastSavedAt=Date.now();info.lastError=null;},err=>{if(err&&err.deletedElsewhere){saveInfos.delete(rec.id);history.delete(rec.id);}else info.lastError=(err&&err.message)||String(err);throw err;})
       .finally(()=>{info.pending--;noteSave();});
     saveQueues.set(rec.id,work);return work;
   }
@@ -1096,9 +1096,11 @@ const Studio = (() => {
       if(!assetChanged)for(const key of beforeAssets){const a=before.assets[key],b=rec.assets[key];if(a.size!==b.size||a.type!==b.type){assetChanged=true;break;}const aa=new Uint8Array(await a.arrayBuffer()),bb=new Uint8Array(await b.arrayBuffer());if(!aa.every((value,i)=>value===bb[i])){assetChanged=true;break;}}
       if(assetChanged||content(before)!==content(rec)){h.undo.push(before);if(h.undo.length>20)h.undo.shift();h.redo=[];}
     }
-    rec.updatedAt = Date.now(); await idbPut(rec.id, rec);
+    if(!before&&knownPersisted.has(rec.id)){tombstones.set(rec.id,Date.now());const e=new Error('deleted in another tab');e.deletedElsewhere=true;throw e;}
+    rec.updatedAt = Date.now(); await idbPut(rec.id, rec); knownPersisted.add(rec.id);
   }
-  async function settledRead(id){let pending;do{pending=id?saveQueues.get(id):Promise.all([...saveQueues.values()]);await (pending||Promise.resolve()).catch(()=>{});}while(id&&pending!==saveQueues.get(id));return id?idbGet(id):idbAll();}
+  async function settledRead(id){const r=await settledRead0(id);if(id){if(r)knownPersisted.add(id);}else for(const x of r||[])knownPersisted.add(x.id);return r;}
+  async function settledRead0(id){let pending;do{pending=id?saveQueues.get(id):Promise.all([...saveQueues.values()]);await (pending||Promise.resolve()).catch(()=>{});}while(id&&pending!==saveQueues.get(id));return id?idbGet(id):idbAll();}
   function historyState(id){const h=history.get(id);return {undo:!!h?.undo.length,redo:!!h?.redo.length};}
   async function restoreHistory(id,direction){
     await (saveQueues.get(id)||Promise.resolve()).catch(()=>{});
@@ -1160,7 +1162,13 @@ const Studio = (() => {
   // Intake hardening: entries are filtered BEFORE inflation (zip-bomb guard), names are
   // allowlisted (no traversal), sizes are capped like JSON imports, and the record passes
   // the same validateExportObject as JSON imports. No entry is ever executed.
-  const ZIP_MAX_FILE = 20 * 1024 * 1024, ZIP_MAX_TOTAL = 60 * 1024 * 1024, ZIP_MAX_ENTRIES = 130, ZIP_MAX_META = 4 * 1024 * 1024;
+  const ZIP_MAX_META = 4 * 1024 * 1024;
+  // Normal import limits = editor limits (backup always restorable). RECOVERY limits apply only when the user
+  // explicitly picks "recovery import" for an over-limit backup made before the editor guards; import is always a COPY.
+  const NORMAL_LIM = { layers: 60, file: 20 * 1024 * 1024, total: 60 * 1024 * 1024, assets: 121, entries: 130 };
+  const RECOVERY_LIM = { layers: 300, file: 60 * 1024 * 1024, total: 300 * 1024 * 1024, assets: 400, entries: 410 };
+  let LIM = NORMAL_LIM;
+  async function withLimits(opts, fn) { const prev = LIM; LIM = opts && opts.recovery ? RECOVERY_LIM : NORMAL_LIM; try { return await fn(); } finally { LIM = prev; } }
   function unzipCapped(u8) {
     return new Promise((res, rej) => {
       let total = 0, count = 0, rejected = null;
@@ -1170,17 +1178,18 @@ const Studio = (() => {
           const name = file.name || "";
           const okName = name === "experience.json" || /^assets\/[A-Za-z0-9_.-]{1,128}$/.test(name);
           if (!okName || name.includes("..") || name.includes("\\")) { rejected = rejected || "bad entry name"; return false; }
-          if (count > ZIP_MAX_ENTRIES) { rejected = rejected || "too many entries"; return false; }
-          if (file.originalSize > ZIP_MAX_FILE) { rejected = rejected || "entry too large"; return false; }
+          if (count > LIM.entries) { rejected = rejected || "too many entries"; return false; }
+          if (file.originalSize > LIM.file) { rejected = rejected || "entry too large"; return false; }
           if (name === "experience.json") { if (file.originalSize > ZIP_MAX_META) { rejected = rejected || "metadata too large"; return false; } return true; } // media total below counts assets only, same as JSON import and the editor guard
           total += file.originalSize;
-          if (total > ZIP_MAX_TOTAL) { rejected = rejected || "archive too large"; return false; }
+          if (total > LIM.total) { rejected = rejected || "archive too large"; return false; }
           return true;
         }
       }, (err, data) => err ? rej(err) : rejected ? rej(new Error("zip entry rejected: " + rejected)) : res(data));
     });
   }
-  async function importZIP(blob, opts) {
+  function importZIP(blob, opts) { return withLimits(opts, () => importZIPInner(blob, opts)); }
+  async function importZIPInner(blob, opts) {
     if (typeof fflate === "undefined") throw new Error("zip support not loaded");
     const persist = !opts || opts.save !== false;
     const files = await unzipCapped(new Uint8Array(await blob.arrayBuffer()));
@@ -1190,13 +1199,13 @@ const Studio = (() => {
     validateExportObject(o);
     if (!o.assets || typeof o.assets !== "object") throw new Error("bad format");
     const entries = Object.entries(o.assets);
-    if (entries.length > 121) throw new Error("too many assets");
+    if (entries.length > LIM.assets) throw new Error("too many assets");
     const assets = {};
     for (const [id, ref] of entries) {
       if (!ref || typeof ref.file !== "string" || !/^assets\/[A-Za-z0-9_.-]{1,128}$/.test(ref.file) || ref.file.includes("..")) throw new Error("bad asset reference");
       const part = files[ref.file];
       if (!part) throw new Error("missing asset: " + ref.file);
-      if (part.length > ZIP_MAX_FILE) throw new Error("asset too large");
+      if (part.length > LIM.file) throw new Error("asset too large");
       assets[id] = new Blob([part], { type: ref.type || "application/octet-stream" });
     }
     const rec = await recordFromExport(o, assets);
@@ -1212,7 +1221,7 @@ const Studio = (() => {
   }
   function validateExportObject(o) {
     if (!o || o.format !== "ar-studio/1") throw new Error("bad format");
-    if (!Array.isArray(o.elements) || o.elements.length > 60) throw new Error("bad elements (maximum60)");
+    if (!Array.isArray(o.elements) || o.elements.length > LIM.layers) throw new Error("bad elements (maximum" + LIM.layers + ")");
     const ids = new Set();
     for (const el of o.elements) {
       if (!el || !["video","image","sound","text","model","particles","group"].includes(el.type)) throw new Error("bad element type");
@@ -1262,18 +1271,19 @@ const Studio = (() => {
     }
     return rec;
   }
-  async function importJSON(text, opts) {
+  function importJSON(text, opts) { return withLimits(opts, () => importJSONInner(text, opts)); }
+  async function importJSONInner(text, opts) {
     const o = JSON.parse(text);
     const persist = !opts || opts.save !== false;
     validateExportObject(o);
     // JSON imports are self-contained. Never fetch an arbitrary URL from a file.
     const entries=Object.entries(o.assets || {});
-    if(entries.length>121)throw new Error("too many assets");
+    if(entries.length>LIM.assets)throw new Error("too many assets");
     let total=0;
     for(const [key,value]of entries) {
       if(typeof value!=="string"||!/^data:(image\/(png|jpeg|webp|gif)|video\/(mp4|webm|quicktime)|audio\/(mpeg|wav|x-wav|mp4|x-m4a|ogg)|model\/gltf-binary|application\/octet-stream);base64,[A-Za-z0-9+/]*={0,2}$/.test(value))throw new Error("asset must be embedded supported media");
       const b64=value.slice(value.indexOf(',')+1),size=b64.length/4*3-(b64.endsWith('==')?2:b64.endsWith('=')?1:0);total+=size;
-      if(size>20*1024*1024||total>60*1024*1024)throw new Error("import media too large");
+      if(size>LIM.file||total>LIM.total)throw new Error("import media too large");
     }
     const assets={};
     for (const [k, durl] of entries) assets[k] = await dataURLtoBlob(durl);

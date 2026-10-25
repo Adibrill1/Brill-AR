@@ -15,3 +15,9 @@ Test: tests/browser/data-safety.cjs
 - Limits counting = exported assets (layer assets, particle sprites, artwork); orphans excluded. Added 121-file guard. Fixed: exactly-20MiB entry (padding case) was rejected by JSON import; ZIP total counted experience.json against 60MB (now assets only, metadata capped 4MB).
 - player.js errors use textContent; /e/ load failure caught.
 - storage.persist result recorded in window.__storagePersisted only; UI makes no persistence promise.
+
+## Follow-up 2
+- Multi-tab delete: a record this tab loaded/saved that later vanishes from IDB is treated as deleted elsewhere; the save is refused (no resurrection, no sticky error). Two-page test, same origin. Not covered: a tab that never loaded the record (can't resurrect it either).
+- Share: first tap that loses Safari activation (NotAllowedError) keeps the built file; the next tap calls navigator.share synchronously. Verified with a stub only; real iOS behavior unverified.
+- Recovery import: explicit button, confirm dialog, always imports a COPY, caps 300 layers / 60MB per file / 300MB total / 400 files; normal limits restored after. Tested 80-layer ZIP and JSON. Memory on a phone unmeasured; prefer a computer.
+- send-ZIP default is ZIP; publish-send tests updated to cover default ZIP and unchecked JSON.
