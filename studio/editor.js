@@ -503,7 +503,11 @@
     $("btn-edit-ar").onclick = () => { location.href = "play.html?edit=1#" + rec.id; };
     $("btn-play").onclick = () => { location.href = "play.html#" + rec.id; };
     $("btn-preview3d").onclick = () => { location.href = "preview.html#" + rec.id; };
-    $("btn-3d").onclick=()=>queueExperience(async()=>{await Studio.save(rec);location.href="preview.html#"+rec.id;});
+    $("btn-2d").onclick=()=>setViewMode("2d");
+    $("btn-3d").onclick=()=>setViewMode("3d");
+    Editor3D.init({wrap:$("canvas-wrap"),getRec:()=>rec,getSelected:()=>selectedId,
+      onSelect:(id)=>{selectedId=id;renderList();renderPanel();draw();Editor3D.refreshGizmo();},
+      onChange:()=>{Studio.save(rec).then(()=>{renderPanel();draw();renderList();});}});
     new IntersectionObserver(es=>{wrapOnScreen=es[0].isIntersecting;sync3d();}).observe($("canvas-wrap"));
     $('btn-duplicate-el').onclick=()=>queueExperience(async()=>{const id=Studio.duplicateLayer(rec,selectedId);if(!id)return;selectedId=id;await Studio.save(rec);await hydrate();render();});
     const restore=direction=>queueExperience(async()=>{const restored=await Studio.restoreHistory(rec.id,direction);if(!restored)return;rec=restored;selectedId=null;checkedIds.clear();tlScrubT=null;resetSeq();await hydrate();render();});
@@ -853,6 +857,7 @@
     $("num-rot").value = Math.round(el.rot || 0);
     $("num-z").value = (Math.round((el.z || 0) * 1000) / 1000);
     $("num-opacity").value = el.opacity == null ? 1 : el.opacity;
+    if (typeof Editor3D !== "undefined") Editor3D.refreshGizmo();
   }
 
   // ---------- timeline editor ----------
@@ -942,9 +947,17 @@
   const MARGIN_FRAC = 0.25;
   let view = { W: 0, H: 0, mx: 0, my: 0 };
   let wrapOnScreen = false;
-  function sync3d() { $("btn-3d").hidden = !rec || !rec.target || !wrapOnScreen; place3d(); }
+  function sync3d() { $("view-pill").hidden = !rec || !rec.target || !wrapOnScreen; place3d(); }
+  let viewMode = "2d";
+  async function setViewMode(m) {
+    if (viewMode === m) return;
+    viewMode = m;
+    $("btn-2d").classList.toggle("on", m === "2d");
+    $("btn-3d").classList.toggle("on", m === "3d");
+    if (m === "3d") await Editor3D.show(); else Editor3D.hide();
+  }
   function place3d() {
-    const b = $("btn-3d"); if (b.hidden) return;
+    const b = $("view-pill"); if (b.hidden) return;
     const wb = $("canvas-wrap").getBoundingClientRect();
     const y = Math.min(wb.bottom - 8 - b.offsetHeight, innerHeight - 10 - b.offsetHeight);
     b.style.top = Math.max(y, wb.top + 8, 8) + "px";
@@ -1088,6 +1101,7 @@
       const a=actionTarget;ctx.save();ctx.strokeStyle='#ff4f00';ctx.lineWidth=3;ctx.setLineDash([6,4]);
       const x=view.mx+(a.to.x+.5)*view.W,y=view.my+(.5-a.to.y)*view.H;ctx.beginPath();ctx.arc(x,y,14,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#ff4f00';ctx.font='14px sans-serif';ctx.fillText('יעד תנועה',x+18,y);ctx.restore();
     }
+    if (typeof Editor3D !== "undefined") Editor3D.sync();
     if (needsAnim) requestAnimationFrame(draw);
   }
 

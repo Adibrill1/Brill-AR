@@ -64,7 +64,7 @@
     <div class="row"><button id="btn-undo" class="ghost small" disabled>ביטול שינוי</button><button id="btn-redo" class="ghost small" disabled>ביצוע חוזר</button><span class="hint">עד20שינויים בניסוי הזה, כל עוד העורך פתוח</span></div>
     <div id="seq-tabs" hidden></div>
     <section id="action-editor" class="action-editor" hidden></section>
-    <div id="canvas-wrap"><canvas id="preview"></canvas><button id="btn-3d" type="button" hidden>3D</button></div>
+    <div id="canvas-wrap"><canvas id="preview"></canvas><div id="view-pill" hidden><button id="btn-2d" type="button" class="on">2D</button><button id="btn-3d" type="button">3D</button></div></div>
     <div id="panel" hidden>
       <div class="row spread"><strong id="panel-name"></strong>
         <button id="btn-duplicate-el" class="ghost small">שכפול שכבה</button>
@@ -207,14 +207,17 @@
 
 <script src="library.js"></script>
 <script src="vendor/gifanim.js"></script>
-<script src="actions.js?v=rc61"></script>
-<script src="shared.js?v=rc61"></script>
+<script src="actions.js?v=rc62"></script>
+<script crossorigin="anonymous" src="./external/scripts/8frame-1.5.0.min.js"></script>
+<script src="vendor/gifanim.js"></script>
+<script src="shared.js?v=rc62"></script>
 <script src="external/qrcode.js"></script>
 <script src="vendor/fflate.umd.js"></script>
 <script src="vendor/gltfzip.js"></script>
 <script src="vendor/fbx-import.js"></script>
     <script src="vendor/obj2glb.js"></script>
-    <script src="action-editor.js?v=rc61"></script>
-    <script src="editor.js?v=rc61"></script>
+    <script src="action-editor.js?v=rc62"></script>
+    <script src="editor-3d.js?v=rc62"></script>
+<script src="editor.js?v=rc62"></script>
 </body>
 </html>
