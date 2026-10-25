@@ -763,7 +763,7 @@
       el.particles = Object.assign({}, el.particles, { spriteAssetId: assetId });
       await saveGuarded(rec); renderPanel();
     };
-    for(const [id,key,min,max]of [['num-plife','lifetime',0,60],['num-pendsize','endSize',0,5]])$(id).onchange=e=>upd(el=>{el.particles={...el.particles,[key]:Math.max(min,Math.min(max,Number(e.target.value)||0))};});
+    for(const [id,key,min,max]of [['num-plife','lifetime',0,60],['num-plife2','life2',0,60],['num-pendsize','endSize',0,5]])$(id).onchange=e=>upd(el=>{el.particles={...el.particles,[key]:Math.max(min,Math.min(max,Number(e.target.value)||0))};});
     $('sel-pemitter').onchange=e=>upd(el=>{el.particles={...el.particles,emitter:e.target.value};});
     $('in-pendcolor').onchange=e=>upd(el=>{el.particles={...el.particles,endColor:e.target.value};});
     $('ck-pfade').onchange=e=>upd(el=>{el.particles={...el.particles,fade:e.target.checked};});
@@ -771,6 +771,8 @@
     $("num-psize").onchange = (e) => upd((el) => { el.particles = Object.assign({}, el.particles, { size: Math.max(2, Math.min(60, parseInt(e.target.value) || 12)) }); });
     $("num-pspeed").onchange = (e) => upd((el) => { el.particles = Object.assign({}, el.particles, { speed: Math.max(0.2, Math.min(3, parseFloat(e.target.value) || 1)) }); });
     $("in-pcolor").onchange = (e) => upd((el) => { el.particles = Object.assign({}, el.particles, { color: e.target.value }); });
+    $("ck-pcolor2").onchange = (e) => upd((el) => { el.particles = Object.assign({}, el.particles); if (e.target.checked) el.particles.color2 = $("in-pcolor2").value; else delete el.particles.color2; });
+    $("in-pcolor2").onchange = (e) => upd((el) => { if (!$("ck-pcolor2").checked) return; el.particles = Object.assign({}, el.particles, { color2: e.target.value }); });
     $("num-pspread").onchange = (e) => upd((el) => { el.particles = Object.assign({}, el.particles, { spread: Math.max(0.1, Math.min(2, parseFloat(e.target.value) || 1)) }); });
     $("sel-pdir-mode").onchange = (e) => upd((el) => { const mode = e.target.value, cur = el.particles && el.particles.direction; el.particles = Object.assign({}, el.particles, { direction: mode === "preset" ? null : mode === "random" ? -2 : mode === "outward" ? -3 : (Number.isInteger(cur) && cur >= 0 ? cur : 0) }); });
     $("sl-pdir").oninput = (e) => upd((el) => { el.particles = Object.assign({}, el.particles, { direction: Math.max(0, Math.min(359, parseInt(e.target.value) || 0)) }); });
@@ -952,7 +954,7 @@
     $("row-particles").hidden = el.type !== "particles";
     if (el.type === "particles") {
       const pc = el.particles || {};
-      $('num-plife').value=pc.lifetime||0;$('num-pendsize').value=pc.endSize==null?1:pc.endSize;$('sel-pemitter').value=pc.emitter||'box';$('in-pendcolor').value=pc.endColor||pc.color||'#ffd94d';$('ck-pfade').checked=!!pc.fade;
+      $('num-plife').value=pc.lifetime||0;$('num-plife2').value=pc.life2||0;$('ck-pcolor2').checked=!!pc.color2;if(pc.color2)$('in-pcolor2').value=pc.color2;$('num-pendsize').value=pc.endSize==null?1:pc.endSize;$('sel-pemitter').value=pc.emitter||'box';$('in-pendcolor').value=pc.endColor||pc.color||'#ffd94d';$('ck-pfade').checked=!!pc.fade;
       $("sel-preset").value = pc.preset || "sparkle";
       $("num-pcount").value = pc.count || 120;
       $("num-psize").value = pc.size || 12;

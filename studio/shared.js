@@ -285,7 +285,7 @@ const Studio = (() => {
   function ensureParticlesComponent() {
     if (!window.AFRAME || AFRAME.components["particles"]) return;
     AFRAME.registerComponent("particles", {
-      schema: { preset: { default: "sparkle" }, count: { default: 120 }, color: { default: "#ffd94d" }, width: { default: 0.5 }, height: { default: 0.5 }, size: { default: 12 }, speed: { default: 1 }, sprite: { default: "" }, direction: { default: -1 },lifetime:{default:0},emitter:{default:"box"},endColor:{default:"#ffffff"},endSize:{default:1},fade:{default:false},spread:{default:1} }, // direction: degrees (0=up,90=right,180=down,270=left); -1 = preset's fixed direction; -2 = random per particle; -3 = outward from center. spread: emission-area scale (documented Artivive control)
+      schema: { preset: { default: "sparkle" }, count: { default: 120 }, color: { default: "#ffd94d" }, width: { default: 0.5 }, height: { default: 0.5 }, size: { default: 12 }, speed: { default: 1 }, sprite: { default: "" }, direction: { default: -1 },lifetime:{default:0},life2:{default:0},emitter:{default:"box"},endColor:{default:"#ffffff"},endSize:{default:1},fade:{default:false},spread:{default:1},color2:{default:""} }, // direction: degrees (0=up,90=right,180=down,270=left); -1 = preset's fixed direction; -2 = random per particle; -3 = outward from center. spread: emission-area scale (documented Artivive control)
       init() {
         const n = Math.min(500, Math.max(10, this.data.count | 0));
         const pos = new Float32Array(n * 3);
@@ -298,12 +298,16 @@ const Studio = (() => {
           else if(d.direction>=0){const a=d.direction*Math.PI/180;this.vel[i*3]=Math.sin(a)*m;this.vel[i*3+1]=Math.cos(a)*m;}
           else{this.vel[i*3]=(Math.random()-0.5)*0.05*sp;this.vel[i*3+1]=(d.preset==="confetti"?-0.1-Math.random()*0.15:0.05+Math.random()*0.12)*sp;}};
         this.startColor=new THREE.Color(this.data.color);this.endColor=new THREE.Color(this.data.endColor);
+        const d0=this.data,lifeLo=d0.lifetime>0&&d0.life2>0?Math.min(d0.lifetime,d0.life2):0,lifeHi=d0.lifetime>0&&d0.life2>0?Math.max(d0.lifetime,d0.life2):0;
+        this.lives=new Float32Array(n);this.startColors=new Float32Array(n*3);
+        this.color2=(d0.color2&&/^#[0-9a-f]{6}$/i.test(d0.color2))?new THREE.Color(d0.color2):null;
         for (let i = 0; i < n; i++) {
           pos[i * 3] = (Math.random() - 0.5) * this.data.width;
           pos[i * 3 + 1] = (Math.random() - 0.5) * this.data.height;
           pos[i * 3 + 2] = (Math.random() - 0.5) * 0.05;
-          this.spawn(i);this.ages[i]=this.data.lifetime>0?Math.random()*this.data.lifetime:0;this.sizes[i]=1;this.alphas[i]=1;
-          this.startColor.toArray(colors,i*3);
+          this.spawn(i);this.lives[i]=lifeHi>0?lifeLo+Math.random()*(lifeHi-lifeLo):(d0.lifetime>0?d0.lifetime:0);this.ages[i]=this.lives[i]>0?Math.random()*this.lives[i]:0;this.sizes[i]=1;this.alphas[i]=1;
+          if(this.color2){this.ageColor=this.ageColor||new THREE.Color();this.ageColor.copy(this.startColor).lerp(this.color2,Math.random()).toArray(this.startColors,i*3);}else this.startColor.toArray(this.startColors,i*3);
+          colors.set(this.startColors.subarray(i*3,i*3+3),i*3);
           this.setVelocity(i);
         }
         const geo = new THREE.BufferGeometry();
@@ -322,7 +326,7 @@ const Studio = (() => {
         const arr = this.points.geometry.attributes.position.array;
         const half = this.data.height / 2;
         for (let i = 0; i < arr.length; i += 3) {
-          const index=i/3,d=this.data;if(d.lifetime>0){this.ages[index]+=dtS;if(this.ages[index]>=d.lifetime){this.ages[index]%=d.lifetime;this.spawn(index);this.setVelocity(index);}const f=this.ages[index]/d.lifetime;this.sizes[index]=1+(d.endSize-1)*f;this.alphas[index]=d.fade?Math.sin(Math.PI*f):1;this.ageColor=this.ageColor||new THREE.Color();this.ageColor.copy(this.startColor).lerp(this.endColor,f).toArray(this.points.geometry.attributes.color.array,i);}
+          const index=i/3,d=this.data,life=this.lives?this.lives[index]:d.lifetime;if(d.lifetime>0&&life>0){this.ages[index]+=dtS;if(this.ages[index]>=life){this.ages[index]%=life;this.spawn(index);this.setVelocity(index);}const f=this.ages[index]/life;this.sizes[index]=1+(d.endSize-1)*f;this.alphas[index]=d.fade?Math.sin(Math.PI*f):1;this.ageColor=this.ageColor||new THREE.Color();if(this.color2)this.ageColor.setRGB(this.startColors[i],this.startColors[i+1],this.startColors[i+2]);else this.ageColor.copy(this.startColor);this.ageColor.lerp(this.endColor,f).toArray(this.points.geometry.attributes.color.array,i);}
           arr[i] += this.vel[i] * dtS;
           arr[i + 1] += this.vel[i + 1] * dtS;
           const halfW = this.data.width / 2 * (this.data.spread>0?Math.min(2,this.data.spread):1);
@@ -421,7 +425,7 @@ const Studio = (() => {
       audio.setMediaElementSource(m.node);audio.gain.gain.value=1;m.three=audio;
     }};if(scene.hasLoaded)route();else scene.addEventListener('loaded',route,{once:true});return listener;
   }
-  function validParticles(el){const p=el.particles;if(!p)return true;if(typeof p!=='object'||Array.isArray(p))return false;for(const [k,min,max]of [['lifetime',0,60],['endSize',0,5],['count',10,500],['size',2,60],['speed',.2,3]])if(p[k]!=null&&(!Number.isFinite(p[k])||p[k]<min||p[k]>max))return false;if(p.emitter!=null&&!['box','disc','sphere'].includes(p.emitter))return false;if(p.direction!=null&&(!Number.isInteger(p.direction)||p.direction<-3||p.direction>359))return false;if(p.spread!=null&&(!Number.isFinite(p.spread)||p.spread<.1||p.spread>2))return false;if(p.endColor!=null&&!/^#[0-9a-f]{6}$/i.test(p.endColor))return false;if(p.fade!=null&&typeof p.fade!=='boolean')return false;return true;}
+  function validParticles(el){const p=el.particles;if(!p)return true;if(typeof p!=='object'||Array.isArray(p))return false;for(const [k,min,max]of [['lifetime',0,60],['endSize',0,5],['count',10,500],['size',2,60],['speed',.2,3]])if(p[k]!=null&&(!Number.isFinite(p[k])||p[k]<min||p[k]>max))return false;if(p.emitter!=null&&!['box','disc','sphere'].includes(p.emitter))return false;if(p.direction!=null&&(!Number.isInteger(p.direction)||p.direction<-3||p.direction>359))return false;if(p.spread!=null&&(!Number.isFinite(p.spread)||p.spread<.1||p.spread>2))return false;if(p.endColor!=null&&!/^#[0-9a-f]{6}$/i.test(p.endColor))return false;if(p.life2!=null&&(!Number.isFinite(p.life2)||p.life2<0||p.life2>60))return false;if(p.color2!=null&&p.color2!==''&&!/^#[0-9a-f]{6}$/i.test(p.color2))return false;if(p.fade!=null&&typeof p.fade!=='boolean')return false;return true;}
   function validCrop(el){const c=el.crop;return !c||['image','video'].includes(el.type)&&['x','y','w','h'].every(k=>Number.isFinite(c[k]))&&c.x>=0&&c.y>=0&&c.w>=.01&&c.h>=.01&&c.x+c.w<=1.000001&&c.y+c.h<=1.000001;}
   function setImageCrop(rec,el,crop){
     const old=el.crop||{x:0,y:0,w:1,h:1};const sourceAspect=(el.aspect||1)/(old.w/old.h);
@@ -567,7 +571,7 @@ const Studio = (() => {
       e = document.createElement("a-entity");
       let spriteAttr = "";
       if (pc.preset === "custom" && pc.spriteAssetId && rec.assets && rec.assets[pc.spriteAssetId]) spriteAttr = `; sprite: ${URL.createObjectURL(rec.assets[pc.spriteAssetId])}`;
-      e.setAttribute("particles", `preset: ${pc.preset || "sparkle"}; count: ${pc.count || 120}; color: ${pc.color || "#ffd94d"}; size: ${pc.size || 12}; speed: ${pc.speed || 1}; width: ${ts.w}; height: ${ts.h}; lifetime: ${pc.lifetime||0}; emitter: ${pc.emitter||"box"}; endColor: ${pc.endColor||pc.color||"#ffd94d"}; endSize: ${pc.endSize==null?1:pc.endSize}; fade: ${!!pc.fade}; spread: ${pc.spread>0?Math.min(2,pc.spread):1}${spriteAttr}${pc.direction != null ? "; direction: " + (pc.direction | 0) : ""}`);
+      e.setAttribute("particles", `preset: ${pc.preset || "sparkle"}; count: ${pc.count || 120}; color: ${pc.color || "#ffd94d"}; size: ${pc.size || 12}; speed: ${pc.speed || 1}; width: ${ts.w}; height: ${ts.h}; lifetime: ${pc.lifetime||0}; emitter: ${pc.emitter||"box"}; endColor: ${pc.endColor||pc.color||"#ffd94d"}; endSize: ${pc.endSize==null?1:pc.endSize}; fade: ${!!pc.fade}; spread: ${pc.spread>0?Math.min(2,pc.spread):1}${pc.life2>0?"; life2: "+pc.life2:""}${pc.color2?"; color2: "+pc.color2:""}${spriteAttr}${pc.direction != null ? "; direction: " + (pc.direction | 0) : ""}`);
     } else if (el.type === "model") {
       // glTF/GLB: wrapper carries placement (timeline/tap target); inner child carries the
       // normalized model scale so timeline scale keys don't fight the fit-to-size normalization.
