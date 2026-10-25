@@ -907,17 +907,22 @@ const Studio = (() => {
   // show "saving/saved/failed" truthfully and warn before a navigation that would drop
   // an in-flight write. lastError stays sticky until a save succeeds (the failed edit
   // is still in memory and rides the next successful save of the same record).
-  const saveWatchers=new Set(),saveInfo={pending:0,lastSavedAt:0,lastError:null};
+  // Per-record save state: one record's success never clears another record's sticky
+  // failure; the navigation guard engages while ANY record has an in-flight write or
+  // an unresolved failure.
+  const saveWatchers=new Set(),saveInfos=new Map();
   let saveHold=null,failSave=null; // test-only seams: hold a settled save open / force a failure
-  function noteSave(){const s={...saveInfo};for(const cb of saveWatchers)try{cb(s);}catch{}}
-  function onSaveState(cb){saveWatchers.add(cb);cb({...saveInfo});return()=>saveWatchers.delete(cb);}
-  function installSaveGuard(win){const handler=e=>{if(saveInfo.pending>0||saveInfo.lastError){e.preventDefault();e.returnValue='';}};win.addEventListener('beforeunload',handler);return handler;}
+  const infoFor=id=>{let i=saveInfos.get(id);if(!i){i={pending:0,lastSavedAt:0,lastError:null};saveInfos.set(id,i);}return i;};
+  function noteSave(){for(const cb of saveWatchers)try{cb();}catch{}}
+  function onSaveState(cb){saveWatchers.add(cb);cb();return()=>saveWatchers.delete(cb);}
+  function saveState(id){const i=saveInfos.get(id);return i?{...i}:{pending:0,lastSavedAt:0,lastError:null};}
+  function installSaveGuard(win){const handler=e=>{for(const i of saveInfos.values())if(i.pending>0||i.lastError){e.preventDefault();e.returnValue='';return;}};win.addEventListener('beforeunload',handler);return handler;}
   function save(rec,options={}) {
-    rec.updatedAt=Date.now();const snapshot=structuredClone(rec),tail=saveQueues.get(rec.id)||Promise.resolve();
-    saveInfo.pending++;noteSave();
+    rec.updatedAt=Date.now();const snapshot=structuredClone(rec),tail=saveQueues.get(rec.id)||Promise.resolve(),info=infoFor(rec.id);
+    info.pending++;noteSave();
     const work=tail.catch(()=>{}).then(()=>saveSnapshot(snapshot,options)).then(()=>saveHold)
-      .then(()=>{saveInfo.lastSavedAt=Date.now();saveInfo.lastError=null;},err=>{saveInfo.lastError=(err&&err.message)||String(err);throw err;})
-      .finally(()=>{saveInfo.pending--;noteSave();});
+      .then(()=>{info.lastSavedAt=Date.now();info.lastError=null;},err=>{info.lastError=(err&&err.message)||String(err);throw err;})
+      .finally(()=>{info.pending--;noteSave();});
     saveQueues.set(rec.id,work);return work;
   }
   async function saveSnapshot(rec,options={}) {
@@ -1163,6 +1168,6 @@ const Studio = (() => {
   return { TARGET_W, TARGET_H, newId, inspectVideo, validateModelBlob, modelClipNames, modelClipInfo, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
            audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, historyState, restoreHistory, duplicateLayer, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
            load: id=>settledRead(id), all: ()=>settledRead(), del: idbDel,
-           onSaveState, installSaveGuard, saveState:()=>({...saveInfo}),
+           onSaveState, installSaveGuard, saveState,
            _testHoldSave:p=>{saveHold=p;}, _testFailSave:m=>{failSave=m;} };
 })();

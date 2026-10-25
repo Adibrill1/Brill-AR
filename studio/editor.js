@@ -68,7 +68,17 @@
   // Single chokepoint for experience writes: surfaces failures (the save-state pill
   // reflects them too) instead of silent unhandled rejections; the in-memory edit is
   // kept and persists on the next successful save.
-  const saveGuarded = (r) => Studio.save(r).catch(() => msg("השמירה נכשלה. השינוי האחרון לא נשמר - נסי שוב."));
+  const SAVE_FAIL_MSG = "השמירה נכשלה. השינוי האחרון לא נשמר - נסי שוב.";
+  const saveGuarded = (r) => Studio.save(r).catch(() => msg(SAVE_FAIL_MSG));
+  // In-app record switching drops unsaved in-memory edits after a failed save. Block it
+  // explicitly instead of losing the work silently. (In-flight saves are safe: save()
+  // snapshots at call time.)
+  const confirmUnsavedSwitch = () => {
+    if (!rec) return true;
+    const st = Studio.saveState(rec.id);
+    if (!st.lastError) return true;
+    return confirm("יש שינויים בניסוי הזה שהשמירה שלהם נכשלה. מעבר ימחק אותם. לעבור בכל זאת?");
+  };
   function queueExperience(work) {
     const operation = experienceReady.then(work);
     experienceReady = operation.catch(err => { msg("הפעולה לא הושלמה: " + err.message); });
@@ -481,13 +491,13 @@
       render();
     };
 
-    $("btn-new").onclick = () => queueExperience(async () => {
+    $("btn-new").onclick = () => { if (!confirmUnsavedSwitch()) return; queueExperience(async () => {
       rec = Studio.blankExperience();
       selectedId = null; artworkImg = null; checkedIds.clear(); tlScrubT = null; resetSeq();
       await saveGuarded(rec);
       await refreshExpSelect(); render();
       msg("ניסוי חדש - התחילי בהעלאת תמונת יצירה.");
-    });
+    }); };
     $("btn-del-exp").onclick = async () => {
       if (!confirm("למחוק את הניסוי הזה לגמרי?")) return;
       return queueExperience(async () => {
@@ -500,13 +510,14 @@
     };
     $("exp-select").onchange = (e) => {
       const id = e.target.value;
+      if (!confirmUnsavedSwitch()) { e.target.value = rec.id; return; }
       queueExperience(async () => {
         const r = await Studio.load(id);
         if (!r) return; // keep the current experience instead of wiping the editor
         rec = r;
         selectedId = null; checkedIds.clear(); tlScrubT = null;
         resetSeq();
-        await hydrate(); await refreshExpSelect(); render();
+        await hydrate(); await refreshExpSelect(); render(); renderSaveState();
       });
     };
     $("btn-export").onclick = () => queueExperience(async () => {
@@ -578,10 +589,13 @@
     $('btn-duplicate-el').onclick=()=>queueExperience(async()=>{const id=Studio.duplicateLayer(rec,selectedId);if(!id)return;selectedId=id;await saveGuarded(rec);await hydrate();render();});
     const restore=direction=>queueExperience(async()=>{const restored=await Studio.restoreHistory(rec.id,direction);if(!restored)return;rec=restored;selectedId=null;checkedIds.clear();tlScrubT=null;resetSeq();await hydrate();render();});
     const saveStateEl=$("save-state");
-    Studio.onSaveState(st=>{if(!st.pending&&!st.lastError&&!st.lastSavedAt){saveStateEl.hidden=true;return;}saveStateEl.hidden=false;
+    function renderSaveState(){const st=rec?Studio.saveState(rec.id):{pending:0,lastSavedAt:0,lastError:null};
+      if(!st.pending&&!st.lastError&&!st.lastSavedAt){saveStateEl.hidden=true;return;}saveStateEl.hidden=false;
       if(st.pending>0){saveStateEl.textContent="שומר…";saveStateEl.className="save-state saving";}
-      else if(st.lastError){saveStateEl.textContent="השמירה נכשלה - השינוי האחרון לא נשמר. נסי שוב.";saveStateEl.className="save-state error";}
-      else{saveStateEl.textContent="נשמר";saveStateEl.className="save-state saved";}});
+      else if(st.lastError){saveStateEl.textContent="השמירה נכשלה - לחצי לניסיון חוזר.";saveStateEl.className="save-state error";}
+      else{saveStateEl.textContent="נשמר";saveStateEl.className="save-state saved";if($("msg").textContent===SAVE_FAIL_MSG)$("msg").textContent="";}}
+    Studio.onSaveState(renderSaveState);
+    saveStateEl.onclick=()=>{if(rec&&saveStateEl.classList.contains("error"))saveGuarded(rec);};
     Studio.installSaveGuard(window);
     $('btn-undo').onclick=()=>restore('undo');$('btn-redo').onclick=()=>restore('redo');
     $("btn-del-el").onclick = async () => {
