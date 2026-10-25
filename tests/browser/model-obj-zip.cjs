@@ -40,7 +40,7 @@ console.log('PASS converted GLB carries both materials and the nested texture',J
 // preview: real pixel proof - re-render the scene and read the framebuffer; a white-base
 // material with no texture would be uniform, the checker must produce red AND blue bins
 await p.goto(base+'/preview.html#'+id);
-await p.waitForFunction(()=>document.querySelector('[gltf-model]')&&document.querySelector('[gltf-model]').getObject3D('mesh'));
+await p.waitForFunction(()=>document.querySelector('a-entity[gltf-model]')&&document.querySelector('a-entity[gltf-model]').getObject3D('mesh'));
 const pix=await p.evaluate(async()=>{const s=document.querySelector('a-scene');
   await new Promise(r=>{if(s.hasLoaded)r();else s.addEventListener('loaded',r,{once:true});});
   await new Promise(r=>setTimeout(r,400));
