@@ -132,6 +132,8 @@ function validateExport(o) {
 const server = http.createServer(async (req, res) => {
   const u = new URL(req.url, "http://x");
   try {
+    // Test-only private fixture: serves one explicitly env-pointed file at /her-export.json.
+    if (u.pathname === "/her-export.json" && process.env.HER_EXPORT_FIXTURE) return send(res, 200, fs.readFileSync(process.env.HER_EXPORT_FIXTURE), "application/json");
     if (req.method === "OPTIONS") return send(res, 204, "");
     if ((req.method === "POST" || req.method === "DELETE") && u.pathname.startsWith("/api/")) {
       if (!PUBLISH_TOKEN) return send(res, 503, { error: "publishing disabled on this server" });

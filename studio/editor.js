@@ -624,6 +624,14 @@
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 5000);
     });
+    $("btn-export-zip").onclick = () => queueExperience(async () => {
+      const blob = await Studio.exportZIP(rec);
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = (rec.name || "ar-studio") + ".zip";
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+    });
     $("btn-import").onclick = () => $("file-import").click();
 
     $("in-server").value = localStorage.getItem("ar-studio-server") || "";
@@ -642,12 +650,13 @@
           msg("חלק מהקבצים לא קריאים יותר בטלפון (" + names.join(", ") + ") - ייבאי אותם שוב ואז שלחי. שום דבר לא נשלח.");
           return;
         }
-        const bodyP = Studio.exportJSON(rec);
+        const useZip = $("send-zip").checked;
+        const bodyP = useZip ? Studio.exportZIP(rec) : Studio.exportJSON(rec);
         let shared = false;
         if (navigator.canShare && navigator.share) {
           try {
             const body = await bodyP;
-            const file = new File([body], (rec.name || "ar-studio") + ".json", { type: "application/json" });
+            const file = new File([body], (rec.name || "ar-studio") + (useZip ? ".zip" : ".json"), { type: useZip ? "application/zip" : "application/json" });
             if (navigator.canShare({ files: [file] })) {
               await navigator.share({ files: [file], title: rec.name || "ar-studio" });
               shared = true;
@@ -660,9 +669,9 @@
         }
         if (shared) return;
         const body = await bodyP;
-        const name = (rec.name || "ar-studio") + ".json";
+        const name = (rec.name || "ar-studio") + (useZip ? ".zip" : ".json");
         const a = document.createElement("a");
-        a.href = URL.createObjectURL(new Blob([body], { type: "application/json" }));
+        a.href = URL.createObjectURL(body instanceof Blob ? body : new Blob([body], { type: "application/json" }));
         a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
         msg("חלון השיתוף לא נפתח כאן, אז הקובץ ירד. שלחי אותו אליי בוואטסאפ.");
       } catch (err) {
@@ -698,7 +707,7 @@
       if (!f) return;
       return queueExperience(async () => {
       try {
-        rec = await Studio.importJSON(await f.text());
+        rec = (/\.zip$/i.test(f.name) || f.type === "application/zip") ? await Studio.importZIP(f) : await Studio.importJSON(await f.text());
         rec.elements.forEach(Studio.normEl);
         selectedId = null; checkedIds.clear(); tlScrubT = null; resetSeq();
         await hydrate(); await refreshExpSelect(); render();

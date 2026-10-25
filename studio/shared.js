@@ -1110,33 +1110,59 @@ const Studio = (() => {
     return new Blob(chunks, { type: "application/zip" });
   }
   // Retrieval: assets become page-owned Blobs directly from zip parts - zero base64 anywhere.
-  function importZIPBytes(bytes) {
+  // Intake hardening: entries are filtered BEFORE inflation (zip-bomb guard), names are
+  // allowlisted (no traversal), sizes are capped like JSON imports, and the record passes
+  // the same validateExportObject as JSON imports. No entry is ever executed.
+  const ZIP_MAX_FILE = 20 * 1024 * 1024, ZIP_MAX_TOTAL = 60 * 1024 * 1024, ZIP_MAX_ENTRIES = 130;
+  function unzipCapped(u8) {
+    return new Promise((res, rej) => {
+      let total = 0, count = 0, rejected = null;
+      fflate.unzip(u8, {
+        filter(file) {
+          count++;
+          const name = file.name || "";
+          const okName = name === "experience.json" || /^assets\/[A-Za-z0-9_.-]{1,128}$/.test(name);
+          if (!okName || name.includes("..") || name.includes("\\")) { rejected = rejected || "bad entry name"; return false; }
+          if (count > ZIP_MAX_ENTRIES) { rejected = rejected || "too many entries"; return false; }
+          if (file.originalSize > ZIP_MAX_FILE) { rejected = rejected || "entry too large"; return false; }
+          total += file.originalSize;
+          if (total > ZIP_MAX_TOTAL) { rejected = rejected || "archive too large"; return false; }
+          return true;
+        }
+      }, (err, data) => err ? rej(err) : rejected ? rej(new Error("zip entry rejected: " + rejected)) : res(data));
+    });
+  }
+  async function importZIP(blob, opts) {
     if (typeof fflate === "undefined") throw new Error("zip support not loaded");
-    const files = fflate.unzipSync(new Uint8Array(bytes));
+    const persist = !opts || opts.save !== false;
+    const files = await unzipCapped(new Uint8Array(await blob.arrayBuffer()));
     const metaBytes = files["experience.json"];
     if (!metaBytes) throw new Error("bad format");
     const o = JSON.parse(fflate.strFromU8(metaBytes));
-    if (!o || o.format !== "ar-studio/1" || !o.assets || typeof o.assets !== "object") throw new Error("bad format");
+    validateExportObject(o);
+    if (!o.assets || typeof o.assets !== "object") throw new Error("bad format");
+    const entries = Object.entries(o.assets);
+    if (entries.length > 121) throw new Error("too many assets");
     const assets = {};
-    for (const [id, ref] of Object.entries(o.assets)) {
-      if (!ref || typeof ref.file !== "string" || ref.file.includes("..")) throw new Error("bad asset reference");
+    for (const [id, ref] of entries) {
+      if (!ref || typeof ref.file !== "string" || !/^assets\/[A-Za-z0-9_.-]{1,128}$/.test(ref.file) || ref.file.includes("..")) throw new Error("bad asset reference");
       const part = files[ref.file];
       if (!part) throw new Error("missing asset: " + ref.file);
+      if (part.length > ZIP_MAX_FILE) throw new Error("asset too large");
       assets[id] = new Blob([part], { type: ref.type || "application/octet-stream" });
     }
-    return { record: { ...o, assets } };
+    const rec = await recordFromExport(o, assets);
+    if (persist) await save(rec);
+    return rec;
   }
-  async function importZIP(blob) { return importZIPBytes(await blob.arrayBuffer()); }
   // Compat: rebuild the canonical JSON string (with dataURLs) from a zip - used by tooling only.
   async function zipToJSON(blob) {
-    const { record } = await importZIP(blob);
-    const out = { ...record, assets: {} };
-    for (const [id, b] of Object.entries(record.assets)) out.assets[id] = await blobToDataURL(b);
+    const rec = await importZIP(blob, { save: false });
+    const out = { ...rec, assets: {} };
+    for (const [id, b] of Object.entries(rec.assets)) out.assets[id] = await blobToDataURL(b);
     return JSON.stringify(out);
   }
-  async function importJSON(text, opts) {
-    const o = JSON.parse(text);
-    const persist = !opts || opts.save !== false;
+  function validateExportObject(o) {
     if (!o || o.format !== "ar-studio/1") throw new Error("bad format");
     if (!Array.isArray(o.elements) || o.elements.length > 60) throw new Error("bad elements (maximum60)");
     const ids = new Set();
@@ -1172,6 +1198,26 @@ const Studio = (() => {
       if (!Array.isArray(el.children)||!el.children.length) throw new Error("bad group children");
       for(const id of el.children) { const child=o.elements.find(e=>e.id===id);if(!child||child.type==='group'||member.has(id))throw new Error("bad group membership");member.add(id); }
     }
+  }
+  async function recordFromExport(o, assets) {
+    const rec = blankExperience(o.name || "מיובא");
+    rec.target = o.target; rec.elements = o.elements || []; rec.createdAt = o.createdAt || Date.now();
+    rec.sequences = Array.isArray(o.sequences) ? o.sequences : [];
+    rec.tracks = Array.isArray(o.tracks) ? o.tracks : [];
+    rec.actionSequences = o.actionSequences || [];
+    rec.assets = assets || {};
+    // Whole-experience imports use the same model boundary as direct uploads.
+    // Validate before save, so rejected input never leaves a broken local record.
+    for(const el of rec.elements.filter(e=>e.type==='model')) {
+      if(!el.assetId||!rec.assets[el.assetId])throw new Error('model asset missing');
+      rec.assets[el.assetId]=await prepareModelBlob(rec.assets[el.assetId]);
+    }
+    return rec;
+  }
+  async function importJSON(text, opts) {
+    const o = JSON.parse(text);
+    const persist = !opts || opts.save !== false;
+    validateExportObject(o);
     // JSON imports are self-contained. Never fetch an arbitrary URL from a file.
     const entries=Object.entries(o.assets || {});
     if(entries.length>121)throw new Error("too many assets");
@@ -1181,19 +1227,9 @@ const Studio = (() => {
       const size=Math.floor(value.slice(value.indexOf(',')+1).length*.75);total+=size;
       if(size>20*1024*1024||total>60*1024*1024)throw new Error("import media too large");
     }
-    const rec = blankExperience(o.name || "מיובא");
-    rec.target = o.target; rec.elements = o.elements || []; rec.createdAt = o.createdAt || Date.now();
-    rec.sequences = Array.isArray(o.sequences) ? o.sequences : [];
-    rec.tracks = Array.isArray(o.tracks) ? o.tracks : [];
-    rec.actionSequences = o.actionSequences || [];
-    rec.assets = {};
-    for (const [k, durl] of Object.entries(o.assets || {})) rec.assets[k] = await dataURLtoBlob(durl);
-    // Whole-experience imports use the same model boundary as direct uploads.
-    // Validate before save, so rejected input never leaves a broken local record.
-    for(const el of rec.elements.filter(e=>e.type==='model')) {
-      if(!el.assetId||!rec.assets[el.assetId])throw new Error('model asset missing');
-      rec.assets[el.assetId]=await prepareModelBlob(rec.assets[el.assetId]);
-    }
+    const assets={};
+    for (const [k, durl] of entries) assets[k] = await dataURLtoBlob(durl);
+    const rec = await recordFromExport(o, assets);
     if (persist) await save(rec);
     return rec;
   }
