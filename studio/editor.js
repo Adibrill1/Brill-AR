@@ -1088,6 +1088,7 @@
     ctx.strokeStyle = "rgba(41,37,53,0.55)"; ctx.lineWidth = 1;
     ctx.strokeRect(mx + 0.5, my + 0.5, W - 1, H - 1);
     boxes = {};
+    window.__audioEnvelopes = {}; // spatial-sound envelope rings, rebuilt every frame (also the test hook)
     const t0 = performance.now();
     // autoNext chain simulation in live preview (mirrors previewer makeSeqRunner):
     // at `at` seconds into the active state, advance to `to` and restart the state clock.
@@ -1165,6 +1166,22 @@
         ctx.fillStyle = "rgba(120,120,120,0.6)"; ctx.fillRect(-wpx / 2, -hpx / 2, wpx, hpx);
       }
       ctx.restore();
+      if (el.type === "sound" && el.spatial) {
+        // envelope rings (our authoring aid - official demos show envelopes around the artwork; exact look is ours)
+        const d = Studio.audioDistances(el), k = W / Studio.geom(rec).artW; // scene distance units -> canvas px
+        const isSel = el.id === selectedId;
+        ctx.save();
+        ctx.strokeStyle = isSel ? "rgba(30,90,200,0.95)" : "rgba(30,90,200,0.4)";
+        ctx.lineWidth = isSel ? 2 : 1.5;
+        ctx.beginPath(); ctx.arc(cx, cy, Math.max(2, d.inner * k), 0, 7); ctx.stroke();
+        ctx.setLineDash([6, 5]);
+        ctx.beginPath(); ctx.arc(cx, cy, Math.max(3, d.outer * k), 0, 7); ctx.stroke();
+        ctx.setLineDash([]);
+        if (isSel) { ctx.fillStyle = "rgba(30,90,200,0.95)"; ctx.font = "11px sans-serif"; ctx.textAlign = "center";
+          ctx.fillText(el.spatialMode === "linear" ? "מעבר לטבעת החיצונית: שקט" : "נחלש עם המרחק", cx, cy - Math.max(3, d.outer * k) - 6); }
+        ctx.restore();
+        window.__audioEnvelopes[el.id] = { cx, cy, rInner: Math.max(2, d.inner * k), rOuter: Math.max(3, d.outer * k), inner: d.inner, outer: d.outer };
+      }
       if (el.id === selectedId) {
         ctx.save();
         ctx.translate(cx, cy); ctx.rotate(-(el.rot || 0) * Math.PI / 180);
@@ -1278,6 +1295,15 @@
           c.setPointerCapture(e.pointerId); return;
         }
       }
+      if (sel && sel.type === "sound" && sel.spatial && window.__audioEnvelopes && window.__audioEnvelopes[sel.id]) {
+        const env = window.__audioEnvelopes[sel.id], dp = Math.hypot(p.x - env.cx, p.y - env.cy);
+        const nearIn = Math.abs(dp - env.rInner) < 9, nearOut = Math.abs(dp - env.rOuter) < 9;
+        if (nearIn || nearOut) {
+          const mode = nearIn && (!nearOut || Math.abs(dp - env.rInner) <= Math.abs(dp - env.rOuter)) ? "env-in" : "env-out";
+          drag = { mode, id: sel.id, cx: env.cx, cy: env.cy, snap: JSON.stringify(rec.elements) };
+          c.setPointerCapture(e.pointerId); return;
+        }
+      }
       if (sel && sel.type === "group" && boxes[sel.id]) {
         const b = boxes[sel.id];
         if (Math.abs(p.x - b.cx) <= b.w / 2 && Math.abs(p.y - b.cy) <= b.h / 2) {
@@ -1322,6 +1348,12 @@
         const ny = Math.max(-0.7, Math.min(0.7, drag.origY - (p.y - drag.start.y) / H));
         if (drag.keyT != null) { const k = keyAtT(el, drag.keyT); k.x = nx; k.y = ny; }
         else { el.x = nx; el.y = ny; }
+      } else if (drag.mode === "env-out" || drag.mode === "env-in") {
+        const k = W / Studio.geom(rec).artW; // canvas px -> scene distance units
+        const dScene = Math.hypot(p.x - drag.cx, p.y - drag.cy) / k;
+        const dd = Studio.audioDistances(el);
+        if (drag.mode === "env-out") el.spatialOuter = Math.max(dd.inner + .01, Math.min(20, dScene));
+        else el.spatialInner = Math.max(.05, Math.min(Math.min(5, dd.outer - .01), dScene));
       } else {
         const d0 = Math.hypot(drag.start.x - drag.cx, drag.start.y - drag.cy) || 1;
         const d1 = Math.hypot(p.x - drag.cx, p.y - drag.cy);
