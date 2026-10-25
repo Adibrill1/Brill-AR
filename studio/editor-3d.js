@@ -8,7 +8,8 @@ window.Editor3D = (() => {
   let wrapEl, sceneEl, rig, cam, host;
   let getRec, getSelected, onSelect, onChange;
   let active = false, mounted = false, orb = null, gizmo = null, helper = null;
-  let gizmoDrag = null, busy = false;
+  let gizmoDrag = null, busy = false, gizmoMode = "move";
+  let toolRow = null;
 
   function init(opts) {
     wrapEl = opts.wrap; getRec = opts.getRec; getSelected = opts.getSelected;
@@ -32,7 +33,7 @@ window.Editor3D = (() => {
       if (el.type === "video") {
         const v = document.createElement("video");
         v.id = "m3-" + el.id; v.src = url; v.muted = true; v.loop = el.loop !== false;
-        v.setAttribute("playsinline", ""); v.preload = "auto";
+        v.setAttribute("playsinline", ""); v.preload = "auto"; v.load();
         assets.appendChild(v);
       } else if (el.type === "image") {
         const mm = await Studio.makeImageMedia(rec.assets[el.assetId], "m3-" + el.id, () => null);
@@ -46,6 +47,7 @@ window.Editor3D = (() => {
         s.id = "m3-" + el.id; s.src = url; assets.appendChild(s);
       }
     }
+    if (rec.elements.some((el) => el.type === "video" && el.chroma && el.chroma.enabled)) Studio.ensureChromaComponent();
     sceneEl = document.createElement("a-scene");
     sceneEl.setAttribute("embedded", "");
     sceneEl.setAttribute("renderer", "colorManagement:true");
@@ -63,8 +65,21 @@ window.Editor3D = (() => {
     cam.setAttribute("camera", "fov: 50");
     cam.setAttribute("position", "0 0 1.15");
     sceneEl.appendChild(cam);
+    // move/rotate tool toggle (Artivive: tool buttons at the top-left of the 3D view)
+    toolRow = document.createElement("div");
+    toolRow.id = "editor-3d-tools";
+    toolRow.style.cssText = "position:absolute;top:8px;inset-inline-start:8px;z-index:6;display:flex;gap:6px";
+    for (const [mode, label, tid] of [["move", "↔", "btn-3d-move"], ["rotate", "⟳", "btn-3d-rotate"]]) {
+      const b = document.createElement("button");
+      b.id = tid; b.type = "button"; b.textContent = label; b.title = mode;
+      b.style.cssText = "width:34px;height:34px;border-radius:8px;border:1px solid #b9b4c7;background:rgba(255,255,255,.94);font:600 16px/1 sans-serif;color:#292535;cursor:pointer";
+      b.onclick = () => { gizmoMode = mode; syncToolButtons(); refreshGizmo(); };
+      toolRow.appendChild(b);
+    }
+    host.appendChild(toolRow);
     host.appendChild(sceneEl);
     wrapEl.appendChild(host);
+    syncToolButtons();
     // headless Chrome can leave a dynamically created scene paused
     const kick = () => { try { sceneEl.play(); } catch (e) {} };
     kick(); setTimeout(kick, 600); setTimeout(kick, 2000);
@@ -105,17 +120,13 @@ window.Editor3D = (() => {
     const rec = getRec(); if (!rec) return;
     rig.querySelectorAll("[data-el-root]").forEach((n) => n.remove());
     Studio.topLevelElements(rec).forEach((el, idx) => {
-      const e = Studio.buildElementEntity(rec, el, idx, "preview", { videoFallback: (x) => !!(x.chroma && x.chroma.enabled) });
+      const e = Studio.buildElementEntity(rec, el, idx, "preview", { videoFallback: (x) => {
+        // undecodable clips would stall the scene; grey plane instead (same policy as the preview page)
+        const f = rec.assets[x.assetId];
+        const probe = document.createElement("video");
+        return f ? probe.canPlayType(f.type || "video/mp4") === "" : true;
+      }, mediaId: (x) => "m3-" + x.id });
       if (!e) return;
-      // buildElementEntity uses #m-<id> media ids; point them at our local copies
-      e.querySelectorAll("[src]").forEach((n) => {
-        const s = n.getAttribute("src");
-        if (typeof s === "string" && s.startsWith("#m-")) n.setAttribute("src", "#m3-" + s.slice(3));
-      });
-      e.querySelectorAll("[gltf-model]").forEach((n) => {
-        const s = n.getAttribute("gltf-model");
-        if (typeof s === "string" && s.startsWith("#m-")) n.setAttribute("gltf-model", "#m3-" + s.slice(3));
-      });
       e.setAttribute("data-el-root", el.id);
       stripAnim(e);
       rig.appendChild(e);
@@ -164,6 +175,23 @@ window.Editor3D = (() => {
     const L = Math.max(ts.w, ts.h, 0.12) * 0.9;
     gizmo = new THREE.Group();
     gizmo.name = "editor-3d-gizmo";
+    if (gizmoMode === "rotate") {
+      const mkRing = (axis, color, name, rotEuler) => {
+        const mat = new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.95, side: THREE.DoubleSide });
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(L * 0.75, 0.02, 10, 48), mat);
+        ring.renderOrder = 10001;
+        ring.rotation.set(rotEuler[0], rotEuler[1], rotEuler[2]);
+        ring.userData = { axis, gizmoPart: name };
+        gizmo.add(ring);
+      };
+      // rotX: ring in the YZ plane (normal +X); rotY: XZ plane (normal +Y); rot: XY plane (normal +Z)
+      mkRing(new THREE.Vector3(1, 0, 0), 0xe03131, "rotX", [0, Math.PI / 2, 0]);
+      mkRing(new THREE.Vector3(0, 1, 0), 0x2f9e44, "rotY", [Math.PI / 2, 0, 0]);
+      mkRing(new THREE.Vector3(0, 0, 1), 0x1971c2, "rot", [0, 0, 0]);
+      gizmo.position.copy(center);
+      rig.object3D.add(gizmo);
+      return;
+    }
     const mk = (axis, color, name) => {
       const grp = new THREE.Group();
       const mat = new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.95 });
@@ -185,6 +213,14 @@ window.Editor3D = (() => {
     mk(new THREE.Vector3(0, 0, 1), 0x1971c2, "z");
     gizmo.position.copy(center);
     rig.object3D.add(gizmo);
+  }
+
+  function syncToolButtons() {
+    if (!toolRow) return;
+    toolRow.querySelector("#btn-3d-move").style.background = gizmoMode === "move" ? "#292535" : "rgba(255,255,255,.94)";
+    toolRow.querySelector("#btn-3d-move").style.color = gizmoMode === "move" ? "#fff" : "#292535";
+    toolRow.querySelector("#btn-3d-rotate").style.background = gizmoMode === "rotate" ? "#292535" : "rgba(255,255,255,.94)";
+    toolRow.querySelector("#btn-3d-rotate").style.color = gizmoMode === "rotate" ? "#fff" : "#292535";
   }
 
   function rayFromEvent(e) {
@@ -230,6 +266,25 @@ window.Editor3D = (() => {
       if (hits.length) {
         let o = hits[0].object;
         while (o && !o.userData.gizmoPart) o = o.parent;
+        if (o && o.userData.gizmoPart.startsWith("rot")) {
+          const el = rec.elements.find((x) => x.id === getSelected());
+          const lr = localRay(ray);
+          const axis = o.userData.axis.clone();
+          const center = gizmo.position.clone();
+          const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(axis, center);
+          const hit = new THREE.Vector3();
+          if (!lr.intersectPlane(plane, hit)) return;
+          const angleOf = (p) => {
+            const v = p.clone().sub(center);
+            if (axis.z) return Math.atan2(v.y, v.x);
+            if (axis.x) return Math.atan2(v.z, v.y);
+            return Math.atan2(v.x, v.z);
+          };
+          gizmoDrag = { id: e.pointerId, el, axis, plane, angleOf, a0: angleOf(hit), rot0: el.rot || 0, rotX0: el.rotX || 0, rotY0: el.rotY || 0, part: o.userData.gizmoPart };
+          if (sceneEl.canvas.setPointerCapture) sceneEl.canvas.setPointerCapture(e.pointerId);
+          e.preventDefault(); e.stopPropagation();
+          return;
+        }
         if (o) {
           const el = rec.elements.find((x) => x.id === getSelected());
           const lr = localRay(ray);
@@ -264,6 +319,21 @@ window.Editor3D = (() => {
   }
 
   function move(e) {
+    if (gizmoDrag && e.pointerId === gizmoDrag.id && gizmoDrag.part) {
+      const rec = getRec(); if (!rec) return;
+      const lr = localRay(rayFromEvent(e));
+      const hit = new THREE.Vector3();
+      if (!lr.intersectPlane(gizmoDrag.plane, hit)) return;
+      let deg = (gizmoDrag.angleOf(hit) - gizmoDrag.a0) * 180 / Math.PI;
+      const el = gizmoDrag.el, key = gizmoDrag.part;
+      const val = Math.round(((key === "rot" ? gizmoDrag.rot0 : key === "rotX" ? gizmoDrag.rotX0 : gizmoDrag.rotY0) + deg) * 10) / 10;
+      el[key] = val;
+      const node = elNode(el.id);
+      if (node) node.setAttribute("rotation", `${el.rotX || 0} ${el.rotY || 0} ${el.rot || 0}`);
+      refreshGizmo();
+      e.preventDefault();
+      return;
+    }
     if (gizmoDrag && e.pointerId === gizmoDrag.id) {
       const rec = getRec(); if (!rec) return;
       const lr = localRay(rayFromEvent(e));
@@ -342,5 +412,5 @@ window.Editor3D = (() => {
     rebuildArtwork().then(rebuildElements);
   }
 
-  return { init, show, hide, sync, isActive: () => active, refreshGizmo, _test: { gizmo: () => gizmo, node: (id) => elNode(id), scene: () => sceneEl, helper: () => helper } };
+  return { init, show, hide, sync, isActive: () => active, refreshGizmo, _test: { gizmo: () => gizmo, node: (id) => elNode(id), scene: () => sceneEl, helper: () => helper, drag: () => gizmoDrag } };
 })();

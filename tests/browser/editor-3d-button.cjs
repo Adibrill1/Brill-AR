@@ -38,11 +38,41 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
  assert.ok(after>0.05,'dragging the X arrow moved the element right and saved: x='+after);
  assert.ok(Math.abs(parseFloat(await p.locator('#num-x').inputValue())-after)<0.02,'panel synced to the gizmo edit');
  await p.screenshot({path:'/downloads/rc62-unified-3d.png'});
+ // --- rotate rings: tool toggle, Z-ring drag rotates in-plane, persists, panel syncs
+ await p.tap('#btn-3d-rotate');await p.waitForTimeout(300);
+ const ringInfo=await p.evaluate(()=>{const g=Editor3D._test.gizmo();return {n:g?g.children.length:0,torus:g?g.children.map(c=>c.geometry&&c.geometry.type):[]};});
+ assert.strictEqual(ringInfo.n,3,'three rotation rings');
+ assert.ok(ringInfo.torus.every(t=>t==='TorusGeometry'),'rings are torus geometries: '+ringInfo.torus);
+ const ringAnglePt=async(k,a)=>p.evaluate(([k,a])=>{const g=Editor3D._test.gizmo();const ring=g.children[k];const R=ring.geometry.parameters.radius;const v=new THREE.Vector3(Math.cos(a)*R,Math.sin(a)*R,0);ring.localToWorld(v);v.project(Editor3D._test.scene().camera);const r=Editor3D._test.scene().canvas.getBoundingClientRect();return {x:r.left+(v.x+1)/2*r.width,y:r.top+(-v.y+1)/2*r.height};},[k,a]);
+ await p.evaluate(()=>Editor3D._test.scene().object3D.updateMatrixWorld(true));
+ const zFrom=await ringAnglePt(2,Math.PI/4),zTo=await ringAnglePt(2,3*Math.PI/4);
+ await p.mouse.move(zFrom.x,zFrom.y);await p.mouse.down();await p.waitForTimeout(120);
+ const dragState=await p.evaluate(()=>{const d=Editor3D._test.drag();return d?{part:d.part,a0:+d.a0.toFixed(3)}:null;});
+ assert.ok(dragState&&dragState.part==='rot','pointerdown on the Z ring starts a rotation drag: '+JSON.stringify(dragState));
+ await p.mouse.move(zTo.x,zTo.y,{steps:8});await p.mouse.up();await p.waitForTimeout(400);
+ const rot=await p.evaluate(id=>Studio.load(id).then(r=>r.elements.find(e=>e.id==='t1').rot),id);
+ assert.ok(Math.abs(rot-90)<18,'Z-ring drag rotated the element ~90deg CCW and saved: rot='+rot);
+ assert.ok(Math.abs(parseFloat(await p.locator('#num-rot').inputValue())-rot)<2,'panel rotation synced: '+rot);
+ // --- orbit to a non-front angle: gizmo stays usable; visual proof
+ const sceneBox=await p.locator('#editor-3d-host').boundingBox();
+ await p.mouse.move(sceneBox.x+40,sceneBox.y+60);await p.mouse.down();await p.mouse.move(sceneBox.x+190,sceneBox.y+120,{steps:8});await p.mouse.up();await p.waitForTimeout(300);
+ const rigRot=await p.evaluate(()=>document.querySelector('#editor-3d-rig').getAttribute('rotation'));
+ assert.ok(Math.abs(rigRot.y)>10,'view orbited to a non-front angle: '+JSON.stringify(rigRot));
+ await p.screenshot({path:'/downloads/rc62-3d-orbit-rings.png'});
+ const rot2=await p.evaluate(id=>Studio.load(id).then(r=>r.elements.find(e=>e.id==='t1').rot),id);
+ assert.ok(Math.abs(rot2-rot)<1e-9,'orbit does not change the element');
+ await p.tap('#btn-3d-move');await p.waitForTimeout(300);
+ const tip2=await p.evaluate(()=>{const g=Editor3D._test.gizmo();const cone=g.children[0].children[1];const v=new THREE.Vector3();cone.getWorldPosition(v);v.project(Editor3D._test.scene().camera);const r=Editor3D._test.scene().canvas.getBoundingClientRect();return {x:r.left+(v.x+1)/2*r.width,y:r.top+(-v.y+1)/2*r.height};});
+ const xBefore=await p.evaluate(id=>Studio.load(id).then(r=>r.elements.find(e=>e.id==='t1').x),id);
+ await p.mouse.move(tip2.x,tip2.y);await p.mouse.down();await p.mouse.move(tip2.x+50,tip2.y,{steps:6});await p.mouse.up();await p.waitForTimeout(400);
+ const xAfter=await p.evaluate(id=>Studio.load(id).then(r=>r.elements.find(e=>e.id==='t1').x),id);
+ assert.ok(xAfter>xBefore+0.02,'move arrows still work from the orbited angle: '+xBefore+' -> '+xAfter);
+ await p.screenshot({path:'/downloads/rc62-3d-orbit-move.png'});
  // back to 2D: canvas visible again, same composition
  await p.tap('#btn-2d');await p.waitForTimeout(300);
  assert.ok(await p.evaluate(()=>getComputedStyle(document.querySelector('#preview')).visibility==='visible'),'2D canvas back');
  assert.ok(await p.locator('#btn-2d.on').count()===1,'2D active again');
  const still=await p.evaluate(id=>Studio.load(id).then(r=>r.elements.find(e=>e.id==='t1').x),id);
- assert.ok(Math.abs(still-after)<1e-9,'position kept across view switch');
+ assert.ok(Math.abs(still-xAfter)<1e-9,'position kept across view switch');
  console.log('PASS unified 2D/3D workspace: pill toggle, linked selection, move arrows edit and persist');
 }finally{await b.close();await new Promise(r=>server.close(r));}})().catch(e=>{console.error(e);process.exit(1)});

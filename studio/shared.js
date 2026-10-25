@@ -313,11 +313,20 @@ const Studio = (() => {
   function ensureChromaComponent() {
     if (!window.AFRAME || AFRAME.components["chroma-video"]) return;
     AFRAME.registerComponent("chroma-video", {
-      schema: { src: { type: "selector" }, color: { default: "#00ff00" }, threshold: { default: 0.35 }, width: { default: 1 }, height: { default: 1 } },
+      // src as a plain string resolved lazily: dynamically built scenes (embedded 3D editor)
+      // attach entities before/while media nodes land, and a-frame's `selector` type resolves
+      // once at parse time, which produced a permanently null texture there.
+      schema: { src: { type: "string" }, color: { default: "#00ff00" }, threshold: { default: 0.35 }, width: { default: 1 }, height: { default: 1 } },
       init() {
-        const tex = new THREE.VideoTexture(this.data.src);
-        const mat = makeChromaMaterial(tex, this.data.color, this.data.threshold);
-        this.el.object3D.add(new THREE.Mesh(new THREE.PlaneGeometry(this.data.width, this.data.height), mat));
+        const mount = () => {
+          const video = this.data.src && document.querySelector(this.data.src);
+          if (!video) return false;
+          const tex = new THREE.VideoTexture(video);
+          const mat = makeChromaMaterial(tex, this.data.color, this.data.threshold);
+          this.el.object3D.add(new THREE.Mesh(new THREE.PlaneGeometry(this.data.width, this.data.height), mat));
+          return true;
+        };
+        if (!mount()) { let tries = 0; const retry = () => { if (mount() || ++tries > 300) return; requestAnimationFrame(retry); }; requestAnimationFrame(retry); }
       }
     });
   }
@@ -421,6 +430,7 @@ const Studio = (() => {
   // mode 'ar': video uses the device-proven xrextras-target-video-fade; 'preview': plain a-video.
   function buildElementEntity(rec, el, idx, mode, opts) {
     opts = opts || {};
+    const mediaRef = (e2) => "#" + (opts.mediaId ? opts.mediaId(e2) : "m-" + e2.id);
     normEl(el);
     const ts = toTargetSpace(rec, el, el.aspect || 1);
     const ox = opts.origin ? opts.origin.x : 0, oy = opts.origin ? opts.origin.y : 0, oz = opts.origin ? opts.origin.z : 0;
@@ -435,7 +445,7 @@ const Studio = (() => {
       e = document.createElement("a-entity");
       groupChildren(rec, el).forEach((ch, ci) => {
         if (ch.type === "group") return; // no nesting in v1
-        const ce = buildElementEntity(rec, ch, ci, mode, { origin: { x: ts.x, y: ts.y, z: ts.z || 0 }, baseRotation: el.rot || 0, videoFallback: opts.videoFallback });
+        const ce = buildElementEntity(rec, ch, ci, mode, { origin: { x: ts.x, y: ts.y, z: ts.z || 0 }, baseRotation: el.rot || 0, videoFallback: opts.videoFallback, mediaId: opts.mediaId });
         if (ce) { e.appendChild(ce); if (ce.dataset.opacity) applyOpacity(ce, parseFloat(ce.dataset.opacity)); }
       });
     } else if (el.type === "video") {
@@ -446,25 +456,25 @@ const Studio = (() => {
       } else if (el.chroma && el.chroma.enabled) {
         ensureChromaComponent();
         e = document.createElement("a-entity");
-        e.setAttribute("chroma-video", `src: #m-${el.id}; color: ${el.chroma.color || "#00ff00"}; threshold: ${el.chroma.threshold == null ? 0.35 : el.chroma.threshold}; width: ${ts.w}; height: ${ts.h}`);
+        e.setAttribute("chroma-video", `src: ${mediaRef(el)}; color: ${el.chroma.color || "#00ff00"}; threshold: ${el.chroma.threshold == null ? 0.35 : el.chroma.threshold}; width: ${ts.w}; height: ${ts.h}`);
       } else if (mode === "ar") {
         // Same exact world-size plane as preview. xrextras-target-video-fade built its
         // plane from the image-target geometry multiplied by our w/h, which stretched
         // the video whenever the artwork is not square; a-video keeps ts.w/ts.h exact.
         ensureTargetVideoComponent();
         e = document.createElement("a-video");
-        e.setAttribute("src", `#m-${el.id}`);
+        e.setAttribute("src", mediaRef(el));
         e.setAttribute("width", ts.w); e.setAttribute("height", ts.h);
         e.setAttribute("material", "transparent: true; opacity: 0");
         e.setAttribute("studio-target-video", `video: #m-${el.id}`);
       } else {
         e = document.createElement("a-video");
-        e.setAttribute("src", `#m-${el.id}`);
+        e.setAttribute("src", mediaRef(el));
         e.setAttribute("width", ts.w); e.setAttribute("height", ts.h);
       }
     } else if (el.type === "image") {
       e = document.createElement("a-image");
-      e.setAttribute("src", `#m-${el.id}`);
+      e.setAttribute("src", mediaRef(el));
       // Discard fully transparent texels before depth testing so they cannot
       // punch rectangular holes through video/camera layers rendered later.
       e.setAttribute("material", { transparent: true, alphaTest: 0.001 });
