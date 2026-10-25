@@ -37,7 +37,10 @@
     }});
     const glbs=[...names.keys()].filter(n=>/\.glb$/i.test(n));
     const gltfs=[...names.keys()].filter(n=>/\.gltf$/i.test(n));
-    if(glbs.length+gltfs.length!==1) throw Error('ה־zip צריך להכיל מודל אחד בלבד: glb או gltf עם הקבצים הנלווים.');
+    if(glbs.length+gltfs.length!==1){
+      if([...names.keys()].some(n=>/\.obj$/i.test(n))) throw Error('ה־zip כולל OBJ ולא glTF. ייבוא zip נתמך לקבצי glb/gltf עם הטקסטורות; קובץ OBJ בודד (מחוץ ל־zip) מומר לגיאומטריה בלבד. לטקסטורות מלאות ייצאו GLB מהתוכנה המקורית.');
+      throw Error('ה־zip צריך להכיל מודל אחד בלבד: glb או gltf עם הקבצים הנלווים.');
+    }
     const model=glbs[0]||gltfs[0];
     const extract=(wanted)=>{
       const original=names.get(wanted);if(!original)throw Error('קובץ נלווה חסר ב־zip: '+wanted);
