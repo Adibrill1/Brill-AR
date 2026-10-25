@@ -1181,7 +1181,17 @@
     const pinchPtrs = new Map(); // pointerId -> client coords
     let pinch2d = null;          // {d0, zoom0}
     const pinchStart = (e) => {
-      if (drag) { const d = drag; drag = null; Studio.save(rec); }
+      // A two-finger gesture must never edit the scene: roll back whatever the first finger's
+      // drag moved (base props or a just-created key) before it can persist, then zoom.
+      if (drag) {
+        const d = drag; drag = null;
+        if (d.snap) {
+          rec.elements = JSON.parse(d.snap);
+          const sel = rec.elements.find((x) => x.id === selectedId);
+          if (sel) renderRuler(sel);
+          draw(); renderPanel(); renderList();
+        }
+      }
       const [a, b] = [...pinchPtrs.values()];
       pinch2d = { d0: Math.hypot(a.x - b.x, a.y - b.y) || 1, zoom0: viewZoom };
       try { c.setPointerCapture(e.pointerId); } catch (_) {}
@@ -1224,7 +1234,7 @@
         if (Math.hypot(p.x - hx, p.y - hy) < 24) {
           const keyT = prepare2DKeyedDrag(sel, "scale");
           if (typeof keyT === "string") { msg(keyT); return; }
-          drag = { mode: "scale", id: sel.id, start: p, origW: sel.w, cx: b.cx, cy: b.cy };
+          drag = { mode: "scale", id: sel.id, start: p, origW: sel.w, cx: b.cx, cy: b.cy, snap: JSON.stringify(rec.elements) };
           if (sel.type === "group") drag.gorigs = Studio.groupChildren(rec, sel).map((k) => ({ id: k.id, w: k.w, h: k.h, x: k.x || 0, y: k.y || 0 }));
           if (keyT != null) { drag.keyT = keyT; drag.s0 = Studio.sampleTimeline(sel, editorClock3D(sel)).scale; }
           c.setPointerCapture(e.pointerId); return;
@@ -1236,7 +1246,7 @@
           const keyT = prepare2DKeyedDrag(sel, "gmove");
           if (typeof keyT === "string") { msg(keyT); return; }
           drag = { mode: "gmove", id: sel.id, start: p, origGX: sel.x || 0, origGY: sel.y || 0,
-                   origs: Studio.groupChildren(rec, sel).map((k) => ({ id: k.id, x: k.x || 0, y: k.y || 0 })) };
+                   origs: Studio.groupChildren(rec, sel).map((k) => ({ id: k.id, x: k.x || 0, y: k.y || 0 })), snap: JSON.stringify(rec.elements) };
           c.setPointerCapture(e.pointerId); return;
         }
       }
@@ -1245,7 +1255,7 @@
         selectedId = el.id; renderList(); renderPanel();
         const keyT = prepare2DKeyedDrag(el, "move");
         if (typeof keyT === "string") { msg(keyT); draw(); return; }
-        drag = { mode: "move", id: el.id, start: p, origX: el.x, origY: el.y };
+        drag = { mode: "move", id: el.id, start: p, origX: el.x, origY: el.y, snap: JSON.stringify(rec.elements) };
         if (keyT != null) {
           drag.keyT = keyT;
           const s0 = Studio.sampleTimeline(el, editorClock3D(el));

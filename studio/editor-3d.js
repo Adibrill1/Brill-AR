@@ -379,7 +379,13 @@ window.Editor3D = (() => {
   function down(e) {
     pinchPtrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pinchPtrs.size === 2) {
-      if (gizmoDrag) { gizmoDrag = null; onChange(); }
+      // A two-finger gesture must never edit the scene: roll back whatever the first finger's
+      // gizmo drag moved (base props or a just-created key) before it can persist, then zoom.
+      if (gizmoDrag) {
+        const gd = gizmoDrag; gizmoDrag = null;
+        const r = getRec();
+        if (gd.snap && r) { r.elements = JSON.parse(gd.snap); rebuildElements(); refreshGizmo(); }
+      }
       orb = null;
       const [a, b] = [...pinchPtrs.values()];
       pinch3d = { d0: Math.hypot(a.x - b.x, a.y - b.y) || 1, z0: cam.getAttribute("position").z };
@@ -416,7 +422,7 @@ window.Editor3D = (() => {
           if (keyT === "gate") { if (onGate) onGate(gateMsg(el)); e.preventDefault(); e.stopPropagation(); return; }
           if ((o.userData.gizmoPart === "rotX" || o.userData.gizmoPart === "rotY") && hasKeys(el) && onGate) onGate(TILT_NOTE);
           const rot0 = (keyT != null && o.userData.gizmoPart === "rot" && sampleEl) ? sampleEl(el).rot : el.rot || 0;
-          gizmoDrag = { id: e.pointerId, el, axis, plane, angleOf, a0: angleOf(hit), rot0, rotX0: el.rotX || 0, rotY0: el.rotY || 0, part: o.userData.gizmoPart, keyT };
+          gizmoDrag = { id: e.pointerId, el, axis, plane, angleOf, a0: angleOf(hit), rot0, rotX0: el.rotX || 0, rotY0: el.rotY || 0, part: o.userData.gizmoPart, keyT, snap: JSON.stringify(rec.elements) };
           if (sceneEl.canvas.setPointerCapture) sceneEl.canvas.setPointerCapture(e.pointerId);
           e.preventDefault(); e.stopPropagation();
           return;
@@ -437,7 +443,7 @@ window.Editor3D = (() => {
           const keyT = prepareKeyedDrag(el, o.userData.gizmoPart);
           if (keyT === "gate") { if (onGate) onGate(gateMsg(el)); e.preventDefault(); e.stopPropagation(); return; }
           const s0 = (keyT != null && sampleEl) ? sampleEl(el) : null;
-          gizmoDrag = { id: e.pointerId, el, axis, plane, start: hit.clone(), x0: s0 ? s0.x : el.x || 0, y0: s0 ? s0.y : el.y || 0, z0: s0 ? s0.z : el.z || 0, keyT };
+          gizmoDrag = { id: e.pointerId, el, axis, plane, start: hit.clone(), x0: s0 ? s0.x : el.x || 0, y0: s0 ? s0.y : el.y || 0, z0: s0 ? s0.z : el.z || 0, keyT, snap: JSON.stringify(rec.elements) };
           if (sceneEl.canvas.setPointerCapture) sceneEl.canvas.setPointerCapture(e.pointerId);
           e.preventDefault(); e.stopPropagation();
           return;
