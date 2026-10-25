@@ -504,6 +504,7 @@
     $("btn-play").onclick = () => { location.href = "play.html#" + rec.id; };
     $("btn-preview3d").onclick = () => { location.href = "preview.html#" + rec.id; };
     $("btn-3d").onclick=()=>queueExperience(async()=>{await Studio.save(rec);location.href="preview.html#"+rec.id;});
+    new IntersectionObserver(es=>{wrapOnScreen=es[0].isIntersecting;sync3d();}).observe($("canvas-wrap"));
     $('btn-duplicate-el').onclick=()=>queueExperience(async()=>{const id=Studio.duplicateLayer(rec,selectedId);if(!id)return;selectedId=id;await Studio.save(rec);await hydrate();render();});
     const restore=direction=>queueExperience(async()=>{const restored=await Studio.restoreHistory(rec.id,direction);if(!restored)return;rec=restored;selectedId=null;checkedIds.clear();tlScrubT=null;resetSeq();await hydrate();render();});
     $('btn-undo').onclick=()=>restore('undo');$('btn-redo').onclick=()=>restore('redo');
@@ -658,7 +659,7 @@
     $("sec-elements").hidden = !hasTarget;
     $("sec-arrange").hidden = !hasTarget;
     $("sec-preview").hidden = !hasTarget;
-    $("btn-3d").hidden = !hasTarget;
+    sync3d();
     const th = $("artwork-thumb");
     if (artworkImg) { th.src = artworkImg.src; th.hidden = false; } else th.hidden = true;
     renderSeqTabs();
@@ -940,6 +941,16 @@
   // All canvas coordinates derive from view = {W,H,mx,my} - artwork size + margin offset.
   const MARGIN_FRAC = 0.25;
   let view = { W: 0, H: 0, mx: 0, my: 0 };
+  let wrapOnScreen = false;
+  function sync3d() { $("btn-3d").hidden = !rec || !rec.target || !wrapOnScreen; place3d(); }
+  function place3d() {
+    const b = $("btn-3d"); if (b.hidden) return;
+    const wb = $("canvas-wrap").getBoundingClientRect();
+    const y = Math.min(wb.bottom - 8 - b.offsetHeight, innerHeight - 10 - b.offsetHeight);
+    b.style.top = Math.max(y, wb.top + 8, 8) + "px";
+  }
+  addEventListener("scroll", place3d, { passive: true });
+  addEventListener("resize", place3d);
 
   function draw() {
     if (!rec || !rec.target || !artworkImg) return;
