@@ -7,9 +7,17 @@
 (async () => {
   const errBox = document.getElementById("err");
   const fail = (t) => { errBox.style.display = "grid"; errBox.innerHTML = t; };
-  const editMode = new URLSearchParams(location.search).get("edit") === "1" && !window.__REMOTE_EXPERIENCE__;
+  const pubId = new URLSearchParams(location.search).get("pub") || "";
+  const editMode = new URLSearchParams(location.search).get("edit") === "1" && !window.__REMOTE_EXPERIENCE__ && !pubId;
   let rec;
-  if (window.__REMOTE_EXPERIENCE__) {
+  if (pubId) {
+    // Static published scene: play.html?pub=<id> loads /pub/<id>.json (surge-served; the
+    // file rides every deploy from a store outside git - see studio/pub/ in .gitignore).
+    if (!/^[a-zA-Z0-9_-]{1,64}$/.test(pubId)) return fail("קישור לא תקין.");
+    const r = await fetch("pub/" + pubId + ".json");
+    if (!r.ok) return fail("הניסוי לא נמצא.");
+    rec = await Studio.importJSON(await r.text());
+  } else if (window.__REMOTE_EXPERIENCE__) {
     const r = await fetch("/api/experiences/" + encodeURIComponent(window.__REMOTE_EXPERIENCE__));
     if (!r.ok) return fail("הניסוי לא נמצא בשרת.");
     rec = await Studio.importJSON(await r.text());
@@ -18,7 +26,7 @@
     if (!id) return fail("חסר מזהה ניסוי. <a href='index.html'>חזרה לעורך</a>");
     rec = await Studio.load(id);
   }
-  if(!window.__REMOTE_EXPERIENCE__&&rec&&document.getElementById("backlink"))document.getElementById("backlink").href="index.html#"+encodeURIComponent(rec.id);
+  if(!window.__REMOTE_EXPERIENCE__&&!pubId&&rec&&document.getElementById("backlink"))document.getElementById("backlink").href="index.html#"+encodeURIComponent(rec.id);
   if (!rec || !rec.target) return fail("הניסוי לא נמצא במכשיר הזה.<br>אם ייצאת ממכשיר אחר - ייבאי קודם ב<a href='index.html'>עורך</a>.");
   rec.elements.forEach(Studio.normEl);
 
