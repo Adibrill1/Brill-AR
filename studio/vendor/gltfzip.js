@@ -40,21 +40,43 @@
     if(glbs.length+gltfs.length!==1){
       const objs=[...names.keys()].filter(n=>/\.obj$/i.test(n));
       if(objs.length===1){
-        // OBJ zip: convert with basic MTL materials (Kd / map_Kd); textures resolve by basename.
+        // OBJ zip: convert with basic MTL materials (Kd / map_Kd). Texture refs resolve
+        // path-first (as written, then relative to the MTL/OBJ dirs); a basename match is
+        // used only when it is unique - same-named files in different dirs are a clear
+        // error, never a silent pick.
         const objText=new TextDecoder('utf-8').decode(extract(objs[0]));
-        const mtlRef=(objText.match(/^\s*mtllib\s+(.+)$/m)||[])[1];
+        const objDir=objs[0].split('/').slice(0,-1).join('/');
         const mtls=[...names.keys()].filter(n=>/\.mtl$/i.test(n));
-        const mtlName=mtlRef?(mtls.find(n=>n.split('/').pop()===mtlRef.trim().split('/').pop())||mtls[0]):mtls[0];
-        const mtlText=mtlName?new TextDecoder('utf-8').decode(extract(mtlName)):'';
-        const getTexture=(wanted)=>{
-          const base=wanted.split('/').pop().toLowerCase();
-          for(const k of names.keys()) if(k.split('/').pop().toLowerCase()===base){
-            const ext=k.split('.').pop().toLowerCase();
-            const mime={png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',webp:'image/webp'}[ext];
-            if(!mime) throw Error('סוג טקסטורה לא נתמך ב־zip: '+wanted+' (png/jpg/webp בלבד).');
-            return {bytes:extract(k),mime};
+        const resolveRef=(wanted,baseDirs)=>{
+          const out=[];
+          for(const p of String(wanted).trim().replace(/\\/g,'/').split('/')){
+            if(!p||p==='.')continue;
+            if(p==='..'){out.pop();continue;}
+            out.push(p);
           }
+          const w=out.join('/');if(!w)return null;
+          const tries=[w,...baseDirs.filter(Boolean).map(d=>d+'/'+w)];
+          for(const t of tries){
+            const hit=[...names.keys()].find(k=>k.toLowerCase()===t.toLowerCase());
+            if(hit)return hit;
+          }
+          const base=w.split('/').pop().toLowerCase();
+          const hits=[...names.keys()].filter(k=>k.split('/').pop().toLowerCase()===base);
+          if(hits.length===1)return hits[0];
+          if(hits.length>1)throw Error('ההפניה '+wanted+' מופיעה בכמה תיקיות ב־zip ('+hits.join(', ')+') - שנה שם או שמור על מבנה התיקיות המקורי.');
           return null;
+        };
+        const mtlRef=(objText.match(/^\s*mtllib\s+(.+)$/m)||[])[1];
+        const mtlName=mtlRef?(resolveRef(mtlRef,[objDir])||mtls[0]):mtls[0];
+        const mtlText=mtlName?new TextDecoder('utf-8').decode(extract(mtlName)):'';
+        const mtlDir=mtlName?mtlName.split('/').slice(0,-1).join('/'):'';
+        const getTexture=(wanted)=>{
+          const k=resolveRef(wanted,[mtlDir,objDir]);
+          if(!k)return null;
+          const ext=k.split('.').pop().toLowerCase();
+          const mime={png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',webp:'image/webp'}[ext];
+          if(!mime) throw Error('סוג טקסטורה לא נתמך ב־zip: '+wanted+' (png/jpg/webp בלבד).');
+          return {bytes:extract(k),mime};
         };
         const bytes=root.objMtlZipToGlb(objText,mtlText,getTexture);
         if(!bytes) throw Error('קובץ ה־obj ב־zip ריק או לא קריא - צריך שורות v ו־f.');
