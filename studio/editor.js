@@ -445,6 +445,7 @@
           try {
             const packed = window.gltfZipToGlb(new Uint8Array(await f.arrayBuffer()), fflate);
             f = new File([packed.bytes], packed.name, { type: "model/gltf-binary" });
+            if (packed.note) importNote = packed.note;
           } catch (ez) { msg("לא ניתן לייבא את ה־zip: " + ez.message); return; }
         }
         if (/\.fbx$/i.test(f.name)) {

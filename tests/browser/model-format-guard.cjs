@@ -26,13 +26,12 @@ await p.locator('#file-model').setInputFiles({name:'meshopt.glb',mimeType:'model
 await p.waitForFunction(()=>document.querySelector('#msg').textContent.includes('Meshopt'));
 assert.equal(await p.locator('#element-list li').count(),0,'meshopt model not added');
 console.log('PASS Meshopt-compressed GLB refused at upload with a named reason and fix');
-// OBJ inside ZIP: specific refusal naming supported paths
-const bytes=await p.evaluate(()=>{const enc=x=>new TextEncoder().encode(x);const png=Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg=='),c=>c.charCodeAt(0));return Array.from(fflate.zipSync({'model.obj':enc('v 0 0 0\nv 1 0 0\nv 0 1 0\nmtllib model.mtl\nusemtl m\nf 1 2 3\n'),'model.mtl':enc('newmtl m\nKd 1 0 0\nmap_Kd tex.png\n'),'tex.png':png}));});
+// OBJ inside ZIP is converted since rc77 (see model-obj-zip.cjs); a zip with no model at all still refuses clearly
+const bytes=await p.evaluate(()=>{const enc=x=>new TextEncoder().encode(x);return Array.from(fflate.zipSync({'readme.txt':enc('no model here')}) );});
 await p.locator('#file-model').setInputFiles({name:'model.zip',mimeType:'application/zip',buffer:Buffer.from(bytes)});
-await p.waitForFunction(()=>document.querySelector('#msg').textContent.includes('OBJ'));
-assert.ok((await p.locator('#msg').innerText()).includes('glb/gltf'),'OBJ-zip refusal names the supported zip contents');
-assert.equal(await p.locator('#element-list li').count(),0,'OBJ zip not added');
-console.log('PASS OBJ-in-ZIP refused with a specific message naming supported paths');
+await p.waitForFunction(()=>document.querySelector('#msg').textContent.includes('מודל אחד בלבד'));
+assert.equal(await p.locator('#element-list li').count(),0,'model-less zip not added');
+console.log('PASS model-less ZIP refused with a clear message');
 // control: a normal GLB still imports
 await p.locator('#file-model').setInputFiles(path.resolve('studio/library/gem.glb'));
 await p.waitForFunction(()=>document.querySelectorAll('#element-list li').length===1);

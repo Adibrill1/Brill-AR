@@ -38,11 +38,33 @@
     const glbs=[...names.keys()].filter(n=>/\.glb$/i.test(n));
     const gltfs=[...names.keys()].filter(n=>/\.gltf$/i.test(n));
     if(glbs.length+gltfs.length!==1){
-      if([...names.keys()].some(n=>/\.obj$/i.test(n))) throw Error('ה־zip כולל OBJ ולא glTF. ייבוא zip נתמך לקבצי glb/gltf עם הטקסטורות; קובץ OBJ בודד (מחוץ ל־zip) מומר לגיאומטריה בלבד. לטקסטורות מלאות ייצאו GLB מהתוכנה המקורית.');
+      const objs=[...names.keys()].filter(n=>/\.obj$/i.test(n));
+      if(objs.length===1){
+        // OBJ zip: convert with basic MTL materials (Kd / map_Kd); textures resolve by basename.
+        const objText=new TextDecoder('utf-8').decode(extract(objs[0]));
+        const mtlRef=(objText.match(/^\s*mtllib\s+(.+)$/m)||[])[1];
+        const mtls=[...names.keys()].filter(n=>/\.mtl$/i.test(n));
+        const mtlName=mtlRef?(mtls.find(n=>n.split('/').pop()===mtlRef.trim().split('/').pop())||mtls[0]):mtls[0];
+        const mtlText=mtlName?new TextDecoder('utf-8').decode(extract(mtlName)):'';
+        const getTexture=(wanted)=>{
+          const base=wanted.split('/').pop().toLowerCase();
+          for(const k of names.keys()) if(k.split('/').pop().toLowerCase()===base){
+            const ext=k.split('.').pop().toLowerCase();
+            const mime={png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',webp:'image/webp'}[ext];
+            if(!mime) throw Error('סוג טקסטורה לא נתמך ב־zip: '+wanted+' (png/jpg/webp בלבד).');
+            return {bytes:extract(k),mime};
+          }
+          return null;
+        };
+        const bytes=root.objMtlZipToGlb(objText,mtlText,getTexture);
+        if(!bytes) throw Error('קובץ ה־obj ב־zip ריק או לא קריא - צריך שורות v ו־f.');
+        return {name:objs[0].split('/').pop().replace(/\.obj$/i,'.glb'),bytes,
+          note:'OBJ עם MTL יובא: צבע בסיס וטקסטורת בסיס בלבד (Kd, map_Kd). תאורה, מפות מתקדמות ונורמלים לא יובאו.'};
+      }
       throw Error('ה־zip צריך להכיל מודל אחד בלבד: glb או gltf עם הקבצים הנלווים.');
     }
     const model=glbs[0]||gltfs[0];
-    const extract=(wanted)=>{
+    function extract(wanted){
       const original=names.get(wanted);if(!original)throw Error('קובץ נלווה חסר ב־zip: '+wanted);
       const r=zip.unzipSync(bytes,{filter:f=>f.name===original});const data=r[original];
       if(!data||data.length>ENTRY)throw Error('קובץ נלווה גדול מדי או פגום.');return data;
