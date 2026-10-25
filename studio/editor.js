@@ -111,6 +111,83 @@
 
   function resetSeq() { actionEngine=ActionCore.create(rec);actionEngine.autoStart();canvasStart=performance.now();canvasTracks={};curSeq = Studio.seqList(rec).length ? Studio.seqList(rec)[0].id : null; }
 
+  // --- test mode + diagnostics (gap n:15): taps drive the experience, editing gestures are refused,
+  // and a live strip shows what plays, what stopped, and what triggered each change. ---
+  let testMode = false, diagTimer = null, diagDirect = false;
+  const diagLog = [], diagLastPlaying = new Map();
+  function logDiag(text) { diagLog.unshift(text); if (diagLog.length > 6) diagLog.pop(); renderDiag(); }
+  function seqName(id) { const sq = Studio.seqList(rec).find((x) => x.id === id); return sq ? (sq.name || id) : id; }
+  function actionSeqName(id) { const q = (ActionCore.list(rec)).find((x) => x.id === id); return q ? (q.name || id) : id; }
+  function setTestMode(on) {
+    testMode = on;
+    const b = $("btn-test-mode"); if (b) { b.classList.toggle("on", on); b.textContent = on ? "חזרה לעריכה" : "מצב בדיקה"; }
+    const strip = $("diag-strip"); if (strip) strip.hidden = !on;
+    if (on) {
+      diagLog.length = 0; diagLastPlaying.clear();
+      for (const q of ActionCore.list(rec)) diagLastPlaying.set(q.id, !!(actionEngine && actionEngine.isPlaying(q.id))); // ongoing runs keep their original cause; only NEW starts get attribution
+      logDiag("מצב בדיקה: הקשות על הקנבס מפעילות פעולות; גרירה ועריכה כבויים עד לחזרה לעריכה.");
+      diagTimer = setInterval(renderDiag, 700);
+    } else if (diagTimer) { clearInterval(diagTimer); diagTimer = null; }
+    draw();
+  }
+  function renderDiag() {
+    const strip = $("diag-strip"); if (!strip || strip.hidden || !rec) return;
+    strip.innerHTML = "";
+    const head = document.createElement("div"); head.className = "diag-head";
+    const t = document.createElement("strong"); t.textContent = "אבחון בדיקה";
+    const cs = document.createElement("span"); cs.className = "hint"; cs.textContent = "מצב מוצג: " + (curSeq ? seqName(curSeq) : "ברירת מחדל");
+    head.appendChild(t); head.appendChild(cs); strip.appendChild(head);
+    const seqs = ActionCore.list(rec), tracks = Studio.trackList(rec);
+    if (!seqs.length && !tracks.length) { const h = document.createElement("div"); h.className = "hint"; h.textContent = "אין רצפי פעולות או מסלולים ביצירה עדיין."; strip.appendChild(h); }
+    for (const q of seqs) {
+      const playing = actionEngine && actionEngine.isPlaying(q.id);
+      const was = diagLastPlaying.get(q.id) || false;
+      if (playing && !was && !diagDirect) { const nm = actionSeqName(q.id); diagLog.unshift("רצף '" + nm + "' הופעל אוטומטית או מתוך רצף אחר"); if (diagLog.length > 6) diagLog.pop(); }
+      diagLastPlaying.set(q.id, !!playing);
+      const snap = actionEngine ? actionEngine.snapshot()[q.id] : null;
+      const row = document.createElement("div"); row.className = "diag-row"; row.dataset.seq = q.id;
+      const dot = document.createElement("span"); dot.className = "diag-dot" + (playing ? " on" : "");
+      const nm = document.createElement("span"); nm.className = "diag-name"; nm.textContent = q.name || q.id;
+      const st = document.createElement("span"); st.className = "diag-state";
+      st.textContent = playing ? "מנגן " + (snap ? snap.time.toFixed(1) : "0") + " שנ׳" : "מושהה";
+      const btn = document.createElement("button"); btn.className = "ghost small diag-toggle"; btn.textContent = playing ? "עצירה" : "ניגון";
+      btn.onclick = () => { diagDirect = true; const w = actionEngine.isPlaying(q.id); actionEngine.toggle(q.id); logDiag((w ? "עצירה ידנית באבחון של '" : "ניגון ידני באבחון של '") + actionSeqName(q.id) + "'"); draw(); renderDiag(); };
+      row.appendChild(dot); row.appendChild(nm); row.appendChild(st); row.appendChild(btn); strip.appendChild(row);
+    }
+    for (const tr of tracks) {
+      const stT = canvasTracks[tr.id], playing = !!(stT && stT.playing);
+      const row = document.createElement("div"); row.className = "diag-row"; row.dataset.track = tr.id;
+      const dot = document.createElement("span"); dot.className = "diag-dot" + (playing ? " on" : "");
+      const nm = document.createElement("span"); nm.className = "diag-name"; nm.textContent = "מסלול: " + (tr.name || tr.id);
+      const st = document.createElement("span"); st.className = "diag-state";
+      st.textContent = playing ? "מנגן " + ((performance.now() - stT.start) / 1000).toFixed(1) + " שנ׳" : "מושהה";
+      const btn = document.createElement("button"); btn.className = "ghost small diag-toggle-track"; btn.textContent = playing ? "עצירה" : "ניגון";
+      btn.onclick = () => { const c = canvasTracks[tr.id] || (canvasTracks[tr.id] = { playing: false, start: 0 }); c.playing = !c.playing; if (c.playing) c.start = performance.now(); logDiag((c.playing ? "ניגון ידני באבחון של מסלול '" : "עצירה ידנית באבחון של מסלול '") + (tr.name || tr.id) + "'"); draw(); renderDiag(); };
+      row.appendChild(dot); row.appendChild(nm); row.appendChild(st); row.appendChild(btn); strip.appendChild(row);
+    }
+    diagDirect = false;
+    if (diagLog.length) {
+      const lg = document.createElement("div"); lg.className = "diag-log";
+      for (const e of diagLog) { const d = document.createElement("div"); d.textContent = e; lg.appendChild(d); }
+      strip.appendChild(lg);
+    }
+  }
+  function handleTestTap(p, hitFn) {
+    const el = hitFn(p);
+    if (!el) return;
+    const av = (rec._actionValues || {})[el.id] || {};
+    const tap = av.tap != null ? av.tap : (el.onTap || "none");
+    const nm = el.name || el.type;
+    if (tap === "none" || !tap) { logDiag("הקשה על '" + nm + "' - אין פעולה משויכת"); return; }
+    if (tap === "link") { if (/^https:/.test(el.tapUrl || "")) window.open(el.tapUrl, "_blank", "noopener"); logDiag("הקשה על '" + nm + "' - קישור"); return; }
+    if (tap === "mute") { logDiag("הקשה על '" + nm + "' - השתקה (אין שמע על קנבס העריכה)"); return; }
+    if (tap === "sequence") { const nx = Studio.nextSequence(rec, curSeq); if (nx && nx !== curSeq) { curSeq = nx; logDiag("הקשה על '" + nm + "' - מעבר למצב '" + seqName(nx) + "'"); renderSeqTabs(); } else logDiag("הקשה על '" + nm + "' - מעבר מצב (מצב יחיד)"); draw(); return; }
+    if (tap.startsWith("seq:")) { const id2 = tap.slice(4); if (Studio.seqList(rec).some((x) => x.id === id2)) { curSeq = id2; logDiag("הקשה על '" + nm + "' - מעבר למצב '" + seqName(id2) + "'"); renderSeqTabs(); } else logDiag("הקשה על '" + nm + "' - מצב חסר"); draw(); return; }
+    if (tap.startsWith("action:")) { const id2 = tap.slice(7); diagDirect = true; const w = actionEngine.isPlaying(id2); actionEngine.toggle(id2); logDiag("הקשה על '" + nm + "' - " + (w ? "עצירת" : "הפעלת") + " רצף '" + actionSeqName(id2) + "'"); draw(); return; }
+    if (tap.startsWith("track:")) { const id2 = tap.slice(6); const c = canvasTracks[id2] || (canvasTracks[id2] = { playing: false, start: 0 }); c.playing = !c.playing; if (c.playing) c.start = performance.now(); logDiag("הקשה על '" + nm + "' - " + (c.playing ? "ניגון" : "עצירת") + " מסלול"); draw(); return; }
+    logDiag("הקשה על '" + nm + "' - פעולה לא מוכרת: " + tap);
+  }
+
   // Sequence-state tabs above the canvas: switch the state being edited, add/remove states.
   function renderSeqTabs() {
     const bar = $("seq-tabs");
@@ -516,6 +593,7 @@
         if (!r) return; // keep the current experience instead of wiping the editor
         rec = r;
         selectedId = null; checkedIds.clear(); tlScrubT = null;
+        if (typeof setTestMode === "function") setTestMode(false); diagLog.length = 0; diagLastPlaying.clear();
         resetSeq();
         await hydrate(); await refreshExpSelect(); render(); renderSaveState();
       });
@@ -598,6 +676,7 @@
     saveStateEl.onclick=()=>{if(rec&&saveStateEl.classList.contains("error"))saveGuarded(rec);};
     Studio.installSaveGuard(window);
     $('btn-undo').onclick=()=>restore('undo');$('btn-redo').onclick=()=>restore('redo');
+    $('btn-test-mode').onclick=()=>setTestMode(!testMode);
     $("btn-del-el").onclick = async () => {
       const i = rec.elements.findIndex((x) => x.id === selectedId);
       if (i < 0) return;
@@ -1089,6 +1168,7 @@
     ctx.strokeRect(mx + 0.5, my + 0.5, W - 1, H - 1);
     boxes = {};
     window.__audioEnvelopes = {}; // spatial-sound envelope rings, rebuilt every frame (also the test hook)
+    window.__testBoxes = boxes; // canvas hit boxes per element, rebuilt every frame (test hook)
     const t0 = performance.now();
     // autoNext chain simulation in live preview (mirrors previewer makeSeqRunner):
     // at `at` seconds into the active state, advance to `to` and restart the state clock.
@@ -1273,6 +1353,7 @@
       pinchPtrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (pinchPtrs.size === 2) { pinchStart(e); return; }
       const p = pos(e);
+      if (testMode) { handleTestTap(p, hit); return; } // test mode: taps drive the experience; no select/drag
       if(actionTarget){
         const a=actionTarget,layer=rec.elements.find(el=>el.id===a.layerId);
         if(layer&&a.type==='move'){

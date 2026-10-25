@@ -73,3 +73,12 @@ button.small { font-size: 13px; padding: 6px 10px; }
 .save-state.saving{color:#c9a227}
 .save-state.error{color:#e06c75;font-weight:600}
 .save-state.error{cursor:pointer;text-decoration:underline}
+.diag-strip{margin-top:8px;border:1px solid #d9d4e3;border-radius:12px;padding:10px;background:#faf9fc;text-align:right;font-size:13px}
+.diag-head{display:flex;justify-content:space-between;align-items:center;gap:8px;margin-bottom:6px}
+.diag-row{display:flex;align-items:center;gap:8px;padding:4px 0;border-top:1px solid #eeeaf4}
+.diag-dot{width:10px;height:10px;border-radius:50%;background:#c9c3d4;flex:none}
+.diag-dot.on{background:#2fae5f;box-shadow:0 0 0 3px rgba(47,174,95,.18)}
+.diag-name{flex:1;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.diag-state{color:#5f5a6b;min-width:86px;text-align:center}
+.diag-log{margin-top:8px;border-top:1px dashed #d9d4e3;padding-top:6px;color:#5f5a6b;font-size:12px}
+#btn-test-mode.on{background:#292535;color:#fff;border-color:#292535}
