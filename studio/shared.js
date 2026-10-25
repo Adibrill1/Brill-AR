@@ -128,7 +128,7 @@ const Studio = (() => {
       offset+=8+length;
     }
     if(!doc||!doc.asset||doc.asset.version!=='2.0')throw Error('נדרש glTF2.0.');
-    const comp=(doc.extensionsRequired||[]).find(e=>e==='KHR_draco_mesh_compression'||e==='EXT_meshopt_compression');
+    const comp=(doc.extensionsRequired||[]).find(e=>e==='KHR_draco_mesh_compression'||e==='EXT_meshopt_compression'||e==='KHR_meshopt_compression');
     if(comp)throw Error('מודל דחוס ('+(comp==='KHR_draco_mesh_compression'?'Draco':'Meshopt')+') אינו נתמך כרגע. ייצאו מהתוכנה המקורית ללא דחיסת גיאומטריה (בבלנדר: בלי סימון Compression) והעלו שוב.');
     const visit=(node,depth)=>{if(depth>100)throw Error('מודל מורכב מדי.');if(!node||typeof node!=='object')return;for(const [key,value]of Object.entries(node)){if(key==='uri'&&typeof value==='string'&&!value.startsWith('data:'))throw Error('המודל מפנה לקובץ חיצוני. ארזו glTF וכל הקבצים יחד ב־ZIP או יצאו GLB עצמאי.');if(typeof value==='object')visit(value,depth+1);}};visit(doc,0);
     return doc;

@@ -36,6 +36,22 @@ console.log('PASS model-less ZIP refused with a clear message');
 await p.locator('#file-model').setInputFiles(path.resolve('studio/library/gem.glb'));
 await p.waitForFunction(()=>document.querySelectorAll('#element-list li').length===1);
 console.log('PASS uncompressed GLB still imports (control)');
+// REAL compressed-geometry fixtures (not flag-only): official Khronos glTF-Sample-Assets.
+// rigged-simple-draco.glb = RiggedSimple glTF-Draco variant (CC-BY-4.0, Cesium 2017,
+// https://github.com/KhronosGroup/glTF-Sample-Assets/tree/main/Models/RiggedSimple),
+// repacked gltf+bin -> GLB. meshopt-cube.glb = MeshoptCubeTest glTF-Meshopt variant (CC0,
+// Arseny Kapoulkine 2025, .../Models/MeshoptCubeTest), textures stripped, repacked. Both
+// carry true compressed bufferViews in extensionsRequired.
+const fx=n=>require('path').resolve(__dirname,'../fixtures/'+n);
+await p.locator('#file-model').setInputFiles(fx('rigged-simple-draco.glb'));
+await p.waitForFunction(()=>document.querySelector('#msg').textContent.includes('Draco'));
+assert.ok((await p.locator('#msg').innerText()).includes('אינו נתמך'),'real Draco file refused');
+assert.equal(await p.locator('#element-list li').count(),1,'real Draco file not added (control GLB only)');
+console.log('PASS real Draco-compressed GLB (Khronos RiggedSimple) refused, not just flag fixtures');
+await p.locator('#file-model').setInputFiles(fx('meshopt-cube.glb'));
+await p.waitForFunction(()=>document.querySelector('#msg').textContent.includes('Meshopt'));
+assert.equal(await p.locator('#element-list li').count(),1,'real KHR_meshopt file not added');
+console.log('PASS real Meshopt-compressed GLB (Khronos MeshoptCubeTest, ratified KHR_ name) refused');
 // phone-width visual: the refusal must be readable, not clipped
 await p.setViewportSize({width:390,height:844});await p.waitForTimeout(400);
 await p.locator('#file-model').setInputFiles({name:'draco.glb',mimeType:'model/gltf-binary',buffer:glb(['KHR_draco_mesh_compression'])});
