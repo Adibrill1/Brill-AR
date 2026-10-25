@@ -11,7 +11,10 @@ await p.evaluate(()=>{window.__shared=null;navigator.canShare=d=>!!(d&&d.files&&
 await p.locator('#btn-send-publish').click();
 await p.waitForFunction(()=>window.__shared,undefined,{polling:500});
 const shared=await p.evaluate(()=>window.__shared);
-assert.ok(shared.name.endsWith('.json')&&shared.type==='application/json'&&shared.size>100,'share payload '+JSON.stringify(shared));
+assert.ok(await p.locator('#send-zip').isChecked()||false,'send-ZIP is on by default now');
+assert.ok(shared.name.endsWith('.zip')&&shared.type==='application/zip'&&shared.size>100,'default share payload is ZIP '+JSON.stringify(shared));
+await p.evaluate(()=>{window.__shared=null;});await p.locator('#send-zip').uncheck();await p.locator('#btn-send-publish').click();await p.waitForFunction(()=>window.__shared,undefined,{polling:500});
+const sj=await p.evaluate(()=>window.__shared);assert.ok(sj.name.endsWith('.json')&&sj.type==='application/json'&&sj.size>100,'unchecked = JSON '+JSON.stringify(sj));
 assert.ok((await p.locator('#msg').textContent()).includes('אחזיר קישור'));
 // abort path: nothing sent, honest message
 await p.evaluate(()=>{window.__shared=null;navigator.share=async()=>{const e=new Error('x');e.name='AbortError';throw e;};});

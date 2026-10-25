@@ -6,6 +6,7 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
  const id=await p.evaluate(async()=>{const r=(await Studio.all())[0];return r.id;});
  // Simulate the iOS FileReader failure: onerror fires with a DOMException on the reader.
  await p.evaluate(()=>{window.__origRead=FileReader.prototype.readAsDataURL;FileReader.prototype.readAsDataURL=function(){const self=this;Object.defineProperty(self,'error',{value:new DOMException('The operation is insecure.','SecurityError')});setTimeout(()=>self.onerror&&self.onerror(new ProgressEvent('error')),0);};});
+ await p.locator('#send-zip').uncheck(); // JSON path (default is now ZIP)
  await p.locator('#btn-send-publish').click();
  await p.waitForFunction(()=>document.querySelector('#msg').textContent.includes('ההכנה לשליחה נכשלה'),undefined,{timeout:10000});
  const toast=await p.evaluate(()=>document.querySelector('#msg').textContent);
