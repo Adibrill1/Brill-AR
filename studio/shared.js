@@ -1310,6 +1310,34 @@ const Studio = (() => {
     return { warn: false, energy, minDim };
   }
 
+  // Compact perceptual fingerprint of an artwork target (dHash, 16x16 cells ->
+  // 64 hex chars). Duplicate detection is separate from assessTargetQuality:
+  // quality judges one image's recognizability; the fingerprint compares two
+  // targets across experiences. Near-identical hashes catch resizes/recompress.
+  function artworkFingerprint(img) {
+    const W = 17, H = 16, cv = document.createElement("canvas"); cv.width = W; cv.height = H;
+    const g = cv.getContext("2d", { willReadFrequently: true });
+    g.drawImage(img, 0, 0, W, H);
+    const d = g.getImageData(0, 0, W, H).data, bits = [];
+    for (let y = 0; y < H; y++) for (let x = 0; x < W - 1; x++) {
+      const i = (y * W + x) * 4, j = i + 4;
+      const a = .299 * d[i] + .587 * d[i + 1] + .114 * d[i + 2], b = .299 * d[j] + .587 * d[j + 1] + .114 * d[j + 2];
+      bits.push(a > b ? 1 : 0);
+    }
+    let hex = "", ones = 0;
+    for (let i = 0; i < bits.length; i += 4) { const n = parseInt(bits.slice(i, i + 4).join(""), 2); hex += n.toString(16); for (let k = n; k; k >>= 1) if (k & 1) ones++; }
+    return { hex, entropy: Math.min(ones, bits.length - ones) / bits.length };
+  }
+  // Hamming distance between two fingerprint hex strings; Infinity when either
+  // side is too featureless to compare (flat art matches everything).
+  function fingerprintDistance(a, b) {
+    if (!a || !b || a.hex.length !== b.hex.length) return Infinity;
+    if (a.entropy < .1 || b.entropy < .1) return Infinity;
+    let n = 0;
+    for (let i = 0; i < a.hex.length; i++) { let x = parseInt(a.hex[i], 16) ^ parseInt(b.hex[i], 16); while (x) { n += x & 1; x >>= 1; } }
+    return n;
+  }
+
   // ---------- parallel overlay tracks (simultaneous sequences) ----------
   // A track is an independent mini-timeline with its own clock. Elements with el.track
   // belong to it: they are visible while the track plays (el.seq still applies on top).
@@ -1400,7 +1428,7 @@ const Studio = (() => {
   }
 
   return { TARGET_W, TARGET_H, newId, inspectVideo, validateModelBlob, prepareModelBlob, modelCompressionKinds, DECODER_DRACO_PATH, DECODER_MESHOPT_PATH, modelClipNames, modelClipInfo, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
-           audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, historyState, restoreHistory, duplicateLayer, exportJSON, importJSON, exportZIP, importZIP, zipToJSON, fetchPublished, ownBlob, assetHealth, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
+           audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, historyState, restoreHistory, duplicateLayer, exportJSON, importJSON, exportZIP, importZIP, zipToJSON, fetchPublished, ownBlob, assetHealth, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, artworkFingerprint, fingerprintDistance, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
            load: id=>settledRead(id), all: ()=>settledRead(), del: idbDel,
            onSaveState, installSaveGuard, saveState,
            _testHoldSave:p=>{saveHold=p;}, _testFailSave:m=>{failSave=m;} };

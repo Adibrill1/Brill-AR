@@ -388,11 +388,24 @@
       rec.target = { artRect: t.artRect, natural: { w: img.naturalWidth, h: img.naturalHeight } };
       rec.assets.__artwork = await Studio.ownBlob(f);
       artworkImg = img;
+      const fp = Studio.artworkFingerprint(img);
+      rec.target.fp = fp;
       await saveGuarded(rec);
       const q = Studio.assessTargetQuality(img);
-      if (q.warn && q.reason === "small") msg("נשמרה. שימי לב: התמונה קטנה (מתחת ל-480 פיקסלים בצד הקצר) - הזיהוי עלול להיות חלש. עדיפה תמונה גדולה וחדה.");
-      else if (q.warn) msg("נשמרה. שימי לב: לתמונה מעט פרטים או ניגודיות - הזיהוי עלול להיות חלש. עדיפה תמונה עם הרבה פרטים.");
-      else msg("תמונת היצירה נשמרה.");
+      let note = "";
+      try {
+        const others = (await Studio.all()).filter((r) => r.id !== rec.id);
+        for (const other of others) {
+          const art = other.assets && other.assets.__artwork;
+          if (!art) continue;
+          let ofp = other.target && other.target.fp;
+          if (!ofp) { const oimg = await Studio.loadImage(await Studio.blobToDataURL(art)); ofp = Studio.artworkFingerprint(oimg); }
+          if (Studio.fingerprintDistance(fp, ofp) <= 16) { note = " שימי לב: תמונת היעד זהה או כמעט זהה לזו של '" + (other.name || other.id) + "' - שתי יצירות עם אותה תמונה מתחרות על אותו זיהוי. עדיפה תמונה ייחודית לכל יצירה."; break; }
+        }
+      } catch {}
+      if (q.warn && q.reason === "small") msg("נשמרה. שימי לב: התמונה קטנה (מתחת ל-480 פיקסלים בצד הקצר) - הזיהוי עלול להיות חלש. עדיפה תמונה גדולה וחדה." + note);
+      else if (q.warn) msg("נשמרה. שימי לב: לתמונה מעט פרטים או ניגודיות - הזיהוי עלול להיות חלש. עדיפה תמונה עם הרבה פרטים." + note);
+      else msg("תמונת היצירה נשמרה." + note);
       render();
       });
     };
