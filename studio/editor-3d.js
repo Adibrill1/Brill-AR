@@ -54,11 +54,15 @@ window.Editor3D = (() => {
         assets.appendChild(a);
       } else if (el.type === "model") {
         const s = document.createElement("a-asset-item");
-        s.id = "m3-" + el.id; s.src = url; assets.appendChild(s);
+        s.id = "m3-" + el.id; s.setAttribute("src", url); assets.appendChild(s); // a-asset-item reads the src ATTRIBUTE; a .src property is an expando and crashes A-Frame on connect
       }
     }
     if (rec.elements.some((el) => el.type === "video" && el.chroma && el.chroma.enabled)) Studio.ensureChromaComponent();
     sceneEl = document.createElement("a-scene");
+    // gltf-model is BOTH a system and a component name; A-Frame's setAttribute override
+    // parses against the component schema and mangles the system value. Write the raw
+    // attribute so the system schema (decoder paths) sees it at scene init.
+    window.HTMLElement.prototype.setAttribute.call(sceneEl, "gltf-model", "dracoDecoderPath: " + Studio.DECODER_DRACO_PATH + "; meshoptDecoderPath: " + Studio.DECODER_MESHOPT_PATH);
     sceneEl.setAttribute("embedded", "");
     sceneEl.setAttribute("renderer", "colorManagement:true");
     sceneEl.setAttribute("vr-mode-ui", "enabled: false");

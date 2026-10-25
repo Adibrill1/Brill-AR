@@ -58,6 +58,10 @@
   }
 
   const scene = document.createElement("a-scene");
+  // gltf-model is BOTH a system and a component name; A-Frame's setAttribute override
+  // parses against the component schema and mangles the system value. Write the raw
+  // attribute so the system schema (decoder paths) sees it at scene init.
+  window.HTMLElement.prototype.setAttribute.call(scene, "gltf-model", "dracoDecoderPath: " + Studio.DECODER_DRACO_PATH + "; meshoptDecoderPath: " + Studio.DECODER_MESHOPT_PATH);
   scene.setAttribute("embedded", "");
   scene.setAttribute("renderer", "colorManagement:true");
   scene.setAttribute("vr-mode-ui", "enabled: false");

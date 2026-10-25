@@ -486,7 +486,7 @@
           msg(bad); return;
         }
       }
-      if(kind==='model'){try{await Studio.validateModelBlob(f);}catch(err){msg('המודל לא נוסף: '+err.message);return;}}
+      if(kind==='model'){try{f=await Studio.prepareModelBlob(f);}catch(err){msg('המודל לא נוסף: '+err.message);return;}}
       const assetId = Studio.newId();
       rec.assets[assetId] = f;
       const artRatio = rec.target.artRect.w / rec.target.artRect.h;

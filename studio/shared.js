@@ -115,6 +115,91 @@ const Studio = (() => {
   }
 
 
+  // Compressed-geometry support: Draco (KHR_draco_mesh_compression) and Meshopt
+  // (EXT_meshopt_compression, plus the ratified KHR_meshopt_compression spelling, which
+  // carries the identical bufferView schema per the official extension README - the
+  // bundled three r158 loader only registers the EXT name, so KHR files are normalized
+  // to it at ingest). Decoders are vendored locally under external/decoders/ (see its
+  // NOTICES.md); runtime never fetches a decoder from a CDN.
+  const MODEL_COMPRESSION={'KHR_draco_mesh_compression':'Draco','EXT_meshopt_compression':'Meshopt','KHR_meshopt_compression':'Meshopt'};
+  const DECODER_DRACO_PATH='external/decoders/draco/';
+  const DECODER_MESHOPT_PATH='external/decoders/meshopt_decoder.js';
+  function modelCompressionKinds(doc){const set=new Set();for(const e of (doc&&doc.extensionsRequired)||[]){if(MODEL_COMPRESSION[e])set.add(MODEL_COMPRESSION[e]);}return [...set];}
+  // Rewrite a GLB's JSON chunk, renaming KHR_meshopt_compression -> EXT_meshopt_compression
+  // in extensionsRequired/extensionsUsed and bufferView extensions (same schema).
+  function normalizeMeshoptKhr(bytes){
+    const view=new DataView(bytes.buffer,bytes.byteOffset,bytes.byteLength);
+    const jsonLen=view.getUint32(12,true);
+    const doc=JSON.parse(new TextDecoder('utf-8').decode(new Uint8Array(bytes.buffer,bytes.byteOffset+20,jsonLen)));
+    if(!(doc.extensionsRequired||[]).includes('KHR_meshopt_compression'))return null;
+    const rename=(o)=>{if(o&&typeof o==='object'&&o.KHR_meshopt_compression){o.EXT_meshopt_compression=o.KHR_meshopt_compression;delete o.KHR_meshopt_compression;}};
+    for(const bv of doc.bufferViews||[])rename(bv.extensions);
+    const fix=a=>a&&a.map(e=>e==='KHR_meshopt_compression'?'EXT_meshopt_compression':e);
+    doc.extensionsRequired=fix(doc.extensionsRequired);doc.extensionsUsed=fix(doc.extensionsUsed);
+    let jsonBuf=new TextEncoder().encode(JSON.stringify(doc));
+    const pad=(4-(jsonBuf.length%4))%4;
+    const rest=bytes.subarray(20+jsonLen); // remaining chunks (BIN) verbatim
+    const total=12+8+jsonBuf.length+pad+rest.byteLength;
+    const out=new Uint8Array(total),v=new DataView(out.buffer);
+    v.setUint32(0,0x46546c67,true);v.setUint32(4,2,true);v.setUint32(8,total,true);
+    v.setUint32(12,jsonBuf.length+pad,true);v.setUint32(16,0x4e4f534a,true);
+    out.set(jsonBuf,20);for(let i=0;i<pad;i++)out[20+jsonBuf.length+i]=0x20;
+    out.set(rest,20+jsonBuf.length+pad);
+    return out;
+  }
+  let _meshoptReady=null;
+  function meshoptReady(){
+    if(window.MeshoptDecoder&&window.MeshoptDecoder.ready)return window.MeshoptDecoder.ready.then(()=>window.MeshoptDecoder);
+    if(!_meshoptReady)_meshoptReady=new Promise((res,rej)=>{
+      const s=document.createElement('script');s.src=DECODER_MESHOPT_PATH;s.async=true;
+      s.onload=()=>{if(!window.MeshoptDecoder){rej(Error('מפענח Meshopt לא נטען כראוי.'));return;}window.MeshoptDecoder.ready.then(()=>res(window.MeshoptDecoder),rej);};
+      s.onerror=()=>rej(Error('לא ניתן לטעון את מפענח המודל הדחוס (קובץ מקומי חסר).'));
+      document.head.appendChild(s);
+    });
+    return _meshoptReady;
+  }
+  // Prove a compressed model actually decodes before accepting it (parse-only, no render).
+  async function decodeCheckModelBlob(blob,doc){
+    const kinds=modelCompressionKinds(doc||{});
+    if(!kinds.length)return;
+    if(typeof THREE==='undefined'||!THREE.GLTFLoader)throw Error('סביבת התצוגה לא נטענה - נסי שוב.');
+    const loader=new THREE.GLTFLoader();
+    if(kinds.includes('Draco')){
+      if(!THREE.DRACOLoader)throw Error('מפענח Draco לא זמין בסביבה זו.');
+      const draco=new THREE.DRACOLoader();draco.setDecoderPath(DECODER_DRACO_PATH);
+      loader.setDRACOLoader(draco);
+    }
+    if(kinds.includes('Meshopt')){
+      try{loader.setMeshoptDecoder(await meshoptReady());}
+      catch(e){throw Error(e&&e.message?e.message:'מפענח Meshopt לא זמין.');}
+    }
+    const buf=await blob.arrayBuffer();
+    // three r158 can surface decoder failures as an unhandled rejection from the worker
+    // instead of routing them to parse's onError, leaving parse unsettled - trap both,
+    // with a hard timeout so a stuck decode can never hang the upload silently.
+    await new Promise((res,rej)=>{
+      let done=false;
+      const cleanup=()=>{window.removeEventListener('unhandledrejection',onRej);clearTimeout(timer);};
+      const finish=(fn,v)=>{if(done)return;done=true;cleanup();fn(v);};
+      const onRej=ev=>{const m=String(ev.reason&&ev.reason.message||ev.reason||'');
+        if(/draco|meshopt|decod|gltf/i.test(m))finish(rej,Error(m||'שגיאת פענוח'));};
+      window.addEventListener('unhandledrejection',onRej);
+      const timer=setTimeout(()=>finish(rej,Error('הפענוח לא הסתיים בזמן')),20000);
+      try{loader.parse(buf,'',()=>finish(res),(err)=>finish(rej,err instanceof Error?err:Error(String(err&&err.message||err))));}
+      catch(err){finish(rej,err instanceof Error?err:Error(String(err&&err.message||err)));}
+    }).catch(err=>{
+      throw Error('קובץ המודל הדחוס פגום או לא ניתן לפענוח ('+(err.message||'שגיאת פענוח')+'). יצאו מחדש מהתוכנה המקורית.');
+    });
+  }
+  async function prepareModelBlob(blob){
+    const bytes=new Uint8Array(await blob.arrayBuffer());
+    const normalized=normalizeMeshoptKhr(bytes);
+    const out=normalized?new Blob([normalized],{type:blob.type||'model/gltf-binary'}):blob;
+    const doc=await validateModelBlob(out);
+    await decodeCheckModelBlob(out,doc);
+    return out;
+  }
+
   async function validateModelBlob(blob) {
     if(!blob||blob.size<20||blob.size>20*1024*1024)throw Error('מודל GLB חסר או גדול מדי (עד20MB).');
     const bytes=await blob.arrayBuffer(),view=new DataView(bytes);
@@ -128,8 +213,7 @@ const Studio = (() => {
       offset+=8+length;
     }
     if(!doc||!doc.asset||doc.asset.version!=='2.0')throw Error('נדרש glTF2.0.');
-    const comp=(doc.extensionsRequired||[]).find(e=>e==='KHR_draco_mesh_compression'||e==='EXT_meshopt_compression'||e==='KHR_meshopt_compression');
-    if(comp)throw Error('מודל דחוס ('+(comp==='KHR_draco_mesh_compression'?'Draco':'Meshopt')+') אינו נתמך כרגע. ייצאו מהתוכנה המקורית ללא דחיסת גיאומטריה (בבלנדר: בלי סימון Compression) והעלו שוב.');
+    const comp=(doc.extensionsRequired||[]).find(e=>MODEL_COMPRESSION[e]);
     const visit=(node,depth)=>{if(depth>100)throw Error('מודל מורכב מדי.');if(!node||typeof node!=='object')return;for(const [key,value]of Object.entries(node)){if(key==='uri'&&typeof value==='string'&&!value.startsWith('data:'))throw Error('המודל מפנה לקובץ חיצוני. ארזו glTF וכל הקבצים יחד ב־ZIP או יצאו GLB עצמאי.');if(typeof value==='object')visit(value,depth+1);}};visit(doc,0);
     return doc;
   }
@@ -1013,7 +1097,7 @@ const Studio = (() => {
     // Validate before save, so rejected input never leaves a broken local record.
     for(const el of rec.elements.filter(e=>e.type==='model')) {
       if(!el.assetId||!rec.assets[el.assetId])throw new Error('model asset missing');
-      await validateModelBlob(rec.assets[el.assetId]);
+      rec.assets[el.assetId]=await prepareModelBlob(rec.assets[el.assetId]);
     }
     await save(rec);
     return rec;
@@ -1163,7 +1247,7 @@ const Studio = (() => {
     toast._t = setTimeout(() => { toast.style.opacity = "0"; }, 1200);
   }
 
-  return { TARGET_W, TARGET_H, newId, inspectVideo, validateModelBlob, modelClipNames, modelClipInfo, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
+  return { TARGET_W, TARGET_H, newId, inspectVideo, validateModelBlob, prepareModelBlob, modelCompressionKinds, DECODER_DRACO_PATH, DECODER_MESHOPT_PATH, modelClipNames, modelClipInfo, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
            audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, historyState, restoreHistory, duplicateLayer, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
            load: id=>settledRead(id), all: ()=>settledRead(), del: idbDel,
            onSaveState, installSaveGuard, saveState,
