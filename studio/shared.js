@@ -268,6 +268,48 @@ const Studio = (() => {
         "void main(){ vec4 c = texture2D(map, vUv); float d = distance(c.rgb, keyColor); if (d < thresh) discard; gl_FragColor = c; }"
     });
   }
+  // AR video lifecycle, mirroring xrextras-target-video-fade but on our own exact
+  // geometry: hidden until the target is found, then fade in and play; on lost,
+  // pause, rewind and hide. Honors creator opacity via _studioOpacity.
+  function ensureTargetVideoComponent() {
+    if (!window.AFRAME || AFRAME.components["studio-target-video"]) return;
+    AFRAME.registerComponent("studio-target-video", {
+      schema: { video: { type: "string" }, fadeMs: { type: "int", default: 800 } },
+      init() {
+        this.video = document.querySelector(this.data.video);
+        this.target = 0;
+        const parent = this.el.parentNode;
+        this.onFound = () => { if (this.video) this.video.play().catch(() => {}); this.target = 1; };
+        this.onLost = () => {
+          if (this.video) { this.video.pause(); this.video.currentTime = 0; }
+          this.target = 0;
+          const m = this.el.getObject3D("mesh");
+          if (m && m.material) m.material.opacity = 0;
+        };
+        if (parent) {
+          parent.addEventListener("xrextrasfound", this.onFound);
+          parent.addEventListener("xrextraslost", this.onLost);
+        }
+      },
+      tick(time, dt) {
+        const m = this.el.getObject3D("mesh");
+        if (!m || !m.material) return;
+        const base = this.el._studioOpacity == null ? 1 : this.el._studioOpacity;
+        const goal = this.target * base, o = m.material.opacity;
+        if (o === goal) return;
+        const step = Math.max(1, dt || 16) / this.data.fadeMs;
+        m.material.opacity = Math.abs(goal - o) <= step ? goal : o + Math.sign(goal - o) * step;
+      },
+      remove() {
+        const parent = this.el.parentNode;
+        if (parent) {
+          parent.removeEventListener("xrextrasfound", this.onFound);
+          parent.removeEventListener("xrextraslost", this.onLost);
+        }
+      }
+    });
+  }
+
   function ensureChromaComponent() {
     if (!window.AFRAME || AFRAME.components["chroma-video"]) return;
     AFRAME.registerComponent("chroma-video", {
@@ -406,8 +448,15 @@ const Studio = (() => {
         e = document.createElement("a-entity");
         e.setAttribute("chroma-video", `src: #m-${el.id}; color: ${el.chroma.color || "#00ff00"}; threshold: ${el.chroma.threshold == null ? 0.35 : el.chroma.threshold}; width: ${ts.w}; height: ${ts.h}`);
       } else if (mode === "ar") {
-        e = document.createElement("a-entity");
-        e.setAttribute("xrextras-target-video-fade", `video: #m-${el.id}; width: ${ts.w}; height: ${ts.h}`);
+        // Same exact world-size plane as preview. xrextras-target-video-fade built its
+        // plane from the image-target geometry multiplied by our w/h, which stretched
+        // the video whenever the artwork is not square; a-video keeps ts.w/ts.h exact.
+        ensureTargetVideoComponent();
+        e = document.createElement("a-video");
+        e.setAttribute("src", `#m-${el.id}`);
+        e.setAttribute("width", ts.w); e.setAttribute("height", ts.h);
+        e.setAttribute("material", "transparent: true; opacity: 0");
+        e.setAttribute("studio-target-video", `video: #m-${el.id}`);
       } else {
         e = document.createElement("a-video");
         e.setAttribute("src", `#m-${el.id}`);
@@ -454,7 +503,7 @@ const Studio = (() => {
       e = document.createElement("a-plane");
       const tb = drawTextCanvas(el, 128);
       const tts = toTargetSpace(rec, el, tb.aspect); // plane must match the canvas aspect or glyphs distort
-      e.setAttribute("material", { src: tb.canvas.toDataURL("image/png"), transparent: true, shader: "flat" });
+      e.setAttribute("material", { src: tb.canvas.toDataURL("image/png"), transparent: true, alphaTest: 0.001, shader: "flat" });
       e.setAttribute("width", tts.w); e.setAttribute("height", tts.h);
     } else if (el.type === "sound" && el.spatial) {
       e = document.createElement("a-entity"); // invisible carrier for PositionalAudio
@@ -1088,6 +1137,6 @@ const Studio = (() => {
   }
 
   return { TARGET_W, TARGET_H, newId, inspectVideo, validateModelBlob, modelClipNames, modelClipInfo, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
-           audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, historyState, restoreHistory, duplicateLayer, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
+           audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, historyState, restoreHistory, duplicateLayer, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
            load: id=>settledRead(id), all: ()=>settledRead(), del: idbDel };
 })();
