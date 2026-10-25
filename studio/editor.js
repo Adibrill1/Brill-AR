@@ -503,7 +503,9 @@
       const el = Studio.normEl({ id: Studio.newId(), type: kind, name: { video: "סרטון", image: "תמונה", sound: "צליל", model: "מודל 3D" }[kind] + " " + (rec.elements.filter((x) => x.type === kind).length + 1),
                    assetId, x: 0, y: 0, w: kind === "video" ? 1.0 : 0.3, h: null, rot: 0, z: kind === "image" ? 0.1 : 0.01, seq: curSeq });
       if (kind === "video" || kind === "sound") { el.volume = kind === "sound" ? 0.8 : 1; el.loop = true; }
-      if (kind === "model") { el.w = 0.4; el.z = 0.2; el.aspect = 1; }
+      if (kind === "model") { el.w = 0.4; el.z = 0.2; el.aspect = 1;
+        try { el.clipDurations = (await Studio.modelClipInfo(f)).map(c => c.duration); } catch {}
+      }
       const durl = await Studio.blobToDataURL(f);
       if (kind === "image") {
         const mm = await Studio.makeImageMedia(f, "m-" + el.id, null);
@@ -986,7 +988,9 @@
     if(el.type==='model') {
       const select=$("sel-model-clip");select.replaceChildren();select.disabled=true;
       const pending=document.createElement('option');pending.textContent='טעינת שמות...';select.append(pending);
-      Studio.modelClipNames(rec.assets[el.assetId]).then(names=>{
+      Studio.modelClipInfo(rec.assets[el.assetId]).then(items=>{
+        if(items.length) el.clipDurations = items.map(c=>c.duration);
+        const names = items.map(c=>c.name);
         if(selectedId!==el.id)return;
         select.replaceChildren();
         if(!names.length){const option=document.createElement('option');option.textContent='אין אנימציות מובנות';select.append(option);return;}

@@ -37,7 +37,7 @@ const ActionCore = (() => {
         if(a.type==='sequence'&&(!['start','stop'].includes(a.to.command)||typeof a.to.sequenceId!=='string'))return 'פעולת רצף לא תקינה';
         if(a.type==='model'){
           const el=rec.elements.find(e=>e.id===a.layerId);if(el.type!=='model')return 'אנימציית מודל דורשת שכבת מודל';
-          if(!Number.isInteger(a.to.clip)||a.to.clip<0||a.to.clip>99||!Number.isFinite(a.to.speed)||a.to.speed<.1||a.to.speed>4||typeof a.to.loop!=='boolean')return 'הגדרות אנימציית מודל לא תקינות';
+          if(!Number.isInteger(a.to.clip)||a.to.clip<0||a.to.clip>99||!Number.isFinite(a.to.speed)||a.to.speed<.1||a.to.speed>4||typeof a.to.loop!=='boolean')return 'הגדרות אנימציית מודל לא תקינות';if(a.to.mode!==undefined&&a.to.mode!=='cut'&&a.to.mode!=='wait')return 'הגדרות אנימציית מודל לא תקינות';
         }
         if(a.type==='media'){
           const el=rec.elements.find(e=>e.id===a.layerId);if(!['video','sound'].includes(el.type))return 'פעולת ניגון דורשת צליל או וידאו';
@@ -61,23 +61,43 @@ const ActionCore = (() => {
     const prepared=[];
     function at(layer,prop,time,candidates){
       let winner=null;
-      for(const p of candidates)if(p.a.layerId===layer&&p.props.includes(prop)&&p.a.start<=time){
+      for(const p of candidates)if(p.a.layerId===layer&&p.props.includes(prop)&&p.effStart<=time){
         if(!winner||p.end>winner.end||p.end===winner.end&&p.a.index>winner.a.index)winner=p;
       }
       if(!winner)return undefined;
-      const {a,from}=winner;
+      const {a,from,effStart}=winner;
       if(prop==='visible')return a.type==='show';
       if(prop==='tap')return a.to.tap;
-      if(prop==='model')return {clip:a.to.clip,speed:a.to.speed,loop:a.to.loop,time:Math.min(a.duration,Math.max(0,time-a.start))*a.to.speed};
+      if(prop==='model')return {clip:a.to.clip,speed:a.to.speed,loop:a.to.loop,mode:a.to.mode||'cut',time:Math.min(a.duration,Math.max(0,time-effStart))*a.to.speed};
       if(prop==='media')return {time:a.to.offset+Math.min(a.duration,Math.max(0,time-a.start)),playing:time<a.start+a.duration};
       const f=a.duration>0?Math.min(1,Math.max(0,(time-a.start)/a.duration)):1;
       return from[prop]+(a.to[prop]-from[prop])*ease(f,a.ease);
     }
+    // A wait-mode model action becomes eligible only when the previous model
+    // action on the same layer finishes naturally: a looping clip runs until its
+    // action's own end; a non-looping clip ends at its real duration (from
+    // element clipDurations captured at authoring) capped by the action span.
+    // Without recorded durations the previous action's span is the fallback.
+    function realClipDuration(el,clip){const d=el&&el.clipDurations&&el.clipDurations[clip];return Number.isFinite(d)&&d>0?d:null;}
     for(const a of sorted){
       const el=rec.elements.find(e=>e.id===a.layerId);if(!el||!kinds[a.type]||a.type==='sequence')continue;
       const from=base(el),props=kinds[a.type];
       for(const p of props){const v=at(a.layerId,p,a.start,prepared.filter(p=>p.a.start<a.start));if(v!==undefined)from[p]=v;}
-      prepared.push({a,props,from,end:a.start+a.duration});
+      let effStart=a.start;
+      if(a.type==='model'&&a.to.mode==='wait'){
+        const prev=prepared.filter(p=>p.a.type==='model'&&p.a.layerId===a.layerId).pop();
+        if(prev){
+          const real=realClipDuration(el,prev.a.to.clip);
+          const natural=prev.a.to.loop?prev.effStart+prev.a.duration:prev.effStart+(real!=null?Math.min(prev.a.duration,real/prev.a.to.speed):prev.a.duration);
+          effStart=Math.max(effStart,natural);
+          // The clip the wait action was waiting on is finished by definition,
+          // so its action stops winning the model channel once the wait action
+          // takes over - otherwise its longer authored span would keep the
+          // finished clip frozen on screen and the wait action would never win.
+          prev.end=Math.min(prev.end,effStart);
+        }
+      }
+      prepared.push({a,props,from,end:effStart+a.duration,effStart});
     }
     for(const p of prepared)if(p.a.start<=t){const id=p.a.layerId;result[id]||={};for(const key of p.props)result[id][key]=at(id,key,t,prepared);}
     return result;
