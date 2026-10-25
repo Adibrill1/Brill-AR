@@ -8,6 +8,7 @@ const run=(script,env)=>new Promise(res=>{execFile('node',[path.join(__dirname,'
  fs.writeFileSync(path.join(remote,'alpha.json'),JSON.stringify({format:'ar-studio/1',id:'alpha',elements:[]}));
  fs.writeFileSync(path.join(remote,'beta.json'),JSON.stringify({format:'ar-studio/1',id:'beta',elements:[{id:'x'}]}));
  let r=await run('pub-manifest.cjs',{PUB_DIR:remote});assert.equal(r.code,0,'manifest generation: '+r.stderr);
+ r=await run('pub-manifest.cjs',{PUB_DIR:remote});assert.equal(r.code,0);assert.deepEqual(JSON.parse(fs.readFileSync(path.join(remote,'manifest.json'),'utf8')).scenes.map(s=>s.id),['alpha','beta'],'manifest.json must never list itself as a scene (regression: second generation included it)');
  const srv=http.createServer((req,res2)=>{const f=path.join(remote,decodeURIComponent(req.url.replace('/pub/','')));if(fs.existsSync(f)){res2.writeHead(200);res2.end(fs.readFileSync(f));}else{res2.writeHead(404);res2.end();}});
  await new Promise(r2=>srv.listen(0,'127.0.0.1',r2));const site='http://127.0.0.1:'+srv.address().port;
  const local=fs.mkdtempSync(path.join(os.tmpdir(),'pub-local-')); // clean-checkout simulation: no pub dir at all
