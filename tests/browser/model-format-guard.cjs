@@ -37,4 +37,12 @@ console.log('PASS OBJ-in-ZIP refused with a specific message naming supported pa
 await p.locator('#file-model').setInputFiles(path.resolve('studio/library/gem.glb'));
 await p.waitForFunction(()=>document.querySelectorAll('#element-list li').length===1);
 console.log('PASS uncompressed GLB still imports (control)');
+// phone-width visual: the refusal must be readable, not clipped
+await p.setViewportSize({width:390,height:844});await p.waitForTimeout(400);
+await p.locator('#file-model').setInputFiles({name:'draco.glb',mimeType:'model/gltf-binary',buffer:glb(['KHR_draco_mesh_compression'])});
+await p.waitForFunction(()=>document.querySelector('#msg').textContent.includes('Draco'));
+await p.locator('#msg').scrollIntoViewIfNeeded();await p.waitForTimeout(200);
+await p.screenshot({path:'/downloads/model-format-guard-390.png'});
+assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false,'no horizontal overflow at 390px');
+console.log('PASS 390px refusal message renders without horizontal overflow (representative capture)');
 }catch(e){console.error(e);process.exitCode=1}finally{await b.close();server.close()}})();
