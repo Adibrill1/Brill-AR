@@ -6,3 +6,12 @@
 - Hebrew import error messages for layer/size limits.
 Caveats: headless only. Existing over-limit scenes are not retroactively fixed. Share-sheet ordering, iOS memory and persist/eviction are unmeasured on a phone. Dormant server paths not changed.
 Test: tests/browser/data-safety.cjs
+
+## Follow-up (same round)
+- Tombstone is now for the page session (no 15s expiry); tested 60s-late save, pending slider timer + delete, reload.
+- One drag = one undo step regardless of duration (first save records history, later saves in the gesture are noHistory); flush on release, project switch, pagehide/hidden. Tested 5 ticks 750ms apart.
+- Publish check uses exact serialized bytes (exportJSONSize, equals exportJSON bytes) vs 40MB; the send-to-publish path no longer refuses, it sends and warns.
+- Export of over-limit scenes warns and still writes everything (never truncates). Existing over-limit scenes: unresolved, cannot re-import in this version.
+- Limits counting = exported assets (layer assets, particle sprites, artwork); orphans excluded. Added 121-file guard. Fixed: exactly-20MiB entry (padding case) was rejected by JSON import; ZIP total counted experience.json against 60MB (now assets only, metadata capped 4MB).
+- player.js errors use textContent; /e/ load failure caught.
+- storage.persist result recorded in window.__storagePersisted only; UI makes no persistence promise.

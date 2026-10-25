@@ -6,7 +6,8 @@
    tap actions (open link / mute toggle), z-order via array order. */
 (async () => {
   const errBox = document.getElementById("err");
-  const fail = (t) => { errBox.style.display = "grid"; errBox.innerHTML = t; };
+  // Text only (textContent); an optional safe link is built as an element, never parsed from a string.
+  const fail = (t, link) => { errBox.style.display = "grid"; errBox.textContent = t; if (link) { errBox.appendChild(document.createElement("br")); const a = document.createElement("a"); a.href = "index.html"; a.textContent = link; errBox.appendChild(a); } };
   const pubId = new URLSearchParams(location.search).get("pub") || "";
   const editMode = new URLSearchParams(location.search).get("edit") === "1" && !window.__REMOTE_EXPERIENCE__ && !pubId;
   let rec;
@@ -16,16 +17,18 @@
     // fetchPublished validates the id, caps the download and does NOT save to local storage.
     try { rec = await Studio.fetchPublished(pubId); } catch (e) { return fail(e.message); }
   } else if (window.__REMOTE_EXPERIENCE__) {
-    const r = await fetch("/api/experiences/" + encodeURIComponent(window.__REMOTE_EXPERIENCE__));
-    if (!r.ok) return fail("הניסוי לא נמצא בשרת.");
-    rec = await Studio.importJSON(await r.text(), { save: false }); // viewer route: never persist into the viewer's editor storage
+    try {
+      const r = await fetch("/api/experiences/" + encodeURIComponent(window.__REMOTE_EXPERIENCE__));
+      if (!r.ok) return fail("הניסוי לא נמצא בשרת.");
+      rec = await Studio.importJSON(await r.text(), { save: false }); // viewer route: never persist into the viewer's editor storage
+    } catch (e) { return fail("טעינת הניסוי נכשלה. נסי לרענן."); }
   } else {
     const id = location.hash.slice(1);
-    if (!id) return fail("חסר מזהה ניסוי. <a href='index.html'>חזרה לעורך</a>");
+    if (!id) return fail("חסר מזהה ניסוי.", "חזרה לעורך");
     rec = await Studio.load(id);
   }
   if(!window.__REMOTE_EXPERIENCE__&&!pubId&&rec&&document.getElementById("backlink"))document.getElementById("backlink").href="index.html#"+encodeURIComponent(rec.id);
-  if (!rec || !rec.target) return fail("הניסוי לא נמצא במכשיר הזה.<br>אם ייצאת ממכשיר אחר - ייבאי קודם ב<a href='index.html'>עורך</a>.");
+  if (!rec || !rec.target) return fail("הניסוי לא נמצא במכשיר הזה. אם ייצאת ממכשיר אחר - ייבאי קודם בעורך.", "פתיחת העורך");
   rec.elements.forEach(Studio.normEl);
 
   // Regenerate the engine target from the stored artwork (deterministic pipeline).

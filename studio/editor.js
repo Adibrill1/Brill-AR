@@ -77,7 +77,7 @@
     if (/too large|too many assets|archive too large|entry too large/i.test(m)) return "הקובץ לא יובא: גודל הקבצים חורג מהמגבלה (60MB בסך הכול, 20MB לקובץ).";
     return "הקובץ לא תקין לייבוא.";
   }
-  const saveGuarded = (r) => Studio.save(r).catch(() => msg(SAVE_FAIL_MSG));
+  const saveGuarded = (r, o) => Studio.save(r, o).catch(() => msg(SAVE_FAIL_MSG));
   // In-app record switching drops unsaved in-memory edits after a failed save. Block it
   // explicitly instead of losing the work silently. (In-flight saves are safe: save()
   // snapshots at call time.)
@@ -650,6 +650,7 @@
       a.download = (rec.name || "ar-studio") + ".json";
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+      { const w = Studio.exportWarning(rec); if (w) msg(w); }
     });
     $("btn-export-zip").onclick = () => queueExperience(async () => {
       const blob = await Studio.exportZIP(rec);
@@ -658,6 +659,7 @@
       a.download = (rec.name || "ar-studio") + ".zip";
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+      { const w = Studio.exportWarning(rec); if (w) msg(w); }
     });
     $("btn-import").onclick = () => $("file-import").click();
 
@@ -677,7 +679,7 @@
           msg("חלק מהקבצים לא קריאים יותר בטלפון (" + names.join(", ") + ") - ייבאי אותם שוב ואז שלחי. שום דבר לא נשלח.");
           return;
         }
-        { const pb = Studio.publishBlocker(rec); if (pb) { msg(pb + " שום דבר לא נשלח."); return; } }
+        const pb = Studio.publishBlocker(rec), warn = [pb && (pb + " אפשר לשלוח אליי כגיבוי, אבל לא אפשר יהיה לפרסם אותה כך."), Studio.exportWarning(rec)].filter(Boolean).join(" "), tail = warn ? " " + warn : "";
         const useZip = $("send-zip").checked;
         const bodyP = useZip ? Studio.exportZIP(rec) : Studio.exportJSON(rec);
         let shared = false;
@@ -688,7 +690,7 @@
             if (navigator.canShare({ files: [file] })) {
               await navigator.share({ files: [file], title: rec.name || "ar-studio" });
               shared = true;
-              msg("אם השליחה בוצעה, הקובץ בדרך אליי. אחזיר קישור אחרי שתאשרי פרסום.");
+              msg("אם השליחה בוצעה, הקובץ בדרך אליי. אחזיר קישור אחרי שתאשרי פרסום." + tail);
             }
           } catch (err) {
             if (err && err.name === "AbortError") { msg("השיתוף בוטל - שום דבר לא נשלח."); return; }
@@ -701,7 +703,7 @@
         const a = document.createElement("a");
         a.href = URL.createObjectURL(body instanceof Blob ? body : new Blob([body], { type: "application/json" }));
         a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-        msg("חלון השיתוף לא נפתח כאן, אז הקובץ ירד. שלחי אותו אליי בוואטסאפ.");
+        msg("חלון השיתוף לא נפתח כאן, אז הקובץ ירד. שלחי אותו אליי בוואטסאפ." + tail);
       } catch (err) {
         const why = (err && err.message) || String(err) || "שגיאה לא ידועה";
         msg("ההכנה לשליחה נכשלה: " + why + ". היצירה נשמרה אצלך - נסי גם ״ייצוא לקובץ״ ושלחי את הקובץ כאן.");
@@ -820,11 +822,18 @@
     const num = (id, min, max, fn) => { $(id).onchange = (e) => { const v = parseFloat(e.target.value); if (isNaN(v)) { renderPanel(); return; } upd((el) => fn(el, Math.max(min, Math.min(max, v)))); }; };
     // Sliders: apply live, save once per gesture (debounced, flushed on release) so a drag is
     // one undo step and does not re-read all media on every tick.
-    let sliderTimer = null;
-    const flushSlider = () => { if (sliderTimer) { clearTimeout(sliderTimer); sliderTimer = null; saveGuarded(rec).finally(() => { renderPanel(); renderList(); }); } };
-    window.__flushSlider = flushSlider;
-    const updS = (fn) => { const el = cur(); if (!el) return; fn(el); draw(); if (sliderTimer) clearTimeout(sliderTimer); sliderTimer = setTimeout(flushSlider, 600); };
-    document.querySelectorAll('input[type=range]').forEach(r => r.addEventListener("change", flushSlider));
+    // One drag = one undo step: the first save of a gesture records history, later saves of the
+    // same gesture (timer, or a long slow drag) are noHistory. Release/switch/hide flush and close it.
+    let sliderTimer = null, gestureSaved = false, sliderRec = null;
+    const flushSlider = (final = true) => {
+      if (sliderTimer) { clearTimeout(sliderTimer); sliderTimer = null; const r = sliderRec || rec; saveGuarded(r, gestureSaved ? { noHistory: true } : undefined).finally(() => { if (r === rec) { renderPanel(); renderList(); } }); gestureSaved = true; }
+      if (final) { gestureSaved = false; sliderRec = null; }
+    };
+    window.__flushSlider = () => flushSlider(true);
+    const updS = (fn) => { const el = cur(); if (!el) return; fn(el); draw(); sliderRec = rec; if (sliderTimer) clearTimeout(sliderTimer); sliderTimer = setTimeout(() => flushSlider(false), 600); };
+    document.querySelectorAll('input[type=range]').forEach(r => r.addEventListener("change", () => flushSlider(true)));
+    window.addEventListener("pagehide", () => flushSlider(true));
+    document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") flushSlider(true); });
     $("sl-scale").oninput = e => updS(el => panelWrite(el, "w", parseFloat(e.target.value)));
     $("sl-rot").oninput = e => updS(el => panelWrite(el, "rot", parseFloat(e.target.value)));
     $("sl-z").oninput = e => updS(el => panelWrite(el, "z", parseFloat(e.target.value)));

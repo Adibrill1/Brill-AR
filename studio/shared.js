@@ -1031,9 +1031,9 @@ const Studio = (() => {
   function onSaveState(cb){saveWatchers.add(cb);cb();return()=>saveWatchers.delete(cb);}
   function saveState(id){const i=saveInfos.get(id);return i?{...i}:{pending:0,lastSavedAt:0,lastError:null};}
   function installSaveGuard(win){const handler=e=>{for(const i of saveInfos.values())if(i.pending>0||i.lastError){e.preventDefault();e.returnValue='';return;}};win.addEventListener('beforeunload',handler);return handler;}
-  // Deleted ids are tombstoned briefly so an in-flight/late save cannot resurrect them.
+  // Deleted ids stay tombstoned for the whole page session so no in-flight, queued or late save can resurrect them.
   const tombstones=new Map();
-  const isTombstoned=id=>{const t=tombstones.get(id);if(!t)return false;if(Date.now()-t>15000){tombstones.delete(id);return false;}return true;};
+  const isTombstoned=id=>tombstones.has(id); // for the page lifetime: imports always mint a new id, and after a reload no timer/queue from this page can exist
   async function delExperience(id){
     tombstones.set(id,Date.now());
     await (saveQueues.get(id)||Promise.resolve()).catch(()=>{});
@@ -1041,12 +1041,37 @@ const Studio = (() => {
     saveQueues.delete(id);history.delete(id);saveInfos.delete(id);
   }
   // Limits shared by editor, export and import so a backup is always restorable.
-  const LIMITS={maxLayers:60,maxEntryBytes:20*1024*1024,maxMediaBytes:60*1024*1024,maxPublishBytes:40*1024*1024};
-  function mediaBytes(rec){let n=0;for(const b of Object.values(rec.assets||{}))n+=b&&b.size||0;return n;}
+  const LIMITS={maxLayers:60,maxEntryBytes:20*1024*1024,maxMediaBytes:60*1024*1024,maxPublishBytes:40*1024*1024,maxAssets:121};
+  // Same set exportJSON/exportZIP write: assets referenced by a layer/particle sprite, plus the artwork.
+  function exportedAssetIds(rec){const ids=new Set();for(const el of rec.elements||[])for(const id of [el.assetId,el.particles&&el.particles.spriteAssetId])if(id&&rec.assets&&rec.assets[id])ids.add(id);if(rec.assets&&rec.assets.__artwork)ids.add('__artwork');return [...ids];}
+  function mediaBytes(rec){let n=0;for(const id of exportedAssetIds(rec))n+=rec.assets[id].size||0;return n;}
+  // Why this record's backup could not be restored by this version (null = restorable).
+  function restoreBlocker(rec){
+    if((rec.elements||[]).length>LIMITS.maxLayers)return 'ליצירה יש יותר מ־'+LIMITS.maxLayers+' שכבות';
+    const ids=exportedAssetIds(rec);
+    if(ids.length>LIMITS.maxAssets)return 'ליצירה יותר מ־'+LIMITS.maxAssets+' קבצי מדיה';
+    for(const id of ids)if((rec.assets[id].size||0)>LIMITS.maxEntryBytes)return 'קובץ אחד גדול מ־20MB';
+    if(mediaBytes(rec)>LIMITS.maxMediaBytes)return 'סך המדיה מעל 60MB';
+    return null;
+  }
+  const exportWarning=rec=>{const r=restoreBlocker(rec);return r?'שימו לב: '+r+', ולכן הגרסה הנוכחית לא תוכל לשחזר את הקובץ הזה בייבוא. הקובץ נשמר במלואו ולא נחתך. הקטינו את היצירה לפני שתסתמכי עליו כגיבוי.':null;};
+  function exportObject(rec){
+    const out = { format: "ar-studio/1", id: rec.id, name: rec.name, createdAt: rec.createdAt, target: rec.target, elements: (rec.elements || []).map((e) => ({ ...e })), sequences: (rec.sequences || []).map((q) => ({ ...q })), tracks: (rec.tracks || []).map((t) => ({ ...t })), actionSequences: JSON.parse(JSON.stringify(rec.actionSequences || [])) };
+    out.assets = {};
+    return out;
+  }
+  // Exact byte size exportJSON would produce (UTF-8), computed without building the string.
+  function exportJSONSize(rec){
+    const skel=JSON.stringify(exportObject(rec)),enc=new TextEncoder();
+    let n=enc.encode(skel).length,first=true;
+    for(const id of exportedAssetIds(rec)){const b=rec.assets[id];n+=(first?0:1)+enc.encode(JSON.stringify(id)).length+1+2+('data:'+(b.type||'application/octet-stream')+';base64,').length+4*Math.ceil(b.size/3);first=false;}
+    return n;
+  }
   // Published scenes are base64 JSON (~4/3 of media) and the player/server cap them at 40MB.
-  function publishBlocker(rec){return Math.ceil(mediaBytes(rec)*4/3)+200000>LIMITS.maxPublishBytes?'היצירה גדולה מדי לפרסום בקישור (המדיה מעל כ־29MB). הקטינו סרטון או הסירו קובץ. הגיבוי והייצוא ממשיכים לעבוד.':null;}
+  function publishBlocker(rec){const n=exportJSONSize(rec);return n>LIMITS.maxPublishBytes?'הקובץ המלא של היצירה הוא '+(n/1048576).toFixed(1)+'MB, ומעל מגבלת 40MB של קישור פרסום. הקטינו סרטון או הסירו קובץ.':null;}
   function addBlocker(rec,{layers=0,bytes=0}={}){
     if((rec.elements||[]).length+layers>LIMITS.maxLayers)return 'אפשר עד '+LIMITS.maxLayers+' שכבות ביצירה. כך הגיבוי תמיד ניתן לשחזור.';
+    if(bytes>0&&exportedAssetIds(rec).length+1>LIMITS.maxAssets)return 'אפשר עד '+LIMITS.maxAssets+' קבצי מדיה ביצירה.';
     if(bytes>LIMITS.maxEntryBytes)return 'הקובץ גדול מ־20MB.';
     if(mediaBytes(rec)+bytes>LIMITS.maxMediaBytes)return 'סך הקבצים ביצירה חורג מ־60MB. כך הגיבוי תמיד ניתן לשחזור. הסירי קובץ או דחסי אותו.';
     return null;
@@ -1089,8 +1114,7 @@ const Studio = (() => {
     return copies[0].id;
   }
   async function exportJSON(rec) {
-    const out = { format: "ar-studio/1", id: rec.id, name: rec.name, createdAt: rec.createdAt, target: rec.target, elements: rec.elements.map((e) => ({ ...e })), sequences: (rec.sequences || []).map((q) => ({ ...q })), tracks: (rec.tracks || []).map((t) => ({ ...t })), actionSequences: JSON.parse(JSON.stringify(rec.actionSequences || [])) };
-    out.assets = {};
+    const out = exportObject(rec);
     for (const el of rec.elements) {
       for (const id of [el.assetId, el.particles && el.particles.spriteAssetId]) {
         if (id && rec.assets[id]) out.assets[id] = await blobToDataURL(rec.assets[id]);
@@ -1109,7 +1133,7 @@ const Studio = (() => {
   function zipAssetName(id, type) { return "assets/" + id + (ZIP_MIME_EXT[type] || ".bin"); }
   async function exportZIP(rec) {
     if (typeof fflate === "undefined") throw new Error("zip support not loaded");
-    const slim = { format: "ar-studio/1", id: rec.id, name: rec.name, createdAt: rec.createdAt, target: rec.target, elements: rec.elements.map((e) => ({ ...e })), sequences: (rec.sequences || []).map((q) => ({ ...q })), tracks: (rec.tracks || []).map((t) => ({ ...t })), actionSequences: JSON.parse(JSON.stringify(rec.actionSequences || [])) };
+    const slim = { format: "ar-studio/1", id: rec.id, name: rec.name, createdAt: rec.createdAt, target: rec.target, elements: (rec.elements || []).map((e) => ({ ...e })), sequences: (rec.sequences || []).map((q) => ({ ...q })), tracks: (rec.tracks || []).map((t) => ({ ...t })), actionSequences: JSON.parse(JSON.stringify(rec.actionSequences || [])) };
     slim.assets = {};
     const wanted = new Set();
     for (const el of rec.elements) for (const id of [el.assetId, el.particles && el.particles.spriteAssetId]) if (id && rec.assets[id]) wanted.add(id);
@@ -1136,7 +1160,7 @@ const Studio = (() => {
   // Intake hardening: entries are filtered BEFORE inflation (zip-bomb guard), names are
   // allowlisted (no traversal), sizes are capped like JSON imports, and the record passes
   // the same validateExportObject as JSON imports. No entry is ever executed.
-  const ZIP_MAX_FILE = 20 * 1024 * 1024, ZIP_MAX_TOTAL = 60 * 1024 * 1024, ZIP_MAX_ENTRIES = 130;
+  const ZIP_MAX_FILE = 20 * 1024 * 1024, ZIP_MAX_TOTAL = 60 * 1024 * 1024, ZIP_MAX_ENTRIES = 130, ZIP_MAX_META = 4 * 1024 * 1024;
   function unzipCapped(u8) {
     return new Promise((res, rej) => {
       let total = 0, count = 0, rejected = null;
@@ -1148,6 +1172,7 @@ const Studio = (() => {
           if (!okName || name.includes("..") || name.includes("\\")) { rejected = rejected || "bad entry name"; return false; }
           if (count > ZIP_MAX_ENTRIES) { rejected = rejected || "too many entries"; return false; }
           if (file.originalSize > ZIP_MAX_FILE) { rejected = rejected || "entry too large"; return false; }
+          if (name === "experience.json") { if (file.originalSize > ZIP_MAX_META) { rejected = rejected || "metadata too large"; return false; } return true; } // media total below counts assets only, same as JSON import and the editor guard
           total += file.originalSize;
           if (total > ZIP_MAX_TOTAL) { rejected = rejected || "archive too large"; return false; }
           return true;
@@ -1247,7 +1272,7 @@ const Studio = (() => {
     let total=0;
     for(const [key,value]of entries) {
       if(typeof value!=="string"||!/^data:(image\/(png|jpeg|webp|gif)|video\/(mp4|webm|quicktime)|audio\/(mpeg|wav|x-wav|mp4|x-m4a|ogg)|model\/gltf-binary|application\/octet-stream);base64,[A-Za-z0-9+/]*={0,2}$/.test(value))throw new Error("asset must be embedded supported media");
-      const size=Math.floor(value.slice(value.indexOf(',')+1).length*.75);total+=size;
+      const b64=value.slice(value.indexOf(',')+1),size=b64.length/4*3-(b64.endsWith('==')?2:b64.endsWith('=')?1:0);total+=size;
       if(size>20*1024*1024||total>60*1024*1024)throw new Error("import media too large");
     }
     const assets={};
@@ -1452,7 +1477,7 @@ const Studio = (() => {
 
   return { TARGET_W, TARGET_H, newId, inspectVideo, validateModelBlob, prepareModelBlob, modelCompressionKinds, DECODER_DRACO_PATH, DECODER_MESHOPT_PATH, modelClipNames, modelClipInfo, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
            audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, historyState, restoreHistory, duplicateLayer, exportJSON, importJSON, exportZIP, importZIP, zipToJSON, fetchPublished, ownBlob, assetHealth, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, artworkFingerprint, fingerprintDistance, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
-           load: id=>settledRead(id), all: ()=>settledRead(), del: delExperience, LIMITS, mediaBytes, addBlocker, publishBlocker,
+           load: id=>settledRead(id), all: ()=>settledRead(), del: delExperience, LIMITS, mediaBytes, addBlocker, publishBlocker, restoreBlocker, exportWarning, exportJSONSize,
            onSaveState, installSaveGuard, saveState,
            _testHoldSave:p=>{saveHold=p;}, _testFailSave:m=>{failSave=m;} };
 })();
