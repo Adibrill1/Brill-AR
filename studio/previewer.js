@@ -5,15 +5,21 @@
 (async () => {
   const errBox = document.getElementById("err");
   const fail = (t) => { errBox.style.display = "grid"; errBox.innerHTML = t; };
+  const pubId=new URLSearchParams(location.search).get("pub")||"";
   const id = location.hash.slice(1);
-  const editMode=new URLSearchParams(location.search).get("edit")==="1";
+  const editMode=!pubId&&new URLSearchParams(location.search).get("edit")==="1";
   const topbarToggle=document.createElement('a');
   topbarToggle.id='topbar-edit-toggle';
   topbarToggle.href=editMode?('preview.html'+location.hash):('preview.html?edit=1'+location.hash);
   topbarToggle.textContent=editMode?'👁 תצוגה':'✏️ עריכה';
-  document.querySelector('#topbar').append(topbarToggle);
-  if (!id) return fail("חסר מזהה ניסוי. <a href='index.html'>חזרה לעורך</a>");
-  const savedRec=await Studio.load(id);let rec=savedRec;
+  if(!pubId)document.querySelector('#topbar').append(topbarToggle);
+  let savedRec=null,rec=null;
+  if (pubId) {
+    try { rec=await Studio.fetchPublished(pubId); } catch(e) { return fail(e.message); }
+  } else {
+    if (!id) return fail("חסר מזהה ניסוי. <a href='index.html'>חזרה לעורך</a>");
+    savedRec=await Studio.load(id);rec=savedRec;
+  }
   const params=new URLSearchParams(location.search);let targetAction=null;
   if(editMode&&params.has('action')){
     targetAction=ActionCore.list(savedRec||{}).find(q=>q.id===params.get('sequence'))?.actions.find(a=>a.id===params.get('action')&&a.type==='move');

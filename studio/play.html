@@ -21,7 +21,9 @@
 </head>
 <body>
 <a id="backlink" href="index.html">↩ לעורך</a>
+<a id="camfree" href="#" hidden style="position:fixed;bottom:10px;inset-inline-start:10px;z-index:9999;background:rgba(255,255,255,.85);color:#123;border-radius:20px;padding:6px 14px;font:14px/1.4 sans-serif;text-decoration:none">👁 צפייה בלי מצלמה</a>
 <div id="err"></div>
+<script>/* pub viewers (recipients, possibly no camera): always offer the camera-free preview */(function(){const pub=new URLSearchParams(location.search).get("pub");if(pub){const a=document.getElementById("camfree");a.href="preview.html?pub="+encodeURIComponent(pub);a.hidden=false;const b=document.getElementById("backlink");if(b)b.hidden=true;}})();</script>
 <script src="vendor/gifanim.js"></script>
 <script src="actions.js?v=rc82"></script>
 <script src="shared.js?v=rc82"></script>

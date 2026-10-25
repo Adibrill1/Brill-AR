@@ -663,7 +663,8 @@ const Studio = (() => {
       const tap = entity._tapOverride != null ? entity._tapOverride : el.onTap;
       if (tap === "link" && el.tapUrl) {
         if (/^https:/.test(el.tapUrl)) window.open(el.tapUrl, "_blank", "noopener");
-        else window.location.href = el.tapUrl; // mailto: / tel:
+        else if (/^(mailto:|tel:)/.test(el.tapUrl)) window.location.href = el.tapUrl;
+        // any other scheme (or a schemeless string) is intentionally inert
       } else if (tap === "mute" && hooks && hooks.onMuteToggle) {
         hooks.onMuteToggle();
       } else if (tap === "sequence" && hooks && hooks.onNextSequence) {
@@ -1050,8 +1051,9 @@ const Studio = (() => {
     if (rec.assets.__artwork) out.assets.__artwork = await blobToDataURL(rec.assets.__artwork);
     return JSON.stringify(out);
   }
-  async function importJSON(text) {
+  async function importJSON(text, opts) {
     const o = JSON.parse(text);
+    const persist = !opts || opts.save !== false;
     if (!o || o.format !== "ar-studio/1") throw new Error("bad format");
     if (!Array.isArray(o.elements) || o.elements.length > 60) throw new Error("bad elements (maximum60)");
     const ids = new Set();
@@ -1061,6 +1063,12 @@ const Studio = (() => {
       ids.add(el.id);
       for (const key of ["x","y","z","w","h","rot","rotX","rotY","opacity","aspect","volume"]) if (el[key] != null && (typeof el[key] !== "number" || !Number.isFinite(el[key]))) throw new Error("bad numeric field");
       if(!validParticles(el))throw new Error('bad particles');
+      // bindTap may navigate to el.tapUrl on tap - refuse script-executing schemes
+      // (normalized: browsers ignore case and embedded whitespace/control chars in schemes).
+      if (el.tapUrl != null) {
+        const u = String(el.tapUrl).toLowerCase().replace(/[\s\u0000-\u0020]+/g, "");
+        if (/^(javascript|data|vbscript|file):/.test(u)) throw new Error("bad tap url");
+      }
       if(!validCrop(el))throw new Error('bad image crop');
       if (el.timeline != null) {
         const tl = el.timeline;
@@ -1103,7 +1111,7 @@ const Studio = (() => {
       if(!el.assetId||!rec.assets[el.assetId])throw new Error('model asset missing');
       rec.assets[el.assetId]=await prepareModelBlob(rec.assets[el.assetId]);
     }
-    await save(rec);
+    if (persist) await save(rec);
     return rec;
   }
 
@@ -1251,8 +1259,29 @@ const Studio = (() => {
     toast._t = setTimeout(() => { toast.style.opacity = "0"; }, 1200);
   }
 
+  // Static published scene (surge /pub route): fetch + validate + parse WITHOUT saving to
+  // the viewer's local editor storage. Capped download; honest Hebrew errors.
+  const MAX_PUB_BYTES = 40 * 1024 * 1024;
+  async function fetchPublished(pubId) {
+    if (typeof pubId !== "string" || !/^[a-zA-Z0-9_-]{1,64}$/.test(pubId)) throw new Error("קישור לא תקין.");
+    const r = await fetch("pub/" + pubId + ".json");
+    if (!r.ok) throw new Error("הניסוי לא נמצא.");
+    const len = Number(r.headers.get("content-length")) || 0;
+    if (len > MAX_PUB_BYTES) throw new Error("הקובץ גדול מדי.");
+    let text;
+    if (r.body && r.body.getReader) {
+      const reader = r.body.getReader(), chunks = []; let n = 0;
+      for (;;) { const { done, value } = await reader.read(); if (done) break; n += value.byteLength; if (n > MAX_PUB_BYTES) throw new Error("הקובץ גדול מדי."); chunks.push(value); }
+      text = new TextDecoder().decode(await new Blob(chunks).arrayBuffer());
+    } else {
+      text = await r.text();
+      if (text.length > MAX_PUB_BYTES * 2) throw new Error("הקובץ גדול מדי.");
+    }
+    return importJSON(text, { save: false });
+  }
+
   return { TARGET_W, TARGET_H, newId, inspectVideo, validateModelBlob, prepareModelBlob, modelCompressionKinds, DECODER_DRACO_PATH, DECODER_MESHOPT_PATH, modelClipNames, modelClipInfo, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
-           audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, historyState, restoreHistory, duplicateLayer, exportJSON, importJSON, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
+           audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, historyState, restoreHistory, duplicateLayer, exportJSON, importJSON, fetchPublished, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
            load: id=>settledRead(id), all: ()=>settledRead(), del: idbDel,
            onSaveState, installSaveGuard, saveState,
            _testHoldSave:p=>{saveHold=p;}, _testFailSave:m=>{failSave=m;} };

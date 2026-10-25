@@ -13,14 +13,12 @@
   if (pubId) {
     // Static published scene: play.html?pub=<id> loads /pub/<id>.json (surge-served; the
     // file rides every deploy from a store outside git - see studio/pub/ in .gitignore).
-    if (!/^[a-zA-Z0-9_-]{1,64}$/.test(pubId)) return fail("קישור לא תקין.");
-    const r = await fetch("pub/" + pubId + ".json");
-    if (!r.ok) return fail("הניסוי לא נמצא.");
-    rec = await Studio.importJSON(await r.text());
+    // fetchPublished validates the id, caps the download and does NOT save to local storage.
+    try { rec = await Studio.fetchPublished(pubId); } catch (e) { return fail(e.message); }
   } else if (window.__REMOTE_EXPERIENCE__) {
     const r = await fetch("/api/experiences/" + encodeURIComponent(window.__REMOTE_EXPERIENCE__));
     if (!r.ok) return fail("הניסוי לא נמצא בשרת.");
-    rec = await Studio.importJSON(await r.text());
+    rec = await Studio.importJSON(await r.text(), { save: false }); // viewer route: never persist into the viewer's editor storage
   } else {
     const id = location.hash.slice(1);
     if (!id) return fail("חסר מזהה ניסוי. <a href='index.html'>חזרה לעורך</a>");
