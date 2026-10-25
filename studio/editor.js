@@ -69,6 +69,14 @@
   // reflects them too) instead of silent unhandled rejections; the in-memory edit is
   // kept and persists on the next successful save.
   const SAVE_FAIL_MSG = "השמירה נכשלה. השינוי האחרון לא נשמר - נסי שוב.";
+  // Ask the browser not to evict our IndexedDB under storage pressure (best effort; outcome varies, esp. iOS Safari).
+  try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().then(ok => { window.__storagePersisted = ok; }).catch(() => {}); } catch {}
+  function importErrorMessage(err) {
+    const m = String((err && err.message) || err);
+    if (/maximum ?60|too many entries|bad elements/i.test(m)) return "הקובץ לא יובא: יותר מ־60 שכבות. הסירי שכבות ונסי שוב.";
+    if (/too large|too many assets|archive too large|entry too large/i.test(m)) return "הקובץ לא יובא: גודל הקבצים חורג מהמגבלה (60MB בסך הכול, 20MB לקובץ).";
+    return "הקובץ לא תקין לייבוא.";
+  }
   const saveGuarded = (r) => Studio.save(r).catch(() => msg(SAVE_FAIL_MSG));
   // In-app record switching drops unsaved in-memory edits after a failed save. Block it
   // explicitly instead of losing the work silently. (In-flight saves are safe: save()
@@ -80,6 +88,7 @@
     return confirm("יש שינויים בניסוי הזה שהשמירה שלהם נכשלה. מעבר ימחק אותם. לעבור בכל זאת?");
   };
   function queueExperience(work) {
+    if (window.__flushSlider) window.__flushSlider();
     const operation = experienceReady.then(work);
     experienceReady = operation.catch(err => { msg("הפעולה לא הושלמה: " + err.message); });
     return experienceReady;
@@ -510,6 +519,7 @@
         }
       }
       if(kind==='model'){try{f=await Studio.prepareModelBlob(f);}catch(err){msg('המודל לא נוסף: '+err.message);return;}}
+      { const blocked = Studio.addBlocker(rec, { layers: 1, bytes: f.size }); if (blocked) { msg(blocked); return; } }
       const assetId = Studio.newId();
       rec.assets[assetId] = await Studio.ownBlob(f);
       const artRatio = rec.target.artRect.w / rec.target.artRect.h;
@@ -572,6 +582,7 @@
     $("file-model").onchange = addFile("model");
 
     $("btn-particles").onclick = async () => {
+      { const blocked = Studio.addBlocker(rec, { layers: 1 }); if (blocked) { msg(blocked); return; } }
       const el = Studio.normEl({ id: Studio.newId(), type: "particles", name: "חלקיקים " + (rec.elements.filter((x) => x.type === "particles").length + 1),
                    x: 0, y: 0, w: 0.6, h: 0.6, rot: 0, z: 0.12, seq: curSeq, particles: { preset: "sparkle", count: 120, color: "#ffd94d" } });
       rec.elements.push(el);
@@ -582,6 +593,7 @@
     };
 
     $("btn-text").onclick = async () => {
+      { const blocked = Studio.addBlocker(rec, { layers: 1 }); if (blocked) { msg(blocked); return; } }
       const el = Studio.normEl({ id: Studio.newId(), type: "text", name: "טקסט " + (rec.elements.filter((x) => x.type === "text").length + 1),
                    text: "כותרת חדשה", color: "#ffffff", bold: true, x: 0, y: 0.35, w: 0.5, h: null, rot: 0, z: 0.15, seq: curSeq });
       const tb = textBitmap(el);
@@ -665,6 +677,7 @@
           msg("חלק מהקבצים לא קריאים יותר בטלפון (" + names.join(", ") + ") - ייבאי אותם שוב ואז שלחי. שום דבר לא נשלח.");
           return;
         }
+        { const pb = Studio.publishBlocker(rec); if (pb) { msg(pb + " שום דבר לא נשלח."); return; } }
         const useZip = $("send-zip").checked;
         const bodyP = useZip ? Studio.exportZIP(rec) : Studio.exportJSON(rec);
         let shared = false;
@@ -698,6 +711,7 @@
     $("btn-publish").onclick = async () => {
       const base = ($("in-server").value || "").trim().replace(/\/+$/, "");
       if (!base) { msg("כדי לפרסם צריך שרת קטן שמחזיק את הקישורים. כרגע אפשר לייצא לקובץ ולשתף ידנית."); return; }
+      { const pb = Studio.publishBlocker(rec); if (pb) { msg(pb); return; } }
       msg("מפרסם...");
       try {
         const body = await Studio.exportJSON(rec);
@@ -727,7 +741,7 @@
         selectedId = null; checkedIds.clear(); tlScrubT = null; resetSeq();
         await hydrate(); await refreshExpSelect(); render();
         msg("הייבוא הצליח.");
-      } catch (err) { msg("הקובץ לא תקין לייבוא."); }
+      } catch (err) { msg(importErrorMessage(err)); }
       });
     };
     $("btn-edit-3d").onclick=()=>queueExperience(async()=>{await saveGuarded(rec);location.href="preview.html?edit=1#"+rec.id;});
@@ -747,7 +761,7 @@
       restoreFrozen:(t)=>restoreFrozen(t),
       onGate:(text)=>msg(text)});
     new IntersectionObserver(es=>{wrapOnScreen=es[0].isIntersecting;sync3d();}).observe($("canvas-wrap"));
-    $('btn-duplicate-el').onclick=()=>queueExperience(async()=>{const id=Studio.duplicateLayer(rec,selectedId);if(!id)return;selectedId=id;await saveGuarded(rec);await hydrate();render();});
+    $('btn-duplicate-el').onclick=()=>queueExperience(async()=>{{const b=Studio.addBlocker(rec,{layers:1});if(b){msg(b);return;}}const id=Studio.duplicateLayer(rec,selectedId);if(!id)return;selectedId=id;await saveGuarded(rec);await hydrate();render();});
     const restore=direction=>queueExperience(async()=>{const restored=await Studio.restoreHistory(rec.id,direction);if(!restored)return;rec=restored;selectedId=null;checkedIds.clear();tlScrubT=null;resetSeq();await hydrate();render();});
     const saveStateEl=$("save-state");
     function renderSaveState(){const st=rec?Studio.saveState(rec.id):{pending:0,lastSavedAt:0,lastError:null};
@@ -804,11 +818,18 @@
     const transform = applyBaseProp;
     const upd = (fn) => { const el = cur(); if (!el) return; fn(el); saveGuarded(rec).finally(() => { renderPanel(); draw(); renderList(); }); };
     const num = (id, min, max, fn) => { $(id).onchange = (e) => { const v = parseFloat(e.target.value); if (isNaN(v)) { renderPanel(); return; } upd((el) => fn(el, Math.max(min, Math.min(max, v)))); }; };
-    $("sl-scale").oninput = e => upd(el => panelWrite(el, "w", parseFloat(e.target.value)));
-    $("sl-rot").oninput = e => upd(el => panelWrite(el, "rot", parseFloat(e.target.value)));
-    $("sl-z").oninput = e => upd(el => panelWrite(el, "z", parseFloat(e.target.value)));
-    $("sl-vol").oninput = (e) => upd((el) => { el.volume = parseFloat(e.target.value); });
-    $("sl-opacity").oninput = (e) => upd((el) => panelWrite(el, "opacity", parseFloat(e.target.value)));
+    // Sliders: apply live, save once per gesture (debounced, flushed on release) so a drag is
+    // one undo step and does not re-read all media on every tick.
+    let sliderTimer = null;
+    const flushSlider = () => { if (sliderTimer) { clearTimeout(sliderTimer); sliderTimer = null; saveGuarded(rec).finally(() => { renderPanel(); renderList(); }); } };
+    window.__flushSlider = flushSlider;
+    const updS = (fn) => { const el = cur(); if (!el) return; fn(el); draw(); if (sliderTimer) clearTimeout(sliderTimer); sliderTimer = setTimeout(flushSlider, 600); };
+    document.querySelectorAll('input[type=range]').forEach(r => r.addEventListener("change", flushSlider));
+    $("sl-scale").oninput = e => updS(el => panelWrite(el, "w", parseFloat(e.target.value)));
+    $("sl-rot").oninput = e => updS(el => panelWrite(el, "rot", parseFloat(e.target.value)));
+    $("sl-z").oninput = e => updS(el => panelWrite(el, "z", parseFloat(e.target.value)));
+    $("sl-vol").oninput = (e) => updS((el) => { el.volume = parseFloat(e.target.value); });
+    $("sl-opacity").oninput = (e) => updS((el) => panelWrite(el, "opacity", parseFloat(e.target.value)));
     $("ck-loop").onchange = (e) => upd((el) => { el.loop = e.target.checked; });
     $("sel-anim").onchange = (e) => upd((el) => { el.anim = e.target.value; el.spin = el.anim === "spin"; });
     $("sel-tap").onchange = (e) => upd((el) => { el.onTap = e.target.value; });
@@ -857,7 +878,7 @@
     $("in-pcolor2").onchange = (e) => upd((el) => { if (!$("ck-pcolor2").checked) return; el.particles = Object.assign({}, el.particles, { color2: e.target.value }); });
     $("num-pspread").onchange = (e) => upd((el) => { el.particles = Object.assign({}, el.particles, { spread: Math.max(0.1, Math.min(2, parseFloat(e.target.value) || 1)) }); });
     $("sel-pdir-mode").onchange = (e) => upd((el) => { const mode = e.target.value, cur = el.particles && el.particles.direction; el.particles = Object.assign({}, el.particles, { direction: mode === "preset" ? null : mode === "random" ? -2 : mode === "outward" ? -3 : (Number.isInteger(cur) && cur >= 0 ? cur : 0) }); });
-    $("sl-pdir").oninput = (e) => upd((el) => { el.particles = Object.assign({}, el.particles, { direction: Math.max(0, Math.min(359, parseInt(e.target.value) || 0)) }); });
+    $("sl-pdir").oninput = (e) => updS((el) => { el.particles = Object.assign({}, el.particles, { direction: Math.max(0, Math.min(359, parseInt(e.target.value) || 0)) }); });
     $("num-pdir").onchange = (e) => upd((el) => { el.particles = Object.assign({}, el.particles, { direction: Math.max(0, Math.min(359, parseInt(e.target.value) || 0)) }); });
     $("ck-chroma").onchange = (e) => upd((el) => { el.chroma = Object.assign({}, el.chroma, { enabled: e.target.checked }); });
     $("in-chroma-color").onchange = (e) => upd((el) => { el.chroma = Object.assign({}, el.chroma, { color: e.target.value }); });

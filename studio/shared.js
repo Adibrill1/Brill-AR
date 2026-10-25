@@ -21,6 +21,7 @@ const Studio = (() => {
       tx.objectStore("experiences").put(rec, id);
       tx.oncomplete = () => res();
       tx.onerror = () => rej(tx.error);
+      tx.onabort = () => rej(tx.error || new Error("storage write aborted (storage may be full)"));
     });
   }
   async function idbGet(id) {
@@ -46,6 +47,7 @@ const Studio = (() => {
       tx.objectStore("experiences").delete(id);
       tx.oncomplete = () => res();
       tx.onerror = () => rej(tx.error);
+      tx.onabort = () => rej(tx.error || new Error("storage write aborted (storage may be full)"));
     });
   }
 
@@ -1029,7 +1031,28 @@ const Studio = (() => {
   function onSaveState(cb){saveWatchers.add(cb);cb();return()=>saveWatchers.delete(cb);}
   function saveState(id){const i=saveInfos.get(id);return i?{...i}:{pending:0,lastSavedAt:0,lastError:null};}
   function installSaveGuard(win){const handler=e=>{for(const i of saveInfos.values())if(i.pending>0||i.lastError){e.preventDefault();e.returnValue='';return;}};win.addEventListener('beforeunload',handler);return handler;}
+  // Deleted ids are tombstoned briefly so an in-flight/late save cannot resurrect them.
+  const tombstones=new Map();
+  const isTombstoned=id=>{const t=tombstones.get(id);if(!t)return false;if(Date.now()-t>15000){tombstones.delete(id);return false;}return true;};
+  async function delExperience(id){
+    tombstones.set(id,Date.now());
+    await (saveQueues.get(id)||Promise.resolve()).catch(()=>{});
+    await idbDel(id);
+    saveQueues.delete(id);history.delete(id);saveInfos.delete(id);
+  }
+  // Limits shared by editor, export and import so a backup is always restorable.
+  const LIMITS={maxLayers:60,maxEntryBytes:20*1024*1024,maxMediaBytes:60*1024*1024,maxPublishBytes:40*1024*1024};
+  function mediaBytes(rec){let n=0;for(const b of Object.values(rec.assets||{}))n+=b&&b.size||0;return n;}
+  // Published scenes are base64 JSON (~4/3 of media) and the player/server cap them at 40MB.
+  function publishBlocker(rec){return Math.ceil(mediaBytes(rec)*4/3)+200000>LIMITS.maxPublishBytes?'היצירה גדולה מדי לפרסום בקישור (המדיה מעל כ־29MB). הקטינו סרטון או הסירו קובץ. הגיבוי והייצוא ממשיכים לעבוד.':null;}
+  function addBlocker(rec,{layers=0,bytes=0}={}){
+    if((rec.elements||[]).length+layers>LIMITS.maxLayers)return 'אפשר עד '+LIMITS.maxLayers+' שכבות ביצירה. כך הגיבוי תמיד ניתן לשחזור.';
+    if(bytes>LIMITS.maxEntryBytes)return 'הקובץ גדול מ־20MB.';
+    if(mediaBytes(rec)+bytes>LIMITS.maxMediaBytes)return 'סך הקבצים ביצירה חורג מ־60MB. כך הגיבוי תמיד ניתן לשחזור. הסירי קובץ או דחסי אותו.';
+    return null;
+  }
   function save(rec,options={}) {
+    if(isTombstoned(rec.id))return Promise.resolve();
     rec.updatedAt=Date.now();const snapshot=structuredClone(rec),tail=saveQueues.get(rec.id)||Promise.resolve(),info=infoFor(rec.id);
     info.pending++;noteSave();
     const work=tail.catch(()=>{}).then(()=>saveSnapshot(snapshot,options)).then(()=>saveHold)
@@ -1429,7 +1452,7 @@ const Studio = (() => {
 
   return { TARGET_W, TARGET_H, newId, inspectVideo, validateModelBlob, prepareModelBlob, modelCompressionKinds, DECODER_DRACO_PATH, DECODER_MESHOPT_PATH, modelClipNames, modelClipInfo, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
            audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, historyState, restoreHistory, duplicateLayer, exportJSON, importJSON, exportZIP, importZIP, zipToJSON, fetchPublished, ownBlob, assetHealth, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, artworkFingerprint, fingerprintDistance, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
-           load: id=>settledRead(id), all: ()=>settledRead(), del: idbDel,
+           load: id=>settledRead(id), all: ()=>settledRead(), del: delExperience, LIMITS, mediaBytes, addBlocker, publishBlocker,
            onSaveState, installSaveGuard, saveState,
            _testHoldSave:p=>{saveHold=p;}, _testFailSave:m=>{failSave=m;} };
 })();
