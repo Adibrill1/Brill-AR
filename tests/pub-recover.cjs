@@ -1,30 +1,60 @@
-const assert=require('node:assert/strict'),fs=require('fs'),path=require('path'),os=require('os'),http=require('http'),{execFile}=require('child_process');
-// pub-recover / pub-manifest: durable published-scene set across clean checkouts, integrity aborts.
-// NOTE: the fixture server lives in THIS process - children must run ASYNC (execFileSync would
-// block the event loop and deadlock the child's fetch).
-const run=(script,env)=>new Promise(res=>{execFile('node',[path.join(__dirname,'../scripts/'+script)],{env:{...process.env,...env}},(e,stdout,stderr)=>res({code:e?(e.code||1):0,stdout:String(stdout),stderr:String(stderr)}));});
-(async()=>{
- const remote=fs.mkdtempSync(path.join(os.tmpdir(),'pub-remote-'));
- fs.writeFileSync(path.join(remote,'alpha.json'),JSON.stringify({format:'ar-studio/1',id:'alpha',elements:[]}));
- fs.writeFileSync(path.join(remote,'beta.json'),JSON.stringify({format:'ar-studio/1',id:'beta',elements:[{id:'x'}]}));
- let r=await run('pub-manifest.cjs',{PUB_DIR:remote});assert.equal(r.code,0,'manifest generation: '+r.stderr);
- r=await run('pub-manifest.cjs',{PUB_DIR:remote});assert.equal(r.code,0);assert.deepEqual(JSON.parse(fs.readFileSync(path.join(remote,'manifest.json'),'utf8')).scenes.map(s=>s.id),['alpha','beta'],'manifest.json must never list itself as a scene (regression: second generation included it)');
- const srv=http.createServer((req,res2)=>{const f=path.join(remote,decodeURIComponent(req.url.replace('/pub/','')));if(fs.existsSync(f)){res2.writeHead(200);res2.end(fs.readFileSync(f));}else{res2.writeHead(404);res2.end();}});
- await new Promise(r2=>srv.listen(0,'127.0.0.1',r2));const site='http://127.0.0.1:'+srv.address().port;
- const local=fs.mkdtempSync(path.join(os.tmpdir(),'pub-local-')); // clean-checkout simulation: no pub dir at all
- r=await run('pub-recover.cjs',{PUB_SITE:site,PUB_DIR:local});assert.equal(r.code,0,'clean recovery: '+r.stderr);
- for(const id of ['alpha','beta'])assert.equal(fs.readFileSync(path.join(local,id+'.json'),'utf8'),fs.readFileSync(path.join(remote,id+'.json'),'utf8'),'byte-identical recovery of '+id);
- console.log('PASS clean-checkout recovery restores every published scene byte-identically');
- fs.appendFileSync(path.join(remote,'beta.json'),' '); // tamper after manifest was generated
- r=await run('pub-recover.cjs',{PUB_SITE:site,PUB_DIR:local});
- assert.ok(r.code!==0&&r.stderr.includes('integrity check')&&r.stderr.includes('beta'),'tampered published scene must abort the deploy: '+r.stderr);
- console.log('PASS tampered published scene aborts recovery (deploy blocked)');
- fs.unlinkSync(path.join(remote,'manifest.json')); // lost manifest
- r=await run('pub-recover.cjs',{PUB_SITE:site,PUB_DIR:local});
- assert.ok(r.code!==0&&r.stderr.includes('no /pub/manifest.json'),'local scenes without a remote manifest must abort: '+r.stderr);
- console.log('PASS local scenes with a lost remote manifest abort (no silent drop)');
- const empty=fs.mkdtempSync(path.join(os.tmpdir(),'pub-empty-'));
- r=await run('pub-recover.cjs',{PUB_SITE:site,PUB_DIR:empty});assert.equal(r.code,0,'empty no-op: '+r.stderr);
- console.log('PASS empty remote + empty local is a clean no-op');
- await new Promise(r2=>srv.close(r2));
-})().catch(e=>{console.error(e);process.exit(1)});
+// pub-recover against the private-register model: restore, tamper abort, unreachable abort,
+// divergence abort, empty no-op. Mock register = file:// bare repo seeded via pub-register sync.
+const { execFileSync, execFile } = require("child_process");
+const fs = require("fs"), os = require("os"), path = require("path"), crypto = require("crypto");
+const assert = require("node:assert/strict");
+const sha = (b) => crypto.createHash("sha256").update(b).digest("hex");
+const run = (script, env, ...args) => new Promise((res) => execFile("node", [script, ...args], { env: { ...process.env, ...env } }, (e, so, se) => res({ code: e ? e.code : 0, out: so + se })));
+const tmp = fs.mkdtempSync(path.join(os.tmpdir(), "pubrec-"));
+const register = path.join(tmp, "register.git"), pub = path.join(tmp, "pub");
+execFileSync("git", ["init", "--bare", "--quiet", register]);
+fs.mkdirSync(pub, { recursive: true });
+const A = Buffer.from(JSON.stringify({ format: "ar-studio/1", id: "a", name: "A", elements: [], assets: {} }));
+const B = Buffer.from(JSON.stringify({ format: "ar-studio/1", id: "b", name: "B", elements: [], assets: {} }));
+fs.writeFileSync(path.join(pub, "scene-a.json"), A); fs.writeFileSync(path.join(pub, "scene-b.json"), B);
+const env = { BRILL_AR_REGISTER_URL: register, PUB_DIR: pub };
+(async () => {
+  // sync local -> register, then wipe local and recover
+  let r = await run("scripts/pub-register.cjs", {}); // no URL -> usage error
+  assert.notEqual(r.code, 0, "sync without URL is a usage error");
+  r = await run("scripts/pub-register.cjs", env, "sync");
+  assert.equal(r.code, 0, "sync to register: " + r.out);
+  fs.rmSync(pub, { recursive: true, force: true });
+  r = await run("scripts/pub-recover.cjs", env);
+  assert.equal(r.code, 0, "recover from register: " + r.out);
+  assert.ok(fs.readFileSync(path.join(pub, "scene-a.json")).equals(A) && fs.readFileSync(path.join(pub, "scene-b.json")).equals(B), "byte-exact restore");
+  console.log("PASS register sync + clean-checkout recover restores byte-exact");
+  // tamper: change a scene in the register without updating its manifest
+  const wc = path.join(tmp, "wc"); execFileSync("git", ["clone", "--quiet", register, wc]);
+  fs.writeFileSync(path.join(wc, "scenes", "scene-a.json"), Buffer.from('{"format":"ar-studio/1","tampered":true}'));
+  execFileSync("git", ["-C", wc, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-aqm", "tamper"]);
+  execFileSync("git", ["-C", wc, "push", "--quiet"]);
+  fs.rmSync(pub, { recursive: true, force: true });
+  r = await run("scripts/pub-recover.cjs", env);
+  assert.notEqual(r.code, 0, "tampered register aborts");
+  assert.match(r.out, /tampered|integrity|FAILED/, "abort names integrity");
+  console.log("PASS tampered register scene aborts the deploy");
+  // repair, then divergence: local scene the register does not list
+  execFileSync("git", ["-C", wc, "checkout", "--quiet", "HEAD~1", "--", "scenes/scene-a.json"]);
+  execFileSync("git", ["-C", wc, "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-aqm", "repair"]); execFileSync("git", ["-C", wc, "push", "--quiet"]);
+  fs.mkdirSync(pub, { recursive: true }); fs.writeFileSync(path.join(pub, "stray.json"), A);
+  r = await run("scripts/pub-recover.cjs", env);
+  assert.notEqual(r.code, 0, "diverging local scene aborts");
+  assert.match(r.out, /not in the register/, "abort names the divergence");
+  console.log("PASS local scene unknown to the register aborts (no silent unpublish)");
+  // unreachable register (no credential / outage) aborts even with empty local
+  fs.rmSync(pub, { recursive: true, force: true });
+  r = await run("scripts/pub-recover.cjs", { BRILL_AR_REGISTER_URL: path.join(tmp, "gone.git"), PUB_DIR: pub });
+  assert.notEqual(r.code, 0, "unreachable register aborts");
+  assert.match(r.out, /register unreadable/, "abort names the register");
+  console.log("PASS unreachable register aborts with a named cause (no silent fallback)");
+  // empty register + empty local is a clean no-op
+  const reg2 = path.join(tmp, "empty.git"); execFileSync("git", ["init", "--bare", "--quiet", reg2]);
+  const pub2 = path.join(tmp, "pub2"); fs.mkdirSync(pub2, { recursive: true });
+  r = await run("scripts/pub-register.cjs", { BRILL_AR_REGISTER_URL: reg2, PUB_DIR: pub2 }, "sync");
+  assert.equal(r.code, 0, "sync empty set: " + r.out);
+  r = await run("scripts/pub-recover.cjs", { BRILL_AR_REGISTER_URL: reg2, PUB_DIR: pub2 });
+  assert.equal(r.code, 0, "empty register recovers clean: " + r.out);
+  console.log("PASS empty register + empty local is a clean no-op");
+  fs.rmSync(tmp, { recursive: true, force: true });
+})().catch((e) => { console.error(e); process.exit(1); });

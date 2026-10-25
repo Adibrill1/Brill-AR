@@ -1,3 +1,4 @@
 node_modules/
 studio/revision.txt
 studio/pub/
+.pub-manifest.local.json

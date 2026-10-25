@@ -9,5 +9,10 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
  assert.equal(await pl.evaluate(()=>{const a=document.getElementById('camfree');return !a.hidden&&a.getAttribute('href');}),'preview.html?pub=qa-demo-scene','camera-free link on the AR page');
  assert.equal(await pl.evaluate(()=>document.getElementById('backlink').hidden),true,'editor backlink hidden for pub viewers');
  const m=await b.newPage();const resp=await m.goto(base+'/preview.html?pub=missing-scene');await m.waitForFunction(()=>document.getElementById('err').textContent.includes('לא נמצא'),undefined,{timeout:20000});
- console.log('PASS live pub route: scene builds camera-free, no viewer-side persistence, camera-free link on AR page, honest 404');
+ // privacy gate: no public enumeration of published scenes
+ const mstat=await (await fetch(base+'/pub/manifest.json')).status;
+ assert.equal(mstat,404,'no public manifest/index on the live site (got '+mstat+')');
+ const sstat=await (await fetch(base+'/pub/qa-demo-scene.json')).status;
+ assert.equal(sstat,200,'approved scene still served by link');
+ console.log('PASS live pub route: scene builds camera-free, no viewer-side persistence, camera-free link on AR page, honest 404, NO public scene index');
 }finally{await b.close();}})().catch(e=>{console.error(e);process.exit(1)});
