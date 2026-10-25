@@ -1076,6 +1076,64 @@ const Studio = (() => {
     if (rec.assets.__artwork) out.assets.__artwork = await blobToDataURL(rec.assets.__artwork);
     return JSON.stringify(out);
   }
+  // ---------- ZIP transport (memory-light export/retrieval) ----------
+  // JSON export holds every asset as a base64 dataURL inside one giant string:
+  // peak JS-heap ~= raw bytes + base64 strings (~1.33x) + the JSON string itself (~1.33x).
+  // ZIP transport stores each asset once as raw bytes (STORE, no compression), emitted as
+  // many small chunks into a Blob (OS may page Blob parts out of JS heap), so no single
+  // giant string is ever allocated. experience.json inside carries asset REFERENCES.
+  const ZIP_MIME_EXT = { "image/png": ".png", "image/jpeg": ".jpg", "image/webp": ".webp", "image/gif": ".gif", "video/mp4": ".mp4", "video/quicktime": ".mov", "video/webm": ".webm", "audio/mpeg": ".mp3", "audio/mp4": ".m4a", "audio/aac": ".aac", "audio/wav": ".wav", "model/gltf-binary": ".glb", "model/gltf+json": ".gltf" };
+  function zipAssetName(id, type) { return "assets/" + id + (ZIP_MIME_EXT[type] || ".bin"); }
+  async function exportZIP(rec) {
+    if (typeof fflate === "undefined") throw new Error("zip support not loaded");
+    const slim = { format: "ar-studio/1", id: rec.id, name: rec.name, createdAt: rec.createdAt, target: rec.target, elements: rec.elements.map((e) => ({ ...e })), sequences: (rec.sequences || []).map((q) => ({ ...q })), tracks: (rec.tracks || []).map((t) => ({ ...t })), actionSequences: JSON.parse(JSON.stringify(rec.actionSequences || [])) };
+    slim.assets = {};
+    const wanted = new Set();
+    for (const el of rec.elements) for (const id of [el.assetId, el.particles && el.particles.spriteAssetId]) if (id && rec.assets[id]) wanted.add(id);
+    if (rec.assets.__artwork) wanted.add("__artwork");
+    const chunks = [];
+    let zipErr = null;
+    const zip = new fflate.Zip((err, chunk, final) => { if (err) { zipErr = err; return; } chunks.push(chunk); });
+    for (const id of wanted) {
+      const b = rec.assets[id];
+      const file = zipAssetName(id, b.type);
+      // one asset in JS memory at a time; STORE (no deflate) keeps CPU and copies minimal
+      const bytes = new Uint8Array(await b.arrayBuffer());
+      const part = new fflate.ZipPassThrough(file);
+      zip.add(part); part.push(bytes, true);
+      slim.assets[id] = { file: file, type: b.type || "application/octet-stream", size: b.size };
+    }
+    const jf = new fflate.ZipPassThrough("experience.json");
+    zip.add(jf); jf.push(fflate.strToU8(JSON.stringify(slim)), true);
+    zip.end();
+    if (zipErr) throw zipErr;
+    return new Blob(chunks, { type: "application/zip" });
+  }
+  // Retrieval: assets become page-owned Blobs directly from zip parts - zero base64 anywhere.
+  function importZIPBytes(bytes) {
+    if (typeof fflate === "undefined") throw new Error("zip support not loaded");
+    const files = fflate.unzipSync(new Uint8Array(bytes));
+    const metaBytes = files["experience.json"];
+    if (!metaBytes) throw new Error("bad format");
+    const o = JSON.parse(fflate.strFromU8(metaBytes));
+    if (!o || o.format !== "ar-studio/1" || !o.assets || typeof o.assets !== "object") throw new Error("bad format");
+    const assets = {};
+    for (const [id, ref] of Object.entries(o.assets)) {
+      if (!ref || typeof ref.file !== "string" || ref.file.includes("..")) throw new Error("bad asset reference");
+      const part = files[ref.file];
+      if (!part) throw new Error("missing asset: " + ref.file);
+      assets[id] = new Blob([part], { type: ref.type || "application/octet-stream" });
+    }
+    return { record: { ...o, assets } };
+  }
+  async function importZIP(blob) { return importZIPBytes(await blob.arrayBuffer()); }
+  // Compat: rebuild the canonical JSON string (with dataURLs) from a zip - used by tooling only.
+  async function zipToJSON(blob) {
+    const { record } = await importZIP(blob);
+    const out = { ...record, assets: {} };
+    for (const [id, b] of Object.entries(record.assets)) out.assets[id] = await blobToDataURL(b);
+    return JSON.stringify(out);
+  }
   async function importJSON(text, opts) {
     const o = JSON.parse(text);
     const persist = !opts || opts.save !== false;
@@ -1306,7 +1364,7 @@ const Studio = (() => {
   }
 
   return { TARGET_W, TARGET_H, newId, inspectVideo, validateModelBlob, prepareModelBlob, modelCompressionKinds, DECODER_DRACO_PATH, DECODER_MESHOPT_PATH, modelClipNames, modelClipInfo, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
-           audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, historyState, restoreHistory, duplicateLayer, exportJSON, importJSON, fetchPublished, ownBlob, assetHealth, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
+           audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, historyState, restoreHistory, duplicateLayer, exportJSON, importJSON, exportZIP, importZIP, zipToJSON, fetchPublished, ownBlob, assetHealth, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
            load: id=>settledRead(id), all: ()=>settledRead(), del: idbDel,
            onSaveState, installSaveGuard, saveState,
            _testHoldSave:p=>{saveHold=p;}, _testFailSave:m=>{failSave=m;} };
