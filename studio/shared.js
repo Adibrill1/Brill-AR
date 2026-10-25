@@ -1054,7 +1054,7 @@ const Studio = (() => {
     if(mediaBytes(rec)>LIMITS.maxMediaBytes)return 'סך המדיה מעל 60MB';
     return null;
   }
-  const exportWarning=rec=>{const r=restoreBlocker(rec);return r?'שימו לב: '+r+', ולכן הגרסה הנוכחית לא תוכל לשחזר את הקובץ הזה בייבוא. הקובץ נשמר במלואו ולא נחתך. הקטינו את היצירה לפני שתסתמכי עליו כגיבוי.':null;};
+  const exportWarning=rec=>{const r=restoreBlocker(rec);return r?'שימי לב: '+r+', ולכן הגרסה הנוכחית לא תוכל לשחזר את הקובץ הזה בייבוא. הקובץ נשמר במלואו ולא נחתך. הקטיני את היצירה לפני שתסתמכי עליו כגיבוי.':null;};
   function exportObject(rec){
     const out = { format: "ar-studio/1", id: rec.id, name: rec.name, createdAt: rec.createdAt, target: rec.target, elements: (rec.elements || []).map((e) => ({ ...e })), sequences: (rec.sequences || []).map((q) => ({ ...q })), tracks: (rec.tracks || []).map((t) => ({ ...t })), actionSequences: JSON.parse(JSON.stringify(rec.actionSequences || [])) };
     out.assets = {};
@@ -1068,7 +1068,7 @@ const Studio = (() => {
     return n;
   }
   // Published scenes are base64 JSON (~4/3 of media) and the player/server cap them at 40MB.
-  function publishBlocker(rec){const n=exportJSONSize(rec);return n>LIMITS.maxPublishBytes?'הקובץ המלא של היצירה הוא '+(n/1048576).toFixed(1)+'MB, ומעל מגבלת 40MB של קישור פרסום. הקטינו סרטון או הסירו קובץ.':null;}
+  function publishBlocker(rec){const n=exportJSONSize(rec);return n>LIMITS.maxPublishBytes?'הקובץ המלא של היצירה הוא '+(n/1048576).toFixed(1)+'MB, ומעל מגבלת 40MB של קישור פרסום. הקטיני סרטון או הסירו קובץ.':null;}
   function addBlocker(rec,{layers=0,bytes=0}={}){
     if((rec.elements||[]).length+layers>LIMITS.maxLayers)return 'אפשר עד '+LIMITS.maxLayers+' שכבות ביצירה. כך הגיבוי תמיד ניתן לשחזור.';
     if(bytes>0&&exportedAssetIds(rec).length+1>LIMITS.maxAssets)return 'אפשר עד '+LIMITS.maxAssets+' קבצי מדיה ביצירה.';
