@@ -93,6 +93,7 @@
   let actionTarget=null;
   let curSeq = null;           // active sequence-state id (null = single-state artwork)
   const media = {};            // assetId -> HTMLImageElement | HTMLVideoElement (for canvas drawing)
+  const deadAssets = new Set();  // assetIds whose stored bytes are unreadable (iOS evicted picker backing); kept in the record, never silently dropped
   const textCache = {};        // el.id -> {key, canvas, aspect}
   let artworkImg = null;       // HTMLImageElement of artwork
   let drag = null;
@@ -325,11 +326,12 @@
     for (const k of Object.keys(media)) delete media[k];
     for (const k of Object.keys(textCache)) delete textCache[k];
     const badAssets = [];
+    deadAssets.clear();
     if (rec.assets.__artwork) {
       // A stored blob can be unreadable ("dead" picker backing evicted by the OS). Keep the
       // editor usable and say exactly what is lost instead of failing the whole load.
       try { artworkImg = await Studio.loadImage(await Studio.blobToDataURL(rec.assets.__artwork)); }
-      catch (err) { badAssets.push("תמונת היצירה"); }
+      catch (err) { badAssets.push("תמונת היצירה"); deadAssets.add("__artwork"); }
     }
     for (const el of rec.elements) {
       Studio.normEl(el);
@@ -345,7 +347,7 @@
           const mm = await Studio.makeImageMedia(rec.assets[el.assetId], "m-" + el.id, null);
           media[el.assetId] = (mm.animated || mm.staticFallback) ? mm.node : await Studio.loadImage(durl);
         }
-      } catch (err) { badAssets.push(el.name || el.type); }
+      } catch (err) { badAssets.push(el.name || el.type); if (el.assetId) deadAssets.add(el.assetId); }
     }
     if (badAssets.length) msg("חלק מהקבצים לא נקראו מהמכשיר (" + [...new Set(badAssets)].join(", ") + ") - ייבאי אותם שוב כדי לשחזר.");
   }
@@ -916,7 +918,8 @@
           if (!Studio.elVisibleIn(k, curSeq)) continue;
           const kl = document.createElement("li");
           kl.style.paddingRight = "22px";
-          kl.textContent = "↳ " + (ICONS[k.type] || "") + k.name;
+          kl.textContent = "↳ " + (k.assetId && deadAssets.has(k.assetId) ? "⚠ " : "") + (ICONS[k.type] || "") + k.name;
+        if (k.assetId && deadAssets.has(k.assetId)) kl.title = "הקובץ לא נקרא מהמכשיר - ייבאי אותו שוב";
           kl.className = k.id === selectedId ? "sel" : "";
           kl.onclick = () => { selectedId = k.id; renderList(); renderPanel(); draw(); };
           ul.appendChild(kl);
@@ -927,7 +930,8 @@
       cb.type = "checkbox"; cb.checked = checkedIds.has(el.id); cb.title = "סמן לקיבוץ";
       cb.onclick = (ev) => { ev.stopPropagation(); if (cb.checked) checkedIds.add(el.id); else checkedIds.delete(el.id); renderList(); };
       li.appendChild(cb);
-      li.appendChild(document.createTextNode((el.track ? "🎞️ " : "") + (ICONS[el.type] || "") + el.name + (i === rec.elements.length - 1 ? "  (עליון)" : i === 0 ? "  (תחתון)" : "")));
+      li.appendChild(document.createTextNode((el.assetId && deadAssets.has(el.assetId) ? "⚠ " : "") + (el.track ? "🎞️ " : "") + (ICONS[el.type] || "") + el.name + (i === rec.elements.length - 1 ? "  (עליון)" : i === 0 ? "  (תחתון)" : "")));
+      if (el.assetId && deadAssets.has(el.assetId)) li.title = "הקובץ לא נקרא מהמכשיר - ייבאי אותו שוב";
       li.className = el.id === selectedId ? "sel" : "";
       li.onclick = () => { selectedId = el.id; renderList(); renderPanel(); draw(); };
       ul.appendChild(li);
