@@ -2,7 +2,7 @@
 // in-editor Preview (course/module sources + official videos): tap layers and SEE which
 // sequences play, what stopped, and what triggered each change; edit mode and test mode
 // are separated so a tap never drags a layer; returning to editing preserves selection.
-const {chromium}=require('playwright-core'),assert=require('assert/strict'),path=require('path'),server=require('../../server/server');
+const {chromium}=require('playwright-core'),assert=require('assert/strict'),path=require('path'),server=require('../../server/server'),waitFor=require('./waitfor.cjs');
 (async()=>{await new Promise(r=>server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+server.address().port,b=await chromium.launch({executablePath:'/usr/bin/google-chrome',headless:true,args:['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-webgl']});try{
 const p=await b.newPage({viewport:{width:1280,height:900}});
 p.on('pageerror',e=>console.log('PAGEERROR:',e.message));
@@ -60,7 +60,7 @@ assert.ok(sel.selClass&&sel.panel.length>0,'selection preserved after exiting te
 await p.locator('#preview').scrollIntoViewIfNeeded();const bb2=await p.locator('#preview').boundingBox();
 const bx0=await p.evaluate(eid=>window.__testBoxes[eid],elIds[0]);
 await p.mouse.move(bb2.x+bx0.cx,bb2.y+bx0.cy);await p.mouse.down();await p.mouse.move(bb2.x+bx0.cx+40,bb2.y+bx0.cy,{steps:3});await p.mouse.up();
-await p.waitForFunction(async id=>{const r=await Studio.load(id);return Math.abs(r.elements[0].x-(-.25))>0.01;},id);
+await waitFor(p,async id=>{const r=await Studio.load(id);return Math.abs(r.elements[0].x-(-.25))>0.01;},id);
 console.log('PASS exiting test mode restores editing (drag moves the layer) with selection preserved',sel);
 // representative 390px capture: strip live with one sequence playing
 await p.locator('#btn-test-mode').click();await p.waitForSelector('#diag-strip:not([hidden])');

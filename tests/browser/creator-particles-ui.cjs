@@ -2,7 +2,7 @@
 // controls (course module-3, verified 2026-10-25): speed, direction (incl. random and
 // outward-from-center), size, density, spread, templates, custom image. Over-life
 // color/size/fade stay labeled as our own authoring tools (old-interface video only).
-const {chromium}=require('playwright-core'),assert=require('assert/strict'),path=require('path'),server=require('../../server/server');
+const {chromium}=require('playwright-core'),assert=require('assert/strict'),path=require('path'),server=require('../../server/server'),waitFor=require('./waitfor.cjs');
 (async()=>{await new Promise(r=>server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+server.address().port,b=await chromium.launch({executablePath:'/usr/bin/google-chrome',headless:true,args:['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-webgl']});try{
 const p=await b.newPage({viewport:{width:1280,height:900}});
 await p.goto(base+'/index.html');await p.waitForSelector('#element-list li');
@@ -12,7 +12,7 @@ await p.locator('#btn-particles').click();await p.waitForFunction(()=>document.q
 await p.locator('#sel-pdir-mode').selectOption('random');
 await set('#num-pspread','.3');await set('#num-pcount','50');
 const id=await p.evaluate(()=>document.querySelector('#exp-select').value);
-await p.waitForFunction(async id=>{const r=await Studio.load(id);const pc=r.elements[0].particles;return pc.direction===-2&&pc.spread===.3&&pc.count===50;},id); // saves are async; never navigate ahead of them
+await waitFor(p,async id=>{const r=await Studio.load(id);const pc=r.elements[0].particles;return pc.direction===-2&&pc.spread===.3&&pc.count===50;},id); // saves are async; never navigate ahead of them
 // persistence through reload
 await p.goto(base+'/index.html');await p.waitForFunction(()=>document.querySelectorAll('#exp-select option').length>0);
 await p.locator('#exp-select').selectOption(id);await p.waitForFunction(()=>document.querySelectorAll('#element-list li').length===1);

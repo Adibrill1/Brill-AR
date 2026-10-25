@@ -344,6 +344,7 @@
   }
 
   function refreshExpSelect() {
+    $("in-exp-name").value = rec.name || "";
     return Studio.all().then((list) => {
       const sel = $("exp-select");
       sel.innerHTML = "";
@@ -569,6 +570,13 @@
       render();
     };
 
+    $("in-exp-name").onchange = () => queueExperience(async () => {
+      const v = $("in-exp-name").value.trim().slice(0, 60);
+      if (!v) { $("in-exp-name").value = rec.name || ""; msg("השם לא יכול להיות ריק."); return; }
+      if (v === rec.name) return;
+      rec.name = v; // id, elements, assets untouched — rename changes display/export naming only
+      await saveGuarded(rec); await refreshExpSelect(); msg("השם נשמר: " + v);
+    });
     $("btn-new").onclick = () => { if (!confirmUnsavedSwitch()) return; queueExperience(async () => {
       rec = Studio.blankExperience();
       selectedId = null; artworkImg = null; checkedIds.clear(); tlScrubT = null; resetSeq();
@@ -614,19 +622,35 @@
     $("in-token").value = localStorage.getItem("ar-studio-token") || "";
     $("in-token").onchange = (e) => localStorage.setItem("ar-studio-token", e.target.value.trim());
     $("btn-send-publish").onclick = async () => {
+      const btn = $("btn-send-publish"); if (btn.disabled) return; btn.disabled = true;
       try {
-        const body = await Studio.exportJSON(rec);
-        const file = new File([body], (rec.name || "ar-studio") + ".json", { type: "application/json" });
-        if (navigator.canShare && navigator.canShare({ files: [file] })) {
-          await navigator.share({ files: [file], title: rec.name || "ar-studio" });
-          msg("אם השליחה בוצעה, הקובץ בדרך אליי. אחזיר קישור אחרי שתאשרי פרסום.");
-        } else {
-          const a = document.createElement("a");
-          a.href = URL.createObjectURL(new Blob([body], { type: "application/json" }));
-          a.download = file.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-          msg("הדפדפן הזה לא תומך בשיתוף ישיר, אז הקובץ ירד. שלחי אותו אליי בוואטסאפ.");
+        // Start the export synchronously inside the tap and share as early as possible:
+        // Safari ties navigator.share to the tap's transient user activation.
+        const bodyP = Studio.exportJSON(rec);
+        let shared = false;
+        if (navigator.canShare && navigator.share) {
+          try {
+            const body = await bodyP;
+            const file = new File([body], (rec.name || "ar-studio") + ".json", { type: "application/json" });
+            if (navigator.canShare({ files: [file] })) {
+              await navigator.share({ files: [file], title: rec.name || "ar-studio" });
+              shared = true;
+              msg("אם השליחה בוצעה, הקובץ בדרך אליי. אחזיר קישור אחרי שתאשרי פרסום.");
+            }
+          } catch (err) {
+            if (err && err.name === "AbortError") { msg("השיתוף בוטל - שום דבר לא נשלח."); return; }
+            // NotAllowedError (activation lost) or any share failure falls through to download.
+          }
         }
-      } catch (err) { if (err && err.name === "AbortError") msg("השיתוף בוטל - שום דבר לא נשלח."); else msg("ההכנה לשליחה נכשלה: " + err.message); }
+        if (shared) return;
+        const body = await bodyP;
+        const name = (rec.name || "ar-studio") + ".json";
+        const a = document.createElement("a");
+        a.href = URL.createObjectURL(new Blob([body], { type: "application/json" }));
+        a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+        msg("חלון השיתוף לא נפתח כאן, אז הקובץ ירד. שלחי אותו אליי בוואטסאפ.");
+      } catch (err) { msg("ההכנה לשליחה נכשלה: " + err.message); }
+      finally { btn.disabled = false; }
     };
     $("btn-publish").onclick = async () => {
       const base = ($("in-server").value || "").trim().replace(/\/+$/, "");

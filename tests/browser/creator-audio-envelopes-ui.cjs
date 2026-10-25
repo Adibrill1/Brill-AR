@@ -2,7 +2,7 @@
 // linear vs logarithmic rolloff, inner/outer radius) are documented by Artivive's
 // official spatial-audio demo (old interface); the on-canvas envelope rings are
 // our own authoring aid and are labeled as such in the panel hint.
-const {chromium}=require('playwright-core'),assert=require('assert/strict'),path=require('path'),server=require('../../server/server');
+const {chromium}=require('playwright-core'),assert=require('assert/strict'),path=require('path'),server=require('../../server/server'),waitFor=require('./waitfor.cjs');
 (async()=>{await new Promise(r=>server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+server.address().port,b=await chromium.launch({executablePath:'/usr/bin/google-chrome',headless:true,args:['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-webgl','--autoplay-policy=no-user-gesture-required']});try{
 const p=await b.newPage({viewport:{width:1280,height:900}});
 await p.goto(base+'/index.html');await p.waitForSelector('#element-list li');
@@ -31,20 +31,20 @@ const ring=()=>p.evaluate(()=>Object.values(window.__audioEnvelopes)[0]);
 let e1=await ring();
 await p.mouse.move(bb.x+e1.cx+e1.rOuter,bb.y+e1.cy);await p.mouse.down();
 await p.mouse.move(bb.x+e1.cx+e1.rOuter+60,bb.y+e1.cy,{steps:4});await p.mouse.up();
-await p.waitForFunction(async id=>{const r=await Studio.load(id);return r.elements[0].spatialOuter>0.55;},id);
+await waitFor(p,async id=>{const r=await Studio.load(id);return r.elements[0].spatialOuter>0.55;},id);
 const after=await p.evaluate(async id=>{const r=await Studio.load(id);return {out:r.elements[0].spatialOuter,inn:r.elements[0].spatialInner};},id);
 console.log('PASS dragging the outer envelope ring updates and persists the outer radius',after);
 // dragging the inner ring past the outer clamps it to outer-0.01
 e1=await ring();
 await p.mouse.move(bb.x+e1.cx+e1.rInner,bb.y+e1.cy);await p.mouse.down();
 await p.mouse.move(bb.x+e1.cx+e1.rOuter+40,bb.y+e1.cy,{steps:4});await p.mouse.up();
-await p.waitForFunction(async id=>{const r=await Studio.load(id);const el=r.elements[0];return el.spatialInner!=null&&el.spatialOuter!=null&&el.spatialInner<el.spatialOuter;},id);
+await waitFor(p,async id=>{const r=await Studio.load(id);const el=r.elements[0];return el.spatialInner!=null&&el.spatialOuter!=null&&el.spatialInner<el.spatialOuter;},id);
 const clamped=await p.evaluate(async id=>{const r=await Studio.load(id);return {out:r.elements[0].spatialOuter,inn:r.elements[0].spatialInner};},id);
 assert.ok(Math.abs(clamped.inn-(clamped.out-.01))<.02,'inner clamps just below outer: '+JSON.stringify(clamped));
 console.log('PASS inner ring drag clamps against the outer radius',clamped);
 // engine wiring in preview: linear mode => PositionalAudio linear, ref=inner, max=outer
 await p.locator('#sel-spatial-mode').selectOption('linear');
-await p.waitForFunction(async id=>{const r=await Studio.load(id);return r.elements[0].spatialMode==='linear';},id);
+await waitFor(p,async id=>{const r=await Studio.load(id);return r.elements[0].spatialMode==='linear';},id);
 await p.goto('about:blank');await p.goto(base+'/preview.html#'+id);
 await p.waitForFunction(()=>{const n=document.querySelector('[data-el-id]');return n&&n.object3D&&n.object3D.children.some(c=>!!c.panner);}); // PositionalAudio keeps type 'Audio'; .panner is the discriminator
 const wir=await p.evaluate(()=>{const n=document.querySelector('[data-el-id]');const a=n.object3D.children.find(c=>!!c.panner);return {model:a.panner.distanceModel,ref:a.panner.refDistance,max:a.panner.maxDistance,rolloff:a.panner.rolloffFactor};});

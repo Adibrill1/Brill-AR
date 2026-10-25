@@ -1,7 +1,7 @@
 // UI-authored Timeline-course exercise (Artivive "Discover Timeline"/module-4):
 // ease curves, overlapping actions on one layer (official ends-later rule),
 // unconnected video on its own clock, reset/replay, save/reload persistence.
-const {chromium}=require('playwright-core'),assert=require('assert/strict'),path=require('path'),server=require('../../server/server');
+const {chromium}=require('playwright-core'),assert=require('assert/strict'),path=require('path'),server=require('../../server/server'),waitFor=require('./waitfor.cjs');
 (async()=>{await new Promise(r=>server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+server.address().port,b=await chromium.launch({executablePath:'/usr/bin/google-chrome',headless:true,args:['--no-sandbox','--use-gl=angle','--use-angle=swiftshader','--enable-webgl','--autoplay-policy=no-user-gesture-required']});try{
 const p=await b.newPage({viewport:{width:1280,height:900}});
 await p.goto(base+'/index.html');await p.waitForSelector('#element-list li');
@@ -42,7 +42,7 @@ await set(detail().getByLabel('יעד אנכי',{exact:true}),'0');
 const ids=await p.evaluate(async()=>{const r=await Studio.load(document.querySelector('#exp-select').value);return{id:r.id,rocket:r.elements.find(e=>e.type==='text').id,seq:r.actionSequences[0].id};});
 // tap wiring: rocket starts the sequence
 await p.locator('#element-list li').nth(0).click();await p.locator('#sel-tap').selectOption('action:'+ids.seq);
-await p.waitForFunction(async ids=>{const r=await Studio.load(ids.id);return r.elements.find(e=>e.id===ids.rocket).onTap==='action:'+ids.seq;},ids);
+await waitFor(p,async ids=>{const r=await Studio.load(ids.id);return r.elements.find(e=>e.id===ids.rocket).onTap==='action:'+ids.seq;},ids);
 // persistence through editor reload
 await p.goto(base+'/index.html');await p.waitForFunction(()=>document.querySelectorAll('#exp-select option').length>0);
 await p.locator('#exp-select').selectOption(ids.id);await p.waitForFunction(()=>document.querySelectorAll('#element-list li').length===2);

@@ -25,7 +25,8 @@ button.ghost.danger { background: #fff; }
 #view-pill { position: fixed; top: 0; left: 50%; transform: translateX(-50%); z-index: 60; display: flex; background: rgba(255,255,255,.94); border: 1px solid #b9b4c7; border-radius: 999px; box-shadow: 0 1px 6px rgba(0,0,0,.22); overflow: hidden; }
 #view-pill button { border: 0; background: transparent; padding: 5px 13px; font: 600 13px/1.2 sans-serif; color: #292535; cursor: pointer; }
 #view-pill button.on { background: #292535; color: #fff; }
-#preview { display: block; border: 1px solid #ddd; border-radius: 8px; width: 100%; }
+#preview { display: block; border: 1px solid #ddd; border-radius: 8px; width: 100%; max-width: 100%; height: auto !important; } /* max-width+height:auto: clamp the JS-set inline size during the pre-redraw resize window so the canvas never overflows the viewport */
+#publish-box, #publish-box p { overflow-wrap: anywhere; } /* long tokens (URLs, Latin names) must never force lines wider than the box */
 #panel label { display: block; font-size: 14px; margin: 8px 0 2px; }
 #panel label.check { display: flex; gap: 8px; align-items: center; }
 #panel input[type=range] { width: 100%; }
