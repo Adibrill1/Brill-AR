@@ -199,13 +199,18 @@ const Studio = (() => {
   function ensureParticlesComponent() {
     if (!window.AFRAME || AFRAME.components["particles"]) return;
     AFRAME.registerComponent("particles", {
-      schema: { preset: { default: "sparkle" }, count: { default: 120 }, color: { default: "#ffd94d" }, width: { default: 0.5 }, height: { default: 0.5 }, size: { default: 12 }, speed: { default: 1 }, sprite: { default: "" }, direction: { default: -1 },lifetime:{default:0},emitter:{default:"box"},endColor:{default:"#ffffff"},endSize:{default:1},fade:{default:false} }, // direction: degrees (0=up,90=right,180=down,270=left); -1 = preset's fixed direction
+      schema: { preset: { default: "sparkle" }, count: { default: 120 }, color: { default: "#ffd94d" }, width: { default: 0.5 }, height: { default: 0.5 }, size: { default: 12 }, speed: { default: 1 }, sprite: { default: "" }, direction: { default: -1 },lifetime:{default:0},emitter:{default:"box"},endColor:{default:"#ffffff"},endSize:{default:1},fade:{default:false},spread:{default:1} }, // direction: degrees (0=up,90=right,180=down,270=left); -1 = preset's fixed direction; -2 = random per particle; -3 = outward from center. spread: emission-area scale (documented Artivive control)
       init() {
         const n = Math.min(500, Math.max(10, this.data.count | 0));
         const pos = new Float32Array(n * 3);
         this.vel = new Float32Array(n * 3);
         this.ages=new Float32Array(n);this.sizes=new Float32Array(n);this.alphas=new Float32Array(n);const colors=new Float32Array(n*3);
-        this.spawn=(i)=>{const d=this.data;if(d.emitter==='disc'||d.emitter==='sphere'){const angle=Math.random()*Math.PI*2,r=Math.sqrt(Math.random());pos[i*3]=Math.cos(angle)*r*d.width/2;pos[i*3+1]=Math.sin(angle)*r*d.height/2;pos[i*3+2]=d.emitter==='sphere'?(Math.random()-.5)*Math.sqrt(Math.max(0,1-r*r))*Math.min(d.width,d.height):0;}else{pos[i*3]=(Math.random()-.5)*d.width;pos[i*3+1]=(Math.random()-.5)*d.height;pos[i*3+2]=(Math.random()-.5)*.05;}};
+        this.spawn=(i)=>{const d=this.data,sp=d.spread>0?Math.min(2,d.spread):1;if(d.emitter==='disc'||d.emitter==='sphere'){const angle=Math.random()*Math.PI*2,r=Math.sqrt(Math.random());pos[i*3]=Math.cos(angle)*r*d.width*sp/2;pos[i*3+1]=Math.sin(angle)*r*d.height*sp/2;pos[i*3+2]=d.emitter==='sphere'?(Math.random()-.5)*Math.sqrt(Math.max(0,1-r*r))*Math.min(d.width,d.height)*sp:0;}else{pos[i*3]=(Math.random()-.5)*d.width*sp;pos[i*3+1]=(Math.random()-.5)*d.height*sp;pos[i*3+2]=(Math.random()-.5)*.05;}};
+        this.setVelocity=(i)=>{const d=this.data,sp=d.speed>0?d.speed:1,m=(0.05+Math.random()*0.12)*sp;
+          if(d.direction===-2){const a=Math.random()*Math.PI*2;this.vel[i*3]=Math.sin(a)*m;this.vel[i*3+1]=Math.cos(a)*m;}
+          else if(d.direction===-3){const a=Math.atan2(pos[i*3],pos[i*3+1]);this.vel[i*3]=Math.sin(a)*m;this.vel[i*3+1]=Math.cos(a)*m;}
+          else if(d.direction>=0){const a=d.direction*Math.PI/180;this.vel[i*3]=Math.sin(a)*m;this.vel[i*3+1]=Math.cos(a)*m;}
+          else{this.vel[i*3]=(Math.random()-0.5)*0.05*sp;this.vel[i*3+1]=(d.preset==="confetti"?-0.1-Math.random()*0.15:0.05+Math.random()*0.12)*sp;}};
         this.startColor=new THREE.Color(this.data.color);this.endColor=new THREE.Color(this.data.endColor);
         for (let i = 0; i < n; i++) {
           pos[i * 3] = (Math.random() - 0.5) * this.data.width;
@@ -213,16 +218,7 @@ const Studio = (() => {
           pos[i * 3 + 2] = (Math.random() - 0.5) * 0.05;
           this.spawn(i);this.ages[i]=this.data.lifetime>0?Math.random()*this.data.lifetime:0;this.sizes[i]=1;this.alphas[i]=1;
           this.startColor.toArray(colors,i*3);
-          const sp = this.data.speed > 0 ? this.data.speed : 1;
-          const m = (0.05 + Math.random() * 0.12) * sp;
-          if (this.data.direction >= 0) { // arbitrary direction control (round I)
-            const a = this.data.direction * Math.PI / 180;
-            this.vel[i * 3] = Math.sin(a) * m;
-            this.vel[i * 3 + 1] = Math.cos(a) * m;
-          } else {
-            this.vel[i * 3] = (Math.random() - 0.5) * 0.05 * sp;
-            this.vel[i * 3 + 1] = (this.data.preset === "confetti" ? -0.1 - Math.random() * 0.15 : 0.05 + Math.random() * 0.12) * sp;
-          }
+          this.setVelocity(i);
         }
         const geo = new THREE.BufferGeometry();
         geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
@@ -240,10 +236,10 @@ const Studio = (() => {
         const arr = this.points.geometry.attributes.position.array;
         const half = this.data.height / 2;
         for (let i = 0; i < arr.length; i += 3) {
-          const index=i/3,d=this.data;if(d.lifetime>0){this.ages[index]+=dtS;if(this.ages[index]>=d.lifetime){this.ages[index]%=d.lifetime;this.spawn(index);}const f=this.ages[index]/d.lifetime;this.sizes[index]=1+(d.endSize-1)*f;this.alphas[index]=d.fade?Math.sin(Math.PI*f):1;this.ageColor=this.ageColor||new THREE.Color();this.ageColor.copy(this.startColor).lerp(this.endColor,f).toArray(this.points.geometry.attributes.color.array,i);}
+          const index=i/3,d=this.data;if(d.lifetime>0){this.ages[index]+=dtS;if(this.ages[index]>=d.lifetime){this.ages[index]%=d.lifetime;this.spawn(index);this.setVelocity(index);}const f=this.ages[index]/d.lifetime;this.sizes[index]=1+(d.endSize-1)*f;this.alphas[index]=d.fade?Math.sin(Math.PI*f):1;this.ageColor=this.ageColor||new THREE.Color();this.ageColor.copy(this.startColor).lerp(this.endColor,f).toArray(this.points.geometry.attributes.color.array,i);}
           arr[i] += this.vel[i] * dtS;
           arr[i + 1] += this.vel[i + 1] * dtS;
-          const halfW = this.data.width / 2;
+          const halfW = this.data.width / 2 * (this.data.spread>0?Math.min(2,this.data.spread):1);
           if (this.data.lifetime<=0&&this.vel[i] > 0 && arr[i] > halfW) arr[i] = -halfW;
           if (this.data.lifetime<=0&&this.vel[i] < 0 && arr[i] < -halfW) arr[i] = halfW;
           if (this.data.lifetime<=0&&this.vel[i + 1] > 0 && arr[i + 1] > half) arr[i + 1] = -half;
@@ -339,7 +335,7 @@ const Studio = (() => {
       audio.setMediaElementSource(m.node);audio.gain.gain.value=1;m.three=audio;
     }};if(scene.hasLoaded)route();else scene.addEventListener('loaded',route,{once:true});return listener;
   }
-  function validParticles(el){const p=el.particles;if(!p)return true;if(typeof p!=='object'||Array.isArray(p))return false;for(const [k,min,max]of [['lifetime',0,60],['endSize',0,5],['count',10,500],['size',2,60],['speed',.2,3]])if(p[k]!=null&&(!Number.isFinite(p[k])||p[k]<min||p[k]>max))return false;if(p.emitter!=null&&!['box','disc','sphere'].includes(p.emitter))return false;if(p.endColor!=null&&!/^#[0-9a-f]{6}$/i.test(p.endColor))return false;if(p.fade!=null&&typeof p.fade!=='boolean')return false;return true;}
+  function validParticles(el){const p=el.particles;if(!p)return true;if(typeof p!=='object'||Array.isArray(p))return false;for(const [k,min,max]of [['lifetime',0,60],['endSize',0,5],['count',10,500],['size',2,60],['speed',.2,3]])if(p[k]!=null&&(!Number.isFinite(p[k])||p[k]<min||p[k]>max))return false;if(p.emitter!=null&&!['box','disc','sphere'].includes(p.emitter))return false;if(p.direction!=null&&(!Number.isInteger(p.direction)||p.direction<-3||p.direction>359))return false;if(p.spread!=null&&(!Number.isFinite(p.spread)||p.spread<.1||p.spread>2))return false;if(p.endColor!=null&&!/^#[0-9a-f]{6}$/i.test(p.endColor))return false;if(p.fade!=null&&typeof p.fade!=='boolean')return false;return true;}
   function validCrop(el){const c=el.crop;return !c||['image','video'].includes(el.type)&&['x','y','w','h'].every(k=>Number.isFinite(c[k]))&&c.x>=0&&c.y>=0&&c.w>=.01&&c.h>=.01&&c.x+c.w<=1.000001&&c.y+c.h<=1.000001;}
   function setImageCrop(rec,el,crop){
     const old=el.crop||{x:0,y:0,w:1,h:1};const sourceAspect=(el.aspect||1)/(old.w/old.h);
@@ -485,7 +481,7 @@ const Studio = (() => {
       e = document.createElement("a-entity");
       let spriteAttr = "";
       if (pc.preset === "custom" && pc.spriteAssetId && rec.assets && rec.assets[pc.spriteAssetId]) spriteAttr = `; sprite: ${URL.createObjectURL(rec.assets[pc.spriteAssetId])}`;
-      e.setAttribute("particles", `preset: ${pc.preset || "sparkle"}; count: ${pc.count || 120}; color: ${pc.color || "#ffd94d"}; size: ${pc.size || 12}; speed: ${pc.speed || 1}; width: ${ts.w}; height: ${ts.h}; lifetime: ${pc.lifetime||0}; emitter: ${pc.emitter||"box"}; endColor: ${pc.endColor||pc.color||"#ffd94d"}; endSize: ${pc.endSize==null?1:pc.endSize}; fade: ${!!pc.fade}${spriteAttr}${pc.direction != null && pc.direction >= 0 ? "; direction: " + (pc.direction | 0) : ""}`);
+      e.setAttribute("particles", `preset: ${pc.preset || "sparkle"}; count: ${pc.count || 120}; color: ${pc.color || "#ffd94d"}; size: ${pc.size || 12}; speed: ${pc.speed || 1}; width: ${ts.w}; height: ${ts.h}; lifetime: ${pc.lifetime||0}; emitter: ${pc.emitter||"box"}; endColor: ${pc.endColor||pc.color||"#ffd94d"}; endSize: ${pc.endSize==null?1:pc.endSize}; fade: ${!!pc.fade}; spread: ${pc.spread>0?Math.min(2,pc.spread):1}${spriteAttr}${pc.direction != null ? "; direction: " + (pc.direction | 0) : ""}`);
     } else if (el.type === "model") {
       // glTF/GLB: wrapper carries placement (timeline/tap target); inner child carries the
       // normalized model scale so timeline scale keys don't fight the fit-to-size normalization.
