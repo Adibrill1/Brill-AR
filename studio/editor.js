@@ -503,6 +503,7 @@
     $("btn-edit-ar").onclick = () => { location.href = "play.html?edit=1#" + rec.id; };
     $("btn-play").onclick = () => { location.href = "play.html#" + rec.id; };
     $("btn-preview3d").onclick = () => { location.href = "preview.html#" + rec.id; };
+    $("btn-3d").onclick=()=>queueExperience(async()=>{await Studio.save(rec);location.href="preview.html#"+rec.id;});
     $('btn-duplicate-el').onclick=()=>queueExperience(async()=>{const id=Studio.duplicateLayer(rec,selectedId);if(!id)return;selectedId=id;await Studio.save(rec);await hydrate();render();});
     const restore=direction=>queueExperience(async()=>{const restored=await Studio.restoreHistory(rec.id,direction);if(!restored)return;rec=restored;selectedId=null;checkedIds.clear();tlScrubT=null;resetSeq();await hydrate();render();});
     $('btn-undo').onclick=()=>restore('undo');$('btn-redo').onclick=()=>restore('redo');
@@ -657,6 +658,7 @@
     $("sec-elements").hidden = !hasTarget;
     $("sec-arrange").hidden = !hasTarget;
     $("sec-preview").hidden = !hasTarget;
+    $("btn-3d").hidden = !hasTarget;
     const th = $("artwork-thumb");
     if (artworkImg) { th.src = artworkImg.src; th.hidden = false; } else th.hidden = true;
     renderSeqTabs();

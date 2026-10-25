@@ -7,6 +7,11 @@
   const fail = (t) => { errBox.style.display = "grid"; errBox.innerHTML = t; };
   const id = location.hash.slice(1);
   const editMode=new URLSearchParams(location.search).get("edit")==="1";
+  const topbarToggle=document.createElement('a');
+  topbarToggle.id='topbar-edit-toggle';
+  topbarToggle.href=editMode?('preview.html'+location.hash):('preview.html?edit=1'+location.hash);
+  topbarToggle.textContent=editMode?'👁 תצוגה':'✏️ עריכה';
+  document.querySelector('#topbar').append(topbarToggle);
   if (!id) return fail("חסר מזהה ניסוי. <a href='index.html'>חזרה לעורך</a>");
   const savedRec=await Studio.load(id);let rec=savedRec;
   const params=new URLSearchParams(location.search);let targetAction=null;
