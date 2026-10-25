@@ -15,6 +15,7 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
  await c.waitForSelector('[data-el-id=one]',{state:'attached',timeout:10000});
  assert.equal(await c.evaluate(async()=>(await Studio.all()).some(r=>r.name==='pub QA')),false,'camera-free preview must not persist either');
  assert.equal(await c.evaluate(()=>document.getElementById('topbar-edit-toggle')==null),true,'no edit toggle for pub viewers');
+ assert.equal(await c.evaluate(()=>document.getElementById('backlink').hidden),true,'editor backlink hidden from pub viewers on the camera-free preview');
  // play.html camera-free link + hidden editor backlink for pub viewers
  const pl=await b.newPage();await pl.goto(base+'/play.html?pub=qa-pub-scene');
  assert.equal(await pl.evaluate(()=>{const a=document.getElementById('camfree');return !a.hidden&&a.getAttribute('href');}),'preview.html?pub=qa-pub-scene','camera-free link offered on the AR page');
