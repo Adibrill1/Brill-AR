@@ -55,6 +55,20 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
  const rotDrag=async(k,prop,dir)=>{const g=await geo();const m=g[k].mid;const v0=await p.evaluate(([id,prop])=>Studio.load(id).then(r=>r.elements.find(e=>e.type==='text')[prop]||0),[id,prop]);await p.mouse.move(m.x,m.y);await p.mouse.down();await p.mouse.move(m.x+dir*30,m.y+dir*22,{steps:8});await p.mouse.up();await p.waitForTimeout(600);const v1=await p.evaluate(([id,prop])=>Studio.load(id).then(r=>r.elements.find(e=>e.type==='text')[prop]||0),[id,prop]);assert.ok(Math.abs(v1-v0)>3,'dragging the '+k+' arc changed '+prop+': '+v0+' -> '+v1);return [v0,v1];};
  const out={};out.rot=await rotDrag('rot','rot',1);out.rotX=await rotDrag('rotX','rotX',1);out.rotY=await rotDrag('rotY','rotY',1);
  // depth policy: new (flush) layers carry NO depth tie offset, legacy layers keep theirs
+ // corners: every arc touchable, identifiable, and not under the tool buttons
+ const corners=[[0.4,0.45,'tr'],[-0.4,0.45,'tl'],[0.4,-0.45,'br'],[-0.4,-0.45,'bl']];
+ for(const [cx,cy,nm] of corners){
+  await p.evaluate(async([id,cx,cy])=>{const r=await Studio.load(id);const e=r.elements.find(e=>e.type==='text');e.x=cx;e.y=cy;e.rot=0;e.rotX=0;e.rotY=0;await Studio.save(r);},[id,cx,cy]);
+  await p.reload();await p.waitForFunction(()=>document.querySelector('#exp-select').options.length>0);await p.locator('#exp-select').selectOption(id);await p.waitForFunction(()=>parseFloat(document.querySelector('#preview').style.height)>300);
+  await p.tap('#btn-3d');await p.waitForSelector('[data-el-root]',{state:'attached',timeout:20000});await p.waitForTimeout(2000);
+  await p.evaluate(()=>{const li=[...document.querySelectorAll('#element-list li')].find(l=>l.textContent.includes('טקסט'));li.click();});await p.waitForTimeout(600);
+  await p.evaluate(()=>Editor3D._test.scene().canvas.scrollIntoView({block:'center'}));await p.waitForTimeout(400);
+  const g=await verify('corner-'+nm);
+  const tb=await p.evaluate(()=>{const r=document.querySelector('#editor-3d-tools').getBoundingClientRect();return {l:r.left,t:r.top,r:r.right,b:r.bottom};});
+  for(const k of ['rot','rotX','rotY','x','y','z']){const m=g[k].mid;assert.ok(!(m.x>tb.l-6&&m.x<tb.r+6&&m.y>tb.t-6&&m.y<tb.b+6),'corner-'+nm+': '+k+' handle not under the tool buttons '+JSON.stringify({m,tb}));}
+  await p.screenshot({path:'/downloads/flush-corner-'+nm+'-390.png'});
+  console.log('corner',nm,JSON.stringify({w:[g.rot.width|0,g.rotX.width|0,g.rotY.width|0],chord:[g.rot.chord|0,g.rotX.chord|0,g.rotY.chord|0]}));
+ }
  // add a legacy (pre-flush) layer to the same scene: it must keep its depth tie, new layers must have none
  await p.evaluate(async id=>{const r=await Studio.load(id);r.elements.push({id:'legacy1',type:'text',name:'old',text:'old',color:'#fff',bold:true,x:0.1,y:-0.2,w:0.3,h:null,rot:0,z:0.1,seq:r.elements[0].seq});r.elements.forEach(Studio.normEl);await Studio.save(r);},id);
  await p.reload();await p.waitForFunction(()=>document.querySelector('#exp-select').options.length>0);await p.locator('#exp-select').selectOption(id);await p.waitForFunction(()=>parseFloat(document.querySelector('#preview').style.height)>300);

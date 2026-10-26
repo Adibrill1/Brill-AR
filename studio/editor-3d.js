@@ -243,8 +243,22 @@ window.Editor3D = (() => {
     // edge-aware cap: handles must not run off the viewport when the element sits near a side
     const ndc = gw.clone().project(camObj);
     const margin = Math.min((1 - Math.abs(ndc.x)) * visW, (1 - Math.abs(ndc.y)) * visH) / 2;
-    const s = Math.max(0.3, Math.min(1.6, Math.min((0.26 * visH) / base, (0.85 * Math.max(margin, 0.05 * visH)) / base)));
+    const s = Math.max(0.4, Math.min(1.6, Math.min((0.26 * visH) / base, (0.85 * Math.max(margin, 0.05 * visH)) / base)));
     gizmo.scale.setScalar(s);
+    // touch zones must not shrink with the view-fit: widen the arc hit tubes when the gizmo is scaled down
+    const grow = Math.max(1, 0.8 / s);
+    gizmo.children.forEach((c) => c.children && c.children.forEach((h) => {
+      if (h.userData && h.userData.proxy && h.userData.hitR) {
+        if (h.userData.grow !== grow) { h.geometry.dispose(); h.geometry = new THREE.TorusGeometry(h.userData.hitR, h.userData.hitL * 0.34 * grow, 6, 24, h.userData.hitSpan); h.userData.grow = grow; }
+      }
+    }));
+    // keep the tool buttons out from under the handles: dock them in the screen corner farthest from the gizmo
+    if (toolRow) {
+      const right = ndc.x < 0, bottom = ndc.y > 0; // gizmo in left half -> buttons right; gizmo in upper half -> buttons bottom
+      toolRow.style.top = bottom ? "auto" : "8px"; toolRow.style.bottom = bottom ? "8px" : "auto";
+      toolRow.style.left = right ? "auto" : "8px"; toolRow.style.right = right ? "8px" : "auto";
+      toolRow.style.insetInlineStart = "auto";
+    }
   }
 
   function refreshGizmo() {
@@ -349,7 +363,7 @@ window.Editor3D = (() => {
       };
       const hit = new THREE.Mesh(new THREE.TorusGeometry(R, L * 0.34, 6, 24, span),
         new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
-      hit.rotation.z = start; hit.userData = { axis, gizmoPart: name, arc: true, proxy: true };
+      hit.rotation.z = start; hit.userData = { axis, gizmoPart: name, arc: true, proxy: true, hitR: R, hitL: L, hitSpan: span };
       pivot.add(arc, head(end, false), head(start, true), hit);
       gizmo.add(pivot);
     };
