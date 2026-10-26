@@ -28,18 +28,17 @@ window.Editor3D = (() => {
 
   function geomOf(rec) { return Studio.geom(rec); }
 
-  async function mount() {
-    if (mounted) return;
-    const rec = getRec(); if (!rec || !rec.target) return;
-    host = document.createElement("div");
-    host.id = "editor-3d-host";
-    host.style.cssText = "position:absolute;inset:0;z-index:4;background:#d9dde3;touch-action:none";
-    const assets = document.createElement("div");
-    assets.hidden = true; assets.id = "editor-3d-media";
-    host.appendChild(assets);
+  // Media nodes for every element, created once per exact asset blob. Elements added or re-assetted
+  // after the first mount used to get no node (the entity then rendered as a blank white plane).
+  async function ensureMedia(rec) {
+    const assets = host && host.querySelector("#editor-3d-media"); if (!assets) return;
     for (const el of rec.elements) {
       if (!el.assetId || !rec.assets[el.assetId]) continue;
-      const url = URL.createObjectURL(rec.assets[el.assetId]);
+      const blob = rec.assets[el.assetId], mid = "m3-" + el.id;
+      const old = assets.querySelector('[id="' + mid + '"]');
+      if (old && old.__blob === blob) continue; // already registered for this exact asset
+      if (old) { try { if (old.src && old.src.startsWith("blob:")) URL.revokeObjectURL(old.src); } catch (e) {} old.remove(); }
+      const url = URL.createObjectURL(blob), before = assets.lastElementChild;
       if (el.type === "video") {
         const v = document.createElement("video");
         v.id = "m3-" + el.id; v.src = url; v.muted = true; v.loop = el.loop !== false;
@@ -56,7 +55,20 @@ window.Editor3D = (() => {
         const s = document.createElement("a-asset-item");
         s.id = "m3-" + el.id; s.setAttribute("src", url); assets.appendChild(s); // a-asset-item reads the src ATTRIBUTE; a .src property is an expando and crashes A-Frame on connect
       }
+      const made = assets.querySelector('[id="' + mid + '"]'); if (made) made.__blob = blob;
     }
+  }
+
+  async function mount() {
+    if (mounted) return;
+    const rec = getRec(); if (!rec || !rec.target) return;
+    host = document.createElement("div");
+    host.id = "editor-3d-host";
+    host.style.cssText = "position:absolute;inset:0;z-index:4;background:#d9dde3;touch-action:none";
+    const assets = document.createElement("div");
+    assets.hidden = true; assets.id = "editor-3d-media";
+    host.appendChild(assets);
+    await ensureMedia(rec);
     if (rec.elements.some((el) => el.type === "video" && el.chroma && el.chroma.enabled)) Studio.ensureChromaComponent();
     sceneEl = document.createElement("a-scene");
     // gltf-model is BOTH a system and a component name; A-Frame's setAttribute override
@@ -688,7 +700,7 @@ window.Editor3D = (() => {
     const sig = compositionSig(getRec());
     if (sig === lastSig) return;
     lastSig = sig; rebuildCount++;
-    rebuildArtwork().then(rebuildElements);
+    rebuildArtwork().then(() => ensureMedia(getRec())).then(rebuildElements);
   }
 
   return { init, show, hide, sync, isActive: () => active, refreshGizmo, _test: { rebuilds: () => rebuildCount, gizmo: () => gizmo, node: (id) => elNode(id), scene: () => sceneEl, helper: () => helper, drag: () => gizmoDrag } };
