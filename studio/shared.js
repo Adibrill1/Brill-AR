@@ -554,7 +554,8 @@ const Studio = (() => {
     normEl(el);
     const ts = toTargetSpace(rec, el, el.aspect || 1);
     const ox = opts.origin ? opts.origin.x : 0, oy = opts.origin ? opts.origin.y : 0, oz = opts.origin ? opts.origin.z : 0;
-    const z = (ts.z || 0) + idx * 0.001; // array order breaks z ties, matching the editor's paint order
+    const tie = el.flush ? 0 : idx * 0.001; // legacy layers: array order breaks z ties by a tiny depth offset. Flush layers (new elements) use NO depth offset: they sit exactly at their z and are ordered by renderOrder instead.
+    const z = (ts.z || 0) + tie;
     const angle = -(opts.baseRotation || 0) * Math.PI / 180;
     const dx = ts.x - ox, dy = ts.y - oy;
     const pos = `${dx * Math.cos(angle) - dy * Math.sin(angle)} ${dx * Math.sin(angle) + dy * Math.cos(angle)} ${z - oz}`;
@@ -652,7 +653,8 @@ const Studio = (() => {
     e.setAttribute("position", pos);
     e.setAttribute("rotation", rot);
     e.dataset.elId = el.id;
-    e._studioFrame = { ox, oy, oz, angle, baseRotation: opts.baseRotation || 0, zTie: idx * 0.001 };
+    if (el.flush) { const ro = 1 + idx; const apply = () => { const o = e.object3D; if (!o) return; o.traverse((m) => { if (m.isMesh || m.isPoints) { m.renderOrder = ro; if (el.type !== 'model' && m.material) { const ms = Array.isArray(m.material) ? m.material : [m.material]; ms.forEach((mm) => { mm.depthWrite = false; }); } } }); }; e.addEventListener('object3dset', apply); e.addEventListener('model-loaded', apply); e.addEventListener('materialtextureloaded', apply); e.addEventListener('componentchanged', (ev) => { if (ev.detail && ev.detail.name === 'material') apply(); }); apply(); setTimeout(apply, 600); setTimeout(apply, 2500); }
+    e._studioFrame = { ox, oy, oz, angle, baseRotation: opts.baseRotation || 0, zTie: tie };
     const hasTl = ActionCore.list(rec).some(q=>q.actions.some(a=>a.type!=="sequence"&&a.layerId===el.id)) || el.timeline && Array.isArray(el.timeline.keys) && el.timeline.keys.length;
     if (el.anim === "spin" && !hasTl) e.setAttribute("animation__spin", `property: rotation; to: 0 0 ${(el.rot || 0) - (opts.baseRotation || 0) + 360}; loop: true; dur: 14000; easing: linear`);
     else if (el.anim === "float" && !hasTl) e.setAttribute("animation__float", `property: position; from: ${pos}; to: ${dx * Math.cos(angle) - dy * Math.sin(angle)} ${dx * Math.sin(angle) + dy * Math.cos(angle) + 0.03} ${z - oz}; dir: alternate; loop: true; dur: 2600; easing: easeInOutSine`);
@@ -969,7 +971,7 @@ const Studio = (() => {
       for(const {e,el}of entries){
         const s=Object.assign(ActionCore.base(el),values[el.id]),ts=toTargetSpace(rec,{...el,x:s.x,y:s.y,z:s.z},el.aspect||1),f=e._studioFrame;
         if(f){const dx=ts.x-f.ox,dy=ts.y-f.oy;e.object3D.position.set(dx*Math.cos(f.angle)-dy*Math.sin(f.angle),dx*Math.sin(f.angle)+dy*Math.cos(f.angle),(ts.z||0)+f.zTie-f.oz);}
-        else { const tie=rec.elements.indexOf(el)*.0001;e.object3D.position.set(ts.x,ts.y,(ts.z||0)+tie); }
+        else { const tie=el.flush?0:rec.elements.indexOf(el)*.0001;e.object3D.position.set(ts.x,ts.y,(ts.z||0)+tie); }
         e.object3D.rotation.z=(s.rot-(f?f.baseRotation:0))*Math.PI/180;
         e.object3D.scale.set(s.scale,s.scale,1);applyOpacity(e,s.opacity);
         e._timelineVisible=s.visible!==false;e.object3D.visible=e._sequenceVisible!==false&&e._timelineVisible;

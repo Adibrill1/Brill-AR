@@ -178,7 +178,7 @@ window.Editor3D = (() => {
   function applySampled(rec, el, node, idx) {
     if (!node || !node.object3D) return;
     const { ts, s } = sampledTs(rec, el);
-    node.object3D.position.set(ts.x, ts.y, (ts.z || 0) + idx * 0.001);
+    node.object3D.position.set(ts.x, ts.y, (ts.z || 0) + (el.flush ? 0 : idx * 0.001));
     node.object3D.rotation.set((el.rotX || 0) * Math.PI / 180, (el.rotY || 0) * Math.PI / 180, ((s ? s.rot : el.rot || 0)) * Math.PI / 180);
     const sc = s ? s.scale : 1;
     node.object3D.scale.set(sc, sc, sc);
@@ -243,7 +243,7 @@ window.Editor3D = (() => {
     // edge-aware cap: handles must not run off the viewport when the element sits near a side
     const ndc = gw.clone().project(camObj);
     const margin = Math.min((1 - Math.abs(ndc.x)) * visW, (1 - Math.abs(ndc.y)) * visH) / 2;
-    const s = Math.max(0.18, Math.min(1.6, Math.min((0.26 * visH) / base, (0.85 * Math.max(margin, 0.05 * visH)) / base)));
+    const s = Math.max(0.3, Math.min(1.6, Math.min((0.26 * visH) / base, (0.85 * Math.max(margin, 0.05 * visH)) / base)));
     gizmo.scale.setScalar(s);
   }
 
@@ -333,30 +333,31 @@ window.Editor3D = (() => {
     mk(new THREE.Vector3(0, 0, 1), 0x1971c2, "z");
     // Curved double-headed rotation arrows, always visible next to the straight move arrows (no mode switch needed).
     // Each arc sits between two move axes so it never overlaps a shaft; the fat invisible arc is the touch target.
-    const mkArc = (axis, color, name, groupEuler, start) => {
-      const R = L * 0.6, span = Math.PI * 2 / 9, end = start + span; // 40deg arc, clear of the move shafts
+    const mkArc = (axis, color, name, groupEuler, start, span, R, pos) => {
+      const end = start + span; // arcs are offset from the move shafts so none projects onto a shaft in the front view
       const pivot = new THREE.Group();
-      pivot.rotation.set(groupEuler[0], groupEuler[1], groupEuler[2]);
-      pivot.userData = { axis, gizmoPart: name, start, span };
+      pivot.rotation.set(groupEuler[0], groupEuler[1], groupEuler[2]); pivot.position.set(pos[0], pos[1], pos[2]);
+      pivot.userData = { axis, gizmoPart: name, arc: true, start, span };
       const mat = new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.95, side: THREE.DoubleSide });
-      const arc = new THREE.Mesh(new THREE.TorusGeometry(R, 0.007, 8, 24, span), mat);
-      arc.rotation.z = start; arc.renderOrder = 10001; arc.userData = { axis, gizmoPart: name };
+      const arc = new THREE.Mesh(new THREE.TorusGeometry(R, 0.011, 8, 24, span), mat);
+      arc.rotation.z = start; arc.renderOrder = 10001; arc.userData = { axis, gizmoPart: name, arc: true };
       const head = (ang, flip) => {
-        const c = new THREE.Mesh(new THREE.ConeGeometry(0.02, 0.06, 12), mat);
+        const c = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.08, 12), mat);
         c.position.set(R * Math.cos(ang), R * Math.sin(ang), 0);
-        c.rotation.z = flip ? ang + Math.PI : ang; c.renderOrder = 10001; c.userData = { axis, gizmoPart: name };
+        c.rotation.z = flip ? ang + Math.PI : ang; c.renderOrder = 10001; c.userData = { axis, gizmoPart: name, arc: true };
         return c;
       };
-      const hit = new THREE.Mesh(new THREE.TorusGeometry(R, L * 0.15, 6, 24, span),
+      const hit = new THREE.Mesh(new THREE.TorusGeometry(R, L * 0.34, 6, 24, span),
         new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
-      hit.rotation.z = start; hit.userData = { axis, gizmoPart: name, proxy: true };
+      hit.rotation.z = start; hit.userData = { axis, gizmoPart: name, arc: true, proxy: true };
       pivot.add(arc, head(end, false), head(start, true), hit);
       gizmo.add(pivot);
     };
     // rot: XY plane (about Z) between +X and +Y; rotX: YZ plane between +Y and +Z; rotY: XZ plane between +Z and +X
-    mkArc(new THREE.Vector3(0, 0, 1), 0x1971c2, "rot", [0, 0, 0], Math.PI * 5 / 36);
-    mkArc(new THREE.Vector3(1, 0, 0), 0xe03131, "rotX", [0, Math.PI / 2, 0], Math.PI * 23 / 36);
-    mkArc(new THREE.Vector3(0, 1, 0), 0x2f9e44, "rotY", [Math.PI / 2, 0, 0], Math.PI * 5 / 36);
+    // rot (about Z): XY plane, in the +X/+Y quadrant. rotX: circle about X centred on the -X side. rotY: circle about Y centred on the -Y side.
+    mkArc(new THREE.Vector3(0, 0, 1), 0x1971c2, "rot", [0, 0, 0], Math.PI * 2 / 18, Math.PI * 5 / 18, L * 0.85, [0, 0, 0]);
+    mkArc(new THREE.Vector3(1, 0, 0), 0xe03131, "rotX", [0, Math.PI / 2, 0], Math.PI * 100 / 180, Math.PI * 80 / 180, L * 0.5, [-L * 0.6, 0, 0]);
+    mkArc(new THREE.Vector3(0, 1, 0), 0x2f9e44, "rotY", [Math.PI / 2, 0, 0], Math.PI * 10 / 180, Math.PI * 70 / 180, L * 0.5, [0, -L * 0.6, 0]);
     gizmo.position.copy(center);
     gizmo.userData.baseL = L + 0.06; // shaft + cone tip
     rig.object3D.add(gizmo);
@@ -441,7 +442,10 @@ window.Editor3D = (() => {
           const center = gizmo.position.clone();
           const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(axis, center);
           const hit = new THREE.Vector3();
-          if (!lr.intersectPlane(plane, hit)) return;
+          // Tilt (rotX/rotY) planes are nearly edge-on in the front view: a ray-plane angle is then wildly unstable
+          // (or misses), so those drags use screen distance instead (0.5 deg/px; rotX vertical, rotY horizontal).
+          const screenMode = o.userData.arc && (o.userData.gizmoPart === "rotX" || o.userData.gizmoPart === "rotY") && (Math.abs(axis.dot(lr.direction)) < 0.3 || !lr.intersectPlane(plane, hit));
+          if (!screenMode && !lr.intersectPlane(plane, hit)) return;
           const angleOf = (p) => {
             const v = p.clone().sub(center);
             if (axis.z) return Math.atan2(v.y, v.x);
@@ -453,7 +457,7 @@ window.Editor3D = (() => {
           if (keyT === "gate") { if (onGate) onGate(gateMsg(el)); e.preventDefault(); e.stopPropagation(); return; }
           if ((o.userData.gizmoPart === "rotX" || o.userData.gizmoPart === "rotY") && hasKeys(el) && onGate) onGate(TILT_NOTE);
           const rot0 = (keyT != null && o.userData.gizmoPart === "rot" && sampleEl) ? sampleEl(el).rot : el.rot || 0;
-          gizmoDrag = { id: e.pointerId, el, axis, plane, angleOf, a0: angleOf(hit), rot0, rotX0: el.rotX || 0, rotY0: el.rotY || 0, part: o.userData.gizmoPart, keyT, snap: JSON.stringify(rec.elements), snapT: frozen0 };
+          gizmoDrag = { id: e.pointerId, el, axis, plane, angleOf, a0: screenMode ? 0 : angleOf(hit), screen: screenMode ? { x: e.clientX, y: e.clientY } : null, rot0, rotX0: el.rotX || 0, rotY0: el.rotY || 0, part: o.userData.gizmoPart, keyT, snap: JSON.stringify(rec.elements), snapT: frozen0 };
           if (sceneEl.canvas.setPointerCapture) sceneEl.canvas.setPointerCapture(e.pointerId);
           e.preventDefault(); e.stopPropagation();
           return;
@@ -513,8 +517,12 @@ window.Editor3D = (() => {
       const rec = getRec(); if (!rec) return;
       const lr = localRay(rayFromEvent(e));
       const hit = new THREE.Vector3();
-      if (!lr.intersectPlane(gizmoDrag.plane, hit)) return;
-      let deg = (gizmoDrag.angleOf(hit) - gizmoDrag.a0) * 180 / Math.PI;
+      let deg;
+      if (gizmoDrag.screen) deg = (gizmoDrag.part === "rotX" ? (e.clientY - gizmoDrag.screen.y) : (e.clientX - gizmoDrag.screen.x)) * 0.5;
+      else {
+        if (!lr.intersectPlane(gizmoDrag.plane, hit)) return;
+        deg = (gizmoDrag.angleOf(hit) - gizmoDrag.a0) * 180 / Math.PI;
+      }
       const el = gizmoDrag.el, key = gizmoDrag.part;
       const val = Math.round(((key === "rot" ? gizmoDrag.rot0 : key === "rotX" ? gizmoDrag.rotX0 : gizmoDrag.rotY0) + deg) * 10) / 10;
       if (key === "rot" && gizmoDrag.keyT != null) {
@@ -550,7 +558,7 @@ window.Editor3D = (() => {
         if (node) {
           const ts = Studio.toTargetSpace(rec, el, el.aspect || 1);
           const idx = Studio.topLevelElements(rec).indexOf(el);
-          node.setAttribute("position", `${ts.x} ${ts.y} ${(ts.z || 0) + idx * 0.001}`);
+          node.setAttribute("position", `${ts.x} ${ts.y} ${(ts.z || 0) + (el.flush ? 0 : idx * 0.001)}`);
         }
       }
       refreshGizmo();

@@ -528,7 +528,7 @@
       rec.assets[assetId] = await Studio.ownBlob(f);
       const artRatio = rec.target.artRect.w / rec.target.artRect.h;
       const el = Studio.normEl({ id: Studio.newId(), type: kind, name: { video: "סרטון", image: "תמונה", sound: "צליל", model: "מודל 3D" }[kind] + " " + (rec.elements.filter((x) => x.type === kind).length + 1),
-                   assetId, x: 0, y: 0, w: kind === "video" ? 1.0 : 0.3, h: null, rot: 0, z: 0, seq: curSeq }); // flush with the artwork plane (z=0): layers keep their order through the existing per-layer tie-break
+                   assetId, x: 0, y: 0, w: kind === "video" ? 1.0 : 0.3, h: null, rot: 0, z: 0, flush: true, seq: curSeq }); // flush with the artwork plane (z=0): layers keep their order through the existing per-layer tie-break
       if (kind === "video" || kind === "sound") { el.volume = kind === "sound" ? 0.8 : 1; el.loop = true; }
       if (kind === "model") { el.w = 0.4; el.z = 0; el.seat = "plane"; el.aspect = 1; // seat="plane": the model's back face rests on the artwork (older models keep their centered placement)
         try { el.clipDurations = (await Studio.modelClipInfo(f)).map(c => c.duration); } catch {}
@@ -588,7 +588,7 @@
     $("btn-particles").onclick = async () => {
       { const blocked = Studio.addBlocker(rec, { layers: 1 }); if (blocked) { msg(blocked); return; } }
       const el = Studio.normEl({ id: Studio.newId(), type: "particles", name: "חלקיקים " + (rec.elements.filter((x) => x.type === "particles").length + 1),
-                   x: 0, y: 0, w: 0.6, h: 0.6, rot: 0, z: 0, seq: curSeq, particles: { preset: "sparkle", count: 120, color: "#ffd94d" } });
+                   x: 0, y: 0, w: 0.6, h: 0.6, rot: 0, z: 0, flush: true, seq: curSeq, particles: { preset: "sparkle", count: 120, color: "#ffd94d" } });
       rec.elements.push(el);
       selectedId = el.id;
       await saveGuarded(rec);
@@ -599,7 +599,7 @@
     $("btn-text").onclick = async () => {
       { const blocked = Studio.addBlocker(rec, { layers: 1 }); if (blocked) { msg(blocked); return; } }
       const el = Studio.normEl({ id: Studio.newId(), type: "text", name: "טקסט " + (rec.elements.filter((x) => x.type === "text").length + 1),
-                   text: "כותרת חדשה", color: "#ffffff", bold: true, x: 0, y: 0.35, w: 0.5, h: null, rot: 0, z: 0, seq: curSeq });
+                   text: "כותרת חדשה", color: "#ffffff", bold: true, x: 0, y: 0.35, w: 0.5, h: null, rot: 0, z: 0, flush: true, seq: curSeq });
       const tb = textBitmap(el);
       el.aspect = tb.aspect;
       el.h = (el.w / el.aspect) * (rec.target.artRect.w / rec.target.artRect.h);
