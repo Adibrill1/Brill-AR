@@ -29,7 +29,7 @@ const dl=p.waitForEvent('download');await p.locator('#btn-send-publish').click()
 assert.ok(await p.evaluate(()=>{const a=document.createElement('a');return true;})&&true);
 assert.ok((await p.locator('#msg').textContent()).includes('ירד'));
 // 390px: publish box readable, no overflow, hint present
-await p.setViewportSize({width:390,height:844});await p.waitForTimeout(500);
+await p.setViewportSize({width:390,height:844});await p.waitForTimeout(500);await p.locator('#shell-tabs [data-tab=check]').click();
 console.log('overflow-debug',await p.evaluate(()=>{const bad=[];for(const el of document.querySelectorAll('*')){const r=el.getBoundingClientRect();if(r.right>innerWidth+1||r.left<-1)bad.push(el.outerHTML.slice(0,60)+' L'+Math.round(r.left)+' R'+Math.round(r.right));}return {sw:document.documentElement.scrollWidth,iw:innerWidth,bad:bad.slice(0,6)};}));
 assert.equal(await p.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);
 assert.ok(await p.locator('#send-publish-hint').isVisible());
