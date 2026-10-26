@@ -82,12 +82,26 @@ window.Editor3D = (() => {
     // move/rotate tool toggle (Artivive: tool buttons at the top-left of the 3D view)
     toolRow = document.createElement("div");
     toolRow.id = "editor-3d-tools";
-    toolRow.style.cssText = "position:absolute;top:8px;inset-inline-start:8px;z-index:6;display:flex;gap:6px";
+    toolRow.style.cssText = "position:absolute;top:8px;left:8px;z-index:6;display:flex;flex-direction:column;gap:6px";
+    const toggleRow = document.createElement("div"); toggleRow.style.cssText = "display:flex;gap:6px"; toolRow.appendChild(toggleRow);
     for (const [mode, label, tid] of [["move", "↔", "btn-3d-move"], ["rotate", "⟳", "btn-3d-rotate"]]) {
       const b = document.createElement("button");
       b.id = tid; b.type = "button"; b.textContent = label; b.title = mode;
       b.style.cssText = "width:34px;height:34px;border-radius:8px;border:1px solid #b9b4c7;background:rgba(255,255,255,.94);font:600 16px/1 sans-serif;color:#292535;cursor:pointer";
       b.onclick = () => { gizmoMode = mode; syncToolButtons(); refreshGizmo(); };
+      toggleRow.appendChild(b);
+    }
+    // Screen-space rotation buttons (curved arrows): fixed size, always inside the view, docked beside the move/rotate toggle
+    // in the screen corner farthest from the selected element, so they never sit on top of the 3D handles.
+    const ROT_BTNS = [["rot", "⟳", "#1971c2", "btn-rot-z", "סיבוב"], ["rotX", "⤾", "#e03131", "btn-rot-x", "הטיה אנכית"], ["rotY", "⤿", "#2f9e44", "btn-rot-y", "הטיה אופקית"]];
+    for (const [part, glyph, color, tid, title] of ROT_BTNS) {
+      const b = document.createElement("button");
+      b.id = tid; b.type = "button"; b.textContent = glyph; b.title = title; b.dataset.part = part;
+      b.style.cssText = "width:44px;height:44px;border-radius:50%;border:2px solid " + color + ";background:rgba(255,255,255,.96);color:" + color + ";font:700 24px/1 sans-serif;cursor:grab;touch-action:none;padding:0";
+      b.addEventListener("pointerdown", (e) => startScreenRotate(part, e, b));
+      b.addEventListener("pointermove", (e) => { if (gizmoDrag && gizmoDrag.id === e.pointerId) move(e); });
+      b.addEventListener("pointerup", (e) => { if (gizmoDrag && gizmoDrag.id === e.pointerId) up(e); });
+      b.addEventListener("pointercancel", (e) => { if (gizmoDrag && gizmoDrag.id === e.pointerId) up(e); });
       toolRow.appendChild(b);
     }
     host.appendChild(toolRow);
@@ -245,28 +259,13 @@ window.Editor3D = (() => {
     const margin = Math.min((1 - Math.abs(ndc.x)) * visW, (1 - Math.abs(ndc.y)) * visH) / 2;
     const s = Math.max(0.18, Math.min(1.6, Math.min((0.26 * visH) / base, (0.85 * Math.max(margin, 0.05 * visH)) / base)));
     gizmo.scale.setScalar(s);
-    // touch zones must not shrink with the view-fit: widen the arc hit tubes when the gizmo is scaled down
-    const grow = Math.max(1, 0.8 / s);
-    gizmo.children.forEach((c) => c.children && c.children.forEach((h) => {
-      if (h.userData && h.userData.proxy && h.userData.hitR) {
-        if (h.userData.grow !== grow) { h.geometry.dispose(); h.geometry = new THREE.TorusGeometry(h.userData.hitR, h.userData.hitL * 0.34 * grow, 6, 24, h.userData.hitSpan); h.userData.grow = grow; }
-      }
-    }));
-    // curved arrows face the centre of the view: mirror/shift them away from the nearest canvas edges so they are not clipped
-    const sxs = ndc.x > 0 ? -1 : 1, sys = ndc.y > 0 ? -1 : 1;
-    gizmo.children.forEach((c) => {
-      const u = c.userData || {}, Lh = gizmo.userData.arcL;
-      if (!u.arc || !Lh) return;
-      if (u.gizmoPart === "rot") c.scale.set(sxs, sys, 1);
-      else if (u.gizmoPart === "rotX") c.position.x = sxs * Lh * 0.6;
-      else if (u.gizmoPart === "rotY") c.position.y = sys * Lh * 0.6;
-    });
     // keep the tool buttons out from under the handles: dock them in the screen corner farthest from the gizmo
     if (toolRow) {
       const right = ndc.x < 0, bottom = ndc.y > 0; // gizmo in left half -> buttons right; gizmo in upper half -> buttons bottom
       toolRow.style.top = bottom ? "auto" : "8px"; toolRow.style.bottom = bottom ? "8px" : "auto";
       toolRow.style.left = right ? "auto" : "8px"; toolRow.style.right = right ? "8px" : "auto";
-      toolRow.style.insetInlineStart = "auto";
+      toolRow.style.insetInlineStart = "auto"; toolRow.style.alignItems = right ? "flex-end" : "flex-start";
+      toolRow.style.flexDirection = bottom ? "column-reverse" : "column";
     }
   }
 
@@ -354,35 +353,7 @@ window.Editor3D = (() => {
     mk(new THREE.Vector3(1, 0, 0), 0xe03131, "x");
     mk(new THREE.Vector3(0, 1, 0), 0x2f9e44, "y");
     mk(new THREE.Vector3(0, 0, 1), 0x1971c2, "z");
-    // Curved double-headed rotation arrows, always visible next to the straight move arrows (no mode switch needed).
-    // Each arc sits between two move axes so it never overlaps a shaft; the fat invisible arc is the touch target.
-    const mkArc = (axis, color, name, groupEuler, start, span, R, pos) => {
-      const end = start + span; // arcs are offset from the move shafts so none projects onto a shaft in the front view
-      const pivot = new THREE.Group();
-      pivot.rotation.set(groupEuler[0], groupEuler[1], groupEuler[2]); pivot.position.set(pos[0], pos[1], pos[2]);
-      pivot.userData = { axis, gizmoPart: name, arc: true, start, span };
-      const mat = new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.95, side: THREE.DoubleSide });
-      const arc = new THREE.Mesh(new THREE.TorusGeometry(R, 0.011, 8, 24, span), mat);
-      arc.rotation.z = start; arc.renderOrder = 10001; arc.userData = { axis, gizmoPart: name, arc: true };
-      const head = (ang, flip) => {
-        const c = new THREE.Mesh(new THREE.ConeGeometry(0.03, 0.08, 12), mat);
-        c.position.set(R * Math.cos(ang), R * Math.sin(ang), 0);
-        c.rotation.z = flip ? ang + Math.PI : ang; c.renderOrder = 10001; c.userData = { axis, gizmoPart: name, arc: true };
-        return c;
-      };
-      const hit = new THREE.Mesh(new THREE.TorusGeometry(R, L * 0.34, 6, 24, span),
-        new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
-      hit.rotation.z = start; hit.userData = { axis, gizmoPart: name, arc: true, proxy: true, hitR: R, hitL: L, hitSpan: span };
-      pivot.add(arc, head(end, false), head(start, true), hit);
-      gizmo.add(pivot);
-    };
-    // rot: XY plane (about Z) between +X and +Y; rotX: YZ plane between +Y and +Z; rotY: XZ plane between +Z and +X
-    // rot (about Z): XY plane, in the +X/+Y quadrant. rotX: circle about X centred on the -X side. rotY: circle about Y centred on the -Y side.
-    mkArc(new THREE.Vector3(0, 0, 1), 0x1971c2, "rot", [0, 0, 0], Math.PI * 2 / 18, Math.PI * 5 / 18, L * 0.85, [0, 0, 0]);
-    mkArc(new THREE.Vector3(1, 0, 0), 0xe03131, "rotX", [0, Math.PI / 2, 0], Math.PI * 95 / 180, Math.PI * 70 / 180, L * 0.5, [-L * 0.6, 0, 0]);
-    mkArc(new THREE.Vector3(0, 1, 0), 0x2f9e44, "rotY", [Math.PI / 2, 0, 0], Math.PI * 5 / 180, Math.PI * 65 / 180, L * 0.5, [0, -L * 0.6, 0]);
     gizmo.position.copy(center);
-    gizmo.userData.arcL = L;
     gizmo.userData.baseL = L + 0.06; // shaft + cone tip
     rig.object3D.add(gizmo);
     fitGizmoToView();
@@ -543,7 +514,8 @@ window.Editor3D = (() => {
       const lr = localRay(rayFromEvent(e));
       const hit = new THREE.Vector3();
       let deg;
-      if (gizmoDrag.screen) deg = (gizmoDrag.part === "rotX" ? (e.clientY - gizmoDrag.screen.y) : (e.clientX - gizmoDrag.screen.x)) * 0.5;
+      if (gizmoDrag.screen && gizmoDrag.part === "rot") { let da = Math.atan2(e.clientY - gizmoDrag.screen.cy, e.clientX - gizmoDrag.screen.cx) - gizmoDrag.screen.sa; while (da > Math.PI) da -= 2 * Math.PI; while (da < -Math.PI) da += 2 * Math.PI; deg = -da * 180 / Math.PI; }
+      else if (gizmoDrag.screen) deg = (gizmoDrag.part === "rotX" ? (e.clientY - gizmoDrag.screen.y) : (e.clientX - gizmoDrag.screen.x)) * 0.5;
       else {
         if (!lr.intersectPlane(gizmoDrag.plane, hit)) return;
         deg = (gizmoDrag.angleOf(hit) - gizmoDrag.a0) * 180 / Math.PI;
@@ -598,6 +570,24 @@ window.Editor3D = (() => {
       fitGizmoToView();
       orb = { x: e.clientX, y: e.clientY };
     }
+  }
+
+  // Drag from a screen-space rotation button: spin follows the pointer's angle around the element's screen centre;
+  // tilts follow vertical (X) / horizontal (Y) distance at 0.5 deg/px. Same data path (gizmoDrag) as the 3D rotation handles.
+  function startScreenRotate(part, e, btn) {
+    const rec = getRec(); if (!rec || !active) return;
+    const el = rec.elements.find((x) => x.id === getSelected()); if (!el || !gizmo) return;
+    const keyT = prepareKeyedDrag(el, part);
+    e.preventDefault(); e.stopPropagation();
+    if (keyT === "gate") { if (onGate) onGate(gateMsg(el)); return; }
+    if ((part === "rotX" || part === "rotY") && hasKeys(el) && onGate) onGate(TILT_NOTE);
+    const camObj = cam.getObject3D("camera") || sceneEl.camera;
+    const gw = new THREE.Vector3(); gizmo.getWorldPosition(gw); gw.project(camObj);
+    const rect = sceneEl.canvas.getBoundingClientRect();
+    const c = { x: rect.left + (gw.x + 1) / 2 * rect.width, y: rect.top + (1 - gw.y) / 2 * rect.height };
+    const rot0 = (keyT != null && part === "rot" && sampleEl) ? sampleEl(el).rot : el.rot || 0;
+    gizmoDrag = { id: e.pointerId, el, axis: null, plane: null, angleOf: null, a0: 0, screen: { x: e.clientX, y: e.clientY, cx: c.x, cy: c.y, sa: Math.atan2(e.clientY - c.y, e.clientX - c.x) }, rot0, rotX0: el.rotX || 0, rotY0: el.rotY || 0, part, keyT, snap: JSON.stringify(rec.elements), snapT: getFrozen ? getFrozen() : null };
+    try { btn.setPointerCapture(e.pointerId); } catch (err) {}
   }
 
   function up(e) {

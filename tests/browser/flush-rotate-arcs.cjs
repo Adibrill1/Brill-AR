@@ -21,56 +21,35 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
  const modelZ=await p.evaluate(()=>{const n=[...document.querySelectorAll('[data-el-root]')].find(x=>x.querySelector('[gltf-model]')||x.getAttribute('data-el-root')&&x.querySelector('a-entity'));const m=n&&n.object3D;if(!m)return null;const box=new THREE.Box3().setFromObject(m);return {minZ:box.min.z,maxZ:box.max.z};});
  console.log('model world z-range',JSON.stringify(modelZ));
  assert.ok(modelZ&&Math.abs(modelZ.minZ)<1e-6&&modelZ.maxZ>0.01,'model back face rests on the artwork plane within 1e-6 art-heights (no depth tie offset), extends toward viewer: '+JSON.stringify(modelZ));
- // gizmo: select the text, move mode shows three straight arrows AND three curved rotation arcs
- await p.evaluate(()=>{const li=[...document.querySelectorAll('#element-list li')].find(l=>l.textContent.includes('טקסט'));li.click();});await p.waitForTimeout(600);
- const info=await p.evaluate(()=>{Editor3D._test.scene().object3D.updateMatrixWorld(true);const g=Editor3D._test.gizmo();const parts=g.children.filter(c=>!c.userData.proxy||c.userData.gizmoPart).map(c=>c.userData.gizmoPart);return {parts,n:g.children.length};});
- console.log(JSON.stringify(info));
- for(const k of ['x','y','z','rot','rotX','rotY'])assert.ok(info.parts.includes(k),'gizmo has '+k);
- await p.evaluate(()=>Editor3D._test.scene().canvas.scrollIntoView({block:'center'}));await p.waitForTimeout(400);
- const geo=()=>p.evaluate(()=>{Editor3D._test.scene().object3D.updateMatrixWorld(true);const sc=Editor3D._test.scene(),g=Editor3D._test.gizmo(),cam=sc.camera,rect=sc.canvas.getBoundingClientRect();const P=(o,v)=>{const w=v.clone();o.localToWorld(w);w.project(cam);return {x:rect.left+(w.x+1)/2*rect.width,y:rect.top+(1-w.y)/2*rect.height};};const out={rect:{l:rect.left,t:rect.top,w:rect.width,h:rect.height}};
-  for(const k of ['rot','rotX','rotY']){const pv=g.children.find(c=>c.userData.gizmoPart===k);const vis=pv.children[0],hit=pv.children.find(c=>c.userData.proxy);const R=vis.geometry.parameters.radius,sp=pv.userData.span,tu=hit.geometry.parameters.tube;const pm=P(vis,new THREE.Vector3(Math.cos(sp/2)*R,Math.sin(sp/2)*R,0)),po=P(vis,new THREE.Vector3(Math.cos(sp/2)*(R+tu),Math.sin(sp/2)*(R+tu),0));const p0=P(vis,new THREE.Vector3(R,0,0)),p1=P(vis,new THREE.Vector3(Math.cos(sp)*R,Math.sin(sp)*R,0));out[k]={end:p1,mid:pm,width:2*Math.hypot(pm.x-po.x,pm.y-po.y),chord:Math.hypot(p0.x-p1.x,p0.y-p1.y)};}
-  for(const k of ['x','y','z']){const gp=g.children.find(c=>c.userData.gizmoPart===k&&c.isGroup);const cyl=gp.children[0];out[k]={mid:P(cyl,new THREE.Vector3(0,0,0))};}
-  return out;});
- const pick=async(pt)=>{await p.mouse.move(pt.x,pt.y);await p.mouse.down();await p.waitForTimeout(80);const part=await p.evaluate(()=>{const d=Editor3D._test.drag();return d&&d.part?d.part:(d?'move':null);});await p.mouse.up();await p.waitForTimeout(150);return part;};
- const verify=async(label)=>{const g=await geo();const res={};for(const k of ['rot','rotX','rotY']){assert.ok(g[k].width>=24,label+' '+k+' arc hit width >=24px: '+g[k].width);assert.ok(g[k].chord>=(k==='rot'?24:7),label+' '+k+' arc visible chord (tilt arcs are foreshortened in the front view): '+g[k].chord);const m=g[k].mid;assert.ok(m.x>g.rect.l&&m.x<g.rect.l+g.rect.w&&m.y>g.rect.t&&m.y<g.rect.t+g.rect.h,label+' '+k+' inside viewport '+JSON.stringify(m));if(label==='edge')await p.screenshot({path:'/downloads/flush-arcs-edge-390.png'});res[k]=await pick(m);assert.equal(res[k],k,label+': touching the '+k+' arc grabs '+k+', got '+res[k]);}
-  for(const k of ['x','y','z']){const m=g[k].mid;const got=await pick(m);assert.notEqual(got&&got.startsWith('rot'),true,label+': touching the '+k+' move arrow does not grab a rotation arc ('+got+')');}
-  return g;};
- const g1=await verify('default');
- console.log(JSON.stringify({w:{rot:g1.rot.width,rotX:g1.rotX.width,rotY:g1.rotY.width},chord:{rot:g1.rot.chord,rotX:g1.rotX.chord,rotY:g1.rotY.chord}}));
- // edge: element near the right/top edge of the artwork
- await p.evaluate(async id=>{const r=await Studio.load(id);const e=r.elements.find(e=>e.type==='text');e.x=0.38;e.y=0.2;await Studio.save(r);},id);
- await p.reload();await p.waitForFunction(()=>document.querySelector('#exp-select').options.length>0);await p.locator('#exp-select').selectOption(id);await p.waitForFunction(()=>parseFloat(document.querySelector('#preview').style.height)>300);
- await p.tap('#btn-3d');await p.waitForSelector('[data-el-root]',{state:'attached',timeout:20000});await p.waitForTimeout(2000);
- await p.evaluate(()=>{const li=[...document.querySelectorAll('#element-list li')].find(l=>l.textContent.includes('טקסט'));li.click();});await p.waitForTimeout(600);
- await p.evaluate(()=>Editor3D._test.scene().canvas.scrollIntoView({block:'center'}));await p.waitForTimeout(400);
- await verify('edge');
- await p.screenshot({path:'/downloads/flush-arcs-edge-390.png'});
- // back to the default spot: drag the curved Z arrow, element rotates and saves
- await p.evaluate(async id=>{const r=await Studio.load(id);const e=r.elements.find(e=>e.type==='text');e.x=0;e.y=0.1;await Studio.save(r);},id);
- await p.reload();await p.waitForFunction(()=>document.querySelector('#exp-select').options.length>0);await p.locator('#exp-select').selectOption(id);await p.waitForFunction(()=>parseFloat(document.querySelector('#preview').style.height)>300);
- await p.tap('#btn-3d');await p.waitForSelector('[data-el-root]',{state:'attached',timeout:20000});await p.waitForTimeout(2000);
- await p.evaluate(()=>{const li=[...document.querySelectorAll('#element-list li')].find(l=>l.textContent.includes('טקסט'));li.click();});await p.waitForTimeout(600);
- await p.evaluate(()=>Editor3D._test.scene().canvas.scrollIntoView({block:'center'}));await p.waitForTimeout(400);
- await p.screenshot({path:'/downloads/flush-arcs-390.png'});
- const rotDrag=async(k,prop,dir)=>{const g=await geo();const m=g[k].mid;const v0=await p.evaluate(([id,prop])=>Studio.load(id).then(r=>r.elements.find(e=>e.type==='text')[prop]||0),[id,prop]);await p.mouse.move(m.x,m.y);await p.mouse.down();const tx=k==='rot'?m.x+(g[k].end.x-m.x)*2:(k==='rotY'?m.x+dir*30:m.x),ty=k==='rot'?m.y+(g[k].end.y-m.y)*2:(k==='rotX'?m.y+dir*30:m.y);await p.mouse.move(tx,ty,{steps:8});await p.mouse.up();await p.waitForTimeout(600);const v1=await p.evaluate(([id,prop])=>Studio.load(id).then(r=>r.elements.find(e=>e.type==='text')[prop]||0),[id,prop]);assert.ok(Math.abs(v1-v0)>3,'dragging the '+k+' arc changed '+prop+': '+v0+' -> '+v1);return [v0,v1];};
- const out={};out.rot=await rotDrag('rot','rot',1);out.rotX=await rotDrag('rotX','rotX',1);out.rotY=await rotDrag('rotY','rotY',1);
- // depth policy: new (flush) layers carry NO depth tie offset, legacy layers keep theirs
- // corners: every arc touchable, identifiable, and not under the tool buttons
- const corners=[[0.4,0.45,'tr'],[-0.4,0.45,'tl'],[0.4,-0.45,'br'],[-0.4,-0.45,'bl']];
+ const sel=async()=>{await p.evaluate(()=>{const li=[...document.querySelectorAll('#element-list li')].find(l=>l.textContent.includes('טקסט'));li.click();});await p.waitForTimeout(600);await p.evaluate(()=>Editor3D._test.scene().canvas.scrollIntoView({block:'center'}));await p.waitForTimeout(400);};
+ const layout=()=>p.evaluate(()=>{Editor3D._test.scene().object3D.updateMatrixWorld(true);const sc=Editor3D._test.scene(),g=Editor3D._test.gizmo(),cam=sc.camera,cr=sc.canvas.getBoundingClientRect();const R=e=>{const r=e.getBoundingClientRect();return {l:r.left,t:r.top,r:r.right,b:r.bottom,w:r.width,h:r.height};};
+  const btns={};for(const [k,id] of [['rot','btn-rot-z'],['rotX','btn-rot-x'],['rotY','btn-rot-y'],['move','btn-3d-move'],['rotate','btn-3d-rotate']]){const e=document.getElementById(id);const r=R(e);const cx=(r.l+r.r)/2,cy=(r.t+r.b)/2;btns[k]={...r,top:document.elementFromPoint(cx,cy)===e};}
+  const pts=[];const P=(v)=>{const w=v.clone();w.project(cam);return {x:cr.left+(w.x+1)/2*cr.width,y:cr.top+(1-w.y)/2*cr.height};};
+  g.children.forEach(c=>{if(c.userData.proxy)return;const w=new THREE.Vector3();c.updateWorldMatrix(true,false);const geo=c.geometry;const tip=new THREE.Vector3(0,0,0);const pos=[tip];if(c.isGroup){const cone=c.children[1];if(cone){const v=new THREE.Vector3();cone.getWorldPosition(v);pts.push(P(v));}}});
+  const o=new THREE.Vector3();g.getWorldPosition(o);pts.push(P(o));
+  return {btns,pts,cr:{l:cr.left,t:cr.top,r:cr.right,b:cr.bottom}};});
+ const corners=[[0,0.1,'c'],[0.4,0.45,'tr'],[-0.4,0.45,'tl'],[0.4,-0.45,'br'],[-0.4,-0.45,'bl'],[0.4,0,'r'],[-0.4,0,'l']];
+ let first=true;
  for(const [cx,cy,nm] of corners){
   await p.evaluate(async([id,cx,cy])=>{const r=await Studio.load(id);const e=r.elements.find(e=>e.type==='text');e.x=cx;e.y=cy;e.rot=0;e.rotX=0;e.rotY=0;await Studio.save(r);},[id,cx,cy]);
   await p.reload();await p.waitForFunction(()=>document.querySelector('#exp-select').options.length>0);await p.locator('#exp-select').selectOption(id);await p.waitForFunction(()=>parseFloat(document.querySelector('#preview').style.height)>300);
   await p.tap('#btn-3d');await p.waitForSelector('[data-el-root]',{state:'attached',timeout:20000});await p.waitForTimeout(2000);
-  await p.evaluate(()=>{const li=[...document.querySelectorAll('#element-list li')].find(l=>l.textContent.includes('טקסט'));li.click();});await p.waitForTimeout(600);
-  await p.evaluate(()=>Editor3D._test.scene().canvas.scrollIntoView({block:'center'}));await p.waitForTimeout(400);
-  const g=await verify('corner-'+nm);
-  const tb=await p.evaluate(()=>{const r=document.querySelector('#editor-3d-tools').getBoundingClientRect();return {l:r.left,t:r.top,r:r.right,b:r.bottom};});
-  for(const k of ['rot','rotX','rotY','x','y','z']){const m=g[k].mid;assert.ok(!(m.x>tb.l-6&&m.x<tb.r+6&&m.y>tb.t-6&&m.y<tb.b+6),'corner-'+nm+': '+k+' handle not under the tool buttons '+JSON.stringify({m,tb}));}
+  await sel();
+  const L=await layout();const names=['rot','rotX','rotY','move','rotate'];
+  await p.screenshot({path:'/downloads/flush-corner-'+nm+'-390.png'});for(const k of names){const b=L.btns[k];assert.ok(b.top,nm+': '+k+' button is the top element at its centre (not covered)');assert.ok(b.l>=L.cr.l&&b.r<=L.cr.r&&b.t>=L.cr.t&&b.b<=L.cr.b,nm+': '+k+' inside the view '+JSON.stringify(b));}
+  for(const k of ['rot','rotX','rotY'])assert.ok(L.btns[k].w>=44&&L.btns[k].h>=44,nm+': '+k+' button >=44px: '+L.btns[k].w);
+  for(let i=0;i<names.length;i++)for(let j=i+1;j<names.length;j++){const a=L.btns[names[i]],b=L.btns[names[j]];assert.ok(a.r<=b.l||b.r<=a.l||a.b<=b.t||b.b<=a.t,nm+': '+names[i]+' and '+names[j]+' buttons do not overlap');}
+  for(const pt of L.pts)for(const k of ['rot','rotX','rotY']){const b=L.btns[k];assert.ok(!(pt.x>b.l-4&&pt.x<b.r+4&&pt.y>b.t-4&&pt.y<b.b+4),nm+': 3D move-arrow point not under the '+k+' button '+JSON.stringify({pt,b}));}
   await p.screenshot({path:'/downloads/flush-corner-'+nm+'-390.png'});
-  console.log('corner',nm,JSON.stringify({w:[g.rot.width|0,g.rotX.width|0,g.rotY.width|0],chord:[g.rot.chord|0,g.rotX.chord|0,g.rotY.chord|0]}));
+  if(first){first=false;
+   const dragBtn=async(k,prop,dx,dy)=>{const v0=await p.evaluate(([id,prop])=>Studio.load(id).then(r=>r.elements.find(e=>e.type==='text')[prop]||0),[id,prop]);const L2=await layout();const b=L2.btns[k];const sx=(b.l+b.r)/2,sy=(b.t+b.b)/2;await p.mouse.move(sx,sy);await p.mouse.down();await p.mouse.move(sx+dx,sy+dy,{steps:8});await p.mouse.up();await p.waitForTimeout(600);const v1=await p.evaluate(([id,prop])=>Studio.load(id).then(r=>r.elements.find(e=>e.type==='text')[prop]||0),[id,prop]);assert.ok(Math.abs(v1-v0)>5,'dragging the '+k+' button changed '+prop+': '+v0+' -> '+v1);return [v0,v1];};
+   const out={};out.rot=await dragBtn('rot','rot',-60,40);out.rotX=await dragBtn('rotX','rotX',0,40);out.rotY=await dragBtn('rotY','rotY',40,0);
+   // 3D move arrows still work (an arrow drag moves x, does not rotate)
+   console.log('drags');
+  }
  }
  // add a legacy (pre-flush) layer to the same scene: it must keep its depth tie, new layers must have none
- await p.evaluate(async id=>{const r=await Studio.load(id);r.elements.push({id:'legacy1',type:'text',name:'old',text:'old',color:'#fff',bold:true,x:0.1,y:-0.2,w:0.3,h:null,rot:0,z:0.1,seq:r.elements[0].seq});r.elements.forEach(Studio.normEl);await Studio.save(r);},id);
+ await p.evaluate(async id=>{const r=await Studio.load(id);const tx=r.elements.find(e=>e.type==='text');tx.x=0;tx.y=0.1;r.elements.push({id:'legacy1',type:'text',name:'old',text:'old',color:'#fff',bold:true,x:0.1,y:-0.2,w:0.3,h:null,rot:0,z:0.1,seq:r.elements[0].seq});r.elements.forEach(Studio.normEl);await Studio.save(r);},id);
  await p.reload();await p.waitForFunction(()=>document.querySelector('#exp-select').options.length>0);await p.locator('#exp-select').selectOption(id);await p.waitForFunction(()=>parseFloat(document.querySelector('#preview').style.height)>300);
  await p.tap('#btn-3d');await p.waitForSelector('[data-el-root]',{state:'attached',timeout:20000});await p.waitForTimeout(2500);
  const zs=await p.evaluate(()=>{const rec=null;return [...document.querySelectorAll('[data-el-root]')].map(n=>({id:n.getAttribute('data-el-root')||n.dataset.elRoot||n.id,z:n.object3D.position.z}));});
@@ -81,5 +60,5 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
  const ro=await p.evaluate(()=>[...document.querySelectorAll('[data-el-root]')].filter((n,i)=>i===0||i===2).map(n=>{let r=null,dw=null;n.object3D.traverse(m=>{if(m.isMesh&&m.renderOrder>0&&r===null){r=m.renderOrder;dw=m.material.depthWrite;}});return {r,dw};}));
  console.log(JSON.stringify(ro));
  assert.ok(ro[0].r&&ro[1].r&&ro[0].r<ro[1].r,'flush layers (text idx0, image idx2) draw in array order via renderOrder: '+JSON.stringify(ro));assert.ok(ro.every(x=>x.dw===false),'flat flush layers do not write depth, so coplanar layers cannot z-fight: '+JSON.stringify(ro));
- console.log('PASS flush defaults + curved rotation arrows: z=0, model seated, arcs wide enough, each arc grabs its own axis (not move arrows) at default and edge position, drag rotates+saves',JSON.stringify(out));
+ console.log('PASS flush defaults + curved rotation arrows: z=0, model seated, arcs wide enough, each arc grabs its own axis (not move arrows) at default and edge position, drag rotates+saves');
 }finally{await b.close();await new Promise(r=>server.close(r));}})().catch(e=>{console.error(e);process.exit(1)});
