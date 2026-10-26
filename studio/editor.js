@@ -117,7 +117,7 @@
     resetSeq();
     await hydrate();
     await refreshExpSelect();
-    bind();
+    bind(); bindFileHealth();
     render();
   }
 
@@ -333,9 +333,8 @@
   }
 
   // A read can fail for a moment (iOS memory pressure, a picker-backed blob mid-eviction) and then work.
-  // Retry before calling an asset lost; when FileReader keeps failing, try arrayBuffer() and keep a
-  // page-owned copy of the same bytes. Only a read that still fails is reported (and the stored record is never changed for it).
-  const healedAssets = new Set();
+  // Retry before calling an asset lost; when FileReader keeps failing, try arrayBuffer() and show it
+  // from a temporary copy of the bytes it did read. The stored asset and the record are never changed or saved here.
   async function readAsset(id) {
     let lastErr;
     for (let i = 0; i < 3; i++) {
@@ -343,9 +342,28 @@
     }
     try {
       const b = rec.assets[id], copy = new Blob([await b.arrayBuffer()], { type: b.type || "" });
-      if (copy.size && copy.size === b.size) { rec.assets[id] = copy; healedAssets.add(id); return await Studio.blobToDataURL(copy); }
+      if (copy.size && copy.size === b.size) return await Studio.blobToDataURL(copy); // display only: the stored asset and record are not changed
     } catch (e) { lastErr = e; }
     throw lastErr;
+  }
+
+  // Read-only file check: shows which step works for each stored asset. Writes, uploads and replaces nothing.
+  function bindFileHealth() {
+    const btn = $("btn-file-health"), out = $("file-health"); if (!btn || !out) return;
+    btn.onclick = async () => {
+      btn.disabled = true; out.hidden = false; out.textContent = "בודק קבצים…";
+      try {
+        const rows = await Studio.fileHealth(rec), ok = (x) => (x ? "✓" : "✗");
+        const lines = rows.map((r) => {
+          if (r.missing) return "• " + r.name + ": חסר בשמירה";
+          const kb = Math.round(r.size / 1024) + "KB";
+          return "• " + r.name + " (" + kb + ", " + (r.type || "?") + "): קריאה " + ok(r.head) + " מלאה " + ok(r.full.ok) + (r.full.tries > 1 ? " (" + r.full.tries + " ניסיונות)" : "") + " המרה " + ok(r.reader.ok) + (r.reader.tries > 1 ? " (" + r.reader.tries + " ניסיונות)" : "") + " פענוח " + (r.decode === "ok" ? "✓" : r.decode === "fail" ? "✗" : "-");
+        });
+        const bad = rows.filter((r) => r.missing || !r.full.ok || !r.reader.ok || r.decode === "fail").length;
+        out.textContent = (bad ? bad + " מתוך " + rows.length + " קבצים בעייתיים" : "כל " + rows.length + " הקבצים נקראים") + "\n" + lines.join("\n") + "\nהבדיקה קוראת בלבד - שום דבר לא נשמר, לא הועלה ולא הוחלף.";
+      } catch (e) { out.textContent = "הבדיקה נכשלה: " + (e && e.message || e); }
+      finally { btn.disabled = false; }
+    };
   }
   async function hydrate() {
     artworkImg = null;
@@ -375,7 +393,6 @@
         }
       } catch (err) { badAssets.push(el.name || el.type); if (el.assetId) deadAssets.add(el.assetId); }
     }
-    if (healedAssets.size) { healedAssets.clear(); try { await Studio.save(rec, { noHistory: true }); } catch (e) {} }
     if (badAssets.length) msg("חלק מהקבצים לא נקראו מהמכשיר (" + [...new Set(badAssets)].join(", ") + ") - ייבאי אותם שוב כדי לשחזר.");
   }
 

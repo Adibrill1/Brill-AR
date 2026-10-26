@@ -74,6 +74,34 @@ const Studio = (() => {
     return out;
   }
 
+  // Read-only diagnostic: for every stored asset, which step works? Nothing is written, uploaded or replaced.
+  // stages: head (first byte), full (arrayBuffer, up to 3 tries), reader (FileReader data URL, up to 3 tries), decode (browser can open it).
+  async function fileHealth(rec) {
+    const names = { __artwork: "תמונת היצירה" };
+    for (const el of (rec && rec.elements) || []) { if (el.assetId && !names[el.assetId]) names[el.assetId] = el.name || el.type; if (el.particles && el.particles.spriteAssetId && !names[el.particles.spriteAssetId]) names[el.particles.spriteAssetId] = (el.name || "חלקיקים") + " (ספרייט)"; }
+    const tryN = async (fn) => { let tries = 0, err = ""; for (let i = 0; i < 3; i++) { tries++; try { await fn(); return { ok: true, tries }; } catch (e) { err = (e && e.name) || String(e).slice(0, 40); await new Promise((r) => setTimeout(r, 100)); } } return { ok: false, tries, err }; };
+    const out = [];
+    for (const [id, b] of Object.entries((rec && rec.assets) || {})) {
+      const row = { id, name: names[id] || id, type: (b && b.type) || "?", size: (b && b.size) || 0 };
+      if (!b || typeof b.slice !== "function") { row.missing = true; out.push(row); continue; }
+      row.head = (await tryN(() => b.slice(0, 1).arrayBuffer())).ok;
+      row.full = await tryN(async () => { const ab = await b.arrayBuffer(); if (ab.byteLength !== b.size) throw new Error("short"); });
+      row.reader = await tryN(() => blobToDataURL(b));
+      row.decode = "skip";
+      if (row.full.ok || row.reader.ok) {
+        const kind = (b.type || "").split("/")[0];
+        let url = null;
+        try {
+          url = URL.createObjectURL(b);
+          if (kind === "image") { await new Promise((res, rej) => { const i = new Image(); i.onload = res; i.onerror = () => rej(new Error("decode")); i.src = url; }); row.decode = "ok"; }
+          else if (kind === "video" || kind === "audio") { await new Promise((res, rej) => { const m = document.createElement(kind); m.preload = "metadata"; m.muted = true; const t = setTimeout(() => rej(new Error("timeout")), 8000); m.onloadedmetadata = () => { clearTimeout(t); res(); }; m.onerror = () => { clearTimeout(t); rej(new Error("decode")); }; m.src = url; }); row.decode = "ok"; }
+        } catch (e) { row.decode = "fail"; } finally { if (url) URL.revokeObjectURL(url); }
+      }
+      out.push(row);
+    }
+    return out;
+  }
+
   const blobToDataURL = (blob) => new Promise((res, rej) => {
     const r = new FileReader();
     r.onload = () => res(r.result);
@@ -1497,7 +1525,7 @@ const Studio = (() => {
   }
 
   return { TARGET_W, TARGET_H, newId, inspectVideo, validateModelBlob, prepareModelBlob, modelCompressionKinds, DECODER_DRACO_PATH, DECODER_MESHOPT_PATH, modelClipNames, modelClipInfo, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
-           audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, historyState, restoreHistory, duplicateLayer, exportJSON, importJSON, exportZIP, importZIP, zipToJSON, fetchPublished, ownBlob, assetHealth, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, artworkFingerprint, fingerprintDistance, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
+           audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, historyState, restoreHistory, duplicateLayer, exportJSON, importJSON, exportZIP, importZIP, zipToJSON, fetchPublished, ownBlob, assetHealth, fileHealth, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, artworkFingerprint, fingerprintDistance, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
            load: id=>settledRead(id), all: ()=>settledRead(), del: delExperience, LIMITS, mediaBytes, pushBack, addBlocker, publishBlocker, restoreBlocker, exportWarning, exportJSONSize,
            onSaveState, installSaveGuard, saveState,
            _testHoldSave:p=>{saveHold=p;}, _testFailSave:m=>{failSave=m;} };

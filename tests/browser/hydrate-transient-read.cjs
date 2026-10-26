@@ -1,6 +1,7 @@
 const {chromium}=require('playwright-core'),assert=require('node:assert/strict');const server=require('../../server/server');
 // An asset read that fails for a moment (or only through FileReader on the stored blob) must not be reported as
 // "files not read from the device". A read that keeps failing still is (asset-health.cjs covers that).
+const SNAP=()=>document.querySelector('#exp-select')&&Studio.all().then(async rs=>{const out=[];for(const r of rs){const h={};for(const [k,v] of Object.entries(r.assets)){const ab=new Uint8Array(await v.arrayBuffer());let x=0;for(let i=0;i<ab.length;i++)x=(x*31+ab[i])>>>0;h[k]=[ab.length,x]}out.push([r.id,r.updatedAt||r.updated||null,h])}return JSON.stringify(out)});
 async function boot(b,base,mode){
  const ctx=await b.newContext({viewport:{width:390,height:844}});const p=await ctx.newPage();
  await p.addInitScript((mode)=>{
@@ -13,9 +14,10 @@ async function boot(b,base,mode){
    return origRead.call(this,blob)};
  },mode);
  await p.goto(base+'/index.html');await p.waitForFunction(()=>document.querySelector('#exp-select').options.length>0);await p.waitForTimeout(1500);
- await p.evaluate(()=>sessionStorage.setItem('arm','1'));await p.reload();await p.waitForFunction(()=>document.querySelector('#exp-select').options.length>0);await p.waitForTimeout(3500);
+ const s0=await p.evaluate(SNAP);await p.evaluate(()=>sessionStorage.setItem('arm','1'));await p.reload();await p.waitForFunction(()=>document.querySelector('#exp-select').options.length>0);await p.waitForTimeout(3500);
  const msg=await p.evaluate(()=>(document.querySelector('#msg')||{}).textContent||'');
  const warned=await p.evaluate(()=>[...document.querySelectorAll('#element-list li')].filter(l=>l.textContent.includes('⚠')).length);
+ await p.evaluate(()=>sessionStorage.removeItem('arm'));const s1=await p.evaluate(SNAP);assert.equal(s1,s0,'hydrate with failing reads (mode '+mode+') leaves stored bytes and record stamps identical');
  await ctx.close();return {msg,warned};
 }
 (async()=>{await new Promise(r=>server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+server.address().port,b=await chromium.launch({executablePath:'/usr/bin/google-chrome',headless:true,args:['--no-sandbox']});try{
