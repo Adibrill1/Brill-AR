@@ -25,7 +25,7 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
  assert.ok(Math.abs(p2-p1)>0.01,'3D animates keyframed elements during live playback: '+p1+' -> '+p2);
  assert.ok(Math.abs(p1)>0.01||Math.abs(p2)>0.01,'sampled position differs from base x=0: '+p1+','+p2);
  // 2. scrub the ruler to the end (t=2s): element moves to x=+0.3 in 3D
- await p.locator('#tl-ruler').scrollIntoViewIfNeeded();await p.waitForTimeout(200);
+ await p.evaluate(s=>{const b=document.querySelector('#panel-subtabs [data-sub="'+s+'"]');if(b&&b.offsetParent)b.click()},'tap');await p.locator('#tl-ruler').scrollIntoViewIfNeeded();await p.waitForTimeout(200);
  const ruler=await p.locator('#tl-ruler').boundingBox();
  await p.mouse.move(ruler.x+ruler.width*0.92,ruler.y+ruler.height/2);await p.mouse.down();await p.mouse.move(ruler.x+ruler.width*0.97,ruler.y+ruler.height/2,{steps:3});await p.mouse.up();await p.waitForTimeout(500);
  const afterScrub=await nodeX();

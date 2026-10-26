@@ -74,7 +74,7 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
  // ...but a deliberate pre-drag freeze survives the cancelled gesture
  await p.evaluate(()=>{document.querySelectorAll('#element-list li').forEach(li=>{if(li.textContent.includes('KD'))li.click();});});
  await p.waitForTimeout(400);
- await p.evaluate(()=>{document.querySelector('#tl-ruler').scrollIntoView({block:'center'});});await p.waitForTimeout(300);
+ await p.evaluate(s=>{const b=document.querySelector('#panel-subtabs [data-sub="'+s+'"]');if(b&&b.offsetParent)b.click()},'tap');await p.evaluate(()=>{document.querySelector('#tl-ruler').scrollIntoView({block:'center'});});await p.waitForTimeout(300);
  const rb=await p.locator('#tl-ruler').boundingBox();
  await p.mouse.move(rb.x+rb.width*0.6,rb.y+rb.height/2);await p.mouse.down();await p.mouse.up();await p.waitForTimeout(300);
  let tl2=await tlState();
