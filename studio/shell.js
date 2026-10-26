@@ -25,5 +25,9 @@
   const sp = () => { const narrow = matchMedia("(max-width: 820px)").matches; const vis = stage.offsetHeight; document.documentElement.style.scrollPaddingTop = narrow && vis ? vis + 4 + "px" : ""; document.documentElement.style.scrollPaddingBottom = narrow ? "70px" : ""; };
   new ResizeObserver(sp).observe(stage); addEventListener("resize", sp);
   new MutationObserver(fit).observe(cv, { attributes: true, attributeFilter: ["width", "height"] }); fit();
+  // 3D view needs room for the gizmo and the docked rotation buttons: taller stage while 3D is on
+  const b3 = document.getElementById("btn-3d");
+  const view = () => { const v = b3.classList.contains("on") ? "3d" : "2d"; if (stage.dataset.view !== v) { stage.dataset.view = v; setTimeout(() => dispatchEvent(new Event("resize")), 0); } };
+  new MutationObserver(view).observe(b3, { attributes: true, attributeFilter: ["class"] }); view();
   document.body.classList.add("shell");
 })();
