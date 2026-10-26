@@ -8,7 +8,10 @@
   // the artwork canvas moves (same node, same id) out of the long card into a pinned stage at the top
   const stage = document.createElement("div"); stage.id = "stage";
   document.querySelector("main").before(stage);
-  stage.appendChild(document.getElementById("canvas-wrap"));
+  { const wrap = document.getElementById("canvas-wrap"); const home = document.createComment("canvas-home"); wrap.before(home);
+    const mq = matchMedia("(max-width: 820px)");
+    const place = () => { if (mq.matches) { if (wrap.parentNode !== stage) stage.appendChild(wrap); } else if (wrap.parentNode === stage) home.after(wrap); };
+    place(); mq.addEventListener("change", () => { place(); setTimeout(() => dispatchEvent(new Event("resize")), 0); }); }
   function setTab(k) {
     document.body.dataset.tab = k;
     nav.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.tab === k)));
@@ -52,5 +55,11 @@
   panel.dataset.sub = "pos"; panel.dataset.collapsed = "0";
   function subSync() { sub.querySelectorAll("button[data-sub]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.sub === panel.dataset.sub))); fold.textContent = panel.dataset.collapsed === "1" ? "▴" : "▾"; }
   subSync();
+  // persistent over-limit warning must stay visible while editing, not only on the Check tab: a compact chip pinned with the stage
+  { const note = document.getElementById("safety-note");
+    if (note) { const chip = document.createElement("button"); chip.type = "button"; chip.id = "safety-chip"; chip.hidden = true; stage.prepend(chip);
+      chip.addEventListener("click", () => setTab("check"));
+      const syncChip = () => { const on = !note.hidden && note.textContent.trim(); chip.hidden = !on; stage.dataset.warn = on ? "1" : "0"; if (on) chip.textContent = "⚠ " + note.textContent.trim() + " (לפרטים: בדיקה ושמירה)"; };
+      new MutationObserver(syncChip).observe(note, { attributes: true, attributeFilter: ["hidden"], childList: true, characterData: true, subtree: true }); syncChip(); } }
   document.body.classList.add("shell");
 })();
