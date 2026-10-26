@@ -388,6 +388,8 @@
 
   // Name of another creation whose recognition target is the same as / too similar to fp (distance <= 16 of 256 bits), else null.
   // Flat/featureless images are not comparable (Infinity) and never conflict; the record itself (exceptId) is skipped.
+  // FAIL CLOSED: when the comparison itself cannot run (storage read, image decode, fingerprint), this THROWS a
+  // DuplicateCheckUnavailable error. Callers must stop without changing anything and say the check was unavailable.
   async function findTargetConflict(_unused, fp, exceptId) {
     try {
       for (const other of (await Studio.all()).filter((r) => r.id !== exceptId)) {
@@ -397,7 +399,7 @@
         if (!ofp) { const oimg = await Studio.loadImage(await Studio.blobToDataURL(art)); ofp = Studio.artworkFingerprint(oimg); }
         if (Studio.fingerprintDistance(fp, ofp) <= 16) return other.name || other.id;
       }
-    } catch {}
+    } catch (e) { const err = new Error("duplicate check unavailable"); err.duplicateCheckUnavailable = true; err.cause = e; throw err; }
     return null;
   }
 
@@ -414,15 +416,10 @@
       // BLOCK (before any change) when this image is the same as, or too similar to, the target of
       // another of her creations. Same-record re-upload is never a conflict; flat/featureless images
       // are not comparable (distance Infinity) so they are not blocked here (quality warning handles them).
-      try {
-        for (const other of (await Studio.all()).filter((r) => r.id !== rec.id)) {
-          const art = other.assets && other.assets.__artwork;
-          if (!art) continue;
-          let ofp = other.target && other.target.fp;
-          if (!ofp) { const oimg = await Studio.loadImage(await Studio.blobToDataURL(art)); ofp = Studio.artworkFingerprint(oimg); }
-          if (Studio.fingerprintDistance(fp, ofp) <= 16) { msg("לא הועלתה. התמונה זהה או דומה מדי לתמונת היעד של היצירה '" + (other.name || other.id) + "'. שתי יצירות עם תמונה דומה מתבלבלות בזיהוי. בחרי תמונה אחרת. היצירה שלך נשארה ללא שינוי."); return; }
-        }
-      } catch {}
+      let conflict = null;
+      try { conflict = await findTargetConflict(null, fp, rec.id); }
+      catch (e) { if (e && e.duplicateCheckUnavailable) { msg("לא הועלתה. לא הצלחנו לבדוק אם התמונה דומה ליצירה אחרת, ולכן לא שינינו כלום והיצירה שלך נשארה כמו שהיא. נסי שוב."); return; } throw e; }
+      if (conflict) { msg("לא הועלתה. התמונה זהה או דומה מדי לתמונת היעד של היצירה '" + conflict + "'. שתי יצירות עם תמונה דומה מתבלבלות בזיהוי. בחרי תמונה אחרת. היצירה שלך נשארה ללא שינוי."); return; }
       const t = await Studio.makeTarget(img);
       rec.target = { artRect: t.artRect, natural: { w: img.naturalWidth, h: img.naturalHeight } };
       rec.assets.__artwork = await Studio.ownBlob(f);
@@ -773,7 +770,9 @@
         const imported = (/\.zip$/i.test(f.name) || f.type === "application/zip") ? await Studio.importZIP(f, o) : await Studio.importJSON(await f.text(), o);
         // Same rule as the artwork upload: an imported copy whose target is the same as / too similar to another creation is refused, nothing is written.
         if (imported.assets && imported.assets.__artwork) {
-          const conflict = await findTargetConflict(null, await Studio.artworkFingerprint(await Studio.loadImage(await Studio.blobToDataURL(imported.assets.__artwork))), imported.id);
+          let conflict = null;
+          try { conflict = await findTargetConflict(null, await Studio.artworkFingerprint(await Studio.loadImage(await Studio.blobToDataURL(imported.assets.__artwork))), imported.id); }
+          catch (e) { const m = "הייבוא נעצר: לא הצלחנו לבדוק אם תמונת היעד דומה ליצירה אחרת. לא נשמר דבר, וכל היצירות שלך נשארו ללא שינוי. נסי שוב."; msg(m); const n = $("safety-note"); if (n) { n.textContent = m; n.hidden = false; } return; }
           if (conflict) { const m = "הייבוא נעצר: תמונת היעד זהה או דומה מדי לתמונת היעד של היצירה '" + conflict + "'. לא נשמר דבר, וכל היצירות שלך נשארו ללא שינוי."; msg(m); const n = $("safety-note"); if (n) { n.textContent = m; n.hidden = false; } return; }
         }
         await Studio.save(imported);
