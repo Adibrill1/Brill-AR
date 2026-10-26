@@ -62,6 +62,9 @@
       chip.addEventListener("click", () => setTab("check"));
       const syncChip = () => { const on = !note.hidden && note.textContent.trim(); chip.hidden = !on; stage.dataset.warn = on ? "1" : "0"; if (on) chip.textContent = "⚠ " + note.textContent.trim() + " (לפרטים: בדיקה ושמירה)"; };
       new MutationObserver(syncChip).observe(note, { attributes: true, attributeFilter: ["hidden"], childList: true, characterData: true, subtree: true }); syncChip(); } }
+  // the save banner (editor.js) is pinned with the stage so a failed save stays visible on every tab, including create and check.
+  // If the editor built it before this shell, move it here; otherwise the editor places it in #stage itself (and sets data-save).
+  { const sb = document.getElementById("save-banner"); if (sb) { stage.prepend(sb); stage.dataset.save = sb.hidden ? "0" : "1"; } }
   // header undo/redo: forward to the REAL buttons (same handlers and disabled state), reachable on every tab
   { const hd = document.querySelector("header"); const ru = document.getElementById("btn-undo"), rr = document.getElementById("btn-redo");
     if (hd && ru && rr) { const bar = document.createElement("div"); bar.id = "hdr-history";

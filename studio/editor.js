@@ -79,7 +79,26 @@
     if (/too large|too many assets|archive too large|entry too large/i.test(m)) return "הקובץ לא יובא: גודל הקבצים חורג מהמגבלה (60MB בסך הכול, 20MB לקובץ). אם זה גיבוי ישן וגדול, נסי ״ייבוא שחזור״.";
     return "הקובץ לא תקין לייבוא.";
   }
-  const saveGuarded = (r, o) => Studio.save(r, o).catch((err) => msg(err && err.deletedElsewhere ? "היצירה הזו נמחקה בחלון אחר, ולכן לא נשמרה. פתחי יצירה אחרת מהרשימה." : SAVE_FAIL_MSG));
+  // A record missing from storage can no longer be saved from this page; its edits are only in memory, so the banner
+  // asks for a backup export first and never suggests opening another project.
+  const goneIds = new Set();
+  const saveGuarded = (r, o) => Studio.save(r, o).catch((err) => { if (err && err.deletedElsewhere) { goneIds.add(r.id); if (window.__renderSaveState) window.__renderSaveState(); msg("היצירה לא נמצאת יותר באחסון של הדפדפן, ולכן השינוי לא נשמר. הוא עדיין בדף הפתוח - ייצאי גיבוי לפני כל פעולה אחרת."); } else msg(SAVE_FAIL_MSG); });
+  // Plain-Hebrew reason for a failed save. The raw browser code is shown next to it, so a phone screenshot is enough to diagnose.
+  function saveErrorReason(st) {
+    const m = st.lastError || "", n = st.lastErrorName || "";
+    if (st.lastErrorAsset) {
+      const id = st.lastErrorAsset, el = rec && rec.elements.find((x) => x.assetId === id || (x.particles && x.particles.spriteAssetId === id));
+      return "הקובץ של " + (id === "__artwork" ? "תמונת היצירה" : (el && (el.name || el.type)) || id) + " לא נקרא מהמכשיר";
+    }
+    if (n === "QuotaExceededError" || /quota/i.test(m)) return "אין מספיק מקום באחסון של הדפדפן";
+    if (/NotReadable|could not be read|blob read failed/i.test(n + " " + m)) return "קובץ שמור לא נקרא מהמכשיר";
+    if (n === "InvalidStateError" || /closing|closed/i.test(m)) return "החיבור לאחסון נסגר (קורה לפעמים אחרי מעבר לאפליקציה אחרת)";
+    if (/aborted/i.test(m)) return "הכתיבה לאחסון בוטלה באמצע (ייתכן שהאחסון מלא)";
+    if (n === "UnknownError") return "הדפדפן דחה את הכתיבה בלי לפרט סיבה";
+    return "סיבה לא מזוהה";
+  }
+  const saveErrorCode = (st) => ((st.lastErrorName && st.lastErrorName !== "Error" ? st.lastErrorName + ": " : "") + (st.lastError || "")).slice(0, 160);
+  const clock = (t) => new Date(t).toLocaleTimeString("he-IL", { hour: "2-digit", minute: "2-digit" });
   // In-app record switching drops unsaved in-memory edits after a failed save. Block it
   // explicitly instead of losing the work silently. (In-flight saves are safe: save()
   // snapshots at call time.)
@@ -366,9 +385,8 @@
           return (isBad(r) ? "✗ " : "✓ ") + r.name + "\n   גודל: " + kb + "\n   " + verdict + "\n   קריאה מהאחסון: " + ok(r.head) + "  קריאה מלאה: " + ok(r.full.ok) + tr(r.full) + "\n   הכנה להצגה: " + ok(r.reader.ok) + tr(r.reader) + "  הצגה: " + dec(r) + "\n";
         });
         const bad = rows.filter(isBad).length;
-        const se = Studio.saveState(rec.id).lastError;
-        const seWhy = !se ? "" : /NotReadable|could not be read|blob read failed/i.test(se) ? "קובץ שמור לא נקרא מהמכשיר" : /Quota|storage may be full|full/i.test(se) ? "אין מספיק מקום באחסון" : "סיבה לא מזוהה";
-        const saveLine = se ? "\nהשמירה האחרונה נכשלה (" + seWhy + "). השינוי עדיין בזיכרון של הדף - אל תרעננו ואל תסגרו, ולחצו על \"נשמר/השמירה נכשלה\" לניסיון חוזר.\n" : "";
+        const sst = Studio.saveState(rec.id), se = sst.lastError;
+        const saveLine = se ? "\nהשמירה האחרונה נכשלה (" + saveErrorReason(sst) + "; קוד: " + saveErrorCode(sst) + "). השינוי עדיין בזיכרון של הדף - אל תרעננו ואל תסגרו, ולחצו על \"נשמר/השמירה נכשלה\" לניסיון חוזר.\n" : "";
         out.textContent = (bad ? bad + " מתוך " + rows.length + " קבצים בעייתיים" : "כל " + rows.length + " הקבצים נקראים") + "\n\n" + lines.join("\n") + saveLine + "\n\nהבדיקה קוראת בלבד - שום דבר לא נשמר, לא הועלה ולא הוחלף. אם יש קובץ שסומן בבעיה, צלמי מסך של התוצאה.";
       } catch (e) { out.textContent = "הבדיקה נכשלה: " + (e && e.message || e); }
       finally { btn.disabled = false; }
@@ -852,13 +870,43 @@
     $('btn-duplicate-el').onclick=()=>queueExperience(async()=>{{const b=Studio.addBlocker(rec,{layers:1});if(b){msg(b);return;}}const id=Studio.duplicateLayer(rec,selectedId);if(!id)return;selectedId=id;await saveGuarded(rec);await hydrate();render();});
     const restore=direction=>queueExperience(async()=>{const restored=await Studio.restoreHistory(rec.id,direction);if(!restored)return;rec=restored;selectedId=null;checkedIds.clear();tlScrubT=null;resetSeq();await hydrate();render();});
     const saveStateEl=$("save-state");
-    function renderSaveState(){const st=rec?Studio.saveState(rec.id):{pending:0,lastSavedAt:0,lastError:null};
+    // Save banner: a failed save stays on screen (shell.js pins it with the stage on every tab) until a save succeeds,
+    // with the reason, the browser's code, the last successful save time, a retry and a backup export. After a failure
+    // is resolved it says so with the time, until closed. It never suggests reloading or switching projects.
+    const banner=document.createElement("div");banner.id="save-banner";banner.hidden=true;banner.setAttribute("role","alert");
+    banner.innerHTML='<p class="sb-text"></p><p class="sb-meta"></p><div class="sb-row"><button type="button" class="sb-retry">ניסיון חוזר לשמירה</button><button type="button" class="sb-export ghost">ייצוא גיבוי ZIP</button><button type="button" class="sb-close ghost">סגירה</button></div>';
+    // the phone shell's pinned #stage may already exist (this init can run after shell.js); otherwise shell.js moves it there
+    if ($("stage")) $("stage").prepend(banner); else document.querySelector("main").before(banner);
+    const hadSaveError=new Set(),closedOk=new Set();
+    const retrySave=()=>{if(!rec)return;const st=Studio.saveState(rec.id);if(st.lastError&&!st.pending)saveGuarded(rec);};
+    banner.querySelector(".sb-retry").onclick=retrySave;
+    banner.querySelector(".sb-export").onclick=()=>$("btn-export-zip").click();
+    banner.querySelector(".sb-close").onclick=()=>{if(rec)closedOk.add(rec.id);renderSaveState();};
+    function renderBanner(st){
+      const t=banner.querySelector(".sb-text"),meta=banner.querySelector(".sb-meta"),retry=banner.querySelector(".sb-retry"),exp=banner.querySelector(".sb-export"),close=banner.querySelector(".sb-close");
+      const last=st.lastSavedAt?"שמירה מוצלחת אחרונה בדף הזה: "+clock(st.lastSavedAt)+".":"בדף הזה עוד לא הייתה שמירה מוצלחת של היצירה.";
+      if(rec&&goneIds.has(rec.id)){banner.hidden=false;banner.className="err";
+        t.textContent="⚠ היצירה לא נמצאת יותר באחסון של הדפדפן (אולי נמחקה בחלון אחר, או שהדפדפן פינה אותה), ולכן השינויים לא נשמרים. הם עדיין בדף הפתוח: ייצאי גיבוי ZIP לפני כל פעולה אחרת.";
+        meta.textContent=last;retry.hidden=true;exp.hidden=false;close.hidden=true;return;}
+      if(st.lastError){if(rec)hadSaveError.add(rec.id),closedOk.delete(rec.id);banner.hidden=false;banner.className="err";
+        t.textContent=st.pending?"⚠ השמירה נכשלה. מנסה לשמור שוב…":"⚠ השמירה נכשלה: "+saveErrorReason(st)+". השינויים עדיין בדף הפתוח. אל תרענני, אל תסגרי ואל תעברי ליצירה אחרת עד שיופיע ״נשמר״ או עד שייצאת גיבוי.";
+        meta.textContent=last+" קוד מהדפדפן: "+saveErrorCode(st);retry.hidden=false;retry.disabled=st.pending>0;exp.hidden=false;close.hidden=true;return;}
+      if(rec&&hadSaveError.has(rec.id)&&!closedOk.has(rec.id)&&!st.pending&&st.lastSavedAt){banner.hidden=false;banner.className="ok";
+        t.textContent="✓ השמירה הצליחה ב־"+clock(st.lastSavedAt)+". השינויים שמורים במכשיר.";
+        meta.textContent=st.lastAttempts>1?"השמירה הצליחה אחרי ניסיון חוזר אוטומטי.":"";retry.hidden=true;exp.hidden=true;close.hidden=false;return;}
+      banner.hidden=true;
+    }
+    function renderSaveState(){const st=rec?Studio.saveState(rec.id):Studio.saveState(null);renderBanner(st);if($("stage"))$("stage").dataset.save=banner.hidden?"0":"1";
       if(!st.pending&&!st.lastError&&!st.lastSavedAt){saveStateEl.hidden=true;return;}saveStateEl.hidden=false;
       if(st.pending>0){saveStateEl.textContent="שומר…";saveStateEl.className="save-state saving";}
       else if(st.lastError){saveStateEl.textContent="השמירה נכשלה - לחצי לניסיון חוזר.";saveStateEl.className="save-state error";}
       else{saveStateEl.textContent="נשמר";saveStateEl.className="save-state saved";if($("msg").textContent===SAVE_FAIL_MSG)$("msg").textContent="";}}
+    window.__renderSaveState=renderSaveState;
     Studio.onSaveState(renderSaveState);
     saveStateEl.onclick=()=>{if(rec&&saveStateEl.classList.contains("error"))saveGuarded(rec);};
+    // iOS closes the storage connection while the app is in the background: retry a failed save when the page is back.
+    document.addEventListener("visibilitychange",()=>{if(document.visibilityState==="visible")retrySave();});
+    window.addEventListener("pageshow",retrySave);
     Studio.installSaveGuard(window);
     $('btn-undo').onclick=()=>restore('undo');$('btn-redo').onclick=()=>restore('redo');
     $('btn-test-mode').onclick=()=>setTestMode(!testMode);

@@ -14,9 +14,11 @@ const Studio = (() => {
       r.onerror = () => rej(r.error);
     });
   }
+  let failPut = null; // test-only seam: fail the next n writes with a given DOMException name
   // requireExists: check and put happen inside ONE readwrite transaction, so a delete from another tab cannot land between them.
   async function idbPut(id, rec, requireExists) {
     const db = await openDB();
+    if (failPut && failPut.n > 0) { failPut.n--; throw new DOMException(failPut.message || "test write failure", failPut.name || "UnknownError"); }
     return new Promise((res, rej) => {
       const tx = db.transaction("experiences", "readwrite");
       if (requireExists) { const g = tx.objectStore("experiences").get(id); g.onsuccess = () => { if (g.result === undefined) { const e = new Error('deleted in another tab'); e.deletedElsewhere = true; rej(e); try { tx.abort(); } catch {} } else tx.objectStore("experiences").put(rec, id); }; }
@@ -1064,10 +1066,13 @@ const Studio = (() => {
   // an unresolved failure.
   const saveWatchers=new Set(),saveInfos=new Map();
   let saveHold=null,failSave=null; // test-only seams: hold a settled save open / force a failure
-  const infoFor=id=>{let i=saveInfos.get(id);if(!i){i={pending:0,lastSavedAt:0,lastError:null};saveInfos.set(id,i);}return i;};
+  // lastErrorName/lastErrorAsset keep the browser's own error code and the unreadable asset (if any) so the UI can say why;
+  // lastAttempts is how many writes the last successful save needed (more than 1 = an automatic retry succeeded).
+  const blankInfo=()=>({pending:0,lastSavedAt:0,lastError:null,lastErrorName:null,lastErrorAsset:null,lastErrorAt:0,lastAttempts:0});
+  const infoFor=id=>{let i=saveInfos.get(id);if(!i){i=blankInfo();saveInfos.set(id,i);}return i;};
   function noteSave(){for(const cb of saveWatchers)try{cb();}catch{}}
   function onSaveState(cb){saveWatchers.add(cb);cb();return()=>saveWatchers.delete(cb);}
-  function saveState(id){const i=saveInfos.get(id);return i?{...i}:{pending:0,lastSavedAt:0,lastError:null};}
+  function saveState(id){const i=saveInfos.get(id);return i?{...i}:blankInfo();}
   function installSaveGuard(win){const handler=e=>{for(const i of saveInfos.values())if(i.pending>0||i.lastError){e.preventDefault();e.returnValue='';return;}};win.addEventListener('beforeunload',handler);return handler;}
   // Deleted ids stay tombstoned for the whole page session so no in-flight, queued or late save can resurrect them.
   const tombstones=new Map(), knownPersisted=new Set(); // knownPersisted: ids this tab has loaded or saved; if one is later missing, another tab deleted it
@@ -1118,14 +1123,40 @@ const Studio = (() => {
     if(isTombstoned(rec.id))return Promise.resolve();
     rec.updatedAt=Date.now();const snapshot=structuredClone(rec),tail=saveQueues.get(rec.id)||Promise.resolve(),info=infoFor(rec.id);
     info.pending++;noteSave();
-    const work=tail.catch(()=>{}).then(()=>saveSnapshot(snapshot,options)).then(()=>saveHold)
-      .then(()=>{info.lastSavedAt=Date.now();info.lastError=null;},err=>{if(err&&err.deletedElsewhere){saveInfos.delete(rec.id);history.delete(rec.id);}else info.lastError=(err&&err.message)||String(err);throw err;})
+    const work=tail.catch(()=>{}).then(()=>saveSnapshot(snapshot,options)).then(attempts=>{info.lastAttempts=attempts||1;return saveHold;})
+      .then(()=>{info.lastSavedAt=Date.now();info.lastError=null;info.lastErrorName=null;info.lastErrorAsset=null;},err=>{if(err&&err.deletedElsewhere){saveInfos.delete(rec.id);history.delete(rec.id);}else{info.lastError=(err&&err.message)||String(err);info.lastErrorName=(err&&err.name)||null;info.lastErrorAsset=(err&&err.assetId)||null;info.lastErrorAt=Date.now();}throw err;})
       .finally(()=>{info.pending--;noteSave();});
     saveQueues.set(rec.id,work);return work;
   }
+  // iOS Safari can fail a write transiently: the storage connection closes after the app was in the background, or
+  // WebKit reports UnknownError while preparing a file-backed Blob. Retry once as is, then once with every asset copied
+  // into memory. A full disk or a record deleted elsewhere is final. An asset that cannot be read is named by id.
+  // Returns how many writes it took.
+  const isFinalWriteError=e=>!!(e&&(e.deletedElsewhere||e.name==="QuotaExceededError"));
+  async function writeRecord(rec,requireExists){
+    try{await idbPut(rec.id,rec,requireExists);return 1;}catch(e){if(isFinalWriteError(e))throw e;}
+    await new Promise(r=>setTimeout(r,250));
+    try{await idbPut(rec.id,rec,requireExists);return 2;}catch(e){if(isFinalWriteError(e))throw e;}
+    const assets={};
+    for(const [id,b] of Object.entries(rec.assets||{})){
+      if(!b||typeof b.arrayBuffer!=="function"){assets[id]=b;continue;}
+      let copy=null;
+      for(let i=0;i<3&&!copy;i++){try{const ab=await b.arrayBuffer();if(ab.byteLength===b.size)copy=new Blob([ab],{type:b.type||""});}catch{}if(!copy)await new Promise(r=>setTimeout(r,120*(i+1)));}
+      if(!copy){const e=new Error("asset could not be read: "+id);e.name="NotReadableError";e.assetId=id;throw e;}
+      assets[id]=copy;
+    }
+    await idbPut(rec.id,{...rec,assets},requireExists);return 3;
+  }
+  // Reading the stored copy only feeds the undo step and the deleted-elsewhere check; the write re-checks existence
+  // atomically, so an unreadable stored copy (after one retry) must not block the save itself.
+  async function readBefore(id){
+    try{return {rec:await idbGet(id),ok:true};}catch{}
+    await new Promise(r=>setTimeout(r,250));
+    try{return {rec:await idbGet(id),ok:true};}catch{return {rec:undefined,ok:false};}
+  }
   async function saveSnapshot(rec,options={}) {
     if(failSave)throw Error(failSave);
-    const before=await idbGet(rec.id);
+    const read=await readBefore(rec.id),before=read.rec;
     if(before&&!options.noHistory){
       let h=history.get(rec.id);if(!h){h={undo:[],redo:[]};history.set(rec.id,h);}
       const content=r=>JSON.stringify({...r,updatedAt:0,assets:Object.keys(r.assets||{}).sort()});
@@ -1136,10 +1167,12 @@ const Studio = (() => {
       if(!assetChanged)try{for(const key of beforeAssets){const a=before.assets[key],b=rec.assets[key];if(a.size!==b.size||a.type!==b.type){assetChanged=true;break;}const aa=new Uint8Array(await a.arrayBuffer()),bb=new Uint8Array(await b.arrayBuffer());if(!aa.every((value,i)=>value===bb[i])){assetChanged=true;break;}}}catch(e){assetChanged=true;}
       if(assetChanged||content(before)!==content(rec)){h.undo.push(before);if(h.undo.length>20)h.undo.shift();h.redo=[];}
     }
-    if(!before&&knownPersisted.has(rec.id)){tombstones.set(rec.id,Date.now());const e=new Error('deleted in another tab');e.deletedElsewhere=true;throw e;}
+    if(read.ok&&!before&&knownPersisted.has(rec.id)){tombstones.set(rec.id,Date.now());const e=new Error('deleted in another tab');e.deletedElsewhere=true;throw e;}
     rec.updatedAt = Date.now();
-    try{await idbPut(rec.id, rec, knownPersisted.has(rec.id));}catch(e){if(e&&e.deletedElsewhere)tombstones.set(rec.id,Date.now());throw e;}
+    let attempts;
+    try{attempts=await writeRecord(rec, knownPersisted.has(rec.id));}catch(e){if(e&&e.deletedElsewhere)tombstones.set(rec.id,Date.now());throw e;}
     knownPersisted.add(rec.id);
+    return attempts;
   }
   async function settledRead(id){const r=await settledRead0(id);if(id){if(r)knownPersisted.add(id);}else for(const x of r||[])knownPersisted.add(x.id);return r;}
   async function settledRead0(id){let pending;do{pending=id?saveQueues.get(id):Promise.all([...saveQueues.values()]);await (pending||Promise.resolve()).catch(()=>{});}while(id&&pending!==saveQueues.get(id));return id?idbGet(id):idbAll();}
@@ -1543,5 +1576,5 @@ const Studio = (() => {
            audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, historyState, restoreHistory, duplicateLayer, exportJSON, missingAssets, importJSON, exportZIP, importZIP, zipToJSON, fetchPublished, ownBlob, assetHealth, fileHealth, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, artworkFingerprint, fingerprintDistance, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
            load: id=>settledRead(id), all: ()=>settledRead(), del: delExperience, LIMITS, mediaBytes, pushBack, addBlocker, publishBlocker, restoreBlocker, exportWarning, exportJSONSize,
            onSaveState, installSaveGuard, saveState,
-           _testHoldSave:p=>{saveHold=p;}, _testFailSave:m=>{failSave=m;} };
+           _testHoldSave:p=>{saveHold=p;}, _testFailSave:m=>{failSave=m;}, _testFailPut:o=>{failPut=o?{...o}:null;} };
 })();
