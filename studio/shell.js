@@ -19,5 +19,9 @@
   // artwork appears (sec-arrange un-hides) -> go to layers once; hides (switch to a project without artwork) -> create
   let was = has();
   new MutationObserver(() => { const n = has(); if (n !== was) { was = n; setTab(n ? "layers" : "create"); } }).observe(document.getElementById("sec-arrange"), { attributes: true, attributeFilter: ["hidden"] });
+  // keep the canvas aspect when its height is capped: width follows height via --ar (never stretch)
+  const cv = document.getElementById("preview");
+  const fit = () => { if (cv.width && cv.height) stage.style.setProperty("--ar", String(cv.width / cv.height)); };
+  new MutationObserver(fit).observe(cv, { attributes: true, attributeFilter: ["width", "height"] }); fit();
   document.body.classList.add("shell");
 })();

@@ -99,5 +99,5 @@ button.small { font-size: 13px; padding: 6px 10px; }
   body.shell #stage { position: sticky; top: 0; z-index: 20; background: #f4f2f9; padding: 4px 8px; }
   body.shell:not([data-tab="layers"]) #stage { display: none; }
   body.shell #canvas-wrap { margin: 0; }
-  body.shell #preview { width: auto; max-height: 42vh; margin: 0 auto; }
+  body.shell #preview { width: min(100%, calc(42vh * var(--ar, 1))); margin: 0 auto; }
 }
