@@ -252,6 +252,15 @@ window.Editor3D = (() => {
         if (h.userData.grow !== grow) { h.geometry.dispose(); h.geometry = new THREE.TorusGeometry(h.userData.hitR, h.userData.hitL * 0.34 * grow, 6, 24, h.userData.hitSpan); h.userData.grow = grow; }
       }
     }));
+    // curved arrows face the centre of the view: mirror/shift them away from the nearest canvas edges so they are not clipped
+    const sxs = ndc.x > 0 ? -1 : 1, sys = ndc.y > 0 ? -1 : 1;
+    gizmo.children.forEach((c) => {
+      const u = c.userData || {}, Lh = gizmo.userData.arcL;
+      if (!u.arc || !Lh) return;
+      if (u.gizmoPart === "rot") c.scale.set(sxs, sys, 1);
+      else if (u.gizmoPart === "rotX") c.position.x = sxs * Lh * 0.6;
+      else if (u.gizmoPart === "rotY") c.position.y = sys * Lh * 0.6;
+    });
     // keep the tool buttons out from under the handles: dock them in the screen corner farthest from the gizmo
     if (toolRow) {
       const right = ndc.x < 0, bottom = ndc.y > 0; // gizmo in left half -> buttons right; gizmo in upper half -> buttons bottom
@@ -370,9 +379,10 @@ window.Editor3D = (() => {
     // rot: XY plane (about Z) between +X and +Y; rotX: YZ plane between +Y and +Z; rotY: XZ plane between +Z and +X
     // rot (about Z): XY plane, in the +X/+Y quadrant. rotX: circle about X centred on the -X side. rotY: circle about Y centred on the -Y side.
     mkArc(new THREE.Vector3(0, 0, 1), 0x1971c2, "rot", [0, 0, 0], Math.PI * 2 / 18, Math.PI * 5 / 18, L * 0.85, [0, 0, 0]);
-    mkArc(new THREE.Vector3(1, 0, 0), 0xe03131, "rotX", [0, Math.PI / 2, 0], Math.PI * 100 / 180, Math.PI * 80 / 180, L * 0.5, [-L * 0.6, 0, 0]);
-    mkArc(new THREE.Vector3(0, 1, 0), 0x2f9e44, "rotY", [Math.PI / 2, 0, 0], Math.PI * 10 / 180, Math.PI * 70 / 180, L * 0.5, [0, -L * 0.6, 0]);
+    mkArc(new THREE.Vector3(1, 0, 0), 0xe03131, "rotX", [0, Math.PI / 2, 0], Math.PI * 95 / 180, Math.PI * 70 / 180, L * 0.5, [-L * 0.6, 0, 0]);
+    mkArc(new THREE.Vector3(0, 1, 0), 0x2f9e44, "rotY", [Math.PI / 2, 0, 0], Math.PI * 5 / 180, Math.PI * 65 / 180, L * 0.5, [0, -L * 0.6, 0]);
     gizmo.position.copy(center);
+    gizmo.userData.arcL = L;
     gizmo.userData.baseL = L + 0.06; // shaft + cone tip
     rig.object3D.add(gizmo);
     fitGizmoToView();
@@ -447,6 +457,7 @@ window.Editor3D = (() => {
       if (hits.length) {
         const exact = hits.filter((h) => !h.object.userData.proxy);
         if (exact.length) hits = exact;
+        else { const straight = hits.filter((h) => !h.object.userData.arc); if (straight.length) hits = straight; } // overlap of fat zones: the straight move arrow wins
         let o = hits[0].object;
         while (o && !o.userData.gizmoPart) o = o.parent;
         if (o && o.userData.gizmoPart.startsWith("rot")) {
