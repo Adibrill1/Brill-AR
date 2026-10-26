@@ -6,6 +6,7 @@
 (() => {
   const $ = (id) => document.getElementById(id);
   const msg = (t, ms = 6000) => { $("msg").textContent = t; if (t) setTimeout(() => { if ($("msg").textContent === t) $("msg").textContent = ""; }, ms); };
+  const INCOMPLETE_EXPORT_MSG = (miss) => "הקובץ נוצר אבל הוא חלקי, לא גיבוי מלא: חסרים הקבצים של " + [...new Set(miss.map((m) => m.name))].join(", ") + ". שם הקובץ מסומן \"חלקי\".";
   const EXPORT_FAIL_MSG = "הייצוא לא הושלם: קובץ אחד לא נקרא מהמכשיר, ולכן לא נוצר קובץ גיבוי (גם לא חלקי). העריכות נשארות בדף הפתוח - אל תרעננו ואל תסגרו.";
   // Editing-semantics guard, shared by the 2D canvas and the embedded 3D view: a drag the
   // timeline would silently override is refused with a message; supported channels write a
@@ -706,19 +707,19 @@
       let json; try { json = await Studio.exportJSON(rec); } catch (e) { msg(EXPORT_FAIL_MSG, 30000); return; }
       const a = document.createElement("a");
       a.href = URL.createObjectURL(new Blob([json], { type: "application/json" }));
-      a.download = (rec.name || "ar-studio") + ".json";
+      const miss = Studio.missingAssets(rec); a.download = (rec.name || "ar-studio") + (miss.length ? " - חלקי" : "") + ".json";
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-      { const w = Studio.exportWarning(rec); if (w) { refreshSafetyNote(); msg("אזהרה לגבי הגיבוי: ההסבר מופיע ליד כפתורי הייצוא."); } }
+      { const w = Studio.exportWarning(rec); if (w) refreshSafetyNote(); if (miss.length) msg(INCOMPLETE_EXPORT_MSG(miss), 30000); else if (w) msg("אזהרה לגבי הגיבוי: ההסבר מופיע ליד כפתורי הייצוא."); }
     });
     $("btn-export-zip").onclick = () => queueExperience(async () => {
       let blob; try { blob = await Studio.exportZIP(rec); } catch (e) { msg(EXPORT_FAIL_MSG, 30000); return; }
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
-      a.download = (rec.name || "ar-studio") + ".zip";
+      const miss = Studio.missingAssets(rec); a.download = (rec.name || "ar-studio") + (miss.length ? " - חלקי" : "") + ".zip";
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-      { const w = Studio.exportWarning(rec); if (w) { refreshSafetyNote(); msg("אזהרה לגבי הגיבוי: ההסבר מופיע ליד כפתורי הייצוא."); } }
+      { const w = Studio.exportWarning(rec); if (w) refreshSafetyNote(); if (miss.length) msg(INCOMPLETE_EXPORT_MSG(miss), 30000); else if (w) msg("אזהרה לגבי הגיבוי: ההסבר מופיע ליד כפתורי הייצוא."); }
     });
     $("btn-import").onclick = () => $("file-import").click();
 
