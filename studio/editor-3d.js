@@ -608,8 +608,9 @@ window.Editor3D = (() => {
     try {
       const rec = getRec(); if (!rec || !rec.target) return;
       wrapEl.style.position = "relative";
+      const firstMount = !mounted;
       await mount();
-      layout();
+      layout(); lastSig = firstMount ? compositionSig(rec) : null; // re-shown: may be stale, rebuild once on next sync
       wrapEl.querySelector("#preview").style.visibility = "hidden";
       host.style.display = "block";
       active = true;
@@ -659,15 +660,31 @@ window.Editor3D = (() => {
     sampleRaf = requestAnimationFrame(sampleLoop);
   }
 
-  let syncTimer = null, lastSync = 0;
+  let syncTimer = null, lastSync = 0, lastSig = null, rebuildCount = 0;
+  // draw() calls sync() on every animation frame. A full rebuild replaces every material and
+  // texture (program re-link, texture re-upload, white flashes until the new textures land), so it
+  // only runs when the composition actually changed: element data, the target, or any asset blob.
+  const blobIds = new WeakMap(); let blobSerial = 0;
+  function compositionSig(rec) {
+    if (!rec) return "";
+    const assets = Object.keys(rec.assets || {}).sort().map((k) => {
+      const v = rec.assets[k]; if (!v || typeof v !== "object") return k + ":" + String(v);
+      if (!blobIds.has(v)) blobIds.set(v, ++blobSerial);
+      return k + ":" + blobIds.get(v) + ":" + (v.size || 0) + ":" + (v.type || "");
+    }).join("|");
+    return JSON.stringify([rec.elements, rec.target, rec.sequences, rec.tracks]) + "#" + assets;
+  }
   function sync() {
     // composition changed underneath us; throttled because draw() fires on rAF too
     if (!mounted || !active || gizmoDrag) return;
     const now = Date.now();
     if (now - lastSync < 250) { clearTimeout(syncTimer); syncTimer = setTimeout(sync, 260); return; }
     lastSync = now;
+    const sig = compositionSig(getRec());
+    if (sig === lastSig) return;
+    lastSig = sig; rebuildCount++;
     rebuildArtwork().then(rebuildElements);
   }
 
-  return { init, show, hide, sync, isActive: () => active, refreshGizmo, _test: { gizmo: () => gizmo, node: (id) => elNode(id), scene: () => sceneEl, helper: () => helper, drag: () => gizmoDrag } };
+  return { init, show, hide, sync, isActive: () => active, refreshGizmo, _test: { rebuilds: () => rebuildCount, gizmo: () => gizmo, node: (id) => elNode(id), scene: () => sceneEl, helper: () => helper, drag: () => gizmoDrag } };
 })();

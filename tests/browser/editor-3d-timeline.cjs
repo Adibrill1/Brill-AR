@@ -36,7 +36,7 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
  // 3. keyed move-arrow drag writes a timeline KEY at the frozen t, base untouched
  await p.evaluate(()=>{const w=document.querySelector('#canvas-wrap');scrollTo(0,w.getBoundingClientRect().top+scrollY-8);});await p.waitForTimeout(300);
  const baseX=await p.evaluate(id=>Studio.load(id).then(r=>r.elements.find(e=>e.id==='anim').x),id);
- const tip=await p.evaluate(()=>{const g=Editor3D._test.gizmo();const cone=g.children[0].children[1];const v=new THREE.Vector3();cone.getWorldPosition(v);v.project(Editor3D._test.scene().camera);const r=Editor3D._test.scene().canvas.getBoundingClientRect();return {x:r.left+(v.x+1)/2*r.width,y:r.top+(-v.y+1)/2*r.height};});
+ const tip=await p.evaluate(()=>{const g=Editor3D._test.gizmo();const cone=g.children[0].children[1];const v=new THREE.Vector3();cone.getWorldPosition(v);const o=new THREE.Vector3();g.getWorldPosition(o);v.lerp(o,0.5);/* grab the arrow shaft midpoint: with no periodic rebuild the cone tip can land past the canvas edge */v.project(Editor3D._test.scene().camera);const r=Editor3D._test.scene().canvas.getBoundingClientRect();return {x:r.left+(v.x+1)/2*r.width,y:r.top+(-v.y+1)/2*r.height};});
  await p.mouse.move(tip.x,tip.y);await p.mouse.down();await p.mouse.move(tip.x+40,tip.y,{steps:5});await p.mouse.up();await p.waitForTimeout(400);
  const keyed=await p.evaluate(id=>Studio.load(id).then(r=>{const e=r.elements.find(e=>e.id==='anim');const kn=e.timeline.keys.find(k=>k.t>2.5);const ko=e.timeline.keys.find(k=>k.t===2);return {baseX:e.x,kx:kn&&kn.x,kt:kn&&kn.t,oldX:ko&&ko.x};}),id);
  assert.strictEqual(keyed.baseX,baseX,'keyed drag leaves base x untouched');
@@ -65,7 +65,7 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
  await p.locator('#element-list li').nth(1).click();await p.waitForTimeout(400);
  await p.evaluate(()=>{const w=document.querySelector('#canvas-wrap');scrollTo(0,w.getBoundingClientRect().top+scrollY-8);});await p.waitForTimeout(300);
  const statX0=await p.evaluate(id=>Studio.load(id).then(r=>r.elements.find(e=>e.id==='stat').x),id);
- const tip3=await p.evaluate(()=>{const g=Editor3D._test.gizmo();const cone=g.children[0].children[1];const v=new THREE.Vector3();cone.getWorldPosition(v);v.project(Editor3D._test.scene().camera);const r=Editor3D._test.scene().canvas.getBoundingClientRect();return {x:r.left+(v.x+1)/2*r.width,y:r.top+(-v.y+1)/2*r.height};});
+ const tip3=await p.evaluate(()=>{const g=Editor3D._test.gizmo();const cone=g.children[0].children[1];const v=new THREE.Vector3();cone.getWorldPosition(v);const o=new THREE.Vector3();g.getWorldPosition(o);v.lerp(o,0.5);/* grab the arrow shaft midpoint: with no periodic rebuild the cone tip can land past the canvas edge */v.project(Editor3D._test.scene().camera);const r=Editor3D._test.scene().canvas.getBoundingClientRect();return {x:r.left+(v.x+1)/2*r.width,y:r.top+(-v.y+1)/2*r.height};});
  await p.mouse.move(tip3.x,tip3.y);await p.mouse.down();await p.mouse.move(tip3.x+40,tip3.y,{steps:5});await p.mouse.up();await p.waitForTimeout(400);
  const stat=await p.evaluate(id=>Studio.load(id).then(r=>{const e=r.elements.find(e=>e.id==='stat');return {x:e.x,keys:(e.timeline&&e.timeline.keys||[]).length};}),id);
  assert.ok(stat.x>statX0+0.02&&stat.keys===0,'unkeyed element keeps base-prop editing, no keys created: '+JSON.stringify(stat));
