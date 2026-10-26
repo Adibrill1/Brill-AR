@@ -6,6 +6,10 @@
 (() => {
   const $ = (id) => document.getElementById(id);
   const msg = (t, ms = 6000) => { $("msg").textContent = t; if (t) setTimeout(() => { if ($("msg").textContent === t) $("msg").textContent = ""; }, ms); };
+  // Server 429: locked after repeated wrong passwords (with the wait), or the hourly publish limit.
+  const tooManyMsg = (out) => out && out.error === "too many failed attempts"
+    ? "יותר מדי ניסיונות עם סיסמה שגויה מהרשת הזאת. אפשר לנסות שוב בעוד " + Math.max(1, Math.ceil((Number(out.retryAfter) || 3600) / 60)) + " דקות."
+    : "הגעת למגבלת הפרסומים לשעה. אפשר לנסות שוב מאוחר יותר.";
   const missNames = (miss) => [...new Set(miss.map((m) => m.name))].join(", ");
   const INCOMPLETE_EXPORT_MSG = (miss) => "הקובץ נוצר אבל הוא חלקי, לא גיבוי מלא: חסרים הקבצים של " + missNames(miss) + ". שם הקובץ מסומן \"חלקי\".";
   const EXPORT_FAIL_MSG = "הייצוא לא הושלם: קובץ אחד לא נקרא מהמכשיר, ולכן לא נוצר קובץ גיבוי (גם לא חלקי). העריכות נשארות בדף הפתוח - אל תרענני ואל תסגרי.";
@@ -563,7 +567,7 @@
         msg("ממיר MOV ל־MP4…");
         try {
           const response = await fetch(base + "/api/convert/mov", { method: "POST", headers: { "content-type": "video/quicktime", authorization: "Bearer " + token }, body: f });
-          if (!response.ok) { let out={};try{out=await response.json();}catch(_){}throw Error(out.error || "שרת ענה " + response.status); }
+          if (!response.ok) { let out={};try{out=await response.json();}catch(_){}throw Error(response.status === 429 && out.error !== "conversion busy" ? tooManyMsg(out) : (out.error || "שרת ענה " + response.status)); }
           const blob = await response.blob();
           if (blob.size > 20 * 1024 * 1024 || !blob.size || !blob.type.startsWith("video/mp4")) throw Error("תוצאת המרה לא תקינה");
           f = new File([blob], f.name.replace(/\.mov$/i, "") + ".mp4", { type: "video/mp4" });
@@ -843,6 +847,7 @@
         const r = await fetch(base + "/api/experiences", { method: "POST", headers: { "content-type": "application/json", authorization: "Bearer " + tok }, body });
         if (r.status === 401) throw new Error("סיסמת הפרסום שגויה");
         if (r.status === 413) throw new Error("הניסוי גדול מדי לשרת");
+        if (r.status === 429) throw new Error(tooManyMsg(await r.json().catch(() => ({}))));
         if (!r.ok) throw new Error("שרת ענה " + r.status);
         const out = await r.json();
         const url = base + out.url;

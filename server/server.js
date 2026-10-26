@@ -25,6 +25,12 @@ const PUBLISH_TOKEN = process.env.PUBLISH_TOKEN || "";
 const RATE_WINDOW_MS = 60 * 60 * 1000;
 const RATE_MAX = 30; // publishes per IP per hour
 const rateLog = new Map();
+// Wrong tokens are counted separately and checked BEFORE the token comparison, so guessing is limited and a locked IP
+// gets 429 for every request (right token included) until the window passes: no oracle, no unlimited tries.
+// A typo does not use up the publish quota. Behind a proxy every client shares one address, so set these with care.
+const AUTH_FAIL_MAX = Math.max(1, Number(process.env.AUTH_FAIL_MAX) || 10);                // wrong tokens per IP per window
+const AUTH_FAIL_WINDOW_MS = Math.max(1000, Number(process.env.AUTH_FAIL_WINDOW_MS) || RATE_WINDOW_MS);
+const authFailLog = new Map();
 
 fs.mkdirSync(DATA, { recursive: true });
 
@@ -32,11 +38,12 @@ const EL_TYPES = new Set(["video", "image", "sound", "text", "model", "particles
 const ASSET_MIME = /^data:(image\/png|image\/jpeg|image\/webp|image\/gif|video\/mp4|video\/webm|video\/quicktime|audio\/mpeg|audio\/wav|audio\/x-wav|audio\/mp4|audio\/x-m4a|audio\/ogg|model\/gltf-binary|application\/octet-stream);base64,/;
 const NUM_FIELDS = ["x", "y", "w", "h", "rot", "rotX", "rotY", "z", "volume", "opacity", "aspect", "size"];
 
-function send(res, code, body, type) {
+function send(res, code, body, type, headers) {
   res.writeHead(code, {
     "content-type": type || "application/json; charset=utf-8",
     "access-control-allow-origin": "*",
     "x-content-type-options": "nosniff",
+    ...headers,
   });
   res.end(typeof body === "string" || Buffer.isBuffer(body) ? body : JSON.stringify(body));
 }
@@ -61,6 +68,17 @@ function rateOk(ip) {
   const log = (rateLog.get(ip) || []).filter((t) => now - t < RATE_WINDOW_MS);
   if (log.length >= RATE_MAX) { rateLog.set(ip, log); return false; }
   log.push(now); rateLog.set(ip, log); return true;
+}
+// Seconds until this IP may try again (0 = not locked). Old entries are dropped as they expire.
+function authLockedFor(ip) {
+  const now = Date.now();
+  const log = (authFailLog.get(ip) || []).filter((t) => now - t < AUTH_FAIL_WINDOW_MS);
+  if (log.length) authFailLog.set(ip, log); else authFailLog.delete(ip);
+  return log.length >= AUTH_FAIL_MAX ? Math.max(1, Math.ceil((log[0] + AUTH_FAIL_WINDOW_MS - now) / 1000)) : 0;
+}
+function noteAuthFail(ip) {
+  const log = authFailLog.get(ip) || []; log.push(Date.now()); authFailLog.set(ip, log);
+  if (authFailLog.size > 10000) for (const k of authFailLog.keys()) authLockedFor(k); // bound memory under a wide scan
 }
 function validateExport(o) {
   if (!o || typeof o !== "object") return "not an object";
@@ -137,8 +155,11 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "OPTIONS") return send(res, 204, "");
     if ((req.method === "POST" || req.method === "DELETE") && u.pathname.startsWith("/api/")) {
       if (!PUBLISH_TOKEN) return send(res, 503, { error: "publishing disabled on this server" });
-      if (!tokenOk(req)) return send(res, 401, { error: "unauthorized" });
-      if (!rateOk(req.socket.remoteAddress || "?")) return send(res, 429, { error: "rate limited" });
+      const ip = req.socket.remoteAddress || "?";
+      const locked = authLockedFor(ip);
+      if (locked) return send(res, 429, { error: "too many failed attempts", retryAfter: locked }, null, { "retry-after": String(locked) });
+      if (!tokenOk(req)) { noteAuthFail(ip); return send(res, 401, { error: "unauthorized" }); }
+      if (!rateOk(ip)) return send(res, 429, { error: "rate limited" });
     }
     if (req.method === "POST" && u.pathname === "/api/experiences") {
       const raw = await readBody(req);

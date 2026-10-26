@@ -31,6 +31,10 @@ JSON files under `server/data/`. No database.
 1. An always-on host: a small VPS (~$5/mo) or a free-tier worker/serverless equivalent.
 2. An HTTPS domain pointed at it (buyers open these links on their phones).
 3. Set a strong PUBLISH_TOKEN (auth is implemented; the owner chooses and guards the secret).
+   Wrong tokens are limited per IP before the token is compared: after `AUTH_FAIL_MAX` (default 10) wrong tokens in
+   `AUTH_FAIL_WINDOW_MS` (default 1 hour) every POST/DELETE from that IP gets 429 with `Retry-After`, right token
+   included, until the window passes. Wrong tokens do not use the publish quota (30 per IP per hour). Behind a reverse
+   proxy all clients share the proxy's address, so one guesser can lock out everyone for the window.
 4. Backups of `server/data/`.
 
 ## Optional MOV conversion (round O)
