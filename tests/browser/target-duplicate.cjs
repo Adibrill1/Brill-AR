@@ -27,13 +27,27 @@ const {chromium}=require('playwright-core'),assert=require('assert/strict'),path
  await p.reload();await p.waitForFunction(()=>[...document.querySelectorAll('#exp-select option')].some(o=>o.textContent==='בדיקת כפילות'));
  await p.locator('#exp-select').selectOption({label:'בדיקת כפילות'});
  await p.locator('#file-artwork').setInputFiles(path.resolve('tests/fixtures/target-a2.png'));
- await p.waitForFunction(()=>document.querySelector('#msg').textContent.includes('נשמרה'));
+ await p.waitForFunction(()=>document.querySelector('#msg').textContent.includes('לא הועלתה'));
  const warn=await p.evaluate(()=>document.querySelector('#msg').textContent);
- assert.ok(warn.includes('מתחרות על אותו זיהוי'),'near-duplicate warns: '+warn);
- assert.ok(warn.includes('יצירת מקור'),'warning names the other experience: '+warn);
- const fpSaved=await p.evaluate(async()=>{const r=await Studio.load(document.querySelector('#exp-select').value);return !!(r.target&&r.target.fp);});
- assert.ok(fpSaved,'fingerprint persisted on the experience');
+ assert.ok(warn.includes('יצירת מקור'),'rejection names the conflicting experience: '+warn);
+ const after=await p.evaluate(async()=>{const r=await Studio.load(document.querySelector('#exp-select').value);return {art:!!(r.assets&&r.assets.__artwork),fp:!!(r.target&&r.target.fp),name:r.name};});
+ assert.deepEqual(after,{art:false,fp:false,name:'בדיקת כפילות'},'rejected upload left the creation untouched: '+JSON.stringify(after));
+ // exact same image blocked too
+ await p.locator('#file-artwork').setInputFiles(path.resolve('tests/fixtures/target-a.png'));
+ await p.waitForFunction(()=>document.querySelector('#msg').textContent.includes('לא הועלתה'));
+ // distinct image accepted and fingerprint persisted
  await p.locator('#file-artwork').setInputFiles(path.resolve('tests/fixtures/target-b.png'));
- await p.waitForFunction(()=>document.querySelector('#msg').textContent.includes('נשמרה')&&!document.querySelector('#msg').textContent.includes('מתחרות'));
- console.log('PASS duplicate target warns and names the other experience; distinct target quiet; fingerprint persisted');
+ await p.waitForFunction(()=>document.querySelector('#msg').textContent.includes('נשמרה'));
+ const fpSaved=await p.evaluate(async()=>{const r=await Studio.load(document.querySelector('#exp-select').value);return !!(r.target&&r.target.fp);});
+ assert.ok(fpSaved,'fingerprint persisted on the accepted creation');
+ // replacing a target with a near-copy of its OWN previous target is not a cross-experience conflict
+ await p.locator('#file-artwork').setInputFiles(path.resolve('tests/fixtures/target-b.png'));
+ await p.waitForFunction(()=>document.querySelector('#msg').textContent.includes('נשמרה'));
+ // replacement rejected keeps the previous target and asset
+ const before=await p.evaluate(async()=>{const r=await Studio.load(document.querySelector('#exp-select').value);return {fp:r.target.fp.hex,size:r.assets.__artwork.size};});
+ await p.locator('#file-artwork').setInputFiles(path.resolve('tests/fixtures/target-a2.png'));
+ await p.waitForFunction(()=>document.querySelector('#msg').textContent.includes('לא הועלתה'));
+ const kept=await p.evaluate(async()=>{const r=await Studio.load(document.querySelector('#exp-select').value);return {fp:r.target.fp.hex,size:r.assets.__artwork.size};});
+ assert.deepEqual(kept,before,'rejected replacement kept previous target and image');
+ console.log('PASS duplicate/too-similar target BLOCKS upload and names the other creation; creation untouched; same-record re-upload and distinct image accepted; rejected replacement keeps previous target');
 }finally{await b.close();await new Promise(r=>server.close(r));}})().catch(e=>{console.error(e);process.exit(1)});

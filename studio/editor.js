@@ -395,25 +395,27 @@
       if (f.size > 8 * 1024 * 1024) { msg("תמונה גדולה מדי (מעל 8MB). נסי תמונה קטנה יותר."); return; }
       return queueExperience(async () => {
       const img = await Studio.loadImage(await Studio.blobToDataURL(f));
-      const t = await Studio.makeTarget(img);
-      rec.target = { artRect: t.artRect, natural: { w: img.naturalWidth, h: img.naturalHeight } };
-      rec.assets.__artwork = await Studio.ownBlob(f);
-      artworkImg = img;
       const fp = Studio.artworkFingerprint(img);
-      rec.target.fp = fp;
-      await saveGuarded(rec);
-      const q = Studio.assessTargetQuality(img);
-      let note = "";
+      // BLOCK (before any change) when this image is the same as, or too similar to, the target of
+      // another of her creations. Same-record re-upload is never a conflict; flat/featureless images
+      // are not comparable (distance Infinity) so they are not blocked here (quality warning handles them).
       try {
-        const others = (await Studio.all()).filter((r) => r.id !== rec.id);
-        for (const other of others) {
+        for (const other of (await Studio.all()).filter((r) => r.id !== rec.id)) {
           const art = other.assets && other.assets.__artwork;
           if (!art) continue;
           let ofp = other.target && other.target.fp;
           if (!ofp) { const oimg = await Studio.loadImage(await Studio.blobToDataURL(art)); ofp = Studio.artworkFingerprint(oimg); }
-          if (Studio.fingerprintDistance(fp, ofp) <= 16) { note = " שימי לב: תמונת היעד זהה או כמעט זהה לזו של '" + (other.name || other.id) + "' - שתי יצירות עם אותה תמונה מתחרות על אותו זיהוי. עדיפה תמונה ייחודית לכל יצירה."; break; }
+          if (Studio.fingerprintDistance(fp, ofp) <= 16) { msg("לא הועלתה. התמונה זהה או דומה מדי לתמונת היעד של היצירה '" + (other.name || other.id) + "'. שתי יצירות עם תמונה דומה מתבלבלות בזיהוי. בחרי תמונה אחרת. היצירה שלך נשארה ללא שינוי."); return; }
         }
       } catch {}
+      const t = await Studio.makeTarget(img);
+      rec.target = { artRect: t.artRect, natural: { w: img.naturalWidth, h: img.naturalHeight } };
+      rec.assets.__artwork = await Studio.ownBlob(f);
+      artworkImg = img;
+      rec.target.fp = fp;
+      await saveGuarded(rec);
+      const q = Studio.assessTargetQuality(img);
+      const note = "";
       if (q.warn && q.reason === "small") msg("נשמרה. שימי לב: התמונה קטנה (מתחת ל-480 פיקסלים בצד הקצר) - הזיהוי עלול להיות חלש. עדיפה תמונה גדולה וחדה." + note);
       else if (q.warn) msg("נשמרה. שימי לב: לתמונה מעט פרטים או ניגודיות - הזיהוי עלול להיות חלש. עדיפה תמונה עם הרבה פרטים." + note);
       else msg("תמונת היצירה נשמרה." + note);
