@@ -73,7 +73,7 @@
   try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist().then(ok => { window.__storagePersisted = ok; }).catch(() => {}); } catch {}
   function importErrorMessage(err) {
     const m = String((err && err.message) || err);
-    if (/maximum ?60|too many entries|bad elements/i.test(m)) return "הקובץ לא יובא: יותר מ־60 שכבות. הסירי שכבות ונסי שוב. אם זה גיבוי ישן וגדול, נסי ״ייבוא שחזור״.";
+    if (/maximum ?60|too many entries|bad elements/i.test(m)) return "הקובץ לא יובא: יותר מ־60 שכבות. אם זה גיבוי ישן וגדול, נסי ״ייבוא שחזור״ (עדיף במחשב).";
     if (/too large|too many assets|archive too large|entry too large/i.test(m)) return "הקובץ לא יובא: גודל הקבצים חורג מהמגבלה (60MB בסך הכול, 20MB לקובץ). אם זה גיבוי ישן וגדול, נסי ״ייבוא שחזור״.";
     return "הקובץ לא תקין לייבוא.";
   }
@@ -652,7 +652,7 @@
       a.download = (rec.name || "ar-studio") + ".json";
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-      { const w = Studio.exportWarning(rec); if (w) msg(w); }
+      { const w = Studio.exportWarning(rec); if (w) { refreshSafetyNote(); msg("אזהרה לגבי הגיבוי: ההסבר מופיע ליד כפתורי הייצוא."); } }
     });
     $("btn-export-zip").onclick = () => queueExperience(async () => {
       const blob = await Studio.exportZIP(rec);
@@ -661,7 +661,7 @@
       a.download = (rec.name || "ar-studio") + ".zip";
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-      { const w = Studio.exportWarning(rec); if (w) msg(w); }
+      { const w = Studio.exportWarning(rec); if (w) { refreshSafetyNote(); msg("אזהרה לגבי הגיבוי: ההסבר מופיע ליד כפתורי הייצוא."); } }
     });
     $("btn-import").onclick = () => $("file-import").click();
 
@@ -758,7 +758,7 @@
         selectedId = null; checkedIds.clear(); tlScrubT = null; resetSeq();
         await hydrate(); await refreshExpSelect(); render();
         msg(recovery ? "יובא כעותק חדש. המקור לא שונה. היצירה גדולה מהמגבלות, אז ייצוא נוסף יציג אזהרה." : "הייבוא הצליח.");
-      } catch (err) { msg(importErrorMessage(err) + (recovery ? "" : "")); }
+      } catch (err) { const m = importErrorMessage(err); msg(m); const n = $("safety-note"); if (n) { n.textContent = m; n.hidden = false; } }
     });
     $("file-import").onchange = (e) => { const f = e.target.files[0]; e.target.value = ""; if (f) return doImport(f, false); };
     // Recovery import: only for an over-limit backup made before the guards existed. Always a NEW copy; larger caps
@@ -955,7 +955,10 @@
     });
   }
   // ---------- rendering ----------
+  // Persistent safety status next to export/import (not a transient toast): shown while the open creation is over the restore limits.
+  function refreshSafetyNote() { const n = $("safety-note"); if (!n || !rec) return; const w = Studio.exportWarning(rec); n.textContent = w || ""; n.hidden = !w; }
   function render() {
+    refreshSafetyNote();
     const hasTarget = !!rec.target;
     $("sec-elements").hidden = !hasTarget;
     $("sec-arrange").hidden = !hasTarget;

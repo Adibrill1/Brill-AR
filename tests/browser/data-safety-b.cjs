@@ -75,4 +75,17 @@ const {chromium}=require('playwright-core'),assert=require('assert/strict'),serv
  const names=await A.evaluate(()=>window.__calls.map(c=>c.name));
  assert.ok(names[1].includes('שם חדש אחרי הכנה'),'second share carries the edited scene, not the stale file: '+names);
  console.log('PASS share cache invalidated by edit:',JSON.stringify(names));
+
+ // persistent safety note (not a transient toast) next to export/import
+ await A.setViewportSize({width:390,height:844});
+ await A.evaluate(async()=>{const r=Studio.blankExperience('הערה קבועה');r.target={artRect:{x:0,y:0,w:768,h:1024},natural:{w:768,h:1024}};r.elements=Array.from({length:61},(_,i)=>Studio.normEl({id:'n'+i,type:'text',name:'t'+i,text:'x',x:0,y:0,w:.3,h:.1,rot:0,z:.1,color:'#fff',bold:true}));await Studio.save(r);});
+ await A.reload();await A.waitForFunction(()=>[...document.querySelectorAll('#exp-select option')].some(o=>o.textContent==='הערה קבועה'));await A.locator('#exp-select').selectOption({label:'הערה קבועה'});await A.waitForTimeout(600);
+ assert.equal(await A.locator('#safety-note').isVisible(),true,'over-limit creation shows the persistent note');
+ await A.waitForTimeout(7000); // long after any toast would have faded
+ const note=await A.locator('#safety-note').textContent();assert.ok(note.includes('לא נחתך')&&note.includes('ייבוא שחזור'),note);
+ const box=await A.evaluate(()=>{const n=document.querySelector('#safety-note').getBoundingClientRect(),b=document.querySelector('#btn-export').getBoundingClientRect();return {noteBottom:n.bottom,exportTop:b.top};});
+ assert.ok(box.noteBottom<=box.exportTop+1,'note sits above the export buttons and does not cover them: '+JSON.stringify(box));
+ await A.evaluate(()=>document.querySelector('#safety-note').scrollIntoView({block:'center'}));await A.waitForTimeout(300);await A.screenshot({path:'/downloads/safety-note-390.png'});
+ await A.locator('#exp-select').selectOption({index:0});await A.waitForTimeout(500);
+ console.log('PASS persistent safety note visible after 7s, above export buttons');
 }finally{await b.close();await new Promise(r=>server.close(r));}})().catch(e=>{console.error(e);process.exit(1)});
