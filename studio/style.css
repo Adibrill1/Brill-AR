@@ -192,3 +192,13 @@ button.small { font-size: 13px; padding: 6px 10px; }
 
 .snap-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
 @media (max-width: 820px) { body.shell .snap-toggle { color: #bdb8af; } }
+
+/* 4th tab "תנועה" (mock): the SAME arrange card (state/sequence tabs, action editor, selected-element sheet) shown on its own;
+   the layers tab keeps the layer list, the undo/test/snap row and the selected-element sheet. */
+@media (max-width: 820px) {
+  body.shell[data-tab="motion"] main > .card:nth-of-type(2), body.shell[data-tab="motion"] #sec-elements, body.shell[data-tab="motion"] #sec-preview { display: none; }
+  body.shell[data-tab="motion"] #sec-arrange > h2, body.shell[data-tab="layers"] #sec-arrange > h2 { display: none; }
+  body.shell[data-tab="layers"] #sec-arrange > :not(.row):not(#panel):not(#diag-strip) { display: none; }
+  body.shell[data-tab="layers"] #sec-arrange { padding-top: 0; border: 0; background: transparent; box-shadow: none; }
+  body.shell #shell-tabs button { font-size: 13px; padding: 0 2px; }
+}

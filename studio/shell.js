@@ -1,7 +1,7 @@
 /* Phone shell (stage 1): bottom tab bar over the EXISTING cards. No data paths, ids or handlers change:
    it only toggles which card is visible (CSS, body[data-tab]) and pins the artwork canvas while editing. */
 (function () {
-  const tabs = [["create", "יצירה"], ["layers", "שכבות וסידור"], ["check", "בדיקה ושמירה"]];
+  const tabs = [["create", "יצירה"], ["layers", "שכבות"], ["motion", "תנועה"], ["check", "בדיקה ושמירה"]];
   const nav = document.createElement("nav"); nav.id = "shell-tabs"; nav.setAttribute("aria-label", "שלבי העבודה");
   tabs.forEach(([k, t]) => { const b = document.createElement("button"); b.type = "button"; b.dataset.tab = k; b.textContent = t; b.addEventListener("click", () => setTab(k)); nav.appendChild(b); });
   document.body.appendChild(nav);
@@ -15,6 +15,7 @@
   function setTab(k) {
     document.body.dataset.tab = k;
     nav.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.tab === k)));
+    if (k === "motion") { const mb = document.querySelector('#panel-subtabs [data-sub="motion"]'); if (mb) mb.click(); }
     window.scrollTo(0, 0);
   }
   const has = () => !document.getElementById("sec-arrange").hidden;
