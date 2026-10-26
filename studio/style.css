@@ -83,3 +83,21 @@ button.small { font-size: 13px; padding: 6px 10px; }
 .diag-state{color:#5f5a6b;min-width:86px;text-align:center}
 .diag-log{margin-top:8px;border-top:1px dashed #d9d4e3;padding-top:6px;color:#5f5a6b;font-size:12px}
 #btn-test-mode.on{background:#292535;color:#fff;border-color:#292535}
+
+/* ---- phone shell (stage 1) ---- */
+#shell-tabs { display: none; }
+#stage { display: contents; }
+@media (max-width: 820px) {
+  body.shell { padding-bottom: 64px; }
+  body.shell #shell-tabs { display: flex; position: fixed; inset: auto 0 0 0; z-index: 70; background: #fff; border-top: 1px solid #b9b4c7; padding-bottom: env(safe-area-inset-bottom); }
+  body.shell #shell-tabs button { flex: 1; min-height: 52px; border: 0; background: transparent; font: 600 14px/1.2 sans-serif; color: #5b566b; cursor: pointer; }
+  body.shell #shell-tabs button[aria-pressed="true"] { color: #292535; box-shadow: inset 0 3px 0 #292535; background: #f4f2f9; }
+  body.shell[data-tab="create"] #sec-elements, body.shell[data-tab="create"] #sec-arrange, body.shell[data-tab="create"] #sec-preview,
+  body.shell[data-tab="layers"] #sec-exp, body.shell[data-tab="layers"] main > .card:nth-of-type(2), body.shell[data-tab="layers"] #sec-preview,
+  body.shell[data-tab="check"] #sec-exp, body.shell[data-tab="check"] main > .card:nth-of-type(2), body.shell[data-tab="check"] #sec-elements, body.shell[data-tab="check"] #sec-arrange { display: none; }
+  body.shell header .sub { display: none; }
+  body.shell #stage { position: sticky; top: 0; z-index: 20; background: #f4f2f9; padding: 4px 8px; }
+  body.shell:not([data-tab="layers"]) #stage { display: none; }
+  body.shell #canvas-wrap { margin: 0; }
+  body.shell #preview { width: auto; max-height: 42vh; margin: 0 auto; }
+}
