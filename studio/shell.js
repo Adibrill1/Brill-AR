@@ -29,5 +29,20 @@
   const b3 = document.getElementById("btn-3d");
   const view = () => { const v = b3.classList.contains("on") ? "3d" : "2d"; if (stage.dataset.view !== v) { stage.dataset.view = v; setTimeout(() => dispatchEvent(new Event("resize")), 0); } };
   new MutationObserver(view).observe(b3, { attributes: true, attributeFilter: ["class"] }); view();
+  // Selected-element sheet: the existing #panel (same inputs/handlers) shown as a bottom sheet with sub-tabs.
+  const panel = document.getElementById("panel"), kids = [...panel.children];
+  const groups = { pos: [1, 6, 7, 8, 10], look: [2, 3, 4, 5, 9, 17, 18], motion: [11, 13, 14, 15, 16], tap: [12] };
+  for (const [g, idx] of Object.entries(groups)) idx.forEach((i) => { if (kids[i]) kids[i].dataset.sub = g; });
+  const sub = document.createElement("div"); sub.id = "panel-subtabs"; sub.setAttribute("role", "tablist");
+  [["pos", "מיקום"], ["look", "מראה"], ["motion", "תנועה וצליל"], ["tap", "נגיעה וזמן"]].forEach(([k, t]) => {
+    const b = document.createElement("button"); b.type = "button"; b.dataset.sub = k; b.textContent = t; b.setAttribute("role", "tab");
+    b.addEventListener("click", () => { panel.dataset.sub = k; panel.dataset.collapsed = "0"; subSync(); }); sub.appendChild(b);
+  });
+  const fold = document.createElement("button"); fold.type = "button"; fold.id = "panel-fold"; fold.textContent = "▾"; fold.setAttribute("aria-label", "כיווץ או הרחבה של לוח העריכה");
+  fold.addEventListener("click", () => { panel.dataset.collapsed = panel.dataset.collapsed === "1" ? "0" : "1"; subSync(); });
+  sub.appendChild(fold); kids[0].after(sub);
+  panel.dataset.sub = "pos"; panel.dataset.collapsed = "0";
+  function subSync() { sub.querySelectorAll("button[data-sub]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.sub === panel.dataset.sub))); fold.textContent = panel.dataset.collapsed === "1" ? "▴" : "▾"; }
+  subSync();
   document.body.classList.add("shell");
 })();
