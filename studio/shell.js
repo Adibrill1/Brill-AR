@@ -36,14 +36,23 @@
   const sub = document.createElement("div"); sub.id = "panel-subtabs"; sub.setAttribute("role", "tablist");
   [["pos", "מיקום"], ["look", "מראה"], ["motion", "תנועה וצליל"], ["tap", "נגיעה וזמן"]].forEach(([k, t]) => {
     const b = document.createElement("button"); b.type = "button"; b.dataset.sub = k; b.textContent = t; b.setAttribute("role", "tab");
-    b.addEventListener("click", () => { panel.dataset.sub = k; panel.dataset.collapsed = "0"; subSync(); }); sub.appendChild(b);
+    b.addEventListener("click", () => {
+      panel.dataset.collapsed = "0"; subSync();
+      // jump (nothing is hidden: every control stays reachable by scrolling and Tab order is complete)
+      const t = [...panel.children].find((c) => c.dataset.sub === k && c.getBoundingClientRect().height > 0);
+      if (t) panel.scrollTo({ top: Math.max(0, t.offsetTop - sub.offsetHeight - 6), behavior: "auto" });
+      panel.dataset.sub = k; subSync();
+    }); sub.appendChild(b);
   });
   const fold = document.createElement("button"); fold.type = "button"; fold.id = "panel-fold"; fold.textContent = "▾"; fold.setAttribute("aria-label", "כיווץ או הרחבה של לוח העריכה");
   fold.addEventListener("click", () => { panel.dataset.collapsed = panel.dataset.collapsed === "1" ? "0" : "1"; subSync(); });
   sub.appendChild(fold); kids[0].after(sub);
+  // group the controls (same nodes, same ids/handlers) so each sub-tab is one contiguous run of the sheet
+  { let anchor = sub; for (const g of ["pos", "look", "motion", "tap"]) for (const i of groups[g]) { if (kids[i]) { anchor.after(kids[i]); anchor = kids[i]; } } }
   // "back to live playback" appears when a canvas drag freezes the playhead: it must be reachable from every sub-tab
   const live = document.getElementById("btn-tl-live"); if (live) { const w = document.createElement("div"); w.id = "panel-live"; w.className = "row"; w.dataset.sub = "all"; w.appendChild(live); sub.after(w); }
   panel.dataset.sub = "pos"; panel.dataset.collapsed = "0";
+  panel.addEventListener("scroll", () => { const top = panel.getBoundingClientRect().top + sub.offsetHeight + 12; let cur = "pos"; for (const c of panel.children) { if (c.dataset.sub && c.dataset.sub !== "all" && c.getBoundingClientRect().height > 0 && c.getBoundingClientRect().bottom > top + 4) { cur = c.dataset.sub; break; } } if (cur !== panel.dataset.sub) { panel.dataset.sub = cur; subSync(); } }, { passive: true });
   function subSync() { sub.querySelectorAll("button[data-sub]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.sub === panel.dataset.sub))); fold.textContent = panel.dataset.collapsed === "1" ? "▴" : "▾"; }
   subSync();
   document.body.classList.add("shell");
