@@ -332,6 +332,21 @@
     }
   }
 
+  // A read can fail for a moment (iOS memory pressure, a picker-backed blob mid-eviction) and then work.
+  // Retry before calling an asset lost; when FileReader keeps failing, try arrayBuffer() and keep a
+  // page-owned copy of the same bytes. Only a read that still fails is reported (and the stored record is never changed for it).
+  const healedAssets = new Set();
+  async function readAsset(id) {
+    let lastErr;
+    for (let i = 0; i < 3; i++) {
+      try { return await Studio.blobToDataURL(rec.assets[id]); } catch (e) { lastErr = e; await new Promise((r) => setTimeout(r, 120 * (i + 1))); }
+    }
+    try {
+      const b = rec.assets[id], copy = new Blob([await b.arrayBuffer()], { type: b.type || "" });
+      if (copy.size && copy.size === b.size) { rec.assets[id] = copy; healedAssets.add(id); return await Studio.blobToDataURL(copy); }
+    } catch (e) { lastErr = e; }
+    throw lastErr;
+  }
   async function hydrate() {
     artworkImg = null;
     for (const k of Object.keys(media)) delete media[k];
@@ -341,14 +356,14 @@
     if (rec.assets.__artwork) {
       // A stored blob can be unreadable ("dead" picker backing evicted by the OS). Keep the
       // editor usable and say exactly what is lost instead of failing the whole load.
-      try { artworkImg = await Studio.loadImage(await Studio.blobToDataURL(rec.assets.__artwork)); }
+      try { artworkImg = await Studio.loadImage(await readAsset("__artwork")); }
       catch (err) { badAssets.push("תמונת היצירה"); deadAssets.add("__artwork"); }
     }
     for (const el of rec.elements) {
       Studio.normEl(el);
       if (!el.assetId || !rec.assets[el.assetId]) continue;
       try {
-        const durl = await Studio.blobToDataURL(rec.assets[el.assetId]);
+        const durl = await readAsset(el.assetId);
         if (el.type === "video") {
           const v = document.createElement("video");
           v.muted = true; v.loop = el.loop !== false; v.playsInline = true; v.src = durl;
@@ -360,6 +375,7 @@
         }
       } catch (err) { badAssets.push(el.name || el.type); if (el.assetId) deadAssets.add(el.assetId); }
     }
+    if (healedAssets.size) { healedAssets.clear(); try { await Studio.save(rec, { noHistory: true }); } catch (e) {} }
     if (badAssets.length) msg("חלק מהקבצים לא נקראו מהמכשיר (" + [...new Set(badAssets)].join(", ") + ") - ייבאי אותם שוב כדי לשחזר.");
   }
 
