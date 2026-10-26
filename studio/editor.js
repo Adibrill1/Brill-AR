@@ -6,8 +6,28 @@
 (() => {
   const $ = (id) => document.getElementById(id);
   const msg = (t, ms = 6000) => { $("msg").textContent = t; if (t) setTimeout(() => { if ($("msg").textContent === t) $("msg").textContent = ""; }, ms); };
-  const INCOMPLETE_EXPORT_MSG = (miss) => "הקובץ נוצר אבל הוא חלקי, לא גיבוי מלא: חסרים הקבצים של " + [...new Set(miss.map((m) => m.name))].join(", ") + ". שם הקובץ מסומן \"חלקי\".";
-  const EXPORT_FAIL_MSG = "הייצוא לא הושלם: קובץ אחד לא נקרא מהמכשיר, ולכן לא נוצר קובץ גיבוי (גם לא חלקי). העריכות נשארות בדף הפתוח - אל תרעננו ואל תסגרו.";
+  const missNames = (miss) => [...new Set(miss.map((m) => m.name))].join(", ");
+  const INCOMPLETE_EXPORT_MSG = (miss) => "הקובץ נוצר אבל הוא חלקי, לא גיבוי מלא: חסרים הקבצים של " + missNames(miss) + ". שם הקובץ מסומן \"חלקי\".";
+  const EXPORT_FAIL_MSG = "הייצוא לא הושלם: קובץ אחד לא נקרא מהמכשיר, ולכן לא נוצר קובץ גיבוי (גם לא חלקי). העריכות נשארות בדף הפתוח - אל תרענני ואל תסגרי.";
+  // Only a read failure is described as one; any other failure says so with its code instead of guessing.
+  const exportFailMsg = (e) => /NotReadable|blob read failed|could not be read/i.test(String(e && e.name) + " " + String((e && e.message) || e)) ? EXPORT_FAIL_MSG
+    : "הייצוא לא הושלם, ולכן לא נוצר קובץ גיבוי (גם לא חלקי). העריכות נשארות בדף הפתוח - אל תרענני ואל תסגרי. קוד: " + String((e && e.message) || e).slice(0, 120);
+  // Persistent notice for export/send/publish outcomes that change what the user can rely on (no file, a partial file,
+  // nothing sent). Unlike msg() it stays until closed or until the same action later succeeds in full. It sits with the
+  // save banner (pinned with the phone shell's stage on every tab) and pushes content instead of covering it.
+  const notice = (src, text) => {
+    let n = $("export-banner");
+    if (!n) {
+      n = document.createElement("div"); n.id = "export-banner"; n.hidden = true; n.setAttribute("role", "alert");
+      n.innerHTML = '<p class="sb-text"></p><div class="sb-row"><button type="button" class="sb-close ghost">סגירה</button></div>';
+      n.querySelector(".sb-close").onclick = () => notice(n.dataset.src, null);
+      const sb = $("save-banner"), st = $("stage");
+      if (sb) sb.after(n); else if (st) st.prepend(n); else document.querySelector("main").before(n);
+    }
+    if (text == null) { if (n.dataset.src === src) { n.hidden = true; n.dataset.src = ""; } }
+    else { n.dataset.src = src; n.dataset.rec = rec ? rec.id : ""; n.querySelector(".sb-text").textContent = "⚠ " + text; n.hidden = false; }
+    if ($("stage")) $("stage").dataset.notice = n.hidden ? "0" : "1";
+  };
   // Editing-semantics guard, shared by the 2D canvas and the embedded 3D view: a drag the
   // timeline would silently override is refused with a message; supported channels write a
   // key at the frozen playhead instead of touching base props. Same strings as editor-3d.js.
@@ -375,10 +395,12 @@
       btn.disabled = true; out.hidden = false; out.textContent = "בודק קבצים…";
       try {
         const rows = await Studio.fileHealth(rec), ok = (x) => (x ? "✓" : "✗");
+        // fileHealth walks the stored files only; a layer (or the artwork) pointing at a file that is not stored at all is listed too
+        { const have = new Set(rows.map((r) => r.id)); for (const m of Studio.missingAssets(rec)) if (!have.has(m.id)) { have.add(m.id); rows.push({ id: m.id, name: m.name, missing: true, ref: true }); } }
         const dec = (r) => (r.decode === "ok" ? "✓" : r.decode === "fail" ? "✗" : "לא נבדק");
         const isBad = (r) => r.missing || !r.full.ok || !r.reader.ok || r.decode === "fail";
         const lines = rows.map((r) => {
-          if (r.missing) return "✗ " + r.name + "\n   הקובץ חסר בשמירה";
+          if (r.missing) return "✗ " + r.name + "\n   " + (r.ref ? "הקובץ חסר: השכבה מפנה לקובץ שלא נמצא בשמירה. ייצוא ייצור קובץ חלקי, לא גיבוי מלא." : "הקובץ חסר בשמירה");
           const kb = r.size >= 1048576 ? (r.size / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(r.size / 1024)) + " KB";
           const tr = (t) => (t.tries > 1 ? " (" + t.tries + " ניסיונות)" : "");
           const verdict = !r.full.ok ? "לא נקרא מהמכשיר" : !r.reader.ok ? "נקרא, אבל ההכנה להצגה נכשלה" : r.decode === "fail" ? "נקרא, אבל לא ניתן להציג אותו" : "תקין";
@@ -722,22 +744,22 @@
       });
     };
     $("btn-export").onclick = () => queueExperience(async () => {
-      let json; try { json = await Studio.exportJSON(rec); } catch (e) { msg(EXPORT_FAIL_MSG, 30000); return; }
+      let json; try { json = await Studio.exportJSON(rec); } catch (e) { notice("export", exportFailMsg(e)); msg("הייצוא לא הושלם - הפרטים בהודעה למעלה."); return; }
       const a = document.createElement("a");
       a.href = URL.createObjectURL(new Blob([json], { type: "application/json" }));
       const miss = Studio.missingAssets(rec); a.download = (rec.name || "ar-studio") + (miss.length ? " - חלקי" : "") + ".json";
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-      { const w = Studio.exportWarning(rec); if (w) refreshSafetyNote(); if (miss.length) msg(INCOMPLETE_EXPORT_MSG(miss), 30000); else if (w) msg("אזהרה לגבי הגיבוי: ההסבר מופיע ליד כפתורי הייצוא."); }
+      { const w = Studio.exportWarning(rec); if (w) refreshSafetyNote(); if (miss.length) { notice("export", INCOMPLETE_EXPORT_MSG(miss)); msg("הקובץ חלקי - הפרטים בהודעה למעלה."); } else { notice("export", null); if (w) msg("אזהרה לגבי הגיבוי: ההסבר מופיע ליד כפתורי הייצוא."); } }
     });
     $("btn-export-zip").onclick = () => queueExperience(async () => {
-      let blob; try { blob = await Studio.exportZIP(rec); } catch (e) { msg(EXPORT_FAIL_MSG, 30000); return; }
+      let blob; try { blob = await Studio.exportZIP(rec); } catch (e) { notice("export", exportFailMsg(e)); msg("הייצוא לא הושלם - הפרטים בהודעה למעלה."); return; }
       const a = document.createElement("a");
       a.href = URL.createObjectURL(blob);
       const miss = Studio.missingAssets(rec); a.download = (rec.name || "ar-studio") + (miss.length ? " - חלקי" : "") + ".zip";
       a.click();
       setTimeout(() => URL.revokeObjectURL(a.href), 5000);
-      { const w = Studio.exportWarning(rec); if (w) refreshSafetyNote(); if (miss.length) msg(INCOMPLETE_EXPORT_MSG(miss), 30000); else if (w) msg("אזהרה לגבי הגיבוי: ההסבר מופיע ליד כפתורי הייצוא."); }
+      { const w = Studio.exportWarning(rec); if (w) refreshSafetyNote(); if (miss.length) { notice("export", INCOMPLETE_EXPORT_MSG(miss)); msg("הקובץ חלקי - הפרטים בהודעה למעלה."); } else { notice("export", null); if (w) msg("אזהרה לגבי הגיבוי: ההסבר מופיע ליד כפתורי הייצוא."); } }
     });
     $("btn-import").onclick = () => $("file-import").click();
 
@@ -764,13 +786,18 @@
       try {
         // Start the export synchronously inside the tap and share as early as possible:
         // Safari ties navigator.share to the tap's transient user activation.
+        // A layer that points at a file the record no longer holds would be sent without it, silently: refuse instead.
+        const miss = Studio.missingAssets(rec);
+        if (miss.length) { notice("send", "שום דבר לא נשלח: חסרים הקבצים של " + missNames(miss) + " (השכבה מפנה לקובץ שלא נמצא בשמירה). ״ייצוא״ ייצור קובץ שמסומן חלקי, לא גיבוי מלא."); msg("שום דבר לא נשלח - הפרטים בהודעה למעלה."); return; }
         const health = await Studio.assetHealth(rec);
         const dead = health.filter((h) => !h.ok);
         if (dead.length) {
           const names = dead.map((h) => h.id === "__artwork" ? "תמונת היצירה" : ((rec.elements.find((x) => x.assetId === h.id || (x.particles && x.particles.spriteAssetId === h.id)) || {}).name || h.id));
-          msg("חלק מהקבצים לא קריאים יותר בטלפון (" + names.join(", ") + ") - ייבאי אותם שוב ואז שלחי. שום דבר לא נשלח.");
+          const t = "חלק מהקבצים לא קריאים יותר בטלפון (" + names.join(", ") + ") - ייבאי אותם שוב ואז שלחי. שום דבר לא נשלח.";
+          notice("send", t); msg(t); // the toast keeps its existing wording; the notice keeps it on screen
           return;
         }
+        notice("send", null);
         const pb = Studio.publishBlocker(rec), warn = [pb && (pb + " אפשר לשלוח אליי כגיבוי, אבל לא אפשר יהיה לפרסם אותה כך."), Studio.exportWarning(rec)].filter(Boolean).join(" "), tail = warn ? " " + warn : "";
         const useZip = $("send-zip").checked, startKey = prepKey(useZip);
         const bodyP = useZip ? Studio.exportZIP(rec) : Studio.exportJSON(rec);
@@ -806,6 +833,8 @@
     $("btn-publish").onclick = async () => {
       const base = ($("in-server").value || "").trim().replace(/\/+$/, "");
       if (!base) { msg("כדי לפרסם צריך שרת קטן שמחזיק את הקישורים. כרגע אפשר לייצא לקובץ ולשתף ידנית."); return; }
+      { const miss = Studio.missingAssets(rec); if (miss.length) { notice("publish", "לא פורסם: חסרים הקבצים של " + missNames(miss) + " (השכבה מפנה לקובץ שלא נמצא בשמירה). קישור כזה היה מציג את היצירה בלעדיהם."); msg("לא פורסם - הפרטים בהודעה למעלה."); return; } }
+      notice("publish", null);
       { const pb = Studio.publishBlocker(rec); if (pb) { msg(pb); return; } }
       msg("מפרסם...");
       try {
@@ -897,6 +926,7 @@
       banner.hidden=true;
     }
     function renderSaveState(){const st=rec?Studio.saveState(rec.id):Studio.saveState(null);renderBanner(st);if($("stage"))$("stage").dataset.save=banner.hidden?"0":"1";
+      { const n=$("export-banner"); if(n&&!n.hidden&&(!rec||n.dataset.rec!==rec.id))notice(n.dataset.src,null); } // an export/send notice belongs to the project it was shown for
       if(!st.pending&&!st.lastError&&!st.lastSavedAt){saveStateEl.hidden=true;return;}saveStateEl.hidden=false;
       if(st.pending>0){saveStateEl.textContent="שומר…";saveStateEl.className="save-state saving";}
       else if(st.lastError){saveStateEl.textContent="השמירה נכשלה - לחצי לניסיון חוזר.";saveStateEl.className="save-state error";}

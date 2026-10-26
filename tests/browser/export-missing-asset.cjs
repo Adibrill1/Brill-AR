@@ -8,7 +8,7 @@ const gone=await p.evaluate(async()=>{const dl=async()=>0;const r=(await Studio.
 await p.reload();await p.waitForFunction(()=>document.querySelector('#exp-select').options.length>0);await p.waitForTimeout(2000);
 assert.deepEqual(await p.evaluate(async()=>Studio.missingAssets((await Studio.all())[0]).map(m=>m.id)),[gone.id],'missingAssets names the layer whose file is gone');
 await p.getByText('בדיקה ושמירה',{exact:true}).last().click().catch(()=>{});await p.waitForTimeout(500);
-await p.evaluate(()=>{window.__msgs=[];new MutationObserver(()=>{const t=document.querySelector('#msg').textContent;if(t)window.__msgs.push(t)}).observe(document.querySelector('#msg'),{childList:true,characterData:true,subtree:true})});
+await p.evaluate(()=>{window.__msgs=[];new MutationObserver(()=>{const t=[document.querySelector('#msg').textContent,(document.querySelector('#export-banner:not([hidden]) .sb-text')||{}).textContent||''].join(' ').trim();if(t)window.__msgs.push(t)}).observe(document.body,{childList:true,characterData:true,subtree:true,attributes:true,attributeFilter:['hidden']})});
 for(const [sel,ext] of [['#btn-export','.json'],['#btn-export-zip','.zip']]){
  await Promise.all([p.waitForEvent('download',{timeout:30000}),p.click(sel)]);const names=await p.evaluate(()=>window.__dl);const nm=names[names.length-1];
  assert.ok(nm.includes('חלקי')&&nm.endsWith(ext),'file name is marked partial: '+nm);}
@@ -17,7 +17,7 @@ await p.evaluate(async()=>{const r=(await Studio.all())[0];delete r.assets.__art
 await p.reload();await p.waitForFunction(()=>document.querySelector('#exp-select').options.length>0);await p.waitForTimeout(2000);
 const ids=await p.evaluate(async()=>Studio.missingAssets((await Studio.all())[0]).map(m=>m.id));assert.deepEqual(ids.sort(),[gone.id,'__artwork'].sort(),'missingAssets also reports the referenced artwork: '+ids);
 await p.getByText('בדיקה ושמירה',{exact:true}).last().click().catch(()=>{});await p.waitForTimeout(500);
-await p.evaluate(()=>{window.__msgs=[];new MutationObserver(()=>{const t=document.querySelector('#msg').textContent;if(t)window.__msgs.push(t)}).observe(document.querySelector('#msg'),{childList:true,characterData:true,subtree:true})});
+await p.evaluate(()=>{window.__msgs=[];new MutationObserver(()=>{const t=[document.querySelector('#msg').textContent,(document.querySelector('#export-banner:not([hidden]) .sb-text')||{}).textContent||''].join(' ').trim();if(t)window.__msgs.push(t)}).observe(document.body,{childList:true,characterData:true,subtree:true,attributes:true,attributeFilter:['hidden']})});
 await Promise.all([p.waitForEvent('download',{timeout:30000}),p.click('#btn-export')]);
 const m2=(await p.evaluate(()=>window.__msgs)).join(' | ');assert.ok(/תמונת היצירה/.test(m2)&&/חלקי/.test(m2),'message names the missing artwork: '+m2);
 const m=(await p.evaluate(()=>window.__msgs)).join(' | ');console.log(m);

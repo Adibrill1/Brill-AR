@@ -35,7 +35,7 @@ for(const [k,v] of Object.entries(exp)){assert.ok(z.assets[k],'asset '+k+' in ZI
 // ---- combo: one asset unreadable, others readable -> no file, a message
 const big=Object.entries(exp).sort((x,y)=>y[1].size-x[1].size)[0][1].size;
 assert.equal(Object.values(exp).filter(v=>v.size===big).length,1,'unreadable asset is identified by a unique size');
-await p.evaluate(s=>{sessionStorage.setItem('bad',String(s));window.__msgs=[];new MutationObserver(()=>{const t=document.querySelector('#msg').textContent;if(t)window.__msgs.push(t)}).observe(document.querySelector('#msg'),{childList:true,characterData:true,subtree:true})},big);
+await p.evaluate(s=>{sessionStorage.setItem('bad',String(s));window.__msgs=[];new MutationObserver(()=>{const t=[document.querySelector('#msg').textContent,(document.querySelector('#export-banner:not([hidden]) .sb-text')||{}).textContent||''].join(' ').trim();if(t)window.__msgs.push(t)}).observe(document.body,{childList:true,characterData:true,subtree:true,attributes:true,attributeFilter:['hidden']})},big);
 const jf2=await dl('#btn-export',8000);const zf2=await dl('#btn-export-zip',8000);
 const m=(await p.evaluate(()=>window.__msgs)).join(' | ');
 console.log('combo: json file',jf2,'zip file',zf2,'msg:',m);
