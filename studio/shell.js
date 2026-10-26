@@ -21,7 +21,9 @@
   new MutationObserver(() => { const n = has(); if (n !== was) { was = n; setTab(n ? "layers" : "create"); } }).observe(document.getElementById("sec-arrange"), { attributes: true, attributeFilter: ["hidden"] });
   // keep the canvas aspect when its height is capped: width follows height via --ar (never stretch)
   const cv = document.getElementById("preview");
-  const fit = () => { if (cv.width && cv.height) stage.style.setProperty("--ar", String(cv.width / cv.height)); };
+  const fit = () => { if (cv.width && cv.height) stage.style.setProperty("--ar", String(cv.width / cv.height)); sp(); };
+  const sp = () => { const narrow = matchMedia("(max-width: 820px)").matches; const vis = stage.offsetHeight; document.documentElement.style.scrollPaddingTop = narrow && vis ? vis + 4 + "px" : ""; document.documentElement.style.scrollPaddingBottom = narrow ? "70px" : ""; };
+  new ResizeObserver(sp).observe(stage); addEventListener("resize", sp);
   new MutationObserver(fit).observe(cv, { attributes: true, attributeFilter: ["width", "height"] }); fit();
   document.body.classList.add("shell");
 })();

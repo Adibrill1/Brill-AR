@@ -95,9 +95,11 @@ button.small { font-size: 13px; padding: 6px 10px; }
   body.shell[data-tab="create"] #sec-elements, body.shell[data-tab="create"] #sec-arrange, body.shell[data-tab="create"] #sec-preview,
   body.shell[data-tab="layers"] main > .card:nth-of-type(2), body.shell[data-tab="layers"] #sec-preview,
   body.shell[data-tab="check"] main > .card:nth-of-type(2), body.shell[data-tab="check"] #sec-elements, body.shell[data-tab="check"] #sec-arrange { display: none; }
-  body.shell header .sub { display: none; }
-  body.shell #stage { position: sticky; top: 0; z-index: 20; background: #f4f2f9; padding: 4px 8px; }
-  body.shell:not([data-tab="layers"]) #stage { display: none; }
+  body.shell header { padding: 8px 14px; } body.shell header h1 { font-size: 16px; } body.shell header .sub { display: none; }
+  body.shell #msg { bottom: 70px; font-size: 13px; padding: 7px 12px; max-width: 86vw; pointer-events: none; }
+  body.shell #sec-exp { padding: 8px 10px; margin-bottom: 8px; } body.shell #sec-exp .row { gap: 6px; margin: 2px 0; } body.shell #sec-exp select { max-width: 40vw; } body.shell #sec-exp button { padding: 6px 10px; font-size: 13px; }
+  body.shell #stage { display: block; position: sticky; top: 0; z-index: 20; background: #f4f2f9; padding: 2px 8px; }
+  body.shell[data-tab="create"] #stage { display: none; }
   body.shell #canvas-wrap { margin: 0; }
-  body.shell #preview { width: min(100%, calc(42vh * var(--ar, 1))); margin: 0 auto; }
+  body.shell #preview { width: min(100%, calc(36vh * var(--ar, 1))) !important; margin: 0 auto; }
 }
