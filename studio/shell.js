@@ -41,6 +41,8 @@
   const fold = document.createElement("button"); fold.type = "button"; fold.id = "panel-fold"; fold.textContent = "▾"; fold.setAttribute("aria-label", "כיווץ או הרחבה של לוח העריכה");
   fold.addEventListener("click", () => { panel.dataset.collapsed = panel.dataset.collapsed === "1" ? "0" : "1"; subSync(); });
   sub.appendChild(fold); kids[0].after(sub);
+  // "back to live playback" appears when a canvas drag freezes the playhead: it must be reachable from every sub-tab
+  const live = document.getElementById("btn-tl-live"); if (live) { const w = document.createElement("div"); w.id = "panel-live"; w.className = "row"; w.dataset.sub = "all"; w.appendChild(live); sub.after(w); }
   panel.dataset.sub = "pos"; panel.dataset.collapsed = "0";
   function subSync() { sub.querySelectorAll("button[data-sub]").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.sub === panel.dataset.sub))); fold.textContent = panel.dataset.collapsed === "1" ? "▴" : "▾"; }
   subSync();
