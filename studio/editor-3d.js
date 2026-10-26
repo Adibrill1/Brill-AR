@@ -615,6 +615,29 @@ window.Editor3D = (() => {
     wrapEl.style.minHeight = (h || 320) + "px";
   }
 
+  // The stage moves #canvas-wrap in the DOM when the viewport crosses the narrow breakpoint (rotation).
+  // Re-parenting an <a-scene> makes A-Frame tear down and re-create its renderer: the animation loop
+  // stops and the scene content is lost. Detect that and mount a fresh scene.
+  let scCanvas = null, remounting = false;
+  function sceneWasReset() {
+    if (!sceneEl) return false;
+    const cs = sceneEl.querySelectorAll(":scope > canvas");
+    if (cs.length > 1) return true;
+    if (sceneEl.canvas) { if (!scCanvas) scCanvas = sceneEl.canvas; else if (sceneEl.canvas !== scCanvas) return true; }
+    return false;
+  }
+  async function remount() {
+    if (remounting) return; remounting = true;
+    try {
+      const old = host;
+      hide();
+      if (old) { old.querySelectorAll("#editor-3d-media > *").forEach((n) => { try { if (n.src && n.src.startsWith("blob:")) URL.revokeObjectURL(n.src); } catch (e) {} }); old.remove(); }
+      mounted = false; sceneEl = null; host = null; rig = null; cam = null; toolRow = null; scCanvas = null; lastFitKey = ""; lastSig = null;
+      gizmo = null; helper = null; orb = null;
+      await show();
+    } finally { remounting = false; }
+  }
+
   async function show() {
     if (busy) return; busy = true;
     try {
@@ -642,15 +665,23 @@ window.Editor3D = (() => {
 
   // Timeline linkage: every frame, mirror the 2D canvas's sampled world into the 3D
   // scene (live playback, frozen playhead, sequence state) and keep the gizmo on it.
-  let sampleRaf = 0, lastFitKey = "";
+  let sampleRaf = 0, lastFitKey = "", wdTime = -1, wdAt = 0, wdRestarts = 0;
   function sampleLoop() {
     if (!active) return;
+    if (!remounting && sceneWasReset()) { remount(); return; }
     // A viewport change (rotation) can leave A-Frame on its fallback camera at the origin, which
     // makes every projection (and the gizmo fit) NaN. Keep the editor's own camera the active one.
     if (cam && sceneEl && cam.components && cam.components.camera) {
       let own = cam.getObject3D("camera");
       if (!own && cam.components.camera.camera) { own = cam.components.camera.camera; cam.setObject3D("camera", own); lastFitKey = ""; }
       if (own && sceneEl.camera !== own) { sceneEl.camera = own; lastFitKey = ""; }
+    }
+    // Watchdog: after a viewport rotation the renderer's animation loop has been seen to stop
+    // (scene time frozen, no frames drawn, rAF itself still firing). Restart it. Cause not found.
+    if (sceneEl && sceneEl.renderer && typeof sceneEl.time === "number") {
+      const nowMs = performance.now();
+      if (sceneEl.time !== wdTime) { wdTime = sceneEl.time; wdAt = nowMs; }
+      else if (nowMs - wdAt > 600 && sceneEl.isPlaying) { try { sceneEl.renderer.setAnimationLoop(sceneEl.render); } catch (e) {} wdAt = nowMs; wdRestarts++; }
     }
     const rec = getRec();
     if (rec && sampleEl) {
