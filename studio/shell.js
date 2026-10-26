@@ -22,8 +22,8 @@
   // keep the canvas aspect when its height is capped: width follows height via --ar (never stretch)
   const cv = document.getElementById("preview");
   const fit = () => { if (cv.width && cv.height) { const v = (cv.width / cv.height).toFixed(4); const old = parseFloat(stage.style.getPropertyValue("--ar")); if (!(Math.abs(old - v) < 0.02)) { stage.style.setProperty("--ar", v); setTimeout(() => dispatchEvent(new Event("resize")), 0); } } sp(); };
-  const sp = () => { const narrow = matchMedia("(max-width: 820px)").matches; const vis = stage.offsetHeight; document.documentElement.style.scrollPaddingTop = narrow && vis ? vis + 4 + "px" : ""; document.documentElement.style.scrollPaddingBottom = narrow ? "70px" : ""; };
-  new ResizeObserver(sp).observe(stage); addEventListener("resize", sp);
+  const sp = () => { const narrow = matchMedia("(max-width: 820px)").matches; const vis = stage.offsetHeight; document.documentElement.style.scrollPaddingTop = narrow && vis ? vis + 4 + "px" : ""; const pn = document.getElementById("panel"); const ph = pn && !pn.hidden ? pn.offsetHeight : 0; document.documentElement.style.scrollPaddingBottom = narrow ? (ph ? ph + 52 + 6 : 70) + "px" : ""; };
+  new ResizeObserver(sp).observe(stage); { const pn0 = document.getElementById("panel"); new ResizeObserver(sp).observe(pn0); new MutationObserver(sp).observe(pn0, { attributes: true, attributeFilter: ["hidden"] }); } addEventListener("resize", sp);
   new MutationObserver(fit).observe(cv, { attributes: true, attributeFilter: ["width", "height"] }); fit();
   // 3D view needs room for the gizmo and the docked rotation buttons: taller stage while 3D is on
   const b3 = document.getElementById("btn-3d");
