@@ -101,5 +101,5 @@ button.small { font-size: 13px; padding: 6px 10px; }
   body.shell #stage { display: block; position: sticky; top: 0; z-index: 20; background: #f4f2f9; padding: 2px 8px; }
   body.shell[data-tab="create"] #stage { display: none; }
   body.shell #canvas-wrap { margin: 0; }
-  body.shell #preview { width: min(100%, calc(36vh * var(--ar, 1))) !important; margin: 0 auto; }
+  body.shell #canvas-wrap { width: min(100%, calc(36vh * var(--ar, 1))); margin: 0 auto; } /* the editor sizes the canvas from this width, so pointer mapping stays 1:1 (no CSS scaling) */
 }
