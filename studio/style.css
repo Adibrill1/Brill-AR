@@ -17,8 +17,8 @@ button.primary { background: #0a54c2; border-color: #0a54c2; font-size: 18px; }
 button.danger { color: #b00020; border-color: #b00020; }
 button.ghost.danger { background: #fff; }
 #artwork-thumb { max-height: 90px; border-radius: 8px; border: 1px solid #ddd; }
-#element-list { list-style: none; margin: 10px 0 0; padding: 0; }
-#element-list li { padding: 10px 12px; border: 1px solid #ddd; border-radius: 10px; margin-bottom: 6px; cursor: pointer; background: #fafafa; }
+#element-list { list-style: none; margin: 10px 0 0; padding: 0; min-width: 0; }
+#element-list li { padding: 10px 12px; border: 1px solid #ddd; border-radius: 10px; margin-bottom: 6px; cursor: pointer; overflow-wrap: anywhere; min-width: 0; background: #fafafa; }
 #element-list li.sel { border-color: #0a54c2; background: #eaf2ff; }
 #canvas-wrap { width: 100%; margin: 8px 0; touch-action: none; }
 #canvas-wrap { position: relative; }

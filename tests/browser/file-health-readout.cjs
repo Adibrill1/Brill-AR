@@ -4,6 +4,9 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
  const ctx=await b.newContext({viewport:{width:390,height:844}});const p=await ctx.newPage();
  await p.addInitScript(()=>{const o=FileReader.prototype.readAsDataURL;FileReader.prototype.readAsDataURL=function(blob){if(sessionStorage.getItem('rf')==='1'){const r=this;setTimeout(()=>{Object.defineProperty(r,'error',{value:{name:'NotReadableError'}});r.onerror&&r.onerror(new Event('error'))},0);return}return o.call(this,blob)}});
  await p.goto(base+'/index.html');await p.waitForFunction(()=>document.querySelector('#exp-select').options.length>0);await p.waitForTimeout(1500);
+ await p.evaluate(async()=>{const r=(await Studio.all())[0];r.elements[0].name='IMG_20260312_184455_very_long_filename_without_spaces_final_v7.mov';await Studio.save(r,{noHistory:true})});
+ await p.reload();await p.waitForFunction(()=>document.querySelector('#exp-select').options.length>0);await p.waitForTimeout(1500);
+ assert.ok(await p.evaluate(()=>document.documentElement.scrollWidth<=innerWidth),'a long unbroken layer name must not widen the page (390px)');
  const snap=()=>p.evaluate(async()=>{const r=(await Studio.all())[0];const out={id:r.id,upd:r.updatedAt||r.updated||null,n:Object.keys(r.assets).length,h:{}};for(const [k,v] of Object.entries(r.assets)){const ab=new Uint8Array(await v.arrayBuffer());let h=0;for(let i=0;i<ab.length;i++)h=(h*31+ab[i])>>>0;out.h[k]=[ab.length,h]}return out});
  const before=await snap();assert.ok(before.n>=2,'project has several stored assets');
  // 1. healthy
@@ -11,7 +14,7 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
  let t=await p.evaluate(()=>document.querySelector('#file-health').textContent);assert.ok(/כל \d+ הקבצים נקראים/.test(t),'healthy project reports all files readable: '+t);assert.ok(/תמונת היצירה/.test(t),'names the artwork');assert.ok(/קוראת בלבד/.test(t),'states it is read-only');
  // 2. FileReader fails for everything: reported per asset with the stage that failed
  await p.evaluate(()=>sessionStorage.setItem('rf','1'));await p.click('#btn-file-health');await p.waitForFunction(()=>/בעייתיים/.test(document.querySelector('#file-health').textContent),null,{timeout:30000});
- t=await p.evaluate(()=>document.querySelector('#file-health').textContent);assert.ok(/קריאה ✓ מלאה ✓ המרה ✗/.test(t)&&/\(3 ניסיונות\)/.test(t),'reader failure is shown as the failing stage with 3 tries, bytes still readable: '+t);
+ t=await p.evaluate(()=>document.querySelector('#file-health').textContent);assert.ok(/קריאה מלאה: ✓/.test(t)&&/הכנה להצגה: ✗ \(3 ניסיונות\)/.test(t)&&/נקרא, אבל ההכנה להצגה נכשלה/.test(t)&&!/octet-stream|image\/|Error|undefined/.test(t)&&/\(3 ניסיונות\)/.test(t),'reader failure is shown as the failing stage with 3 tries, bytes still readable: '+t);
  await p.evaluate(()=>sessionStorage.removeItem('rf'));
  // 3. missing asset entry
  const miss=await p.evaluate(async()=>{const rows=await Studio.fileHealth({elements:[{assetId:'gone',name:'כוכב'}],assets:{gone:null,fake:{}}});return rows.map(r=>[r.name,!!r.missing])});assert.ok(miss.length===2&&miss.every(r=>r[1]),'missing assets are reported as missing: '+JSON.stringify(miss));

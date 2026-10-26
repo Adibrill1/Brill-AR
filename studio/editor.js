@@ -354,13 +354,17 @@
       btn.disabled = true; out.hidden = false; out.textContent = "בודק קבצים…";
       try {
         const rows = await Studio.fileHealth(rec), ok = (x) => (x ? "✓" : "✗");
+        const dec = (r) => (r.decode === "ok" ? "✓" : r.decode === "fail" ? "✗" : "לא נבדק");
+        const isBad = (r) => r.missing || !r.full.ok || !r.reader.ok || r.decode === "fail";
         const lines = rows.map((r) => {
-          if (r.missing) return "• " + r.name + ": חסר בשמירה";
-          const kb = Math.round(r.size / 1024) + "KB";
-          return "• " + r.name + " (" + kb + ", " + (r.type || "?") + "): קריאה " + ok(r.head) + " מלאה " + ok(r.full.ok) + (r.full.tries > 1 ? " (" + r.full.tries + " ניסיונות)" : "") + " המרה " + ok(r.reader.ok) + (r.reader.tries > 1 ? " (" + r.reader.tries + " ניסיונות)" : "") + " פענוח " + (r.decode === "ok" ? "✓" : r.decode === "fail" ? "✗" : "-");
+          if (r.missing) return "✗ " + r.name + "\n   הקובץ חסר בשמירה";
+          const kb = r.size >= 1048576 ? (r.size / 1048576).toFixed(1) + " MB" : Math.max(1, Math.round(r.size / 1024)) + " KB";
+          const tr = (t) => (t.tries > 1 ? " (" + t.tries + " ניסיונות)" : "");
+          const verdict = !r.full.ok ? "לא נקרא מהמכשיר" : !r.reader.ok ? "נקרא, אבל ההכנה להצגה נכשלה" : r.decode === "fail" ? "נקרא, אבל לא ניתן להציג אותו" : "תקין";
+          return (isBad(r) ? "✗ " : "✓ ") + r.name + "\n   גודל: " + kb + "\n   " + verdict + "\n   קריאה מהאחסון: " + ok(r.head) + "  קריאה מלאה: " + ok(r.full.ok) + tr(r.full) + "\n   הכנה להצגה: " + ok(r.reader.ok) + tr(r.reader) + "  הצגה: " + dec(r) + "\n";
         });
-        const bad = rows.filter((r) => r.missing || !r.full.ok || !r.reader.ok || r.decode === "fail").length;
-        out.textContent = (bad ? bad + " מתוך " + rows.length + " קבצים בעייתיים" : "כל " + rows.length + " הקבצים נקראים") + "\n" + lines.join("\n") + "\nהבדיקה קוראת בלבד - שום דבר לא נשמר, לא הועלה ולא הוחלף.";
+        const bad = rows.filter(isBad).length;
+        out.textContent = (bad ? bad + " מתוך " + rows.length + " קבצים בעייתיים" : "כל " + rows.length + " הקבצים נקראים") + "\n\n" + lines.join("\n") + "\n\nהבדיקה קוראת בלבד - שום דבר לא נשמר, לא הועלה ולא הוחלף. אם יש קובץ שסומן בבעיה, צלמי מסך של התוצאה.";
       } catch (e) { out.textContent = "הבדיקה נכשלה: " + (e && e.message || e); }
       finally { btn.disabled = false; }
     };
