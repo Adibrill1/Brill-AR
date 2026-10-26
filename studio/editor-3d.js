@@ -630,7 +630,7 @@ window.Editor3D = (() => {
 
   // Timeline linkage: every frame, mirror the 2D canvas's sampled world into the 3D
   // scene (live playback, frozen playhead, sequence state) and keep the gizmo on it.
-  let sampleRaf = 0;
+  let sampleRaf = 0, lastFitKey = "";
   function sampleLoop() {
     if (!active) return;
     const rec = getRec();
@@ -644,6 +644,11 @@ window.Editor3D = (() => {
         if (el && node) {
           const { ts } = sampledTs(rec, el);
           gizmo.position.copy(placementCenter(rec, ts));
+          // The element moves under timeline playback/scrub and the view changes on resize/rotation:
+          // refit the handles (edge-aware) whenever position, camera or canvas size changed.
+          const cr = sceneEl && sceneEl.canvas ? sceneEl.canvas : null, cp = cam && cam.object3D ? cam.object3D.position : null;
+          const fitKey = [gizmo.position.x, gizmo.position.y, gizmo.position.z, cp ? cp.x : 0, cp ? cp.y : 0, cp ? cp.z : 0, cr ? cr.clientWidth : 0, cr ? cr.clientHeight : 0, rig && rig.object3D ? rig.object3D.rotation.y : 0].map((v) => Math.round(v * 1000)).join(",");
+          if (fitKey !== lastFitKey) { lastFitKey = fitKey; fitGizmoToView(); }
           if (helper) {
             const centerWorld = gizmo.position.clone().applyMatrix4(rig.object3D.matrixWorld);
             const q = new THREE.Quaternion(); rig.object3D.getWorldQuaternion(q);
