@@ -45,7 +45,13 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
    const dragBtn=async(k,prop,dx,dy)=>{const v0=await p.evaluate(([id,prop])=>Studio.load(id).then(r=>r.elements.find(e=>e.type==='text')[prop]||0),[id,prop]);const L2=await layout();const b=L2.btns[k];const sx=(b.l+b.r)/2,sy=(b.t+b.b)/2;await p.mouse.move(sx,sy);await p.mouse.down();await p.mouse.move(sx+dx,sy+dy,{steps:8});await p.mouse.up();await p.waitForTimeout(600);const v1=await p.evaluate(([id,prop])=>Studio.load(id).then(r=>r.elements.find(e=>e.type==='text')[prop]||0),[id,prop]);assert.ok(Math.abs(v1-v0)>5,'dragging the '+k+' button changed '+prop+': '+v0+' -> '+v1);return [v0,v1];};
    const out={};out.rot=await dragBtn('rot','rot',-60,40);out.rotX=await dragBtn('rotX','rotX',0,40);out.rotY=await dragBtn('rotY','rotY',40,0);
    // 3D move arrows still work (an arrow drag moves x, does not rotate)
-   console.log('drags');
+   // predictable spin: pointer sweeps 90deg counter-clockwise around the element's screen centre, twice -> +90 then +180 (repeatable)
+   await p.evaluate(async id=>{const r=await Studio.load(id);r.elements.find(e=>e.type==='text').rot=0;await Studio.save(r);},id);
+   await p.reload();await p.waitForFunction(()=>document.querySelector('#exp-select').options.length>0);await p.locator('#exp-select').selectOption(id);await p.waitForFunction(()=>parseFloat(document.querySelector('#preview').style.height)>300);
+   await p.tap('#btn-3d');await p.waitForSelector('[data-el-root]',{state:'attached',timeout:20000});await p.waitForTimeout(2000);await sel();
+   const sweep=async()=>{const L3=await layout();const o=L3.pts[L3.pts.length-1],b=L3.btns.rot;const sx=(b.l+b.r)/2,sy=(b.t+b.b)/2;const a0=Math.atan2(sy-o.y,sx-o.x),rr=Math.max(40,Math.hypot(sx-o.x,sy-o.y));await p.mouse.move(sx,sy);await p.mouse.down();for(let i=1;i<=12;i++){const a=a0-(Math.PI/2)*i/12;await p.mouse.move(o.x+rr*Math.cos(a),o.y+rr*Math.sin(a));}await p.mouse.up();await p.waitForTimeout(600);return p.evaluate(id=>Studio.load(id).then(r=>r.elements.find(e=>e.type==='text').rot),id);};
+   const r1=await sweep();console.log('sweep1',r1);assert.ok(Math.abs(r1-90)<8,'90deg counter-clockwise sweep around the element rotates it +90: '+r1);
+   const r2=await sweep();console.log('sweep2',r2);assert.ok(Math.abs(r2-180)<12,'a second identical sweep adds another ~90 (repeatable): '+r2);
   }
  }
  // add a legacy (pre-flush) layer to the same scene: it must keep its depth tie, new layers must have none
