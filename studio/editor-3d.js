@@ -394,6 +394,38 @@ window.Editor3D = (() => {
     return new THREE.Ray(o, d);
   }
 
+  // Picking follows what the user SEES: flush layers share a depth, so ties go to the layer drawn on top
+  // (higher renderOrder), and transparent pixels of an image layer do not steal the tap.
+  const alphaCache = new WeakMap();
+  function alphaAt(hit) {
+    const m = Array.isArray(hit.object.material) ? hit.object.material[0] : hit.object.material;
+    const img = m && m.map && m.map.image, uv = hit.uv;
+    if (!img || !uv || !(img.width || img.naturalWidth) || (img.tagName === "VIDEO")) return 255;
+    try {
+      let c = alphaCache.get(img);
+      if (!c) {
+        const w = img.naturalWidth || img.width, h = img.naturalHeight || img.height, k = Math.min(1, 128 / Math.max(w, h));
+        const cv = document.createElement("canvas"); cv.width = Math.max(1, Math.round(w * k)); cv.height = Math.max(1, Math.round(h * k));
+        const cx = cv.getContext("2d", { willReadFrequently: true }); cx.drawImage(img, 0, 0, cv.width, cv.height);
+        c = { cx, w: cv.width, h: cv.height }; alphaCache.set(img, c);
+      }
+      const fl = m.map.flipY !== false;
+      const x = Math.min(c.w - 1, Math.max(0, Math.floor(uv.x * c.w))), y = Math.min(c.h - 1, Math.max(0, Math.floor((fl ? 1 - uv.y : uv.y) * c.h)));
+      return c.cx.getImageData(x, y, 1, 1).data[3];
+    } catch (e) { return 255; }
+  }
+  function pickOrder(hits) {
+    if (hits.length < 2) return hits;
+    const solid = hits.filter((h) => alphaAt(h) >= 24);
+    const pool = solid.length ? solid : hits;
+    const d0 = pool[0].distance, tied = pool.filter((h) => h.distance - d0 <= 0.0005);
+    if (tied.length > 1) {
+      tied.sort((a, b) => (b.object.renderOrder || 0) - (a.object.renderOrder || 0));
+      return [tied[0], ...pool.filter((h) => h !== tied[0])];
+    }
+    return pool;
+  }
+
   function bindPointer() {
     const bind = () => {
       if (!sceneEl.canvas || sceneEl.canvas._editor3dBound) return;
@@ -414,6 +446,7 @@ window.Editor3D = (() => {
     }, { passive: false });
   }
 
+  let tapAlt = null;
   function down(e) {
     pinchPtrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pinchPtrs.size === 2) {
@@ -438,6 +471,12 @@ window.Editor3D = (() => {
     if (gizmo) {
       let hits = ray.intersectObjects(gizmo.children, true);
       if (hits.length) {
+        tapAlt = null;
+        { // a plain tap on a handle that sits over ANOTHER layer's visible pixels selects that layer (a drag still moves the handle)
+          const tg = []; rig.querySelectorAll("[data-el-root]").forEach((n) => tg.push(n.object3D));
+          const eh = pickOrder(ray.intersectObjects(tg, true));
+          if (eh.length) { let q = eh[0].object; while (q && !(q.el && q.el.getAttribute && q.el.getAttribute("data-el-root"))) q = q.parent; const id = q && q.el && q.el.getAttribute("data-el-root"); if (id && id !== getSelected() && alphaAt(eh[0]) >= 24) tapAlt = { pid: e.pointerId, id, x: e.clientX, y: e.clientY }; }
+        }
         const exact = hits.filter((h) => !h.object.userData.proxy);
         if (exact.length) hits = exact;
         else { const straight = hits.filter((h) => !h.object.userData.arc); if (straight.length) hits = straight; } // overlap of fat zones: the straight move arrow wins
@@ -497,7 +536,7 @@ window.Editor3D = (() => {
     // element picking
     const targets = [];
     rig.querySelectorAll("[data-el-root]").forEach((n) => targets.push(n.object3D));
-    const hits = ray.intersectObjects(targets, true);
+    const hits = pickOrder(ray.intersectObjects(targets, true));
     if (hits.length) {
       let o = hits[0].object;
       while (o && !(o.el && o.el.getAttribute && o.el.getAttribute("data-el-root"))) o = o.parent;
@@ -604,7 +643,15 @@ window.Editor3D = (() => {
 
   function up(e) {
     if (e && pinchPtrs.has(e.pointerId)) { pinchPtrs.delete(e.pointerId); if (pinch3d && pinchPtrs.size < 2) pinch3d = null; }
-    if (gizmoDrag) { gizmoDrag = null; onChange(); }
+    if (gizmoDrag) {
+      const gd = gizmoDrag; gizmoDrag = null;
+      const ta = tapAlt; tapAlt = null;
+      if (ta && e && ta.pid === e.pointerId && e.type === "pointerup" && Math.hypot(e.clientX - ta.x, e.clientY - ta.y) < 8) {
+        const r = getRec();
+        if (gd.snap && r) { r.elements = JSON.parse(gd.snap); rebuildElements(); refreshGizmo(); if (restoreFrozen) restoreFrozen(gd.snapT); }
+        onSelect(ta.id);
+      } else onChange();
+    }
     orb = null;
   }
 
@@ -741,5 +788,5 @@ window.Editor3D = (() => {
     rebuildArtwork().then(() => ensureMedia(getRec())).then(rebuildElements);
   }
 
-  return { init, show, hide, sync, isActive: () => active, refreshGizmo, _test: { rebuilds: () => rebuildCount, gizmo: () => gizmo, node: (id) => elNode(id), scene: () => sceneEl, helper: () => helper, drag: () => gizmoDrag } };
+  return { init, show, hide, sync, isActive: () => active, refreshGizmo, _test: { alphaAt, pickOrder, rebuilds: () => rebuildCount, gizmo: () => gizmo, node: (id) => elNode(id), scene: () => sceneEl, helper: () => helper, drag: () => gizmoDrag } };
 })();
