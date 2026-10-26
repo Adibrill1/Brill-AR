@@ -36,6 +36,11 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
  const end=await state();assert.ok(inside(end),'after scrub to the right edge: arrow tips inside canvas '+JSON.stringify(end));assert.ok(end.tipInHost,'arrow tip is over the 3D host (touchable): '+JSON.stringify(end));
  // scrolled page: still inside + touchable
  await p.evaluate(()=>scrollBy(0,120));await p.waitForTimeout(300);const sc2=await state();assert.ok(inside(sc2),'after page scroll: '+JSON.stringify(sc2));
+ // rotate to landscape: camera must stay the active one and tips must be finite and inside the canvas
+ await p.setViewportSize({width:844,height:390});await p.waitForTimeout(1200);
+ await p.evaluate(()=>{const w=document.querySelector('#canvas-wrap');scrollTo(0,w.getBoundingClientRect().top+scrollY-4);});await p.waitForTimeout(500);
+ const ls=await state();assert.ok(!ls.none,'gizmo exists in landscape');assert.ok(ls.tips.every(t=>Number.isFinite(t[0])&&Number.isFinite(t[1])),'landscape: arrow tips are finite (no NaN) '+JSON.stringify(ls));assert.ok(inside(ls),'landscape: arrow tips inside canvas '+JSON.stringify(ls));
+ await p.setViewportSize({width:390,height:844});await p.waitForTimeout(1200);const back=await state();assert.ok(inside(back)&&back.tips.every(t=>Number.isFinite(t[0])),'back to portrait: tips finite and inside '+JSON.stringify(back));
  // NOT covered: landscape. A viewport change to 844x390 leaves the gizmo scale NaN (camera world matrix degenerate) in this build AND on 5dec08a: open bug, see report.
- console.log('PASS editor-3d-gizmo-visible: arrow tips inside the canvas during playback, at the right edge after scrub, after page scroll (portrait only) (headless emulation, not a phone)');
+ console.log('PASS editor-3d-gizmo-visible: arrow tips inside the canvas during playback, at the right edge after scrub, after page scroll and after rotation to landscape and back (headless emulation, not a phone)');
 }finally{await b.close();server.close();}})().catch(e=>{console.error(e&&e.stack||e);process.exit(1)});

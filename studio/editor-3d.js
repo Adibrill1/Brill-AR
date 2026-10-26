@@ -645,6 +645,13 @@ window.Editor3D = (() => {
   let sampleRaf = 0, lastFitKey = "";
   function sampleLoop() {
     if (!active) return;
+    // A viewport change (rotation) can leave A-Frame on its fallback camera at the origin, which
+    // makes every projection (and the gizmo fit) NaN. Keep the editor's own camera the active one.
+    if (cam && sceneEl && cam.components && cam.components.camera) {
+      let own = cam.getObject3D("camera");
+      if (!own && cam.components.camera.camera) { own = cam.components.camera.camera; cam.setObject3D("camera", own); lastFitKey = ""; }
+      if (own && sceneEl.camera !== own) { sceneEl.camera = own; lastFitKey = ""; }
+    }
     const rec = getRec();
     if (rec && sampleEl) {
       if (beginFrame) beginFrame();
