@@ -12,13 +12,14 @@ const ver=await p.evaluate(()=>{try{return typeof XR8.version==='function'?XR8.v
  const have=await p.evaluate(()=>!!(window.XR8&&XR8.XrController&&XR8.XrController.configure));
  console.log('XR8.XrController.configure present:',have);
  if(!have){console.log('SKIP: engine not loadable headless (xr.js lazy-loads tracking chunks); API acceptance unverified');process.exit(0);}
- const out=await p.evaluate(async()=>{const mk=async(seed)=>{const c=document.createElement('canvas');c.width=768;c.height=1024;const g=c.getContext('2d');let s=seed;const r=()=>(s=(s*1664525+1013904223)>>>0)/4294967296;g.fillStyle='#ccc';g.fillRect(0,0,768,1024);for(let i=0;i<70;i++){g.fillStyle='hsl('+Math.floor(r()*360)+',60%,'+(20+r()*60)+'%)';g.fillRect(r()*700,r()*950,30+r()*200,30+r()*200);}const bl=await new Promise(x=>c.toBlob(x,'image/png'));const img=await Studio.loadImage(await Studio.blobToDataURL(bl));const t=await Studio.makeTarget(img);return Studio.targetDataJSON(t.luminance,t.padded,t.thumb);};
+ const out=await p.evaluate(async()=>{const mk=async(seed)=>{const c=document.createElement('canvas');c.width=768;c.height=1024;const g=c.getContext('2d');let s=seed;const r=()=>(s=(s*1664525+1013904223)>>>0)/4294967296;g.fillStyle='#ccc';g.fillRect(0,0,768,1024);for(let i=0;i<70;i++){g.fillStyle='hsl('+Math.floor(r()*360)+',60%,'+(20+r()*60)+'%)';g.fillRect(r()*700,r()*950,30+r()*200,30+r()*200);}const bl=await new Promise(x=>c.toBlob(x,'image/png'));const img=await Studio.loadImage(await Studio.blobToDataURL(bl));const t=await Studio.makeTarget(img);return Studio.targetDataJSON(t.luminance,t.padded,t.thumb,'scene-'+seed);};
   const T=[await mk(1),await mk(2),await mk(3)];const res={names:T.map(t=>t.name||null),keys:Object.keys(T[0])};
   try{XR8.XrController.configure({imageTargetData:T});res.three='accepted';}catch(e){res.three='threw: '+e.message;}
   try{XR8.XrController.configure({imageTargetData:[T[1]]});res.swap='accepted';}catch(e){res.swap='threw: '+e.message;}
   try{XR8.XrController.configure({imageTargetData:T[0]});res.notArray='accepted';}catch(e){res.notArray='threw: '+e.message;}
   return res;});
  console.log(JSON.stringify(out));
+ assert.deepEqual(out.names,['scene-1','scene-2','scene-3'],'each target carries its own unique name (the default "artwork" would collide across scenes)');
  assert.equal(out.three,'accepted','configure accepts 3 dummy custom targets');
  assert.equal(out.swap,'accepted','configure can swap the active set');
  assert.ok(/Expected array/.test(out.notArray),'non-array is rejected: '+out.notArray);

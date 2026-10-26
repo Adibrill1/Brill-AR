@@ -111,9 +111,9 @@ const Studio = (() => {
     return { padded, luminance, thumb, artRect: { x, y, w, h } };
   }
 
-  function targetDataJSON(lum, orig, thumb) {
+  function targetDataJSON(lum, orig, thumb, name) {
     return {
-      imagePath: lum, metadata: null, name: "artwork", type: "PLANAR",
+      imagePath: lum, metadata: null, name: name || "artwork", type: "PLANAR",
       properties: { left: 0, top: 0, width: TARGET_W, height: TARGET_H, isRotated: false, originalWidth: TARGET_W, originalHeight: TARGET_H },
       resources: { originalImage: orig, croppedImage: orig, thumbnailImage: thumb, luminanceImage: lum },
       created: Date.now(), updated: Date.now(),
