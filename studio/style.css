@@ -167,3 +167,9 @@ button.small { font-size: 13px; padding: 6px 10px; }
   body.shell #panel { scroll-padding-top: 58px; scroll-padding-bottom: 14px; }
 }
 @media (max-width: 820px) and (max-height: 560px) { body.shell #view-pill { left: auto !important; right: 6px; top: 6px !important; transform: none; } }
+@media (max-width: 820px) {
+  body.shell #starter-library { background: #17171c; color: #f4f2ee; }
+  body.shell #starter-library h2, body.shell #starter-library h3 { color: #f4f2ee; }
+  body.shell .library-card { background: #1d1d24; border-color: #3a3a45; }
+  body.shell #in-token { background: #23232b; color: #f4f2ee; border: 1px solid #3a3a45; }
+}
