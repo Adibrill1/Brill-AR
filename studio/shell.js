@@ -61,5 +61,12 @@
       chip.addEventListener("click", () => setTab("check"));
       const syncChip = () => { const on = !note.hidden && note.textContent.trim(); chip.hidden = !on; stage.dataset.warn = on ? "1" : "0"; if (on) chip.textContent = "⚠ " + note.textContent.trim() + " (לפרטים: בדיקה ושמירה)"; };
       new MutationObserver(syncChip).observe(note, { attributes: true, attributeFilter: ["hidden"], childList: true, characterData: true, subtree: true }); syncChip(); } }
+  // header undo/redo: forward to the REAL buttons (same handlers and disabled state), reachable on every tab
+  { const hd = document.querySelector("header"); const ru = document.getElementById("btn-undo"), rr = document.getElementById("btn-redo");
+    if (hd && ru && rr) { const bar = document.createElement("div"); bar.id = "hdr-history";
+      const mk = (id, label, real, glyph) => { const b = document.createElement("button"); b.type = "button"; b.id = id; b.setAttribute("aria-label", label); b.textContent = glyph; b.addEventListener("click", () => { if (!real.disabled) real.click(); }); return b; };
+      const hu = mk("hdr-undo", "ביטול", ru, "↶"), hr = mk("hdr-redo", "חזרה", rr, "↷"); bar.append(hu, hr); hd.appendChild(bar);
+      const sync = () => { hu.disabled = ru.disabled; hr.disabled = rr.disabled; };
+      const mo = new MutationObserver(sync); mo.observe(ru, { attributes: true, attributeFilter: ["disabled"] }); mo.observe(rr, { attributes: true, attributeFilter: ["disabled"] }); sync(); } }
   document.body.classList.add("shell");
 })();

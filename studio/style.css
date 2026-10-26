@@ -181,3 +181,14 @@ button.small { font-size: 13px; padding: 6px 10px; }
   body.shell[data-tab="create"] #stage[data-warn="1"] { display: block; position: sticky; }
   body.shell[data-tab="create"] #stage[data-warn="1"] #canvas-wrap { display: none; }
 }
+
+#hdr-history { display: none; }
+@media (max-width: 820px) {
+  body.shell header { position: relative; }
+  body.shell #hdr-history { display: flex; gap: 6px; position: absolute; left: 10px; top: 50%; transform: translateY(-50%); }
+  body.shell #hdr-history button { width: 44px; height: 40px; border-radius: 10px; border: 1px solid #3a3a45; background: #23232b; color: #f4f2ee; font: 700 20px/1 sans-serif; padding: 0; }
+  body.shell #hdr-history button:disabled { opacity: .35; }
+}
+
+.snap-toggle { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; }
+@media (max-width: 820px) { body.shell .snap-toggle { color: #bdb8af; } }

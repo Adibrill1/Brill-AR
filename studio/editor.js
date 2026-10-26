@@ -1465,6 +1465,7 @@
       const a=actionTarget;ctx.save();ctx.strokeStyle='#ff4f00';ctx.lineWidth=3;ctx.setLineDash([6,4]);
       const x=view.mx+(a.to.x+.5)*view.W,y=view.my+(.5-a.to.y)*view.H;ctx.beginPath();ctx.arc(x,y,14,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#ff4f00';ctx.font='14px sans-serif';ctx.fillText('יעד תנועה',x+18,y);ctx.restore();
     }
+    if (drag && drag.guide) { ctx.save(); ctx.strokeStyle = "#ff5fd2"; ctx.lineWidth = 1.5; ctx.beginPath(); if (drag.guide.v) { ctx.moveTo(view.mx + view.W / 2, view.my); ctx.lineTo(view.mx + view.W / 2, view.my + view.H); } if (drag.guide.h) { ctx.moveTo(view.mx, view.my + view.H / 2); ctx.lineTo(view.mx + view.W, view.my + view.H / 2); } ctx.stroke(); ctx.restore(); }
     if (typeof Editor3D !== "undefined") Editor3D.sync();
     if (needsAnim) requestAnimationFrame(draw);
   }
@@ -1591,8 +1592,12 @@
           y: Math.max(-.7, Math.min(.7, drag.origGY + dy))
         });
       } else if (drag.mode === "move") {
-        const nx = Math.max(-0.7, Math.min(0.7, drag.origX + (p.x - drag.start.x) / W));
-        const ny = Math.max(-0.7, Math.min(0.7, drag.origY - (p.y - drag.start.y) / H));
+        let nx = Math.max(-0.7, Math.min(0.7, drag.origX + (p.x - drag.start.x) / W));
+        let ny = Math.max(-0.7, Math.min(0.7, drag.origY - (p.y - drag.start.y) / H));
+        // centre-line snap (mock interaction): pulls to the artwork centre lines within ~1.8% / 1.4% of the artwork; off via the checkbox or Alt
+        drag.guide = null;
+        const snapOn = $("ck-snap") ? $("ck-snap").checked : true;
+        if (snapOn && !e.altKey) { const g = {}; if (Math.abs(nx) < 0.018) { nx = 0; g.v = true; } if (Math.abs(ny) < 0.014) { ny = 0; g.h = true; } if (g.v || g.h) drag.guide = g; }
         if (drag.keyT != null) { const k = keyAtT(el, drag.keyT); k.x = nx; k.y = ny; }
         else { el.x = nx; el.y = ny; }
       } else if (drag.mode === "env-out" || drag.mode === "env-in") {
@@ -1615,7 +1620,7 @@
       draw();
       renderPanel();
     });
-    const end = async (e) => { if (e && pinchPtrs.has(e.pointerId)) { pinchPtrs.delete(e.pointerId); if (pinch2d && pinchPtrs.size < 2) pinch2d = null; } if (drag) { const d = drag; drag = null; await saveGuarded(rec); if (d.keyT != null) { const el = rec.elements.find((x) => x.id === d.id); if (el && el.id === selectedId) renderRuler(el); draw(); } } };
+    const end = async (e) => { if (e && pinchPtrs.has(e.pointerId)) { pinchPtrs.delete(e.pointerId); if (pinch2d && pinchPtrs.size < 2) pinch2d = null; } if (drag) { const d = drag; drag = null; if (d.guide) draw(); await saveGuarded(rec); if (d.keyT != null) { const el = rec.elements.find((x) => x.id === d.id); if (el && el.id === selectedId) renderRuler(el); draw(); } } };
     c.addEventListener("pointerup", end);
     c.addEventListener("pointercancel", end);
   }
