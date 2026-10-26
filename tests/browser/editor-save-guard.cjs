@@ -54,7 +54,7 @@ await p.locator('#btn-new').click();
 await p.waitForTimeout(400);
 assert.equal(await p.evaluate(()=>document.querySelector('#exp-select').value),idA,'declining the warning keeps the current experience');
 p.once('dialog',d=>d.accept());
-await p.locator('#btn-new').click();await p.locator('#file-artwork').setInputFiles(path.resolve('studio/library/star.png'));await p.waitForSelector('#sec-elements:not([hidden])');
+await p.locator('#btn-new').click();await p.locator('#file-artwork').setInputFiles(path.resolve('studio/library/ring.png'));await p.waitForSelector('#sec-elements:not([hidden])');
 await p.waitForFunction(()=>document.querySelector('#save-state')?.textContent==='נשמר');
 const idB=await p.evaluate(()=>document.querySelector('#exp-select').value);
 assert.notEqual(idB,idA,'second experience is a different record');
