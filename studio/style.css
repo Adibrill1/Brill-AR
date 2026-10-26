@@ -93,8 +93,8 @@ button.small { font-size: 13px; padding: 6px 10px; }
   body.shell #shell-tabs button { flex: 1; min-height: 52px; border: 0; background: transparent; font: 600 14px/1.2 sans-serif; color: #5b566b; cursor: pointer; }
   body.shell #shell-tabs button[aria-pressed="true"] { color: #292535; box-shadow: inset 0 3px 0 #292535; background: #f4f2f9; }
   body.shell[data-tab="create"] #sec-elements, body.shell[data-tab="create"] #sec-arrange, body.shell[data-tab="create"] #sec-preview,
-  body.shell[data-tab="layers"] #sec-exp, body.shell[data-tab="layers"] main > .card:nth-of-type(2), body.shell[data-tab="layers"] #sec-preview,
-  body.shell[data-tab="check"] #sec-exp, body.shell[data-tab="check"] main > .card:nth-of-type(2), body.shell[data-tab="check"] #sec-elements, body.shell[data-tab="check"] #sec-arrange { display: none; }
+  body.shell[data-tab="layers"] main > .card:nth-of-type(2), body.shell[data-tab="layers"] #sec-preview,
+  body.shell[data-tab="check"] main > .card:nth-of-type(2), body.shell[data-tab="check"] #sec-elements, body.shell[data-tab="check"] #sec-arrange { display: none; }
   body.shell header .sub { display: none; }
   body.shell #stage { position: sticky; top: 0; z-index: 20; background: #f4f2f9; padding: 4px 8px; }
   body.shell:not([data-tab="layers"]) #stage { display: none; }
