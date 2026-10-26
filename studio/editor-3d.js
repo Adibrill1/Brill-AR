@@ -243,7 +243,7 @@ window.Editor3D = (() => {
     // edge-aware cap: handles must not run off the viewport when the element sits near a side
     const ndc = gw.clone().project(camObj);
     const margin = Math.min((1 - Math.abs(ndc.x)) * visW, (1 - Math.abs(ndc.y)) * visH) / 2;
-    const s = Math.max(0.4, Math.min(1.6, Math.min((0.26 * visH) / base, (0.85 * Math.max(margin, 0.05 * visH)) / base)));
+    const s = Math.max(0.18, Math.min(1.6, Math.min((0.26 * visH) / base, (0.85 * Math.max(margin, 0.05 * visH)) / base)));
     gizmo.scale.setScalar(s);
     // touch zones must not shrink with the view-fit: widen the arc hit tubes when the gizmo is scaled down
     const grow = Math.max(1, 0.8 / s);
