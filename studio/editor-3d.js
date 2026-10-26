@@ -127,7 +127,7 @@ window.Editor3D = (() => {
     const acx = ((r.x + r.w / 2) / Studio.TARGET_W - 0.5) * g.tw;
     const acy = 0.5 - (r.y + r.h / 2) / Studio.TARGET_H;
     artNode.setAttribute("position", `${acx} ${acy} 0`);
-    rig.appendChild(artNode);
+    rig.appendChild(artNode); Studio.pushBack(artNode);
   }
 
   function rebuildElements() {
@@ -331,6 +331,32 @@ window.Editor3D = (() => {
     mk(new THREE.Vector3(1, 0, 0), 0xe03131, "x");
     mk(new THREE.Vector3(0, 1, 0), 0x2f9e44, "y");
     mk(new THREE.Vector3(0, 0, 1), 0x1971c2, "z");
+    // Curved double-headed rotation arrows, always visible next to the straight move arrows (no mode switch needed).
+    // Each arc sits between two move axes so it never overlaps a shaft; the fat invisible arc is the touch target.
+    const mkArc = (axis, color, name, groupEuler, start) => {
+      const R = L * 0.6, span = Math.PI * 2 / 9, end = start + span; // 40deg arc, clear of the move shafts
+      const pivot = new THREE.Group();
+      pivot.rotation.set(groupEuler[0], groupEuler[1], groupEuler[2]);
+      pivot.userData = { axis, gizmoPart: name, start, span };
+      const mat = new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.95, side: THREE.DoubleSide });
+      const arc = new THREE.Mesh(new THREE.TorusGeometry(R, 0.007, 8, 24, span), mat);
+      arc.rotation.z = start; arc.renderOrder = 10001; arc.userData = { axis, gizmoPart: name };
+      const head = (ang, flip) => {
+        const c = new THREE.Mesh(new THREE.ConeGeometry(0.02, 0.06, 12), mat);
+        c.position.set(R * Math.cos(ang), R * Math.sin(ang), 0);
+        c.rotation.z = flip ? ang + Math.PI : ang; c.renderOrder = 10001; c.userData = { axis, gizmoPart: name };
+        return c;
+      };
+      const hit = new THREE.Mesh(new THREE.TorusGeometry(R, L * 0.15, 6, 24, span),
+        new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false, side: THREE.DoubleSide }));
+      hit.rotation.z = start; hit.userData = { axis, gizmoPart: name, proxy: true };
+      pivot.add(arc, head(end, false), head(start, true), hit);
+      gizmo.add(pivot);
+    };
+    // rot: XY plane (about Z) between +X and +Y; rotX: YZ plane between +Y and +Z; rotY: XZ plane between +Z and +X
+    mkArc(new THREE.Vector3(0, 0, 1), 0x1971c2, "rot", [0, 0, 0], Math.PI * 5 / 36);
+    mkArc(new THREE.Vector3(1, 0, 0), 0xe03131, "rotX", [0, Math.PI / 2, 0], Math.PI * 23 / 36);
+    mkArc(new THREE.Vector3(0, 1, 0), 0x2f9e44, "rotY", [Math.PI / 2, 0, 0], Math.PI * 5 / 36);
     gizmo.position.copy(center);
     gizmo.userData.baseL = L + 0.06; // shaft + cone tip
     rig.object3D.add(gizmo);

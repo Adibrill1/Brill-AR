@@ -97,7 +97,7 @@
   const acx = ((r.x + r.w / 2) / Studio.TARGET_W - 0.5) * g.tw;
   const acy = 0.5 - (r.y + r.h / 2) / Studio.TARGET_H;
   art.setAttribute("position", `${acx} ${acy} 0`);
-  rig.appendChild(art);
+  rig.appendChild(art); Studio.pushBack(art);
 
   // Multi-state artworks: tap an element wired to "sequence" to switch states.
   let curSeq = Studio.seqList(rec).length ? Studio.seqList(rec)[0].id : null;

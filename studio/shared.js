@@ -126,6 +126,11 @@ const Studio = (() => {
   //   w     = element width as fraction of artwork width
   //   rot   = degrees clockwise on screen, z = depth units in front of artwork
   // Target space (engine): height = 1, width = TARGET_W/TARGET_H, y up, origin center.
+  // Preview/editor-3D backdrop: push the artwork plane back in the depth buffer so layers at z=0 (flush) never z-fight with it.
+  function pushBack(node) {
+    const apply = () => { const m = node.getObject3D && node.getObject3D("mesh"); if (!m || !m.material) return false; m.material.polygonOffset = true; m.material.polygonOffsetFactor = 2; m.material.polygonOffsetUnits = 2; m.material.needsUpdate = true; return true; };
+    if (!apply()) node.addEventListener("loaded", apply, { once: true });
+  }
   function geom(rec) {
     const r = rec.target.artRect;
     const tw = TARGET_W / TARGET_H;
@@ -620,7 +625,8 @@ const Studio = (() => {
           const maxDim = Math.max(size.x, size.y, size.z) || 1;
           const k = ts.w / maxDim; // fit the model's largest side to the chosen width
           inner.object3D.scale.set(k, k, k);
-          inner.object3D.position.set(-center.x * k, -center.y * k, -center.z * k);
+          // seat==='plane' (new models only): the back face rests on the element plane instead of straddling it.
+          inner.object3D.position.set(-center.x * k, -center.y * k, el.seat === "plane" ? -box.min.z * k : -center.z * k);
         });
         e.appendChild(inner);
       }
@@ -1490,7 +1496,7 @@ const Studio = (() => {
 
   return { TARGET_W, TARGET_H, newId, inspectVideo, validateModelBlob, prepareModelBlob, modelCompressionKinds, DECODER_DRACO_PATH, DECODER_MESHOPT_PATH, modelClipNames, modelClipInfo, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
            audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, historyState, restoreHistory, duplicateLayer, exportJSON, importJSON, exportZIP, importZIP, zipToJSON, fetchPublished, ownBlob, assetHealth, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, artworkFingerprint, fingerprintDistance, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
-           load: id=>settledRead(id), all: ()=>settledRead(), del: delExperience, LIMITS, mediaBytes, addBlocker, publishBlocker, restoreBlocker, exportWarning, exportJSONSize,
+           load: id=>settledRead(id), all: ()=>settledRead(), del: delExperience, LIMITS, mediaBytes, pushBack, addBlocker, publishBlocker, restoreBlocker, exportWarning, exportJSONSize,
            onSaveState, installSaveGuard, saveState,
            _testHoldSave:p=>{saveHold=p;}, _testFailSave:m=>{failSave=m;} };
 })();
