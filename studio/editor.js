@@ -386,6 +386,21 @@
     return textCache[el.id];
   }
 
+  // Name of another creation whose recognition target is the same as / too similar to fp (distance <= 16 of 256 bits), else null.
+  // Flat/featureless images are not comparable (Infinity) and never conflict; the record itself (exceptId) is skipped.
+  async function findTargetConflict(_unused, fp, exceptId) {
+    try {
+      for (const other of (await Studio.all()).filter((r) => r.id !== exceptId)) {
+        const art = other.assets && other.assets.__artwork;
+        if (!art) continue;
+        let ofp = other.target && other.target.fp;
+        if (!ofp) { const oimg = await Studio.loadImage(await Studio.blobToDataURL(art)); ofp = Studio.artworkFingerprint(oimg); }
+        if (Studio.fingerprintDistance(fp, ofp) <= 16) return other.name || other.id;
+      }
+    } catch {}
+    return null;
+  }
+
   // ---------- upload flows ----------
   function bind() {
     $("btn-artwork").onclick = () => $("file-artwork").click();
@@ -754,8 +769,15 @@
     };
     const doImport = (f, recovery) => queueExperience(async () => {
       try {
-        const o = recovery ? { recovery: true } : undefined;
-        rec = (/\.zip$/i.test(f.name) || f.type === "application/zip") ? await Studio.importZIP(f, o) : await Studio.importJSON(await f.text(), o);
+        const o = recovery ? { recovery: true, save: false } : { save: false };
+        const imported = (/\.zip$/i.test(f.name) || f.type === "application/zip") ? await Studio.importZIP(f, o) : await Studio.importJSON(await f.text(), o);
+        // Same rule as the artwork upload: an imported copy whose target is the same as / too similar to another creation is refused, nothing is written.
+        if (imported.assets && imported.assets.__artwork) {
+          const conflict = await findTargetConflict(null, await Studio.artworkFingerprint(await Studio.loadImage(await Studio.blobToDataURL(imported.assets.__artwork))), imported.id);
+          if (conflict) { const m = "הייבוא נעצר: תמונת היעד זהה או דומה מדי לתמונת היעד של היצירה '" + conflict + "'. לא נשמר דבר, וכל היצירות שלך נשארו ללא שינוי."; msg(m); const n = $("safety-note"); if (n) { n.textContent = m; n.hidden = false; } return; }
+        }
+        await Studio.save(imported);
+        rec = imported;
         rec.elements.forEach(Studio.normEl);
         selectedId = null; checkedIds.clear(); tlScrubT = null; resetSeq();
         await hydrate(); await refreshExpSelect(); render();
