@@ -9,7 +9,7 @@ const sha=b=>crypto.createHash('sha256').update(b).digest('hex');
 for(const vp of [{width:390,height:844,name:'portrait'},{width:844,height:390,name:'landscape'}]){
 const ctx=await b.newContext({viewport:{width:vp.width,height:vp.height},isMobile:true,hasTouch:true,acceptDownloads:true});const p=await ctx.newPage();
 let pageErrors=[];p.on('pageerror',e=>pageErrors.push(String(e)));
-await p.addInitScript(()=>{const ab=Blob.prototype.arrayBuffer;Blob.prototype.arrayBuffer=function(){if(sessionStorage.getItem('bad')&&this.size===Number(sessionStorage.getItem('bad')))return Promise.reject(new DOMException('x','NotReadableError'));return ab.call(this)}});
+await p.addInitScript(()=>{window.__dl=[];const __c=HTMLAnchorElement.prototype.click;HTMLAnchorElement.prototype.click=function(){if(this.download)window.__dl.push(this.download);return __c.call(this)};const ab=Blob.prototype.arrayBuffer;Blob.prototype.arrayBuffer=function(){if(sessionStorage.getItem('bad')&&this.size===Number(sessionStorage.getItem('bad')))return Promise.reject(new DOMException('x','NotReadableError'));return ab.call(this)}});
 await p.goto(base+'/index.html');await p.waitForFunction(()=>document.querySelector('#exp-select').options.length>0);await p.waitForTimeout(1500);
 assert.ok(await p.evaluate(()=>document.body.classList.contains('shell')),'phone shell active');
 await p.locator('#shell-tabs button[data-tab="layers"]').click();
@@ -66,7 +66,8 @@ await p.evaluate(async()=>{const id=document.querySelector('#exp-select').value;
 await edit();await p.waitForFunction(()=>{const b=document.querySelector('#save-banner');return !b.hidden&&/לא נמצאת יותר באחסון/.test(b.textContent)},undefined,{timeout:15000});
 bn=await banner();assert.equal(bn.retry,null,'no retry for a record that is gone');assert.ok(bn.exp,'backup export offered');
 const msgs=(await p.evaluate(()=>window.__msgs)).join(' | ');assert.ok(!/פתחי יצירה אחרת/.test(msgs+bn.text),'never suggests opening another project: '+msgs);
-const [d]=await Promise.all([p.waitForEvent('download',{timeout:30000}),p.click('#save-banner .sb-export')]);assert.match(d.suggestedFilename(),/\.zip$/,'backup ZIP from the banner');
+// Headless Chrome on Linux names blob downloads 'download'; assert the name the app sets on the link instead.
+await Promise.all([p.waitForEvent('download',{timeout:30000}),p.click('#save-banner .sb-export')]);assert.match(await p.evaluate(()=>window.__dl[window.__dl.length-1]||''),/\.zip$/,'backup ZIP from the banner');
 assert.deepEqual(pageErrors,[],'no page errors');
 console.log('PASS save-failure-banner '+vp.name);
 await ctx.close();}

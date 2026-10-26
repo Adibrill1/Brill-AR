@@ -7,7 +7,7 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
 const ctx=await b.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,acceptDownloads:true});const p=await ctx.newPage();
 const pageErrors=[];p.on('pageerror',e=>pageErrors.push(String(e)));
 let posts=0,downloads=0;p.on('request',r=>{if(r.method()==='POST'&&r.url().includes('/api/'))posts++});p.on('download',()=>downloads++);
-await p.addInitScript(()=>{window.__shared=[];Object.defineProperty(navigator,'canShare',{value:()=>true,configurable:true});Object.defineProperty(navigator,'share',{value:async d=>{window.__shared.push(d.files[0].name)},configurable:true});});
+await p.addInitScript(()=>{window.__dl=[];const __c=HTMLAnchorElement.prototype.click;HTMLAnchorElement.prototype.click=function(){if(this.download)window.__dl.push(this.download);return __c.call(this)};window.__shared=[];Object.defineProperty(navigator,'canShare',{value:()=>true,configurable:true});Object.defineProperty(navigator,'share',{value:async d=>{window.__shared.push(d.files[0].name)},configurable:true});});
 await p.goto(base+'/index.html');await p.waitForFunction(()=>document.querySelector('#exp-select').options.length>0);await p.waitForTimeout(1500);
 const gone=await p.evaluate(async()=>{const r=(await Studio.all())[0];const el=r.elements.find(e=>e.assetId&&r.assets[e.assetId]&&!r.elements.some(o=>o!==e&&o.assetId===e.assetId));delete r.assets[el.assetId];await Studio.save(r,{noHistory:true});return {id:el.assetId,name:el.name||el.type}});
 await p.reload();await p.waitForFunction(()=>document.querySelector('#exp-select').options.length>0);await p.waitForTimeout(2000);
@@ -29,7 +29,8 @@ await tab('check');await p.evaluate(b=>{const s=document.querySelector('#in-serv
 await p.evaluate(()=>document.querySelector('#btn-publish').click());await p.waitForFunction(()=>/לא פורסם/.test(document.querySelector('#export-banner').textContent),undefined,{timeout:15000});
 assert.ok((await note()).text.includes(gone.name));assert.equal(posts,0,'no upload request');
 // 4. export: partial file + notice that outlives the old 30s timer and other toasts
-const [d]=await Promise.all([p.waitForEvent('download',{timeout:30000}),p.locator('#btn-export-zip').click()]);assert.ok(d.suggestedFilename().includes('חלקי'),'file marked partial');
+// Headless Chrome on Linux names blob downloads 'download'; assert the name the app sets on the link instead.
+await Promise.all([p.waitForEvent('download',{timeout:30000}),p.locator('#btn-export-zip').click()]);{const nm=await p.evaluate(()=>window.__dl[window.__dl.length-1]||'');assert.ok(nm.includes('חלקי')&&nm.endsWith('.zip'),'file marked partial: '+nm);}
 n=await note();assert.match(n.text,/חלקי, לא גיבוי מלא/);
 await p.evaluate(()=>{document.querySelector('#msg').textContent='other toast'});await p.waitForTimeout(32000);
 n=await note();assert.ok(n.shown&&/חלקי, לא גיבוי מלא/.test(n.text),'partial notice still shown after 32s');
