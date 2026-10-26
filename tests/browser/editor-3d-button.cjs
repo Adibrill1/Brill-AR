@@ -55,7 +55,7 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
  assert.ok(Math.abs(parseFloat(await p.locator('#num-rot').inputValue())-rot)<2,'panel rotation synced: '+rot);
  // --- orbit to a non-front angle: gizmo stays usable; visual proof
  const sceneBox=await p.locator('#editor-3d-host').boundingBox();
- await p.mouse.move(sceneBox.x+40,sceneBox.y+60);await p.mouse.down();await p.mouse.move(sceneBox.x+190,sceneBox.y+120,{steps:8});await p.mouse.up();await p.waitForTimeout(300);
+ await p.mouse.move(sceneBox.x+sceneBox.width/2-100,sceneBox.y+60);await p.mouse.down();await p.mouse.move(sceneBox.x+sceneBox.width/2+50,sceneBox.y+120,{steps:8});await p.mouse.up();await p.waitForTimeout(300);
  const rigRot=await p.evaluate(()=>document.querySelector('#editor-3d-rig').getAttribute('rotation'));
  assert.ok(Math.abs(rigRot.y)>10,'view orbited to a non-front angle: '+JSON.stringify(rigRot));
  await p.screenshot({path:'/downloads/rc62-3d-orbit-rings.png'});
