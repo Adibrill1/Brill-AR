@@ -1166,6 +1166,8 @@ const Studio = (() => {
         if (id && !(rec.assets && rec.assets[id] && typeof rec.assets[id].slice === "function")) out.push({ id, name: el.name || el.type || id });
       }
     }
+    // The artwork image is referenced whenever the record has an image target (a blank record has none).
+    if (rec && rec.target && !(rec.assets && rec.assets.__artwork && typeof rec.assets.__artwork.slice === "function")) out.push({ id: "__artwork", name: "תמונת היצירה" });
     return out;
   }
   async function exportJSON(rec) {
