@@ -391,15 +391,17 @@
   // FAIL CLOSED: when the comparison itself cannot run (storage read, image decode, fingerprint), this THROWS a
   // DuplicateCheckUnavailable error. Callers must stop without changing anything and say the check was unavailable.
   async function findTargetConflict(_unused, fp, exceptId) {
+    let cur = null;
     try {
       for (const other of (await Studio.all()).filter((r) => r.id !== exceptId)) {
+        cur = other;
         const art = other.assets && other.assets.__artwork;
         if (!art) continue;
         let ofp = other.target && other.target.fp;
         if (!ofp) { const oimg = await Studio.loadImage(await Studio.blobToDataURL(art)); ofp = Studio.artworkFingerprint(oimg); }
         if (Studio.fingerprintDistance(fp, ofp) <= 16) return other.name || other.id;
       }
-    } catch (e) { const err = new Error("duplicate check unavailable"); err.duplicateCheckUnavailable = true; err.cause = e; throw err; }
+    } catch (e) { const err = new Error("duplicate check unavailable"); err.duplicateCheckUnavailable = true; err.cause = e; err.projectName = cur ? (cur.name || "ללא שם") : ""; throw err; }
     return null;
   }
 
@@ -418,7 +420,7 @@
       // are not comparable (distance Infinity) so they are not blocked here (quality warning handles them).
       let conflict = null;
       try { conflict = await findTargetConflict(null, fp, rec.id); }
-      catch (e) { if (e && e.duplicateCheckUnavailable) { msg("לא הועלתה. לא הצלחנו לבדוק אם התמונה דומה ליצירה אחרת, ולכן לא שינינו כלום והיצירה שלך נשארה כמו שהיא. נסי שוב."); return; } throw e; }
+      catch (e) { if (e && e.duplicateCheckUnavailable) { msg("לא הועלתה. לא הצלחנו לבדוק אם התמונה דומה ליצירה אחרת, ולכן לא שינינו כלום והיצירה שלך נשארה כמו שהיא." + (e.projectName ? " הבדיקה נתקעה ביצירה '" + e.projectName + "' - בדקי אותה או ייצאי ממנה גיבוי." : " הבדיקה לא הצליחה לקרוא את היצירות השמורות.") + " נסי שוב."); return; } throw e; }
       if (conflict) { msg("לא הועלתה. התמונה זהה או דומה מדי לתמונת היעד של היצירה '" + conflict + "'. שתי יצירות עם תמונה דומה מתבלבלות בזיהוי. בחרי תמונה אחרת. היצירה שלך נשארה ללא שינוי."); return; }
       const t = await Studio.makeTarget(img);
       rec.target = { artRect: t.artRect, natural: { w: img.naturalWidth, h: img.naturalHeight } };
@@ -772,7 +774,7 @@
         if (imported.assets && imported.assets.__artwork) {
           let conflict = null;
           try { conflict = await findTargetConflict(null, await Studio.artworkFingerprint(await Studio.loadImage(await Studio.blobToDataURL(imported.assets.__artwork))), imported.id); }
-          catch (e) { const m = "הייבוא נעצר: לא הצלחנו לבדוק אם תמונת היעד דומה ליצירה אחרת. לא נשמר דבר, וכל היצירות שלך נשארו ללא שינוי. נסי שוב."; msg(m); const n = $("safety-note"); if (n) { n.textContent = m; n.hidden = false; } return; }
+          catch (e) { const m = "הייבוא נעצר: לא הצלחנו לבדוק אם תמונת היעד דומה ליצירה אחרת" + (e && e.projectName ? " (הבדיקה נתקעה ביצירה '" + e.projectName + "')" : "") + ". לא נשמר דבר, וכל היצירות שלך נשארו ללא שינוי. נסי שוב."; msg(m); const n = $("safety-note"); if (n) { n.textContent = m; n.hidden = false; } return; }
           if (conflict) { const m = "הייבוא נעצר: תמונת היעד זהה או דומה מדי לתמונת היעד של היצירה '" + conflict + "'. לא נשמר דבר, וכל היצירות שלך נשארו ללא שינוי."; msg(m); const n = $("safety-note"); if (n) { n.textContent = m; n.hidden = false; } return; }
         }
         await Studio.save(imported);
