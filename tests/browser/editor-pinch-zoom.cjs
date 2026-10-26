@@ -13,7 +13,10 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
  await p.locator('#exp-select').selectOption(id);
  await p.waitForFunction(()=>parseFloat(document.querySelector('#preview').style.height)>300,{timeout:10000});
  const ses=await ctx.newCDPSession(p);
- const pinch=async(box,d0,d1)=>{const cx=box.x+box.width/2,cy=box.y+box.height/2;
+ const pinch=async(box,d0,d1)=>{const cx=box.x+box.width/2;let cy=box.y+box.height/2;
+  // 3D view docks its tool buttons in a corner; keep the two fingers off that column (a finger on a button does not reach the canvas)
+  const tb=await p.evaluate(()=>{const e=document.getElementById('editor-3d-tools');if(!e||!e.offsetParent)return null;const r=e.getBoundingClientRect();return {t:r.top,b:r.bottom};});
+  if(tb&&cy>tb.t-14&&cy<tb.b+14)cy=(cy-box.y<box.height/2+1)&&tb.t>box.y+box.height/2?cy:(tb.b+14<box.y+box.height-20?tb.b+30:tb.t-30);
   await ses.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:cx-d0/2,y:cy,id:1},{x:cx+d0/2,y:cy,id:2}]});
   await ses.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:cx-(d0+d1)/4,y:cy,id:1},{x:cx+(d0+d1)/4,y:cy,id:2}]});
   await ses.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:cx-d1/2,y:cy,id:1},{x:cx+d1/2,y:cy,id:2}]});
