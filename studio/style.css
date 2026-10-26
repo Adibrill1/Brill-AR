@@ -202,3 +202,10 @@ button.small { font-size: 13px; padding: 6px 10px; }
   body.shell[data-tab="layers"] #sec-arrange { padding-top: 0; border: 0; background: transparent; box-shadow: none; }
   body.shell #shell-tabs button { font-size: 13px; padding: 0 2px; }
 }
+
+#btn-test-mode-check { display: none; }
+@media (max-width: 820px) {
+  body.shell #btn-test-mode-check { display: block; margin: 6px 0 10px; }
+  body.shell #btn-test-mode-check.on { background: #6e4dff; color: #fff; border-color: #6e4dff; }
+  body.shell #shell-tabs button { font-size: 12.5px; line-height: 1.15; padding: 0 6px; white-space: normal; }
+}

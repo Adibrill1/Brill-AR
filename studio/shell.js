@@ -69,5 +69,11 @@
       const hu = mk("hdr-undo", "ביטול", ru, "↶"), hr = mk("hdr-redo", "חזרה", rr, "↷"); bar.append(hu, hr); hd.appendChild(bar);
       const sync = () => { hu.disabled = ru.disabled; hr.disabled = rr.disabled; };
       const mo = new MutationObserver(sync); mo.observe(ru, { attributes: true, attributeFilter: ["disabled"] }); mo.observe(rr, { attributes: true, attributeFilter: ["disabled"] }); sync(); } }
+  // test mode reachable from the Check tab: forwards to the REAL toggle (single source of truth); label/state mirrored
+  { const real = document.getElementById("btn-test-mode"), prev = document.getElementById("sec-preview");
+    if (real && prev) { const px = document.createElement("button"); px.type = "button"; px.id = "btn-test-mode-check"; px.className = "ghost"; prev.querySelector("h2").after(px);
+      px.addEventListener("click", () => real.click());
+      const sync = () => { px.textContent = real.textContent; px.classList.toggle("on", real.classList.contains("on")); px.setAttribute("aria-pressed", String(real.classList.contains("on"))); };
+      new MutationObserver(sync).observe(real, { attributes: true, attributeFilter: ["class"], childList: true, characterData: true, subtree: true }); sync(); } }
   document.body.classList.add("shell");
 })();
