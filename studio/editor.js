@@ -364,7 +364,10 @@
           return (isBad(r) ? "✗ " : "✓ ") + r.name + "\n   גודל: " + kb + "\n   " + verdict + "\n   קריאה מהאחסון: " + ok(r.head) + "  קריאה מלאה: " + ok(r.full.ok) + tr(r.full) + "\n   הכנה להצגה: " + ok(r.reader.ok) + tr(r.reader) + "  הצגה: " + dec(r) + "\n";
         });
         const bad = rows.filter(isBad).length;
-        out.textContent = (bad ? bad + " מתוך " + rows.length + " קבצים בעייתיים" : "כל " + rows.length + " הקבצים נקראים") + "\n\n" + lines.join("\n") + "\n\nהבדיקה קוראת בלבד - שום דבר לא נשמר, לא הועלה ולא הוחלף. אם יש קובץ שסומן בבעיה, צלמי מסך של התוצאה.";
+        const se = Studio.saveState(rec.id).lastError;
+        const seWhy = !se ? "" : /NotReadable|could not be read|blob read failed/i.test(se) ? "קובץ שמור לא נקרא מהמכשיר" : /Quota|storage may be full|full/i.test(se) ? "אין מספיק מקום באחסון" : "סיבה לא מזוהה";
+        const saveLine = se ? "\nהשמירה האחרונה נכשלה (" + seWhy + "). השינוי עדיין בזיכרון של הדף - אל תרעננו ואל תסגרו, ולחצו על \"נשמר/השמירה נכשלה\" לניסיון חוזר.\n" : "";
+        out.textContent = (bad ? bad + " מתוך " + rows.length + " קבצים בעייתיים" : "כל " + rows.length + " הקבצים נקראים") + "\n\n" + lines.join("\n") + saveLine + "\n\nהבדיקה קוראת בלבד - שום דבר לא נשמר, לא הועלה ולא הוחלף. אם יש קובץ שסומן בבעיה, צלמי מסך של התוצאה.";
       } catch (e) { out.textContent = "הבדיקה נכשלה: " + (e && e.message || e); }
       finally { btn.disabled = false; }
     };

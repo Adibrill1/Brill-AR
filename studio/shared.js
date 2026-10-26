@@ -1131,7 +1131,9 @@ const Studio = (() => {
       const content=r=>JSON.stringify({...r,updatedAt:0,assets:Object.keys(r.assets||{}).sort()});
       const beforeAssets=Object.keys(before.assets||{}).sort(),afterAssets=Object.keys(rec.assets||{}).sort();
       let assetChanged=beforeAssets.join('\0')!==afterAssets.join('\0');
-      if(!assetChanged)for(const key of beforeAssets){const a=before.assets[key],b=rec.assets[key];if(a.size!==b.size||a.type!==b.type){assetChanged=true;break;}const aa=new Uint8Array(await a.arrayBuffer()),bb=new Uint8Array(await b.arrayBuffer());if(!aa.every((value,i)=>value===bb[i])){assetChanged=true;break;}}
+      // The byte comparison only decides whether to keep an undo step. A read failure here (iOS file-backed blobs can fail
+      // transiently) must not fail the save of an unrelated edit: keep the undo step and carry on. The write itself stays atomic.
+      if(!assetChanged)try{for(const key of beforeAssets){const a=before.assets[key],b=rec.assets[key];if(a.size!==b.size||a.type!==b.type){assetChanged=true;break;}const aa=new Uint8Array(await a.arrayBuffer()),bb=new Uint8Array(await b.arrayBuffer());if(!aa.every((value,i)=>value===bb[i])){assetChanged=true;break;}}}catch(e){assetChanged=true;}
       if(assetChanged||content(before)!==content(rec)){h.undo.push(before);if(h.undo.length>20)h.undo.shift();h.redo=[];}
     }
     if(!before&&knownPersisted.has(rec.id)){tombstones.set(rec.id,Date.now());const e=new Error('deleted in another tab');e.deletedElsewhere=true;throw e;}
