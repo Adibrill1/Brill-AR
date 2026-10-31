@@ -1451,7 +1451,9 @@ const Studio = (() => {
       btn = document.createElement("button");
       btn.id = "sound-overlay"; btn.type = "button";
       btn.textContent = "🔊 נגיעה במסך מפעילה את הצליל";
-      btn.style.cssText = "position:fixed;top:max(12px,calc(env(safe-area-inset-top) + 8px));left:50%;transform:translateX(-50%);z-index:41;min-height:44px;padding:10px 20px;border:0;border-radius:999px;background:rgba(20,18,30,.82);color:#fff;font:600 15px/1.2 sans-serif;box-shadow:0 4px 18px rgba(0,0,0,.35);cursor:pointer;white-space:nowrap";
+      // below the page's own fixed top bar (preview #topbar, player #backlink), never under it
+      const bar = document.getElementById("topbar") || document.getElementById("backlink"), below = bar ? Math.ceil(bar.getBoundingClientRect().bottom) + 8 : 0;
+      btn.style.cssText = "position:fixed;top:max(" + Math.max(12, below) + "px,calc(env(safe-area-inset-top) + 8px));left:50%;transform:translateX(-50%);z-index:10000;max-width:calc(100vw - 24px);min-height:44px;padding:10px 20px;border:0;border-radius:999px;background:rgba(20,18,30,.86);color:#fff;font:600 15px/1.2 sans-serif;box-shadow:0 4px 18px rgba(0,0,0,.35);cursor:pointer;white-space:nowrap";
       document.body.appendChild(btn);
     }
     return { unlock, isUnlocked: () => unlocked };
