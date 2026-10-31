@@ -1,0 +1,42 @@
+# Publishes the editor (studio/) to GitHub Pages on every push to main.
+# The published copy gets the commit id as its cache-busting version (?v=...), so a phone never mixes
+# old and new files after an update. The repository files themselves are not changed.
+# studio/CNAME belongs to the surge player site and is left out.
+name: Publish editor to GitHub Pages
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare site
+        run: |
+          cp -R studio _site
+          rm -f _site/CNAME
+          v="${GITHUB_SHA::7}"
+          sed -i -E "s/\?v=rc[0-9]+/?v=${v}/g" _site/*.html
+          sed -i -E "s#href=\"style\.css\"#href=\"style.css?v=${v}\"#" _site/index.html
+          grep -c "?v=${v}" _site/index.html
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4

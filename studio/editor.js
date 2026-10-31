@@ -157,8 +157,14 @@
   const ICONS = { video: "🎬 ", image: "🖼️ ", sound: "🎵 ", text: "🔤 ", model: "🧊 ", particles: "✨ ", group: "📦 " };
 
   // ---------- boot ----------
+  // The real site never creates a sample creation: an empty gallery starts with one blank creation. Local servers
+  // (localhost / 127.0.0.1) keep seeding the sample, which the browser tests use as their fixture; ?demo forces the
+  // sample anywhere and ?nodemo turns it off anywhere.
+  const demoAllowed = (() => { const q = new URLSearchParams(location.search); if (q.has("nodemo")) return false; if (q.has("demo")) return true; return /^(localhost|127\.0\.0\.1|\[::1\])$/.test(location.hostname); })();
+  async function blankCreation() { const r = Studio.blankExperience(); await saveGuarded(r); return r; }
+  async function firstCreation() { if (demoAllowed) return Studio.seedDemo(false); const all = await Studio.all(); return all[0] || blankCreation(); }
   async function boot() {
-    const requested=location.hash.slice(1);rec = requested&&await Studio.load(requested)||await Studio.seedDemo(false);
+    const requested=location.hash.slice(1);rec = requested&&await Studio.load(requested)||await firstCreation();
     resetSeq();
     await hydrate();
     await refreshExpSelect();
@@ -729,7 +735,7 @@
       return queueExperience(async () => {
       await Studio.del(rec.id);
       const all = await Studio.all();
-      rec = all[0] || await Studio.seedDemo(true);
+      rec = all[0] || (demoAllowed ? await Studio.seedDemo(true) : await blankCreation());
       selectedId = null; checkedIds.clear(); tlScrubT = null; resetSeq();
       await hydrate(); await refreshExpSelect(); render();
       });
