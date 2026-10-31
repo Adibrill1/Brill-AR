@@ -1,4 +1,4 @@
-// rename-experience: user request 2:15 — rename an existing project (not all "ניסוי חדש").
+// rename-experience: user request 2:15 — rename an existing project (not all "יצירה חדשה").
 // Covers: rename persists + selector updates, id/elements/assets untouched, empty name refused
 // (reverts, nothing saved), export/publish filenames derive from rec.name by shared code path
 // (btn-export/btn-send-publish both use rec.name — headless blob-download filenames are unreliable,

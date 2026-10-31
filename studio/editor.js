@@ -130,7 +130,7 @@
     if (!rec) return true;
     const st = Studio.saveState(rec.id);
     if (!st.lastError) return true;
-    return confirm("יש שינויים בניסוי הזה שהשמירה שלהם נכשלה. מעבר ימחק אותם. לעבור בכל זאת?");
+    return confirm("יש שינויים ביצירה הזו שהשמירה שלהם נכשלה. מעבר ימחק אותם. לעבור בכל זאת?");
   };
   let prepared = null;
   function queueExperience(work) {
@@ -722,10 +722,10 @@
       selectedId = null; artworkImg = null; checkedIds.clear(); tlScrubT = null; resetSeq();
       await saveGuarded(rec);
       await refreshExpSelect(); render();
-      msg("ניסוי חדש - התחילי בהעלאת תמונת יצירה.");
+      msg("יצירה חדשה - התחילי בהעלאת תמונת יצירה.");
     }); };
     $("btn-del-exp").onclick = async () => {
-      if (!confirm("למחוק את הניסוי הזה לגמרי?")) return;
+      if (!confirm("למחוק את היצירה הזו לגמרי?")) return;
       return queueExperience(async () => {
       await Studio.del(rec.id);
       const all = await Studio.all();
@@ -846,7 +846,7 @@
         const tok = ($("in-token").value || "").trim();
         const r = await fetch(base + "/api/experiences", { method: "POST", headers: { "content-type": "application/json", authorization: "Bearer " + tok }, body });
         if (r.status === 401) throw new Error("סיסמת הפרסום שגויה");
-        if (r.status === 413) throw new Error("הניסוי גדול מדי לשרת");
+        if (r.status === 413) throw new Error("היצירה גדולה מדי לשרת");
         if (r.status === 429) throw new Error(tooManyMsg(await r.json().catch(() => ({}))));
         if (!r.ok) throw new Error("שרת ענה " + r.status);
         const out = await r.json();

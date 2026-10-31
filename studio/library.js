@@ -15,7 +15,7 @@ window.StarterLibrary = (() => {
     const title=document.createElement('h2');title.textContent='ספריית התחלה';
     const close=document.createElement('button');close.textContent='סגירה';close.className='ghost';close.onclick=()=>dialog.close();
     head.append(title,close);dialog.append(head);
-    const note=document.createElement('p');note.className='hint';note.textContent='שישה פריטים מקוריים לשימוש ולעריכה ביצירה שלך. נשמרים עם הניסוי במכשיר, בלי חשבון ובלי תשלום.';dialog.append(note);
+    const note=document.createElement('p');note.className='hint';note.textContent='שישה פריטים מקוריים לשימוש ולעריכה ביצירה שלך. נשמרים עם היצירה במכשיר, בלי חשבון ובלי תשלום.';dialog.append(note);
     const grid=document.createElement('div');grid.className='library-grid';dialog.append(grid);
     const status=document.createElement('p');status.setAttribute('role','status');dialog.append(status);
     let busy=false;

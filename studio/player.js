@@ -19,16 +19,16 @@
   } else if (window.__REMOTE_EXPERIENCE__) {
     try {
       const r = await fetch("/api/experiences/" + encodeURIComponent(window.__REMOTE_EXPERIENCE__));
-      if (!r.ok) return fail("הניסוי לא נמצא בשרת.");
+      if (!r.ok) return fail("היצירה לא נמצאה בשרת.");
       rec = await Studio.importJSON(await r.text(), { save: false }); // viewer route: never persist into the viewer's editor storage
-    } catch (e) { return fail("טעינת הניסוי נכשלה. נסי לרענן."); }
+    } catch (e) { return fail("טעינת היצירה נכשלה. נסי לרענן."); }
   } else {
     const id = location.hash.slice(1);
-    if (!id) return fail("חסר מזהה ניסוי.", "חזרה לעורך");
+    if (!id) return fail("חסר מזהה יצירה.", "חזרה לעורך");
     rec = await Studio.load(id);
   }
   if(!window.__REMOTE_EXPERIENCE__&&!pubId&&rec&&document.getElementById("backlink"))document.getElementById("backlink").href="index.html#"+encodeURIComponent(rec.id);
-  if (!rec || !rec.target) return fail("הניסוי לא נמצא במכשיר הזה. אם ייצאת ממכשיר אחר - ייבאי קודם בעורך.", "פתיחת העורך");
+  if (!rec || !rec.target) return fail("היצירה לא נמצאה במכשיר הזה. אם ייצאת ממכשיר אחר - ייבאי קודם בעורך.", "פתיחת העורך");
   rec.elements.forEach(Studio.normEl);
 
   // Regenerate the engine target from the stored artwork (deterministic pipeline).
@@ -204,5 +204,5 @@
   console.error(e);
   const errBox = document.getElementById("err");
   errBox.style.display = "grid";
-  errBox.textContent = "שגיאה בטעינת הניסוי: " + e.message;
+  errBox.textContent = "שגיאה בטעינת היצירה: " + e.message;
 });

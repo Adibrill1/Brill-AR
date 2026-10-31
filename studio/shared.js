@@ -1053,7 +1053,7 @@ const Studio = (() => {
 
   // ---------- experience records ----------
   function blankExperience(name) {
-    return { id: newId(), name: name || "ניסוי חדש", createdAt: Date.now(), updatedAt: Date.now(),
+    return { id: newId(), name: name || "יצירה חדשה", createdAt: Date.now(), updatedAt: Date.now(),
              target: null, elements: [], assets: {} };
   }
   const history=new Map(),saveQueues=new Map();
@@ -1557,7 +1557,7 @@ const Studio = (() => {
   async function fetchPublished(pubId) {
     if (typeof pubId !== "string" || !/^[a-zA-Z0-9_-]{1,64}$/.test(pubId)) throw new Error("קישור לא תקין.");
     const r = await fetch("pub/" + pubId + ".json");
-    if (!r.ok) throw new Error("הניסוי לא נמצא.");
+    if (!r.ok) throw new Error("היצירה לא נמצאה.");
     const len = Number(r.headers.get("content-length")) || 0;
     if (len > MAX_PUB_BYTES) throw new Error("הקובץ גדול מדי.");
     let text;

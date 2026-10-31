@@ -24,7 +24,7 @@ await p.evaluate(()=>{window.__failAll=false;});assert.equal(await hasArt(idB),f
 console.log('PASS injected read failure: refused, says check unavailable, nothing written');
 // injected fingerprint failure
 await p.evaluate(()=>{window.__fd=Studio.fingerprintDistance;Studio.fingerprintDistance=function(){throw new Error('injected fingerprint failure');};});
-await uploadInto(ring);s=await state();assert.ok(injectedMsg.test(s.msg),'fingerprint failure says unavailable: '+s.msg);assert.ok(s.msg.includes('ניסוי חדש'),'the message names the project the check stalled on, to help diagnosis: '+s.msg);assert.equal(await hasArt(idB),false,'fingerprint failure uploaded nothing');
+await uploadInto(ring);s=await state();assert.ok(injectedMsg.test(s.msg),'fingerprint failure says unavailable: '+s.msg);assert.ok(s.msg.includes('יצירה חדשה'),'the message names the project the check stalled on, to help diagnosis: '+s.msg);assert.equal(await hasArt(idB),false,'fingerprint failure uploaded nothing');
 await p.evaluate(()=>{Studio.fingerprintDistance=window.__fd;});
 console.log('PASS injected fingerprint failure: refused, nothing written');
 // retry after the cause is resolved works

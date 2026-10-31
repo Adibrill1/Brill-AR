@@ -18,7 +18,7 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
  if(mode==='export')await waitFor(p,async rid=>window.exported&&(await Studio.load(rid)).elements.length>0,id);
  if(mode==='new')await p.screenshot({path:'/downloads/core-new-empty.png',fullPage:true});
  const out=await p.evaluate(async id=>{const orig=await Studio.load(id),all=await Studio.all();return{original:orig?orig.elements.length:null,others:all.filter(r=>r.id!==id).map(r=>({id:r.id,n:r.elements.length,name:r.name})),exported:window.exported&&{id:window.exported.id,n:window.exported.elements.length}};},id);
- if(mode==='new'){assert.equal(out.original,1,'model must stay on original');assert(out.others.some(r=>r.n===0&&r.name==='ניסוי חדש'),'new experience stays empty');}
+ if(mode==='new'){assert.equal(out.original,1,'model must stay on original');assert(out.others.some(r=>r.n===0&&r.name==='יצירה חדשה'),'new experience stays empty');}
  if(mode==='delete'){assert.equal(out.original,null,'confirmed originating record deleted after pending import');assert.deepEqual(out.others,baseline,'deletion must not attach pending model to another record');}
  if(mode==='export'){assert.deepEqual(out.exported,{id,n:1},'export must include preceding pending import');}
  console.log('PASS pending import then '+mode,out);await p.close();

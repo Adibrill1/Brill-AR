@@ -17,7 +17,7 @@
   if (pubId) {
     try { rec=await Studio.fetchPublished(pubId); } catch(e) { return fail(e.message); }
   } else {
-    if (!id) return fail("חסר מזהה ניסוי. <a href='index.html'>חזרה לעורך</a>");
+    if (!id) return fail("חסר מזהה יצירה. <a href='index.html'>חזרה לעורך</a>");
     savedRec=await Studio.load(id);rec=savedRec;
   }
   const params=new URLSearchParams(location.search);let targetAction=null;
@@ -27,7 +27,7 @@
     rec=structuredClone(savedRec);const layer=rec.elements.find(el=>el.id===targetAction.layerId);if(layer.type==='group')Studio.transformGroup(rec,layer,targetAction.to);else Object.assign(layer,targetAction.to);
   }
   document.querySelector("#topbar a").href="index.html#"+encodeURIComponent(id);
-  if (!rec || !rec.target) return fail("הניסוי לא נמצא. <a href='index.html'>חזרה לעורך</a>");
+  if (!rec || !rec.target) return fail("היצירה לא נמצאה. <a href='index.html'>חזרה לעורך</a>");
   rec.elements.forEach(Studio.normEl);
 
   const mediaEls = [];
