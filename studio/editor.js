@@ -100,7 +100,7 @@
   function importErrorMessage(err) {
     const m = String((err && err.message) || err);
     if (/maximum ?60|too many entries|bad elements/i.test(m)) return "הקובץ לא יובא: יותר מ־60 שכבות. אם זה גיבוי ישן וגדול, נסי ״ייבוא שחזור״ (עדיף במחשב).";
-    if (/too large|too many assets|archive too large|entry too large/i.test(m)) return "הקובץ לא יובא: גודל הקבצים חורג מהמגבלה (60MB בסך הכול, 20MB לקובץ). אם זה גיבוי ישן וגדול, נסי ״ייבוא שחזור״.";
+    if (/too large|too many assets|archive too large|entry too large/i.test(m)) return "הקובץ לא יובא: גודל הקבצים חורג מהמגבלה (" + Math.round(Studio.LIMITS.maxMediaBytes / 1048576) + "MB בסך הכול, " + Math.round(Studio.LIMITS.maxEntryBytes / 1048576) + "MB לקובץ). אם זה גיבוי ישן וגדול, נסי ״ייבוא שחזור״.";
     return "הקובץ לא תקין לייבוא.";
   }
   // A record missing from storage can no longer be saved from this page; its edits are only in memory, so the banner
@@ -558,7 +558,8 @@
     const importAssetNow = async (kind, f, options = {}) => {
       if (!f) return;
       let importNote = "",videoInfo=null;
-      if (f.size > 20 * 1024 * 1024) { msg(kind === 'video' ? 'קובץ גדול מדי (מעל 20MB). נסי סרטון קצר יותר או דחיסה ל־MP4' : 'קובץ גדול מדי (מעל 20MB) לגרסת הניסוי.'); return; }
+      { const capMB = Math.round(Studio.LIMITS.maxEntryBytes / 1048576);
+        if (f.size > Studio.LIMITS.maxEntryBytes) { msg(kind === 'video' ? 'קובץ גדול מדי (מעל ' + capMB + 'MB). נסי סרטון קצר יותר או דחיסה ל־MP4' : 'קובץ גדול מדי (מעל ' + capMB + 'MB).'); return; } }
       if(kind==='video'){
         msg('בודק את הסרטון…');
         try{videoInfo=await Studio.inspectVideo(f);}catch(error){if(!(/\.mov$/i.test(f.name)||f.type==='video/quicktime'))throw error;}
@@ -887,7 +888,7 @@
     });
     $("file-import").onchange = (e) => { const f = e.target.files[0]; e.target.value = ""; if (f) return doImport(f, false); };
     // Recovery import: only for an over-limit backup made before the guards existed. Always a NEW copy; larger caps
-    // (300 layers / 60MB per file / 300MB total) can run out of memory on a phone, so the user must confirm.
+    // (300 layers / 100MB per file / 300MB total) can run out of memory on a phone, so the user must confirm.
     $("btn-import-recovery").onclick = () => { if (confirm("ייבוא שחזור מיועד לגיבוי גדול מהרגיל. הוא נשמר כעותק חדש ולא נוגע במקור, אבל בטלפון עלול להיגמר הזיכרון והדפדפן להיתקע. מומלץ מאוד לעשות את זה במחשב. להמשיך?")) $("file-import-recovery").click(); };
     $("file-import-recovery").onchange = (e) => { const f = e.target.files[0]; e.target.value = ""; if (!f) return; if (f.size > 100 * 1024 * 1024 && navigator.maxTouchPoints > 0 && !confirm("הקובץ גדול (" + Math.round(f.size / 1048576) + "MB) ואת בטלפון. קריאה שלו עלולה לתקוע את הדפדפן. מומלץ לפתוח את העורך במחשב. לקרוא בכל זאת?")) return; return doImport(f, true); };
     $("btn-edit-3d").onclick=()=>queueExperience(async()=>{await saveGuarded(rec);location.href="preview.html?edit=1#"+rec.id;});
@@ -1010,7 +1011,7 @@
     window.addEventListener("pagehide", () => flushSlider(true));
     document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") flushSlider(true); });
     $("sl-scale").oninput = e => updS(el => panelWrite(el, "w", parseFloat(e.target.value)));
-    $("sl-rot").oninput = e => updS(el => panelWrite(el, "rot", parseFloat(e.target.value)));
+    $("sl-rot").oninput = e => updS(el => panelWrite(el, "rot", Studio.snapAngle(parseFloat(e.target.value)))); // snaps near multiples of 90°; the number field stays exact
     $("sl-z").oninput = e => updS(el => panelWrite(el, "z", parseFloat(e.target.value)));
     $("sl-vol").oninput = (e) => updS((el) => { el.volume = parseFloat(e.target.value); });
     $("sl-opacity").oninput = (e) => updS((el) => panelWrite(el, "opacity", parseFloat(e.target.value)));

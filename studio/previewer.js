@@ -212,16 +212,8 @@
   if(!editMode){Studio.connectSpatialAudio(scene,rig,mediaEls);Studio.monitorMedia(rig, rec);}
   if(!editMode)Studio.ensurePlayback(mediaEls.filter((m) => m.kind === "video"));
 
-  // First tap: unmute videos, start sound elements.
-  window.addEventListener("pointerdown", () => {
-    if(editMode)return;
-    const context=scene.audioListener&&scene.audioListener.context;if(context&&context.state==='suspended')context.resume().catch(()=>{});
-    for (const m of mediaEls) {
-      if (m.node._studioBlocked) { m.resumeOnVisible = true; continue; }
-      if (m.kind === "video") { if (!muted) m.node.muted = false; if (m.node.paused) m.node.play().catch(() => {}); }
-      else if (m.node.paused) m.node.play().catch(() => {});
-    }
-  }, { once: true });
+  // Touch: unmute videos (also paused ones), start sound elements, resume audio context; a button says so until then.
+  if(!editMode)Studio.soundOnTouch(mediaEls, { isMuted: () => muted, getContext: () => scene.audioListener && scene.audioListener.context });
 
   // Orbit by drag, zoom by wheel/pinch.
   let orb = null;

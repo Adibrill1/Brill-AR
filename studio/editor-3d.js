@@ -572,7 +572,7 @@ window.Editor3D = (() => {
         deg = (gizmoDrag.angleOf(hit) - gizmoDrag.a0) * 180 / Math.PI;
       }
       const el = gizmoDrag.el, key = gizmoDrag.part;
-      const val = Math.round(((key === "rot" ? gizmoDrag.rot0 : key === "rotX" ? gizmoDrag.rotX0 : gizmoDrag.rotY0) + deg) * 10) / 10;
+      const val = Studio.snapAngle(Math.round(((key === "rot" ? gizmoDrag.rot0 : key === "rotX" ? gizmoDrag.rotX0 : gizmoDrag.rotY0) + deg) * 10) / 10); // snaps to 0/±90/±180… within 6°
       if (key === "rot" && gizmoDrag.keyT != null) {
         keyAt(el, gizmoDrag.keyT).rot = val; // timeline key at the frozen playhead; the sampler renders it
       } else {

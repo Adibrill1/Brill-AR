@@ -18,21 +18,22 @@ const {chromium}=require('playwright-core'),assert=require('assert/strict'),serv
  });
  assert.equal(del.present,false,'deleted experience stays deleted after in-flight and late saves');
  assert.equal(del.inList,false);
- // (1) limits: 61st layer, and >60MB media, are refused by the editor guard
+ // (1) limits (read from Studio.LIMITS): 61st layer, over-total media and an oversize file are refused by the editor guard
  const lim=await p.evaluate(async()=>{
   const r=Studio.blankExperience('גבולות');
   r.elements=Array.from({length:60},(_,i)=>({id:'e'+i,type:'text'}));
   const layers=Studio.addBlocker(r,{layers:1});
-  const r2=Studio.blankExperience('מדיה');r2.assets={a:new Blob([new Uint8Array(20*1024*1024)]),b:new Blob([new Uint8Array(20*1024*1024)]),c:new Blob([new Uint8Array(19*1024*1024)])};r2.elements=['a','b','c'].map(k=>({id:k,type:'image',assetId:k}));
-  const okSmall=Studio.addBlocker(r2,{bytes:1024*1024});            // 60MB exactly
-  const tooMuch=Studio.addBlocker(r2,{bytes:2*1024*1024});          // 61MB
-  const entry=Studio.addBlocker(Studio.blankExperience('x'),{bytes:21*1024*1024});
+  const MiB=1024*1024,M=Studio.LIMITS.maxEntryBytes,T=Studio.LIMITS.maxMediaBytes,sizes=[];for(let left=T-MiB;left>0;left-=M)sizes.push(Math.min(M,left));
+  const r2=Studio.blankExperience('מדיה');r2.assets={};r2.elements=sizes.map((n,i)=>{r2.assets['k'+i]=new Blob([new Uint8Array(n)]);return {id:'k'+i,type:'image',assetId:'k'+i};});
+  const okSmall=Studio.addBlocker(r2,{bytes:MiB});                  // exactly the total limit
+  const tooMuch=Studio.addBlocker(r2,{bytes:2*MiB});                // 1MiB over
+  const entry=Studio.addBlocker(Studio.blankExperience('x'),{bytes:M+MiB});
   return {layers,okSmall,tooMuch,entry,limits:Studio.LIMITS};
  });
  assert.ok(lim.layers&&lim.layers.includes('60'),'61st layer refused: '+lim.layers);
  assert.equal(lim.okSmall,null,'exactly at the import limit is allowed');
- assert.ok(lim.tooMuch&&lim.tooMuch.includes('60MB'),'over total refused: '+lim.tooMuch);
- assert.ok(lim.entry&&lim.entry.includes('20MB'),'oversize file refused: '+lim.entry);
+ assert.ok(lim.tooMuch&&lim.tooMuch.includes(Math.round(lim.limits.maxMediaBytes/1048576)+'MB'),'over total refused: '+lim.tooMuch);
+ assert.ok(lim.entry&&lim.entry.includes(Math.round(lim.limits.maxEntryBytes/1048576)+'MB'),'oversize file refused: '+lim.entry);
  // an experience exactly at the limits round-trips through export -> import
  const rt=await p.evaluate(async()=>{
   const r=Studio.blankExperience('בגבול');r.target={artRect:{x:0,y:0,w:768,h:1024},natural:{w:768,h:1024}};
@@ -51,8 +52,8 @@ const {chromium}=require('playwright-core'),assert=require('assert/strict'),serv
   const out={};
   // exact predicted JSON size == real exportJSON bytes (UTF-8, Hebrew name)
   const r1=mk([1000,1001,1002]);const j1=await Studio.exportJSON(r1);out.sizeMatch=[Studio.exportJSONSize(r1),new Blob([j1]).size];
-  // exactly 20MiB entry (20MiB mod 3 != 0: padding case) imports; 3 x 20MiB = 60MiB exactly imports via JSON and ZIP
-  const M=20*1024*1024;const r2=mk([M,M,M]);out.restoreAt=Studio.restoreBlocker(r2);
+  // entries exactly at the per-file limit fill the total limit exactly and import via JSON and ZIP
+  const M=Studio.LIMITS.maxEntryBytes,N=Studio.LIMITS.maxMediaBytes/M;out.n=N;const r2=mk(Array.from({length:N},()=>M));out.restoreAt=Studio.restoreBlocker(r2);
   try{const back=await Studio.importJSON(await Studio.exportJSON(r2),{save:false});out.jsonAt=back.elements.length;}catch(e){out.jsonAt='ERR '+e.message;}
   try{const back=await Studio.importZIP(await Studio.exportZIP(r2),{save:false});out.zipAt=back.elements.length;}catch(e){out.zipAt='ERR '+e.message;}
   out.jsonAtSize=Studio.exportJSONSize(r2);out.pubAt=Studio.publishBlocker(r2);
@@ -73,16 +74,17 @@ const {chromium}=require('playwright-core'),assert=require('assert/strict'),serv
   return out;
  });
  assert.equal(bd.sizeMatch[0],bd.sizeMatch[1],'predicted publish size equals exportJSON bytes exactly: '+bd.sizeMatch);
- assert.equal(bd.restoreAt,null,'60MiB exactly (3 x 20MiB) is restorable');
- assert.equal(bd.jsonAt,3,'60MiB / 20MiB padding-case entries import via JSON: '+bd.jsonAt);
- assert.equal(bd.zipAt,3,'same via ZIP: '+bd.zipAt);
+ assert.ok(Number.isInteger(bd.n)&&bd.n>=1,'total limit is a whole number of per-file limits: '+bd.n);
+ assert.equal(bd.restoreAt,null,'exactly the total limit (per-file-sized entries) is restorable');
+ assert.equal(bd.jsonAt,bd.n,'entries at the per-file limit import via JSON: '+bd.jsonAt);
+ assert.equal(bd.zipAt,bd.n,'same via ZIP: '+bd.zipAt);
  assert.ok(bd.restoreOver&&bd.warnOver.includes('לא נחתך'),'over-limit entry is flagged on export, not silently truncated');
  assert.ok(bd.overExportHasAsset,'over-limit export still contains the full asset');
  assert.ok(bd.pubUnder[0]&&bd.pubUnder[1]===null,'just under 40MiB serialized is publishable '+bd.pubUnder);
  assert.ok(bd.pubOver[0]&&bd.pubOver[1],'just over 40MiB serialized is blocked '+bd.pubOver);
  assert.equal(bd.orphan,null,'orphan assets are not exported so not counted');
  assert.ok(bd.assets121&&bd.assets121.includes('121'),'122nd media file refused');
- console.log('PASS boundaries: exact size, 60MiB JSON+ZIP round trip, over-limit warned, publish edge exact',JSON.stringify({jsonAtSize:bd.jsonAtSize,pubAt:bd.pubAt,pub30:bd.pub30}));
+ console.log('PASS boundaries: exact size, total-limit JSON+ZIP round trip, over-limit warned, publish edge exact',JSON.stringify({jsonAtSize:bd.jsonAtSize,pubAt:bd.pubAt,pub30:bd.pub30}));
  console.log('PASS delete not resurrected; add guards match import limits; 60-layer round trip');
  // (3) slider: one save per drag, one undo step
  await p.evaluate(async()=>{const r=Studio.blankExperience('סליידר');r.target={artRect:{x:0,y:0,w:768,h:1024},natural:{w:768,h:1024}};await Studio.save(r);});

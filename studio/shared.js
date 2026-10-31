@@ -814,17 +814,26 @@ const Studio = (() => {
       syncMedia(container, rec);
     }
   }
-  function syncMedia(container, rec) {
+  // A hidden ancestor INSIDE the container (state, track, action, timeline, group) stops the media at once. The container
+  // itself (or above) being hidden means the AR image target is lost; tracking flickers for a few frames while the art
+  // is still in view, and pausing on every flicker made video sound stutter and repeat (worse while recording). So a
+  // target loss pauses only after TRACKING_GRACE_MS of continuous loss, and playback resumes as soon as it is back.
+  const TRACKING_GRACE_MS = 1000;
+  function syncMedia(container, rec, now) {
+    now = now == null ? performance.now() : now;
+    const root = container.object3D;
+    const hidden = (o) => { let content = false, tracking = false, inside = !!root; while (o) { if (o === root) inside = false; if (!o.visible) { if (inside) content = true; else tracking = true; } o = o.parent; } return { content, tracking }; };
     for (const m of container._studioMedia || []) {
-      let allowed = m._studioBaseAllowed !== false && !m._actionBlocked && m._actionPlaying!==false;
+      let allowed = m._studioBaseAllowed !== false && !m._actionBlocked && m._actionPlaying!==false, lost = false;
       const node = container.querySelector('[data-el-id="' + m.el.id + '"]');
-      let parent = node && node.object3D;
-      while (parent) { if (!parent.visible) allowed = false; parent = parent.parent; }
+      if (node && node.object3D) { const h = hidden(node.object3D); if (h.content) allowed = false; if (h.tracking) lost = true; }
       // Nonspatial sound has no visual node: still inherit its group's state/track/timeline.
       if (!node) for (const group of rec.elements.filter(el => el.type === "group" && (el.children || []).includes(m.el.id))) {
         let g = container.querySelector('[data-el-id="'+group.id+'"]');
-        if (g) { let o=g.object3D; while(o) { if(!o.visible)allowed=false; o=o.parent; } }
+        if (g && g.object3D) { const h = hidden(g.object3D); if (h.content) allowed = false; if (h.tracking) lost = true; }
       }
+      if (lost) { if (m._lostSince == null) m._lostSince = now; if (now - m._lostSince >= TRACKING_GRACE_MS) allowed = false; }
+      else m._lostSince = null;
       m.node._studioBlocked = !allowed;
       if (!allowed) { if (!m.node.paused) { m.resumeOnVisible = true; m.node.pause(); } }
       else if (m.resumeOnVisible) { m.resumeOnVisible = false; m.node.play().catch(() => {}); }
@@ -1084,7 +1093,10 @@ const Studio = (() => {
     saveQueues.delete(id);history.delete(id);saveInfos.delete(id);knownPersisted.delete(id);
   }
   // Limits shared by editor, export and import so a backup is always restorable.
-  const LIMITS={maxLayers:60,maxEntryBytes:20*1024*1024,maxMediaBytes:60*1024*1024,maxPublishBytes:40*1024*1024,maxAssets:121};
+  // 50MB per file / 100MB per creation (was 20/60): room for longer phone videos while a ZIP backup still fits in an
+  // iPhone tab's memory. Publishing a link keeps its own 40MB cap (server and player), checked by publishBlocker.
+  const MB=1024*1024,mb=n=>Math.round(n/MB)+'MB';
+  const LIMITS={maxLayers:60,maxEntryBytes:50*MB,maxMediaBytes:100*MB,maxPublishBytes:40*MB,maxAssets:121};
   // Same set exportJSON/exportZIP write: assets referenced by a layer/particle sprite, plus the artwork.
   function exportedAssetIds(rec){const ids=new Set();for(const el of rec.elements||[])for(const id of [el.assetId,el.particles&&el.particles.spriteAssetId])if(id&&rec.assets&&rec.assets[id])ids.add(id);if(rec.assets&&rec.assets.__artwork)ids.add('__artwork');return [...ids];}
   function mediaBytes(rec){let n=0;for(const id of exportedAssetIds(rec))n+=rec.assets[id].size||0;return n;}
@@ -1093,8 +1105,8 @@ const Studio = (() => {
     if((rec.elements||[]).length>LIMITS.maxLayers)return 'ליצירה יש יותר מ־'+LIMITS.maxLayers+' שכבות';
     const ids=exportedAssetIds(rec);
     if(ids.length>LIMITS.maxAssets)return 'ליצירה יותר מ־'+LIMITS.maxAssets+' קבצי מדיה';
-    for(const id of ids)if((rec.assets[id].size||0)>LIMITS.maxEntryBytes)return 'קובץ אחד גדול מ־20MB';
-    if(mediaBytes(rec)>LIMITS.maxMediaBytes)return 'סך המדיה מעל 60MB';
+    for(const id of ids)if((rec.assets[id].size||0)>LIMITS.maxEntryBytes)return 'קובץ אחד גדול מ־'+mb(LIMITS.maxEntryBytes);
+    if(mediaBytes(rec)>LIMITS.maxMediaBytes)return 'סך המדיה מעל '+mb(LIMITS.maxMediaBytes);
     return null;
   }
   const exportWarning=rec=>{const r=restoreBlocker(rec);return r?'שימי לב: '+r+', ולכן הגרסה הנוכחית לא תוכל לשחזר את הקובץ הזה בייבוא. הקובץ נשמר במלואו ולא נחתך. הקובץ ניתן לשחזור דרך ״ייבוא שחזור״ (עדיף במחשב). הקטיני את היצירה לפני שתסתמכי עליו כגיבוי.':null;};
@@ -1115,8 +1127,8 @@ const Studio = (() => {
   function addBlocker(rec,{layers=0,bytes=0}={}){
     if((rec.elements||[]).length+layers>LIMITS.maxLayers)return 'אפשר עד '+LIMITS.maxLayers+' שכבות ביצירה. כך הגיבוי תמיד ניתן לשחזור.';
     if(bytes>0&&exportedAssetIds(rec).length+1>LIMITS.maxAssets)return 'אפשר עד '+LIMITS.maxAssets+' קבצי מדיה ביצירה.';
-    if(bytes>LIMITS.maxEntryBytes)return 'הקובץ גדול מ־20MB.';
-    if(mediaBytes(rec)+bytes>LIMITS.maxMediaBytes)return 'סך הקבצים ביצירה חורג מ־60MB. כך הגיבוי תמיד ניתן לשחזור. הסירי קובץ או דחסי אותו.';
+    if(bytes>LIMITS.maxEntryBytes)return 'הקובץ גדול מ־'+mb(LIMITS.maxEntryBytes)+'.';
+    if(mediaBytes(rec)+bytes>LIMITS.maxMediaBytes)return 'סך הקבצים ביצירה חורג מ־'+mb(LIMITS.maxMediaBytes)+'. כך הגיבוי תמיד ניתן לשחזור. הסירי קובץ או דחסי אותו.';
     return null;
   }
   function save(rec,options={}) {
@@ -1253,8 +1265,8 @@ const Studio = (() => {
   const ZIP_MAX_META = 4 * 1024 * 1024;
   // Normal import limits = editor limits (backup always restorable). RECOVERY limits apply only when the user
   // explicitly picks "recovery import" for an over-limit backup made before the editor guards; import is always a COPY.
-  const NORMAL_LIM = { layers: 60, file: 20 * 1024 * 1024, total: 60 * 1024 * 1024, assets: 121, entries: 130 };
-  const RECOVERY_LIM = { layers: 300, file: 60 * 1024 * 1024, total: 300 * 1024 * 1024, assets: 400, entries: 410 };
+  const NORMAL_LIM = { layers: LIMITS.maxLayers, file: LIMITS.maxEntryBytes, total: LIMITS.maxMediaBytes, assets: LIMITS.maxAssets, entries: 130 };
+  const RECOVERY_LIM = { layers: 300, file: 100 * 1024 * 1024, total: 300 * 1024 * 1024, assets: 400, entries: 410 };
   const limsFor = (opts) => (opts && opts.recovery ? RECOVERY_LIM : NORMAL_LIM); // per call, never global: concurrent imports cannot see each other's limits
   function unzipCapped(u8, LIM) {
     return new Promise((res, rej) => {
@@ -1409,6 +1421,41 @@ const Studio = (() => {
 
   // Try to start all given media; if autoplay is blocked (iOS low-power mode,
   // headless browsers), show a clear tap-to-play button instead of a silently frozen frame.
+  // Rotation dragged by hand (3D gizmo, rotation slider) snaps to the nearest multiple of 90° within tol degrees.
+  // Typed numbers stay exact.
+  function snapAngle(deg, tol = 6) { const t = Math.round(deg / 90) * 90; return Math.abs(deg - t) <= tol ? (t || 0) : deg; }
+  // Phones only allow sound after a touch, so videos start muted. Every touch (until sound is on) unmutes every video,
+  // starts sound elements and resumes the audio context. A video that is paused at that moment (its state is hidden or
+  // the artwork is out of view) is unlocked with a silent play()/pause() inside the touch, so it can start later with
+  // sound. While audible media waits for that first touch, a button at the top says so (the old flow had no hint, so
+  // sound only appeared when the record button happened to be touched).
+  function soundOnTouch(mediaEls, { isMuted = () => false, getContext = () => null } = {}) {
+    let btn = null, unlocked = false;
+    const unlock = () => {
+      const ctx = getContext(); if (ctx && ctx.state === "suspended") ctx.resume().catch(() => {});
+      for (const m of mediaEls) {
+        const n = m.node;
+        if (m.kind === "video" && !isMuted()) n.muted = false;
+        if (n._studioBlocked) {
+          m.resumeOnVisible = true;
+          if (n.paused) { const g = m.three && m.three.gain && m.three.gain.gain, prev = g ? g.value : null; if (g) g.value = 0;
+            n.play().then(() => { if (n._studioBlocked) n.pause(); }).catch(() => {}).finally(() => { if (g) g.value = prev; }); }
+          continue;
+        }
+        if (n.paused) n.play().catch(() => {});
+      }
+      unlocked = true; if (btn) { btn.remove(); btn = null; }
+    };
+    window.addEventListener("pointerdown", unlock, true);
+    if (mediaEls.some((m) => m.el.volume == null || m.el.volume > 0)) {
+      btn = document.createElement("button");
+      btn.id = "sound-overlay"; btn.type = "button";
+      btn.textContent = "🔊 נגיעה במסך מפעילה את הצליל";
+      btn.style.cssText = "position:fixed;top:max(12px,calc(env(safe-area-inset-top) + 8px));left:50%;transform:translateX(-50%);z-index:41;min-height:44px;padding:10px 20px;border:0;border-radius:999px;background:rgba(20,18,30,.82);color:#fff;font:600 15px/1.2 sans-serif;box-shadow:0 4px 18px rgba(0,0,0,.35);cursor:pointer;white-space:nowrap";
+      document.body.appendChild(btn);
+    }
+    return { unlock, isUnlocked: () => unlocked };
+  }
   function ensurePlayback(mediaEls, opts) {
     opts = opts || {};
     const pending = () => mediaEls.filter((m) => m.node.paused && !m.node._studioBlocked);
@@ -1575,6 +1622,6 @@ const Studio = (() => {
   return { TARGET_W, TARGET_H, newId, inspectVideo, validateModelBlob, prepareModelBlob, modelCompressionKinds, DECODER_DRACO_PATH, DECODER_MESHOPT_PATH, modelClipNames, modelClipInfo, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
            audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, historyState, restoreHistory, duplicateLayer, exportJSON, missingAssets, importJSON, exportZIP, importZIP, zipToJSON, fetchPublished, ownBlob, assetHealth, fileHealth, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, artworkFingerprint, fingerprintDistance, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
            load: id=>settledRead(id), all: ()=>settledRead(), del: delExperience, LIMITS, mediaBytes, pushBack, addBlocker, publishBlocker, restoreBlocker, exportWarning, exportJSONSize,
-           onSaveState, installSaveGuard, saveState,
+           onSaveState, installSaveGuard, saveState, soundOnTouch, snapAngle, syncMedia,
            _testHoldSave:p=>{saveHold=p;}, _testFailSave:m=>{failSave=m;}, _testFailPut:o=>{failPut=o?{...o}:null;} };
 })();

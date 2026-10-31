@@ -178,17 +178,8 @@
   Studio.monitorMedia(target, rec);
   Studio.ensurePlayback(mediaEls.filter((m) => m.kind === "video"));
 
-  // First tap: unmute videos, start sound elements, resume audio context (proven pattern).
-  window.addEventListener("pointerdown", () => {
-    if (editMode) return;
-    for (const m of mediaEls) {
-      if (m.node._studioBlocked) { m.resumeOnVisible = true; continue; }
-      if (m.kind === "video") { if (!muted) m.node.muted = false; if (m.node.paused) m.node.play().catch(() => {}); }
-      else { if (m.node.paused) m.node.play().catch(() => {}); }
-    }
-    const ctx = scene.audioListener && scene.audioListener.context;
-    if (ctx && ctx.state === "suspended") ctx.resume().catch(() => {});
-  });
+  // Touch: unmute videos (also paused ones), start sound elements, resume audio context; a button says so until then.
+  if (!editMode) Studio.soundOnTouch(mediaEls, { isMuted: () => muted, getContext: () => scene.audioListener && scene.audioListener.context });
 
   // Route every sound source through one Web Audio context so the 10s capture records the mix.
   const setup = () => {
