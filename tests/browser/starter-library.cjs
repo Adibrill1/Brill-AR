@@ -19,14 +19,14 @@ const lib=await p.evaluate(async()=>{
     if(ok==='ok'&&e.clip){const names=(await Studio.modelClipInfo(blob)).map(c=>c.name);if(!names.includes(e.clip))ok='no clip '+e.clip;}
     out.models.push([e.id,ok,blob.size]);}
   return out;});
-assert.equal(lib.n,234,'234 entries');assert.deepEqual(lib.groups,{original:6,scene:8,fx:13,fx3d:13,weather:14,cosmic:12,made:6,model:53,animal:16,creature:40,sea:19,dino:6,particles:8,sticker:12,loop:8});assert.deepEqual(lib.bad,[],'all files and thumbnails served');
+assert.equal(lib.n,260,'260 entries');assert.deepEqual(lib.groups,{original:6,scene:8,fx:13,fx3d:13,weather:14,w3d:14,cosmic:12,k3d:12,made:6,model:53,animal:16,creature:40,sea:19,dino:6,particles:8,sticker:12,loop:8});assert.deepEqual(lib.bad,[],'all files and thumbnails served');
 const badModels=lib.models.filter(m=>m[1]!=='ok');assert.deepEqual(badModels,[],'every model validates and parses');
 assert.ok(lib.models.every(m=>m[2]<=20*1048576),'every model under the 20MB model limit');
 // dialog: filters + add one model and one loop
 const openLib=async()=>{await p.locator('#shell-tabs button[data-tab="layers"]').click().catch(()=>{});await p.getByRole('button',{name:'ספריית התחלה'}).first().click();await p.waitForSelector('#starter-library[open]');};
 await openLib();
 const counts=await p.evaluate(()=>[...document.querySelectorAll('.library-filters button')].map(b=>b.textContent));
-assert.deepEqual(counts,['הכול (234)','סצנות בתנועה (8)','אפקטים מרחפים (13)','אפקטים בתלת־ממד (13)','מזג אוויר (14)','חלל וחלקיקים (12)','מקוריים בתנועה (6)','תלת־ממד (53)','חיות בתנועה (16)','ים (19)','דינוזאורים (6)','דמויות (40)','חלקיקים (8)','מדבקות (12)','לולאות וידאו (8)','מקוריים (6)']);
+assert.deepEqual(counts,['הכול (260)','סצנות בתנועה (8)','אפקטים מרחפים (13)','אפקטים בתלת־ממד (13)','מזג אוויר (14)','מזג אוויר בתלת־ממד (14)','חלל וחלקיקים (12)','חלל בתלת־ממד (12)','מקוריים בתנועה (6)','תלת־ממד (53)','חיות בתנועה (16)','ים (19)','דינוזאורים (6)','דמויות (40)','חלקיקים (8)','מדבקות (12)','לולאות וידאו (8)','מקוריים (6)']);
 await p.click('.library-filters button[data-group="model"]');
 const visible=await p.evaluate(()=>[...document.querySelectorAll('.library-card')].filter(c=>!c.hidden).length);assert.equal(visible,53,'model filter shows 53');
 if(process.env.SHOT)await p.screenshot({path:process.env.SHOT});
@@ -46,5 +46,5 @@ assert.deepEqual(more.fox,['model','שועל',5,.5],'fox starts on Idle (clip 5)
  const sc=await p.evaluate(async()=>{const r=await Studio.load(document.querySelector('#exp-select').value);return r.elements.slice(-4).map(e=>[e.type,e.name,e.modelClip==null?null:e.modelClip,!!(e.timeline&&e.timeline.loop&&e.timeline.keys.length>5),e.rotY||0,e.type==='particles'?!!r.assets[e.particles.spriteAssetId]:!!r.assets[e.assetId]]);});
  assert.deepEqual(sc,[['model','דג ליצן',5,true,90,true],['model','דג כחול',5,true,90,true],['model','קוי',5,true,-90,true],['particles','בועות',null,false,0,true]],'aquarium: 3 swimming fish on looping paths + bubbles '+JSON.stringify(sc));}assert.deepEqual(more.snow,['particles','שלג','custom',true,180],'snow particles with its sprite');assert.deepEqual(more.crown,['image','כתר','image/png'],'crown sticker');
 assert.deepEqual(pageErrors,[],'no page errors');
-console.log('PASS starter-library: 234 entries, 154 GLBs, 8 scenes validated and parsed (largest '+(Math.max(...lib.models.map(m=>m[2]))/1048576).toFixed(1)+'MB), filters, add model + loop');
+console.log('PASS starter-library: 260 entries, 180 GLBs, 8 scenes validated and parsed (largest '+(Math.max(...lib.models.map(m=>m[2]))/1048576).toFixed(1)+'MB), filters, add model + loop');
 }finally{await b.close();server.close();}})().catch(e=>{console.error(e&&e.stack||e);process.exit(1)});

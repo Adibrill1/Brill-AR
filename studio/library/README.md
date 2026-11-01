@@ -127,3 +127,11 @@ stand-offs. plasma (a plasma lamp), neon-love, neon-mazal, neon-heart, retro-sun
 grid), fireworks, light-rays, portal (a stone ring with a swirling vortex), aurora, flames (a campfire), enso (an ink
 brush circle drawn in the air), bauhaus (painted shapes on a plinth), warp (starlight streaks rushing out of the
 picture). Thumbnails are rendered from the GLB (`tools/make-graphics.cjs mthumb`).
+
+## Weather and cosmic effects in 3D — `models/fx3d-w-*.glb`, `models/fx3d-k-*.glb`
+The 14 weather and 12 cosmic effects as 3D models, from the same script and in the same way. Clouds are whole shapes
+(metaballs, lightly displaced, with a translucent skin a little larger than the body), so nothing is cut at their edges;
+rain, hail and snow fall in seamless cycles and fade at the ends of each fall; fog is soft-edged translucent cards; the
+moon's surface is drawn in the script. Cosmic effects are clouds of glowing dots (each an octahedron, merged into a few
+meshes that turn and breathe as wholes); the line terrain moves by two blended shape keys (glTF morph targets); the
+fibre lamp's tips change colour by three overlapping tip sets that grow and shrink in turn.

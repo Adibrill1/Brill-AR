@@ -136,6 +136,17 @@ window.StarterLibrary = (() => {
     ['retro-sun','שמש רטרו ורשת',.6],['fireworks','זיקוקים',.7],['light-rays','קרני אור צבעוניות',.7],['portal','שער קסם מאבן',.5],
     ['aurora','זוהר צפוני',.8],['flames','מדורה',.45],['enso','מעגל מכחול',.5],['bauhaus','צורות באוהאוס',.65],['warp','קפיצה לחלל',.7]
   ].map(([id,name,w]) => ({id:'fx3d-'+id,name,detail:'אפקט בתלת־ממד · לולאה',kind:'model',file:'models/fx3d-'+id+'.glb',thumb:'thumbs/fx3d-'+id+'.png',clip:'Loop',w,group:'fx3d'}));
+  // Weather and cosmic effects as 3D models, built the same way (clouds are whole metaball shapes with a soft skin)
+  const w3d = [
+    ['w-sun','שמש זורחת',.5],['w-partly','שמש ועננים',.55],['w-clouds','עננים נודדים',.8],['w-raincloud','ענן גשם',.5],['w-rain','גשם',.8],
+    ['w-storm','סערה וברקים',.7],['w-lightning','ברקים',.6],['w-hail','ברד',.5],['w-snow','שלג',.8],['w-rainbow','קשת בענן',.7],
+    ['w-wind','רוח ועלים',.8],['w-fog','ערפל',.8],['w-tornado','טורנדו',.45],['w-night','לילה עם ירח',.7]
+  ].map(([id,name,w]) => ({id:'fx3d-'+id,name,detail:'מזג אוויר בתלת־ממד · לולאה',kind:'model',file:'models/fx3d-'+id+'.glb',thumb:'thumbs/fx3d-'+id+'.png',clip:'Loop',w,group:'w3d'}));
+  const k3d = [
+    ['k-tornado','מערבולת חלקיקים',.5],['k-saturn','שבתאי מחלקיקים',.65],['k-blackhole','חור שחור ודיסקת אור',.6],['k-globe','גלובוס נקודות',.45],
+    ['k-galaxy','גלקסיה ספירלית',.7],['k-dna','סליל DNA',.3],['k-gyro','טבעות מסתובבות',.5],['k-sphere','כדור חלקיקים נושם',.45],
+    ['k-terrain','נוף קווים',.9],['k-constellation','קבוצת כוכבים',.7],['k-orb','כדור קוסמי',.45],['k-fibres','מנורת סיבים אופטיים',.45]
+  ].map(([id,name,w]) => ({id:'fx3d-'+id,name,detail:'חלל בתלת־ממד · לולאה',kind:'model',file:'models/fx3d-'+id+'.glb',thumb:'thumbs/fx3d-'+id+'.png',clip:'Loop',w,group:'k3d'}));
   // Weather, same kind of keyed loop (clouds 15 s, fog 12 s, the rest 6 s): [file id, Hebrew name, start width]
   const weather = [
     ['w-sun','שמש זורחת',.6],['w-partly','שמש ועננים',.7],['w-clouds','עננים נודדים',1],['w-raincloud','ענן גשם',.6],['w-rain','גשם',1],
@@ -148,8 +159,8 @@ window.StarterLibrary = (() => {
     ['k-galaxy','גלקסיה ספירלית',.8],['k-dna','סליל DNA',.45],['k-gyro','טבעות מסתובבות',.6],['k-sphere','כדור חלקיקים נושם',.55],
     ['k-terrain','נוף קווים',1],['k-constellation','קבוצת כוכבים',.8],['k-orb','כדור קוסמי',.55],['k-fibres','סיבי אור',.8]
   ].map(([id,name,w]) => ({id:'fx-'+id,name,detail:'חלל וחלקיקים · לולאה · ללא צליל',kind:'video',file:'fx/'+id+'.mp4',thumb:'thumbs/fx-'+id+'.jpg',w,chroma:{enabled:true,color:'#000000',threshold:.35},group:'cosmic'}));
-  const entries = [...originals, ...scenes, ...effects, ...fx3d, ...weather, ...cosmic, ...made, ...models, ...animated, ...particleStyles, ...stickers, ...loops];
-  const groups = [['all','הכול'],['scene','סצנות בתנועה'],['fx','אפקטים מרחפים'],['fx3d','אפקטים בתלת־ממד'],['weather','מזג אוויר'],['cosmic','חלל וחלקיקים'],['made','מקוריים בתנועה'],['model','תלת־ממד'],['animal','חיות בתנועה'],['sea','ים'],['dino','דינוזאורים'],['creature','דמויות'],['particles','חלקיקים'],['sticker','מדבקות'],['loop','לולאות וידאו'],['original','מקוריים']];
+  const entries = [...originals, ...scenes, ...effects, ...fx3d, ...weather, ...w3d, ...cosmic, ...k3d, ...made, ...models, ...animated, ...particleStyles, ...stickers, ...loops];
+  const groups = [['all','הכול'],['scene','סצנות בתנועה'],['fx','אפקטים מרחפים'],['fx3d','אפקטים בתלת־ממד'],['weather','מזג אוויר'],['w3d','מזג אוויר בתלת־ממד'],['cosmic','חלל וחלקיקים'],['k3d','חלל בתלת־ממד'],['made','מקוריים בתנועה'],['model','תלת־ממד'],['animal','חיות בתנועה'],['sea','ים'],['dino','דינוזאורים'],['creature','דמויות'],['particles','חלקיקים'],['sticker','מדבקות'],['loop','לולאות וידאו'],['original','מקוריים']];
   const MIME = {glb:'model/gltf-binary',mp4:'video/mp4',png:'image/png',gif:'image/gif',wav:'audio/wav'};
   async function open(importAsset) {
     const dialog = document.createElement('dialog'); dialog.id='starter-library'; dialog.dir='rtl';
