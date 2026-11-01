@@ -25,6 +25,7 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
  const clearMsg=async()=>{await p.waitForTimeout(6300);};
  // 1. keyed element: panel mirrors the SAMPLED frame, num-x writes a key at the frozen playhead
  await selectEl('KD');
+ await p.waitForTimeout(800); // the live clock restarts when the creation loads: let it leave the first key, or a fast edit freezes on t=0 and updates that key
  let s0=await state();
  assert.strictEqual(s0.numX,'-0.25','panel shows the sampled x (keys are static here): '+s0.numX);
  assert.ok(s0.liveHidden,'starting live');
