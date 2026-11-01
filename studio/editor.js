@@ -1654,7 +1654,9 @@
         ctx.fillStyle = "rgba(70,40,140,0.55)"; ctx.fill();
         ctx.strokeStyle = "rgba(255,255,255,0.8)"; ctx.setLineDash([5, 4]); ctx.stroke(); ctx.setLineDash([]);
         ctx.fillStyle = "#fff"; ctx.font = Math.round(Math.min(wpx, hpx) / 3.2) + "px sans-serif";
-        ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("3D", 0, 2);
+        ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        if (typeof Editor3D !== "undefined" && Editor3D.modelError(el.id)) { ctx.font = Math.round(Math.min(wpx, hpx) / 6) + "px sans-serif"; ctx.fillText("לא נטען", 0, 2); } // failed twice in the real-scene layer
+        else ctx.fillText("3D", 0, 2);
       } else if (el.type === "sound") {
         ctx.beginPath(); ctx.arc(0, 0, Math.min(wpx, hpx) / 2, 0, 7);
         ctx.fillStyle = "rgba(30,60,120,0.85)"; ctx.fill();

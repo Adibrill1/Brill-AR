@@ -585,6 +585,13 @@ const Studio = (() => {
 
   // ---------- round A: shared entity factory for player + preview ----------
   // mode 'ar': video uses the device-proven xrextras-target-video-fade; 'preview': plain a-video.
+  // One object URL per blob: model files load through three.js's file cache, which keeps a copy per URL, so a fresh
+  // URL on every rebuild kept another copy of every model each time the editor rebuilt its layers (an iPhone ran out
+  // of memory: models stayed placeholders or the 3D layer was wiped). releaseBlobURL drops the URL and its cached copy.
+  const blobUrls = new Map();
+  function blobURL(b) { let u = blobUrls.get(b); if (!u) { u = URL.createObjectURL(b); blobUrls.set(b, u); } return u; }
+  function releaseBlobURL(b) { const u = blobUrls.get(b); if (!u) return; blobUrls.delete(b); try { if (window.THREE && THREE.Cache) THREE.Cache.remove(u); URL.revokeObjectURL(u); } catch (e) {} }
+  function blobURLs() { return new Map(blobUrls); }
   function buildElementEntity(rec, el, idx, mode, opts) {
     opts = opts || {};
     const mediaRef = (e2) => "#" + (opts.mediaId ? opts.mediaId(e2) : "m-" + e2.id);
@@ -642,7 +649,7 @@ const Studio = (() => {
       const pc = el.particles || {};
       e = document.createElement("a-entity");
       let spriteAttr = "";
-      if (pc.preset === "custom" && pc.spriteAssetId && rec.assets && rec.assets[pc.spriteAssetId]) spriteAttr = `; sprite: ${URL.createObjectURL(rec.assets[pc.spriteAssetId])}`;
+      if (pc.preset === "custom" && pc.spriteAssetId && rec.assets && rec.assets[pc.spriteAssetId]) spriteAttr = `; sprite: ${blobURL(rec.assets[pc.spriteAssetId])}`;
       e.setAttribute("particles", `preset: ${pc.preset || "sparkle"}; count: ${pc.count || 120}; color: ${pc.color || "#ffd94d"}; size: ${pc.size || 12}; speed: ${pc.speed || 1}; width: ${ts.w}; height: ${ts.h}; lifetime: ${pc.lifetime||0}; emitter: ${pc.emitter||"box"}; endColor: ${pc.endColor||pc.color||"#ffd94d"}; endSize: ${pc.endSize==null?1:pc.endSize}; fade: ${!!pc.fade}; spread: ${pc.spread>0?Math.min(2,pc.spread):1}${pc.life2>0?"; life2: "+pc.life2:""}${pc.color2?"; color2: "+pc.color2:""}${spriteAttr}${pc.direction != null ? "; direction: " + (pc.direction | 0) : ""}`);
     } else if (el.type === "model") {
       // glTF/GLB: wrapper carries placement (timeline/tap target); inner child carries the
@@ -653,7 +660,7 @@ const Studio = (() => {
         const inner = document.createElement("a-entity");
         ensureModelAnimationComponent();
         inner.setAttribute("model-clips", {clip:el.modelClip||0,speed:el.modelSpeed||1,playing:!ActionCore.list(rec).some(q=>q.actions.some(a=>a.type==='model'&&a.layerId===el.id))&&el.modelPlaying!==false,loop:el.modelLoop!==false});
-        inner.setAttribute("gltf-model", URL.createObjectURL(blob));
+        inner.setAttribute("gltf-model", blobURL(blob));
         inner.addEventListener("model-loaded", () => {
           const mesh = inner.getObject3D("mesh");
           if (!mesh) return;
@@ -1649,7 +1656,7 @@ const Studio = (() => {
   }
 
   return { TARGET_W, TARGET_H, newId, inspectVideo, validateModelBlob, prepareModelBlob, modelCompressionKinds, DECODER_DRACO_PATH, DECODER_MESHOPT_PATH, modelClipNames, modelClipInfo, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
-           audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, historyState, restoreHistory, duplicateLayer, exportJSON, missingAssets, importJSON, exportZIP, importZIP, zipToJSON, fetchPublished, ownBlob, assetHealth, fileHealth, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, artworkFingerprint, fingerprintDistance, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
+           audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, blobURL, releaseBlobURL, blobURLs, historyState, restoreHistory, duplicateLayer, exportJSON, missingAssets, importJSON, exportZIP, importZIP, zipToJSON, fetchPublished, ownBlob, assetHealth, fileHealth, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, artworkFingerprint, fingerprintDistance, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
            load: id=>settledRead(id), all: ()=>settledRead(), del: delExperience, LIMITS, mediaBytes, pushBack, addBlocker, publishBlocker, restoreBlocker, exportWarning, exportJSONSize,
            onSaveState, installSaveGuard, saveState, soundOnTouch, snapAngle, syncMedia,
            _testHoldSave:p=>{saveHold=p;}, _testFailSave:m=>{failSave=m;}, _testFailPut:o=>{failPut=o?{...o}:null;} };

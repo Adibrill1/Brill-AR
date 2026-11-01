@@ -38,8 +38,10 @@ window.Editor3D = (() => {
   // after the first mount used to get no node (the entity then rendered as a blank white plane).
   async function ensureMedia(rec) {
     const assets = host && host.querySelector("#editor-3d-media"); if (!assets) return;
+    const keep = new Set(rec.elements.filter((el) => el.type !== "model").map((el) => "m3-" + el.id)); // models load from their own URL
+    assets.querySelectorAll('[id^="m3-"]').forEach((n) => { if (keep.has(n.id)) return; try { if (n.src && n.src.startsWith("blob:")) { THREE.Cache.remove(n.src); URL.revokeObjectURL(n.src); } } catch (e) {} n.remove(); }); // layers of another creation, or deleted
     for (const el of rec.elements) {
-      if (!el.assetId || !rec.assets[el.assetId]) continue;
+      if (!el.assetId || !rec.assets[el.assetId] || el.type === "model") continue;
       const blob = rec.assets[el.assetId], mid = "m3-" + el.id;
       const old = assets.querySelector('[id="' + mid + '"]');
       if (old && old.__blob === blob) continue; // already registered for this exact asset
@@ -186,7 +188,9 @@ window.Editor3D = (() => {
 
   function rebuildElements() {
     const rec = getRec(); if (!rec) return;
-    rig.querySelectorAll("[data-el-root]").forEach((n) => n.remove());
+    rig.querySelectorAll("[data-el-root]").forEach((n) => { freeModels(n); n.remove(); });
+    const inUse = new Set(Object.values(rec.assets || {}));
+    for (const b of Studio.blobURLs().keys()) if (!inUse.has(b)) Studio.releaseBlobURL(b);
     Studio.topLevelElements(rec).forEach((el, idx) => {
       const e = Studio.buildElementEntity(rec, el, idx, "preview", { videoFallback: (x) => {
         // undecodable clips would stall the scene; grey plane instead (same policy as the preview page)
@@ -195,6 +199,7 @@ window.Editor3D = (() => {
         return f ? probe.canPlayType(f.type || "video/mp4") === "" : true;
       }, mediaId: (x) => "m3-" + x.id });
       if (!e) return;
+      e.querySelectorAll("[gltf-model]").forEach((m) => { m.addEventListener("model-error", () => modelFailed(el.id), { once: true }); m.addEventListener("model-loaded", () => { failed.delete(el.id); pruneCache(); }, { once: true }); });
       e.setAttribute("data-el-root", el.id);
       stripAnim(e);
       rig.appendChild(e);
@@ -203,6 +208,46 @@ window.Editor3D = (() => {
     });
     refreshGizmo();
   }
+
+  // A model's geometry, materials, textures and skeleton are its own (parsed per entity), so they are freed when the
+  // layer is rebuilt; A-Frame leaves them on the GPU, and every edit added another set.
+  function freeModels(root) {
+    root.querySelectorAll("[gltf-model]").forEach((m) => {
+      const mesh = m.getObject3D && m.getObject3D("mesh"); if (!mesh) return;
+      mesh.traverse((o) => {
+        if (o.geometry) o.geometry.dispose();
+        if (o.skeleton && o.skeleton.dispose) o.skeleton.dispose();
+        (Array.isArray(o.material) ? o.material : o.material ? [o.material] : []).forEach((mt) => { for (const k in mt) { const v = mt[k]; if (v && v.isTexture) { if (v.image && typeof v.image.close === "function") v.image.close(); v.dispose(); } } mt.dispose(); });
+      });
+    });
+    pruneCache();
+  }
+  // The model's embedded images pass through three.js's file cache under one-off blob URLs (1024px each, ~4MB decoded);
+  // keep only the cache entries of files still in use.
+  function pruneCache() {
+    if (!window.THREE || !THREE.Cache || !THREE.Cache.files) return;
+    const keep = new Set(Studio.blobURLs().values());
+    for (const k of Object.keys(THREE.Cache.files)) if (k.startsWith("blob:") && !keep.has(k)) THREE.Cache.remove(k);
+  }
+  // A model that fails to load (a phone short of memory) is tried once more; after that the editor shows it as not loaded.
+  const failed = new Map();
+  function modelFailed(id) {
+    const n = (failed.get(id) || 0) + 1; failed.set(id, n);
+    if (n === 1) setTimeout(() => { lastSig = null; sync(); }, 1500);
+  }
+  function modelError(id) { return (failed.get(id) || 0) > 1; }
+  // iOS drops a page's WebGL context when memory runs short or after the app was in the background. While it is lost the
+  // layer draws nothing, so the canvas takes the layers back; if it is not handed back soon, the layer is built anew.
+  let glLost = false, lostTimer = 0;
+  function watchContext() {
+    const c = sceneEl && sceneEl.canvas; if (!c || c.__watched) return; c.__watched = true;
+    c.addEventListener("webglcontextlost", () => { glLost = true; clearTimeout(lostTimer); lostTimer = setTimeout(() => { if (glLost) { glLost = false; remount(); } }, 3000); });
+    c.addEventListener("webglcontextrestored", () => { glLost = false; clearTimeout(lostTimer); lastSig = null; sync(); });
+  }
+  document.addEventListener("visibilitychange", () => {
+    if (document.visibilityState !== "visible" || !sceneEl || !sceneEl.renderer) return;
+    try { if (sceneEl.renderer.getContext().isContextLost() && !glLost) { glLost = true; clearTimeout(lostTimer); lostTimer = setTimeout(() => { if (glLost) { glLost = false; remount(); } }, 1500); } } catch (e) {}
+  });
 
   // ---------- selection highlight + move gizmo (rig-space axes) ----------
   function clearGizmo() {
@@ -744,7 +789,7 @@ window.Editor3D = (() => {
     if (remounting) return; remounting = true;
     try {
       const old = host;
-      hide();
+      hide(); if (rig) rig.querySelectorAll("[data-el-root]").forEach(freeModels); glLost = false; clearTimeout(lostTimer);
       if (old) { old.querySelectorAll("#editor-3d-media > *").forEach((n) => { try { if (n.src && n.src.startsWith("blob:")) URL.revokeObjectURL(n.src); } catch (e) {} }); old.remove(); }
       mounted = false; sceneEl = null; host = null; rig = null; cam = null; toolRow = null; scCanvas = null; lastFitKey = ""; lastSig = null; artNode = null;
       gizmo = null; helper = null; orb = null;
@@ -828,7 +873,7 @@ window.Editor3D = (() => {
   // True when the 2D layer is drawing this element (model loaded, particles or keyed video built): the canvas then
   // leaves its body to the layer and draws only the selection marks.
   function drawsIn2d(id) {
-    if (!active || mode !== "2d" || !rig) return false;
+    if (!active || mode !== "2d" || !rig || glLost) return false;
     const rec = getRec(); if (!rec || !overlayType(rec.elements.find((x) => x.id === id))) return false;
     const n = rig.querySelector('[data-el-id="' + id + '"]');
     if (!n || !n.object3D) return false;
@@ -873,7 +918,7 @@ window.Editor3D = (() => {
     // A viewport change (rotation) can leave A-Frame on its fallback camera at the origin, which
     // makes every projection (and the gizmo fit) NaN. Keep the editor's own camera the active one.
     if (artNode && artNode.object3D && artNode.object3D.visible !== (mode === "3d")) artNode.object3D.visible = mode === "3d"; // the 2D canvas draws the artwork itself
-    playClips(true);
+    playClips(true); watchContext();
     if (mode === "2d") frame2d();
     else if (cam && sceneEl && cam.components && cam.components.camera) {
       let own = cam.getObject3D("camera");
@@ -951,5 +996,5 @@ window.Editor3D = (() => {
     rebuildArtwork().then(() => ensureMedia(getRec())).then(rebuildElements);
   }
 
-  return { init, show, hide, overlay, drawsIn2d, overlayType, needsOverlay: (rec) => !!rec && rec.elements.some(overlayType), sync, isActive: () => active && mode === "3d", refreshGizmo, _test: { mode: () => mode, alphaAt, pickOrder, rebuilds: () => rebuildCount, gizmo: () => gizmo, node: (id) => elNode(id), scene: () => sceneEl, helper: () => helper, drag: () => gizmoDrag } };
+  return { init, show, hide, overlay, drawsIn2d, overlayType, modelError, needsOverlay: (rec) => !!rec && rec.elements.some(overlayType), sync, isActive: () => active && mode === "3d", refreshGizmo, _test: { glLost: () => glLost, mode: () => mode, alphaAt, pickOrder, rebuilds: () => rebuildCount, gizmo: () => gizmo, node: (id) => elNode(id), scene: () => sceneEl, helper: () => helper, drag: () => gizmoDrag } };
 })();
