@@ -20,7 +20,7 @@ window.Editor3D = (() => {
   // "3d": the full 3D workspace (gizmo, orbit). "2d": the same scene as a transparent layer over the flat 2D canvas,
   // framed by an orthographic camera to match it pixel for pixel, drawing in their final look only the layers the
   // canvas cannot (3D models, particles, green-screen video). The canvas keeps every touch and draws the rest.
-  let mode = "3d", ortho = null, getView2d = null, rigRot3d = null;
+  let mode = "3d", ortho = null, getView2d = null, rigRot3d = null, frontBtn = null;
   // a layer tilted on the other axes (rotX/rotY) is one too: the flat canvas can only turn it in its own plane
   function overlayType(el) { return !!el && (el.type === "model" || el.type === "particles" || (el.type === "video" && !!(el.chroma && el.chroma.enabled)) || (el.type !== "sound" && el.type !== "group" && !!(el.rotX || el.rotY))); }
 
@@ -109,6 +109,12 @@ window.Editor3D = (() => {
       b.onclick = () => { gizmoMode = mode; syncToolButtons(); refreshGizmo(); };
       toggleRow.appendChild(b);
     }
+    // back to the front view: the artwork face-on at the starting distance
+    const front = document.createElement("button");
+    front.id = "btn-3d-front"; front.type = "button"; front.textContent = "חזית"; front.title = "חזרה למבט מלפנים";
+    front.style.cssText = "position:absolute;left:8px;bottom:8px;z-index:6;height:34px;padding:0 10px;border-radius:8px;border:1px solid #b9b4c7;background:rgba(255,255,255,.94);font:600 13px/1 sans-serif;color:#292535;cursor:pointer";
+    front.onclick = () => { if (!rig || !cam) return; rig.setAttribute("rotation", "0 0 0"); cam.setAttribute("position", "0 0 1.15"); fitGizmoToView(); refreshGizmo(); };
+    frontBtn = front; // in the bottom-left corner of the view, apart from the tool column
     // Screen-space rotation buttons (curved arrows): fixed size, always inside the view, docked beside the move/rotate toggle
     // in the screen corner farthest from the selected element, so they never sit on top of the 3D handles.
     const ROT_BTNS = [["rot", "⟳", "#1971c2", "btn-rot-z", "סיבוב"], ["rotX", "⤾", "#e03131", "btn-rot-x", "הטיה אנכית"], ["rotY", "⤿", "#2f9e44", "btn-rot-y", "הטיה אופקית"]];
@@ -122,7 +128,7 @@ window.Editor3D = (() => {
       b.addEventListener("pointercancel", (e) => { if (gizmoDrag && gizmoDrag.id === e.pointerId) up(e); });
       toolRow.appendChild(b);
     }
-    host.appendChild(toolRow);
+    host.appendChild(toolRow); host.appendChild(frontBtn);
     host.appendChild(sceneEl);
     wrapEl.appendChild(host);
     syncToolButtons();
@@ -156,13 +162,14 @@ window.Editor3D = (() => {
     if (artNode && artNode.__blob === blob && artNode.__key === key) return;
     const g = geomOf(rec), r = rec.target.artRect;
     const url = URL.createObjectURL(blob);
-    const img = await Studio.loadImage(url);
-    if (!host || !rig) return;
+    let img; try { img = await Studio.loadImage(url); } catch (e) { URL.revokeObjectURL(url); return; }
+    const now = getRec(); // a creation switched while the image loaded: its own rebuild draws its artwork
+    if (!host || !rig || !now || now.assets.__artwork !== blob || (artNode && artNode.__blob === blob && artNode.__key === key)) { URL.revokeObjectURL(url); return; }
     img.id = "editor-3d-artwork-" + (++artSerial);
     host.querySelector("#editor-3d-media").appendChild(img);
     const node = document.createElement("a-plane");
     node.__blob = blob; node.__key = key;
-    node.setAttribute("material", { src: "#" + img.id, shader: "flat" });
+    node.setAttribute("material", { src: "#" + img.id, shader: "flat", side: "double" });
     node.setAttribute("width", g.artW); node.setAttribute("height", g.artH);
     const acx = ((r.x + r.w / 2) / Studio.TARGET_W - 0.5) * g.tw;
     const acy = 0.5 - (r.y + r.h / 2) / Studio.TARGET_H;
@@ -675,7 +682,7 @@ window.Editor3D = (() => {
     }
     if (orb) {
       const rot = rig.getAttribute("rotation");
-      rot.y += (e.clientX - orb.x) * 0.25;
+      rot.y = Math.max(-70, Math.min(70, rot.y + (e.clientX - orb.x) * 0.25)); // the artwork never turns edge-on or away (it vanished into the grey)
       rot.x = Math.max(-35, Math.min(35, rot.x + (e.clientY - orb.y) * 0.25));
       rig.setAttribute("rotation", rot);
       fitGizmoToView();
@@ -753,6 +760,7 @@ window.Editor3D = (() => {
     host.style.background = flat ? "transparent" : "#d9dde3";
     host.style.pointerEvents = flat ? "none" : "auto";
     if (toolRow) toolRow.style.display = flat ? "none" : "flex";
+    if (frontBtn) frontBtn.style.display = flat ? "none" : "";
     if (!flat) { host.style.left = host.style.top = host.style.width = host.style.height = ""; host.style.inset = "0"; host.dataset.box = ""; }
     if (rig) {
       if (flat) { if (!rigRot3d) rigRot3d = Object.assign({}, rig.getAttribute("rotation")); rig.setAttribute("rotation", "0 0 0"); } // the flat view is always face-on
