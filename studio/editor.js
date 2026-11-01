@@ -585,8 +585,31 @@
       msg("נוספו חלקיקים. אפשר לשנות צבע, כמות ומהירות בלוח למטה.");
       render();
     };
+    // A ready scene from the starter library: every part becomes its own layer (models start on their move, paths are
+    // timeline keys, particles get their sprite), all added and saved together so one undo removes the scene.
+    const addLibraryScene = async (parts, options) => {
+      { const blocked = Studio.addBlocker(rec, { layers: parts.length, bytes: parts.reduce((n, pt) => n + pt.blob.size, 0) }); if (blocked) { msg(blocked); return; } }
+      const artRatio = rec.target.artRect.w / rec.target.artRect.h; let last = null;
+      for (const pt of parts) {
+        const assetId = Studio.newId(); rec.assets[assetId] = await Studio.ownBlob(pt.blob);
+        const el = { id: Studio.newId(), name: pt.name, x: pt.x || 0, y: pt.y || 0, z: pt.z || 0, w: pt.w || 0.3, rot: pt.rot || 0, flush: true, seq: curSeq };
+        if (pt.rotX) el.rotX = pt.rotX; if (pt.rotY) el.rotY = pt.rotY;
+        if (pt.timeline) el.timeline = JSON.parse(JSON.stringify(pt.timeline));
+        if (pt.type === "model") {
+          Object.assign(el, { type: "model", assetId, aspect: 1, h: null, seat: "plane" });
+          try { const clips = await Studio.modelClipInfo(pt.blob); el.clipDurations = clips.map((c) => c.duration); const i = clips.findIndex((c) => c.name === pt.clip); if (i >= 0) el.modelClip = i; } catch {}
+        } else if (pt.type === "particles") Object.assign(el, { type: "particles", h: pt.h || el.w, particles: Object.assign({}, pt.particles, { preset: "custom", spriteAssetId: assetId }) });
+        else Object.assign(el, { type: "image", assetId, aspect: 1, h: el.w * artRatio });
+        rec.elements.push(Studio.normEl(el)); last = el;
+      }
+      selectedId = last ? last.id : null;
+      await saveGuarded(rec);
+      msg("נוספה הסצנה \"" + (options.name || "") + "\": " + parts.length + " שכבות. כל שכבה נערכת בנפרד, והמסלולים בציר הזמן.");
+      render();
+    };
     const importAssetNow = async (kind, f, options = {}) => {
       if (!f) return;
+      if (kind === "scene") return addLibraryScene(f.parts, options);
       if (kind === "particles") return addLibraryParticles(f, options);
       let importNote = "",videoInfo=null;
       { const capMB = Math.round(Studio.LIMITS.maxEntryBytes / 1048576);

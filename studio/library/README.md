@@ -56,6 +56,19 @@ textures unchanged (first two packs below). Thumbnails are rendered from the GLB
 All Quaternius packs above are CC0 1.0 per their pack pages and License.txt files. The move is chosen in the editor's
 model panel; the library only sets the starting one (swimming, Idle, Wave, Dance or Flying).
 
+## Original animated models — `models/m-*.glb`, `thumbs/m-*.png`
+Six models built entirely in code by `tools/make-models.mjs` (outside this repository): geometry generated there
+(sphere, torus, lathe, box, bipyramid, star prism), plain glTF PBR materials, and node animation in one looping clip
+named "Loop". No external artwork. solar (sun, four orbiting planets, a moon and a ringed planet), balloons (five
+bobbing balloons on strings), star-mobile (a turning mobile of spinning stars), gems (three crystals orbiting a
+fourth), dreidel (a spinning, wobbling top), flower (petals opening and closing on a swaying stem).
+
+## Ready scenes (`kind: 'scene'` in library.js) — `thumbs/sc-*.png`
+Eight scenes, each several layers added in one tap: models from this library starting on a chosen move, looping
+paths written as timeline keys (x, y, depth, turn, scale, fade in/out), and a particle style. Each layer stays
+editable on its own. aquarium, dragon, party, winter, dino-walk, shark, space, birthday. Thumbnails are captured from
+the editor's own 2D view (`tools/scene-thumbs.cjs`).
+
 ## Particle styles — `particles/<sprite>.png`, `thumbs/p-<id>.png`
 Eight ready particle layers. Each sprite is a 128px white shape drawn in code by `tools/make-graphics.cjs sprites`
 (heart, petal, snowflake, leaf, sparkle, bubble, star, confetti), tinted in the experience by the layer's colours; the

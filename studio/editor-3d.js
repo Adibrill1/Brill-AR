@@ -774,7 +774,7 @@ window.Editor3D = (() => {
       applyMode();
       layout(); lastSig = firstMount ? compositionSig(rec) : null; // re-shown: may be stale, rebuild once on next sync
       wrapEl.querySelector("#preview").style.visibility = "hidden";
-      host.style.display = "block";
+      host.style.display = "block"; try { sceneEl.resize(); } catch (e) {} // measured now that the host is shown
       active = true;
       refreshGizmo();
       cancelAnimationFrame(sampleRaf); sampleRaf = requestAnimationFrame(sampleLoop);
@@ -804,7 +804,7 @@ window.Editor3D = (() => {
       await mount();
       applyMode(); clearGizmo();
       lastSig = firstMount ? compositionSig(rec) : null;
-      host.style.display = "block";
+      host.style.display = "block"; host.dataset.box = ""; // frame2d sizes the shown host on the next frame
       active = true;
       cancelAnimationFrame(sampleRaf); sampleRaf = requestAnimationFrame(sampleLoop);
     } finally { busy = false; }
@@ -826,7 +826,9 @@ window.Editor3D = (() => {
     const rec = getRec(), v = getView2d && getView2d(), c = wrapEl.querySelector("#preview");
     if (!rec || !rec.target || !v || !v.view.W || !c || !sceneEl) return;
     const w = v.view.cw, h = v.view.ch, box = [c.offsetLeft, c.offsetTop, w, h].join(",");
-    if (host.dataset.box !== box) {
+    // also when the scene canvas has no size: a resize measured while the host was hidden (another creation, another
+    // tab) leaves it at 0x0, and the layer then draws nothing although every layer reports ready
+    if (host.dataset.box !== box || !(sceneEl.canvas && sceneEl.canvas.width)) {
       host.dataset.box = box;
       Object.assign(host.style, { inset: "auto", left: c.offsetLeft + "px", top: c.offsetTop + "px", width: w + "px", height: h + "px" });
       try { sceneEl.resize(); } catch (e) {}
