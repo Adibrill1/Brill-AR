@@ -24,7 +24,12 @@ window.StarterLibrary = (() => {
     ['flower_gazania','פרח גזניה'],['food_pomegranate_01','רימון'],['food_apple_01','תפוח'],['lemon','לימון'],['croissant','קרואסון'],
     ['carrot_cake','עוגת גזר'],['ukulele_01','יוקללה'],['boombox','רדיו־טייפ'],['cassette_player','ווקמן'],['camera_01','מצלמה ישנה'],
     ['television_01','טלוויזיה ישנה'],['alarm_clock_01','שעון מעורר'],['mantel_clock_01','שעון אח'],['dartboard','לוח חיצים'],
-    ['football','כדור כדורגל ישן'],['armchair_01','כורסה ויקטוריאנית']
+    ['football','כדור כדורגל ישן'],['armchair_01','כורסה ויקטוריאנית'],
+    ['treasure_chest','תיבת אוצר'],['vintage_suitcase','מזוודה עתיקה'],['vintage_pocket_watch','שעון כיס'],['seadogs_compass','מצפן'],
+    ['filmstrip_projector_8mm','מקרן סרטים'],['vintage_video_camera','מצלמת קולנוע ישנה'],['spinning_wheel_01','גלגל טוויה'],
+    ['strawberry_chocolate_cake','עוגת שוקולד ותותים'],['chess_set','לוח שחמט'],['vintage_grandfather_clock_01','שעון סבא'],
+    ['wicker_basket_01','סל נצרים'],['book_encyclopedia_set_01','אנציקלופדיה ישנה'],['vintage_binocular','משקפת עתיקה'],
+    ['magnifying_glass_01','זכוכית מגדלת'],['vintage_microscope','מיקרוסקופ עתיק'],['lifebuoy','גלגל הצלה'],['dutch_ship_medium','ספינת מפרש']
   ].map(([id,name]) => ({id:'ph-'+id,name,detail:'תלת־ממד · חינמי (CC0)',kind:'model',file:'models/'+id+'.glb',thumb:'thumbs/'+id+'.png',group:'model'}));
   // Rendered from the Styles studio: [style id, Hebrew name, seconds]
   const loops = [

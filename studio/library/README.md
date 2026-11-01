@@ -13,7 +13,7 @@ geometry, not copied from stock or Artivive. No external artwork.
 - orbit.mp4 / orbit-poster.png: original two-second orbital geometric animation, H264/yuv420p, 256x256, no audio.
 
 ## 3D models: Poly Haven (CC0) — `models/`, `thumbs/<id>.png`
-36 models from https://polyhaven.com, all under CC0 (public domain dedication: free for any use, no credit needed;
+53 models from https://polyhaven.com, all under CC0 (public domain dedication: free for any use, no credit needed;
 credited here as a courtesy). Downloaded with the 1K glTF variant through the Poly Haven API and packed to a single
 GLB per model by `tools/gltf-to-glb.mjs` (outside this repository); geometry, materials and textures unchanged.
 One change: `fancy_picture_frame_01` has its inner painting node (`fancy_picture_frame_01_canvas`) removed from the
@@ -26,7 +26,12 @@ carved_wooden_elephant, garden_gnome, rubber_duck_toy, Lantern_01, wooden_lanter
 chinese_chandelier, lightbulb_01, antique_ceramic_vase_01, ceramic_vase_01, brass_goblets, wine_bottles_01,
 potted_plant_04, fern_02, anthurium_botany_01, flower_gazania, food_pomegranate_01, food_apple_01, lemon, croissant,
 carrot_cake, Ukulele_01, boombox, cassette_player, Camera_01, Television_01, alarm_clock_01, mantel_clock_01,
-dartboard, football, ArmChair_01. (File names are lower-case.)
+dartboard, football, ArmChair_01, treasure_chest, vintage_suitcase, vintage_pocket_watch, seadogs_compass,
+filmstrip_projector_8mm, vintage_video_camera, spinning_wheel_01, strawberry_chocolate_cake, chess_set,
+vintage_grandfather_clock_01, wicker_basket_01, book_encyclopedia_set_01, vintage_binocular, magnifying_glass_01,
+vintage_microscope, lifebuoy, dutch_ship_medium. (File names are lower-case.) vintage_suitcase comes as a pair; the second
+suitcase's nodes are dropped (`--drop-node vintage_suitcase_02_bottom/_clasp/_handle/_top`) and its thumbnail is
+rendered from the edited model.
 
 The models are static; motion is added in the editor (spin, float, pulse, timeline).
 
