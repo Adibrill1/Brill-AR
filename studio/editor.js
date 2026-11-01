@@ -424,31 +424,49 @@
       finally { btn.disabled = false; }
     };
   }
+  // A video is read straight from its stored file (object URL) after a one-byte check that the file is still readable,
+  // with the same retries as readAsset. A whole-file data URL of a 50MB clip could run an iPhone out of memory.
+  async function videoURL(id) {
+    let lastErr;
+    for (let i = 0; i < 3; i++) {
+      try { await rec.assets[id].slice(0, 1).arrayBuffer(); return URL.createObjectURL(rec.assets[id]); }
+      catch (e) { lastErr = e; await new Promise((r) => setTimeout(r, 120 * (i + 1))); }
+    }
+    throw lastErr;
+  }
   async function hydrate() {
-    artworkImg = null;
+    // Keep what is already on screen when its stored file is the same one: the artwork used to be dropped and
+    // re-read on every added, duplicated or undone layer, so it vanished for a moment (or for good, on a failed re-read).
+    const keepArt = artworkImg && artworkImg.__blob === rec.assets.__artwork ? artworkImg : null;
+    const oldMedia = Object.assign({}, media);
+    artworkImg = keepArt;
     for (const k of Object.keys(media)) delete media[k];
     for (const k of Object.keys(textCache)) delete textCache[k];
     const badAssets = [];
     deadAssets.clear();
-    if (rec.assets.__artwork) {
+    if (rec.assets.__artwork && !artworkImg) {
       // A stored blob can be unreadable ("dead" picker backing evicted by the OS). Keep the
       // editor usable and say exactly what is lost instead of failing the whole load.
-      try { artworkImg = await Studio.loadImage(await readAsset("__artwork")); }
+      try { artworkImg = await Studio.loadImage(await readAsset("__artwork")); artworkImg.__blob = rec.assets.__artwork; }
       catch (err) { badAssets.push("תמונת היצירה"); deadAssets.add("__artwork"); }
     }
     for (const el of rec.elements) {
       Studio.normEl(el);
       if (!el.assetId || !rec.assets[el.assetId]) continue;
+      const prev = oldMedia[el.assetId];
+      if (prev && prev.__blob === rec.assets[el.assetId]) { if (el.type === "video") prev.loop = el.loop !== false; media[el.assetId] = prev; continue; }
       try {
-        const durl = await readAsset(el.assetId);
         if (el.type === "video") {
           const v = document.createElement("video");
-          v.muted = true; v.loop = el.loop !== false; v.playsInline = true; v.src = durl;
+          v.muted = true; v.loop = el.loop !== false; v.playsInline = true; v.src = await videoURL(el.assetId);
           v.play().catch(() => {});
+          v.__blob = rec.assets[el.assetId];
           media[el.assetId] = v;
         } else if (el.type === "image") {
+          const durl = await readAsset(el.assetId);
           const mm = await Studio.makeImageMedia(rec.assets[el.assetId], "m-" + el.id, null);
           media[el.assetId] = (mm.animated || mm.staticFallback) ? mm.node : await Studio.loadImage(durl);
+          media[el.assetId].__blob = rec.assets[el.assetId];
         }
       } catch (err) { badAssets.push(el.name || el.type); if (el.assetId) deadAssets.add(el.assetId); }
     }
@@ -517,7 +535,7 @@
       const t = await Studio.makeTarget(img);
       rec.target = { artRect: t.artRect, natural: { w: img.naturalWidth, h: img.naturalHeight } };
       rec.assets.__artwork = await Studio.ownBlob(f);
-      artworkImg = img;
+      artworkImg = img; artworkImg.__blob = rec.assets.__artwork;
       rec.target.fp = fp;
       await saveGuarded(rec);
       const q = Studio.assessTargetQuality(img);
@@ -640,23 +658,24 @@
       if (kind === "model") { el.w = 0.4; el.z = 0; el.seat = "plane"; el.aspect = 1; // seat="plane": the model's back face rests on the artwork (older models keep their centered placement)
         try { el.clipDurations = (await Studio.modelClipInfo(f)).map(c => c.duration); } catch {}
       }
-      const durl = await Studio.blobToDataURL(f);
       if (kind === "image") {
+        const durl = await Studio.blobToDataURL(f);
         const mm = await Studio.makeImageMedia(f, "m-" + el.id, null);
         if (mm.animated || mm.staticFallback) {
           el.aspect = mm.width / mm.height;
-          media[assetId] = mm.node;
+          media[assetId] = mm.node; mm.node.__blob = rec.assets[assetId];
         } else {
           const im = await Studio.loadImage(durl);
           el.aspect = im.naturalWidth / im.naturalHeight;
-          media[assetId] = im;
+          media[assetId] = im; im.__blob = rec.assets[assetId];
           if (mm.gifError) msg(mm.gifError === "interlaced" ? "ה־GIF הזה שמור בשיטת שילוב (interlaced) שלא נתמכת - מוצג כתמונה סטטית." : "ה־GIF לא נטען כאנימציה - מוצג כתמונה סטטית.");
         }
         if (mm.staticFallback) importNote = (mm.gifError === "interlaced" ? "ה־GIF הזה שמור בשיטת שילוב (interlaced) שלא נתמכת - מוצג כתמונה סטטית." : "ה־GIF לא נטען כאנימציה - מוצג כתמונה סטטית.");
         el.h = (el.w / el.aspect) * artRatio;
       } else if (kind === "video") {
         const v = document.createElement("video");
-        v.muted = true; v.playsInline = true; v.src = durl;
+        v.muted = true; v.playsInline = true; v.src = URL.createObjectURL(rec.assets[assetId]); // the stored copy; a data URL of the whole clip could run a phone out of memory
+        v.__blob = rec.assets[assetId];
         el.aspect = videoInfo.width/videoInfo.height;
         el.h = (el.w / el.aspect) * artRatio;
         v.loop = true; v.play().catch(() => {});
@@ -906,8 +925,10 @@
       freezeAt:(t)=>freezePlayhead(t),
       getFrozen:()=>tlScrubT,
       restoreFrozen:(t)=>restoreFrozen(t),
-      onGate:(text)=>msg(text)});
+      onGate:(text)=>msg(text),
+      getView2d:()=>({view,zoom:viewZoom})});
     new IntersectionObserver(es=>{wrapOnScreen=es[0].isIntersecting;sync3d();}).observe($("canvas-wrap"));
+    bindFullEdit();
     $('btn-duplicate-el').onclick=()=>queueExperience(async()=>{{const b=Studio.addBlocker(rec,{layers:1});if(b){msg(b);return;}}const id=Studio.duplicateLayer(rec,selectedId);if(!id)return;selectedId=id;await saveGuarded(rec);await hydrate();render();});
     const restore=direction=>queueExperience(async()=>{const restored=await Studio.restoreHistory(rec.id,direction);if(!restored)return;rec=restored;selectedId=null;checkedIds.clear();tlScrubT=null;resetSeq();await hydrate();render();});
     const saveStateEl=$("save-state");
@@ -1417,6 +1438,42 @@
   // margin around it (user request: see the space surrounding the image while editing).
   // All canvas coordinates derive from view = {W,H,mx,my} - artwork size + margin offset.
   const MARGIN_FRAC = 0.25;
+  // Full-screen editing: the canvas wrap covers the whole screen (CSS body.full-edit) and the artwork is drawn as large
+  // as fits; the same handlers move, scale and rotate layers on it. A small bar on top has exit, undo and redo.
+  const FULL_MARGIN_FRAC = 0.1, FULL_BAR_PX = 64;
+  let fullEdit = false;
+  // Rotation knob of a selected layer's box (canvas px): ROT_KNOB_PX above the top edge's middle, turned with the layer.
+  const ROT_KNOB_PX = 26;
+  function rotHandle(b) {
+    const s = Math.sin(b.rot), c = Math.cos(b.rot), up = (d) => ({ x: b.cx + d * s, y: b.cy - d * c });
+    const e = up(b.h / 2), k = up(b.h / 2 + ROT_KNOB_PX);
+    return { x: k.x, y: k.y, ex: e.x, ey: e.y };
+  }
+  function setFullEdit(on) {
+    fullEdit = !!on;
+    document.body.classList.toggle("full-edit", fullEdit);
+    $("btn-full").textContent = fullEdit ? "✕" : "⛶";
+    $("btn-full").setAttribute("aria-label", fullEdit ? "יציאה ממסך מלא" : "עריכה במסך מלא");
+    $("full-bar").hidden = !fullEdit;
+    viewZoom = 1;
+    setTimeout(() => dispatchEvent(new Event("resize")), 0); // canvas, 3D scene and the 2D/3D pill re-measure
+  }
+  function bindFullEdit() {
+    const wrap = $("canvas-wrap");
+    // top-right corner of the canvas; the 3D view's tool buttons dock below it on that side (editor-3d fitGizmoToView)
+    const b = document.createElement("button"); b.type = "button"; b.id = "btn-full"; b.className = "canvas-tool";
+    b.onclick = () => setFullEdit(!fullEdit); wrap.appendChild(b);
+    const bar = document.createElement("div"); bar.id = "full-bar"; bar.hidden = true;
+    const mk = (id, glyph, label, real) => { const x = document.createElement("button"); x.type = "button"; x.id = id; x.textContent = glyph; x.setAttribute("aria-label", label);
+      x.onclick = () => { if (!$(real).disabled) $(real).click(); }; return x; };
+    const hu = mk("full-undo", "↶", "ביטול", "btn-undo"), hr = mk("full-redo", "↷", "חזרה", "btn-redo");
+    const name = document.createElement("span"); name.id = "full-name";
+    bar.append(hu, hr, name); wrap.appendChild(bar);
+    const sync = () => { hu.disabled = $("btn-undo").disabled; hr.disabled = $("btn-redo").disabled; const el = rec && rec.elements.find((x) => x.id === selectedId); name.textContent = el ? el.name || "" : "נגיעה באלמנט בוחרת אותו"; };
+    const mo = new MutationObserver(sync); mo.observe($("btn-undo"), { attributes: true }); mo.observe($("btn-redo"), { attributes: true }); mo.observe($("panel-name"), { childList: true, characterData: true, subtree: true });
+    addEventListener("keydown", (e) => { if (e.key === "Escape" && fullEdit) setFullEdit(false); });
+    setFullEdit(false); sync();
+  }
   let view = { W: 0, H: 0, mx: 0, my: 0, cw: 0, ch: 0 };
   // View zoom (two-finger pinch): scales the editing view around its center without touching
   // the artwork, elements or world coordinates - pos() maps pointer events back to world px.
@@ -1430,7 +1487,7 @@
     viewMode = m;
     $("btn-2d").classList.toggle("on", m === "2d");
     $("btn-3d").classList.toggle("on", m === "3d");
-    if (m === "3d") await Editor3D.show(); else Editor3D.hide();
+    if (m === "3d") await Editor3D.show(); else { Editor3D.hide(); draw(); }
   }
   function place3d() {
     const b = $("view-pill"); if (b.hidden) return;
@@ -1446,9 +1503,12 @@
     const c = cv();
     const wrap = $("canvas-wrap");
     const artW = rec.target.artRect.w, artH = rec.target.artRect.h;
-    const W = Math.round((wrap.clientWidth || 320) / (1 + 2 * MARGIN_FRAC));
+    // full screen: the artwork fills as much of the screen as fits (width and height), with a smaller margin around it
+    const mf = fullEdit ? FULL_MARGIN_FRAC : MARGIN_FRAC;
+    let W = Math.round((wrap.clientWidth || 320) / (1 + 2 * mf));
+    if (fullEdit) W = Math.min(W, Math.round(Math.max(120, wrap.clientHeight - FULL_BAR_PX) / (1 + 2 * mf) * (artW / artH)));
     const H = Math.round(W * (artH / artW));
-    const mx = Math.round(W * MARGIN_FRAC), my = Math.round(H * MARGIN_FRAC);
+    const mx = Math.round(W * mf), my = Math.round(H * mf);
     const cw = W + 2 * mx, ch = H + 2 * my;
     view = { W, H, mx, my, cw, ch };
     const dpr = window.devicePixelRatio || 1;
@@ -1512,9 +1572,13 @@
       ctx.save();
       ctx.translate(cx, cy);
       ctx.rotate(-effRot * Math.PI / 180);
-      ctx.globalAlpha = 0.92 * (ts ? ts.opacity : (el.opacity == null ? 1 : el.opacity));
+      ctx.globalAlpha = ts ? ts.opacity : (el.opacity == null ? 1 : el.opacity); // the layer's own opacity, as in the experience
       const m = el.assetId && media[el.assetId];
-      if (el.type === "video" && m && m.readyState >= 2) {
+      // models, particles and green-screen video are drawn in their final look by the real scene layer over this canvas
+      const real = viewMode === "2d" && typeof Editor3D !== "undefined" && Editor3D.drawsIn2d(el.id);
+      if (real) {
+        if (el.type === "model" || el.type === "particles") needsAnim = true; // the layer animates; keep the marks in step
+      } else if (el.type === "video" && m && m.readyState >= 2) {
         const c=el.crop||{x:0,y:0,w:1,h:1},iw=m.videoWidth,ih=m.videoHeight;ctx.drawImage(m,c.x*iw,c.y*ih,c.w*iw,c.h*ih,-wpx/2,-hpx/2,wpx,hpx);
       } else if (el.type === "image" && m) {
         const c=el.crop||{x:0,y:0,w:1,h:1},iw=m.naturalWidth||m.width,ih=m.naturalHeight||m.height;
@@ -1569,6 +1633,11 @@
         ctx.fillStyle = "#2266ff";
         ctx.fillRect(wpx / 2 - 8, hpx / 2 - 8, 16, 16);
         ctx.restore();
+        // rotation handle: a round knob above the top edge, dragged around the layer's centre
+        const rh = rotHandle(boxes[el.id]);
+        ctx.save(); ctx.strokeStyle = "#2266ff"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(rh.ex, rh.ey); ctx.lineTo(rh.x, rh.y); ctx.stroke();
+        ctx.beginPath(); ctx.arc(rh.x, rh.y, 10, 0, 7); ctx.fillStyle = "#fff"; ctx.fill(); ctx.stroke();
+        ctx.fillStyle = "#2266ff"; ctx.font = "bold 13px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("⟳", rh.x, rh.y + 1); ctx.restore();
       }
     }
     const selEl = rec.elements.find((x) => x.id === selectedId);
@@ -1598,7 +1667,10 @@
       const x=view.mx+(a.to.x+.5)*view.W,y=view.my+(.5-a.to.y)*view.H;ctx.beginPath();ctx.arc(x,y,14,0,Math.PI*2);ctx.stroke();ctx.setLineDash([]);ctx.fillStyle='#ff4f00';ctx.font='14px sans-serif';ctx.fillText('יעד תנועה',x+18,y);ctx.restore();
     }
     if (drag && drag.guide) { ctx.save(); ctx.strokeStyle = "#ff5fd2"; ctx.lineWidth = 1.5; ctx.beginPath(); if (drag.guide.v) { ctx.moveTo(view.mx + view.W / 2, view.my); ctx.lineTo(view.mx + view.W / 2, view.my + view.H); } if (drag.guide.h) { ctx.moveTo(view.mx, view.my + view.H / 2); ctx.lineTo(view.mx + view.W, view.my + view.H / 2); } ctx.stroke(); ctx.restore(); }
-    if (typeof Editor3D !== "undefined") Editor3D.sync();
+    if (typeof Editor3D !== "undefined") {
+      if (viewMode === "2d") Editor3D.overlay(wrapOnScreen && Editor3D.needsOverlay(rec));
+      Editor3D.sync();
+    }
     if (needsAnim) requestAnimationFrame(draw);
   }
 
@@ -1662,6 +1734,17 @@
         }return;
       }
       const sel = rec.elements.find((x) => x.id === selectedId);
+      if (sel && sel.type !== "group" && boxes[sel.id]) {
+        const b = boxes[sel.id], rh = rotHandle(b);
+        if (Math.hypot(p.x - rh.x, p.y - rh.y) < 22) {
+          const preT = tlScrubT, keyT = prepare2DKeyedDrag(sel, "rot");
+          if (typeof keyT === "string") { msg(keyT); return; }
+          const rot0 = keyT != null ? Studio.sampleTimeline(sel, editorClock3D(sel)).rot : (sel.rot || 0);
+          drag = { mode: "rotate", id: sel.id, cx: b.cx, cy: b.cy, a0: Math.atan2(p.y - b.cy, p.x - b.cx), rot0, snap: JSON.stringify(rec.elements), snapT: preT };
+          if (keyT != null) drag.keyT = keyT;
+          c.setPointerCapture(e.pointerId); return;
+        }
+      }
       if (sel && boxes[sel.id]) {
         const b = boxes[sel.id];
         const hx = b.cx + Math.cos(b.rot) * (b.w / 2) - Math.sin(b.rot) * (b.h / 2);
@@ -1732,6 +1815,12 @@
         if (snapOn && !e.altKey) { const g = {}; if (Math.abs(nx) < 0.018) { nx = 0; g.v = true; } if (Math.abs(ny) < 0.014) { ny = 0; g.h = true; } if (g.v || g.h) drag.guide = g; }
         if (drag.keyT != null) { const k = keyAtT(el, drag.keyT); k.x = nx; k.y = ny; }
         else { el.x = nx; el.y = ny; }
+      } else if (drag.mode === "rotate") {
+        // screen y points down, so turning clockwise lowers rot; snaps to 0/±90/±180 within 6°
+        let deg = drag.rot0 - (Math.atan2(p.y - drag.cy, p.x - drag.cx) - drag.a0) * 180 / Math.PI;
+        deg = ((deg + 180) % 360 + 360) % 360 - 180;
+        const v = Studio.snapAngle(Math.round(deg * 10) / 10);
+        if (drag.keyT != null) keyAtT(el, drag.keyT).rot = v; else el.rot = v;
       } else if (drag.mode === "env-out" || drag.mode === "env-in") {
         const k = W / Studio.geom(rec).artW; // canvas px -> scene distance units
         const dScene = Math.hypot(p.x - drag.cx, p.y - drag.cy) / k;

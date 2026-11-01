@@ -33,12 +33,14 @@ assert.deepEqual(m.flicker,{pauses:0,paused:false},'tracking flicker never pause
 assert.equal(m.at900,false,'still playing 0.9s into a loss');assert.equal(m.at1000,true,'paused after 1s of continuous loss');
 assert.equal(m.backPaused,false,'resumes as soon as the artwork is back');assert.equal(m.backPlays,1,'one resume');
 assert.equal(m.contentPaused,true,'a hidden layer still pauses at once');
-// (3) sound button + touch unmutes every video, unlocks a paused (blocked) one, then removes the button
+// (3) sound button (when the browser refuses sound before a touch) + touch unmutes every video, unlocks a paused (blocked) one, then removes the button
 const s=await p.evaluate(async()=>{
-  const mk=(blocked,paused)=>({paused,muted:true,_studioBlocked:blocked,plays:0,pauses:0,play(){this.paused=false;this.plays++;return Promise.resolve();},pause(){this.paused=true;this.pauses++;}});
+  // like iPhone Safari: sound is refused until the first touch (the silent start-up try fails, so the button shows)
+  window.__touched=false;window.addEventListener('pointerdown',()=>{window.__touched=true;},{capture:true,once:true});
+  const mk=(blocked,paused)=>({paused,muted:true,_studioBlocked:blocked,plays:0,pauses:0,play(){if(!window.__touched&&!this.muted)return Promise.reject(Object.assign(new Error('no gesture'),{name:'NotAllowedError'}));this.paused=false;this.plays++;return Promise.resolve();},pause(){this.paused=true;this.pauses++;}});
   const a=mk(false,false),bl=mk(true,true),snd=mk(false,true);
   const media=[{kind:'video',el:{id:'a'},node:a},{kind:'video',el:{id:'b'},node:bl},{kind:'audio',el:{id:'s'},node:snd}];
-  Studio.soundOnTouch(media,{});const shown=!!document.querySelector('#sound-overlay');const text=shown?document.querySelector('#sound-overlay').textContent:'';
+  Studio.soundOnTouch(media,{});await new Promise(r=>setTimeout(r,30));const shown=!!document.querySelector('#sound-overlay');const text=shown?document.querySelector('#sound-overlay').textContent:'';
   window.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true}));await new Promise(r=>setTimeout(r,50));
   return {shown,text,gone:!document.querySelector('#sound-overlay'),aMuted:a.muted,bMuted:bl.muted,bPlays:bl.plays,bPaused:bl.paused,bResume:media[1].resumeOnVisible,sndPlaying:!snd.paused};});
 assert.ok(s.shown&&/צליל/.test(s.text),'sound button shown: '+s.text);assert.ok(s.gone,'button removed after the touch');

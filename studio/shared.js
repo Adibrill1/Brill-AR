@@ -288,9 +288,11 @@ const Studio = (() => {
     const length=head.getUint32(12,true);if(length>4*1024*1024||length+20>blob.size)return [];
     try { const doc=JSON.parse(await blob.slice(20,20+length).text());return (doc.animations||[]).slice(0,100).map((a,i)=>typeof a.name==='string'?a.name.slice(0,120):'Animation '+i); }catch{return [];}
   }
-  async function inspectVideo(blob,timeoutMs=8000){
-    const url=URL.createObjectURL(blob),video=document.createElement('video');video.preload='auto';video.muted=true;video.playsInline=true;
-    try{return await new Promise((resolve,reject)=>{let timer;const end=(error)=>{clearTimeout(timer);video.onloadeddata=null;video.onerror=null;error?reject(error):resolve({width:video.videoWidth,height:video.videoHeight,duration:video.duration});};video.onloadeddata=()=>video.videoWidth&&video.videoHeight?end():end(Error('לא ניתן לקרוא את ממדי הסרטון'));video.onerror=()=>end(Error('הדפדפן לא הצליח לקרוא את פורמט הסרטון'));timer=setTimeout(()=>end(Error('טעינת הסרטון לא הסתיימה. נסי קובץ שמור במכשיר או MP4 בפורמט H.264')),timeoutMs);video.src=url;video.load();});}
+  // Size and length are known at loadedmetadata; waiting for a decoded frame (loadeddata) made long clips on iPhone hit
+  // the timeout, so the same file failed and then worked on a later try.
+  async function inspectVideo(blob,timeoutMs=20000){
+    const url=URL.createObjectURL(blob),video=document.createElement('video');video.preload='metadata';video.muted=true;video.playsInline=true;video.setAttribute('playsinline','');
+    try{return await new Promise((resolve,reject)=>{let timer;const end=(error)=>{clearTimeout(timer);video.onloadedmetadata=null;video.onloadeddata=null;video.onerror=null;error?reject(error):resolve({width:video.videoWidth,height:video.videoHeight,duration:video.duration});};video.onloadedmetadata=()=>{if(video.videoWidth&&video.videoHeight)end();};video.onloadeddata=()=>video.videoWidth&&video.videoHeight?end():end(Error('לא ניתן לקרוא את ממדי הסרטון'));video.onerror=()=>end(Error('הדפדפן לא הצליח לקרוא את פורמט הסרטון'));timer=setTimeout(()=>end(Error('טעינת הסרטון לא הסתיימה. נסי קובץ שמור במכשיר או MP4 בפורמט H.264')),timeoutMs);video.src=url;video.load();});}
     finally{video.removeAttribute('src');video.load();URL.revokeObjectURL(url);}
   }
   async function modelClipInfo(blob){
@@ -650,7 +652,12 @@ const Studio = (() => {
         inner.addEventListener("model-loaded", () => {
           const mesh = inner.getObject3D("mesh");
           if (!mesh) return;
-          const box = new THREE.Box3().setFromObject(mesh);
+          // The fit box is measured in the inner entity's own space. A world-space box (setFromObject) also held the
+          // layer's position, so the centering offset pulled every off-center model back toward the artwork's middle.
+          const own = inner.object3D; own.updateMatrixWorld(true);
+          const inv = new THREE.Matrix4().copy(own.matrixWorld).invert(), box = new THREE.Box3(), rel = new THREE.Matrix4();
+          mesh.traverse((o) => { if (!o.geometry) return; if (!o.geometry.boundingBox) o.geometry.computeBoundingBox(); box.union(o.geometry.boundingBox.clone().applyMatrix4(rel.multiplyMatrices(inv, o.matrixWorld))); });
+          if (box.isEmpty()) box.setFromObject(mesh);
           const size = box.getSize(new THREE.Vector3());
           const center = box.getCenter(new THREE.Vector3());
           const maxDim = Math.max(size.x, size.y, size.z) || 1;
@@ -819,6 +826,7 @@ const Studio = (() => {
   // is still in view, and pausing on every flicker made video sound stutter and repeat (worse while recording). So a
   // target loss pauses only after TRACKING_GRACE_MS of continuous loss, and playback resumes as soon as it is back.
   const TRACKING_GRACE_MS = 1000;
+  const LOOP_LEAD_S = 0.08; // syncMedia restarts a looping clip this many seconds before its end (about two frames)
   function syncMedia(container, rec, now) {
     now = now == null ? performance.now() : now;
     const root = container.object3D;
@@ -837,6 +845,10 @@ const Studio = (() => {
       m.node._studioBlocked = !allowed;
       if (!allowed) { if (!m.node.paused) { m.resumeOnVisible = true; m.node.pause(); } }
       else if (m.resumeOnVisible) { m.resumeOnVisible = false; m.node.play().catch(() => {}); }
+      // Seamless loop: jump back to the start a moment before the end. The browser's own loop stops at the end and
+      // reloads (a visible pause on iPhone, longer for long clips).
+      const n = m.node, d = n.duration;
+      if (n.loop && !n.paused && d > 0.5 && Number.isFinite(d) && n.currentTime >= d - LOOP_LEAD_S) { try { n.currentTime = 0; } catch (e) {} }
     }
   }
   function monitorMedia(container, rec) {
@@ -1447,7 +1459,17 @@ const Studio = (() => {
       unlocked = true; if (btn) { btn.remove(); btn = null; }
     };
     window.addEventListener("pointerdown", unlock, true);
-    if (mediaEls.some((m) => m.el.volume == null || m.el.volume > 0)) {
+    const audible = mediaEls.filter((m) => m.el.volume == null || m.el.volume > 0);
+    if (!audible.length) return { unlock, isUnlocked: () => unlocked };
+    // Some browsers let a page start sound by itself (Safari with the site's Auto-Play set to "Allow All Auto-Play",
+    // Chrome on a site used often). Try that first, silently, so the sound starts with the experience; the touch button
+    // shows only when the browser refuses.
+    (async () => {
+      const n = audible[0].node, wasMuted = n.muted, wasPaused = n.paused, vol = n.volume;
+      try { n.volume = 0; n.muted = false; await n.play(); if (wasPaused && n._studioBlocked) n.pause(); n.volume = vol; if (!unlocked) unlock(); }
+      catch (e) { n.volume = vol; n.muted = wasMuted; if (!wasPaused) n.play().catch(() => {}); if (!unlocked) showButton(); }
+    })();
+    function showButton() {
       btn = document.createElement("button");
       btn.id = "sound-overlay"; btn.type = "button";
       btn.textContent = "🔊 נגיעה במסך מפעילה את הצליל";

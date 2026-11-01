@@ -38,17 +38,19 @@ window.StarterLibrary = (() => {
     const title=document.createElement('h2');title.textContent='ספריית התחלה';
     const close=document.createElement('button');close.textContent='סגירה';close.className='ghost';close.onclick=()=>dialog.close();
     head.append(title,close);dialog.append(head);
-    const note=document.createElement('p');note.className='hint';note.textContent=entries.length+' פריטים לשימוש ולעריכה ביצירה שלך: מודלים חינמיים (CC0), לולאות מהסטודיו שלך ופריטים מקוריים. נשמרים עם היצירה במכשיר, בלי חשבון ובלי תשלום.';dialog.append(note);
+    const note=document.createElement('p');note.className='hint';note.textContent=entries.length+' פריטים. נגיעה בפריט מוסיפה אותו ליצירה: מודלים חינמיים (CC0), לולאות מהסטודיו שלך ופריטים מקוריים. נשמרים עם היצירה במכשיר, בלי חשבון ובלי תשלום.';dialog.append(note);
     const filters=document.createElement('div');filters.className='library-filters';filters.setAttribute('role','group');filters.setAttribute('aria-label','סוג פריט');dialog.append(filters);
     const grid=document.createElement('div');grid.className='library-grid';dialog.append(grid);
     const status=document.createElement('p');status.setAttribute('role','status');dialog.append(status);
     let busy=false;
+    // The whole card is the add button: one tap on the picture adds the item.
     for(const item of entries){
-      const card=document.createElement('article');card.className='library-card';card.dataset.group=item.group;
-      const visual=document.createElement('div');visual.className='library-thumb';
+      const card=document.createElement('button');card.type='button';card.className='library-card';card.dataset.group=item.group;
+      card.setAttribute('aria-label','הוספת '+item.name);card.dataset.libraryId=item.id;
+      const visual=document.createElement('span');visual.className='library-thumb';
       if(item.thumb){const im=document.createElement('img');im.src='library/'+item.thumb;im.alt='';im.loading='lazy';visual.append(im);}else visual.textContent=item.icon;
-      const name=document.createElement('h3');name.textContent=item.name;const detail=document.createElement('p');detail.className='hint';detail.textContent=item.detail;
-      const add=document.createElement('button');add.textContent='הוספה ליצירה';add.setAttribute('aria-label','הוספת '+item.name);add.dataset.libraryId=item.id;
+      const name=document.createElement('span');name.className='library-name';name.textContent=item.name;const detail=document.createElement('span');detail.className='hint';detail.textContent=item.detail;
+      const add=card;
       add.onclick=async()=>{
         if(busy)return;busy=true;grid.querySelectorAll('button').forEach(b=>b.disabled=true);status.textContent='טוען את הפריט…';
         try{
@@ -59,7 +61,7 @@ window.StarterLibrary = (() => {
         }catch(e){status.textContent='הפריט לא נטען. אפשר לנסות שוב.';}
         finally{busy=false;grid.querySelectorAll('button').forEach(b=>b.disabled=false);}
       };
-      card.append(visual,name,detail,add);grid.append(card);
+      card.append(visual,name,detail);grid.append(card);
     }
     const show=(g)=>{filters.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.group===g)));grid.querySelectorAll('.library-card').forEach(c=>{c.hidden=g!=='all'&&c.dataset.group!==g;});};
     for(const [g,label] of groups){const b=document.createElement('button');b.type='button';b.className='ghost';b.dataset.group=g;b.textContent=label+' ('+(g==='all'?entries.length:entries.filter(e=>e.group===g).length)+')';b.onclick=()=>show(g);filters.append(b);}

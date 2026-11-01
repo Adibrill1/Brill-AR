@@ -17,13 +17,18 @@ window.Editor3D = (() => {
   const pinchPtrs = new Map(); // pointerId -> client coords
   let pinch3d = null;          // {d0, z0}
   let toolRow = null;
+  // "3d": the full 3D workspace (gizmo, orbit). "2d": the same scene as a transparent layer over the flat 2D canvas,
+  // framed by an orthographic camera to match it pixel for pixel, drawing in their final look only the layers the
+  // canvas cannot (3D models, particles, green-screen video). The canvas keeps every touch and draws the rest.
+  let mode = "3d", ortho = null, getView2d = null, rigRot3d = null;
+  function overlayType(el) { return !!el && (el.type === "model" || el.type === "particles" || (el.type === "video" && !!(el.chroma && el.chroma.enabled))); }
 
   function init(opts) {
     wrapEl = opts.wrap; getRec = opts.getRec; getSelected = opts.getSelected;
     onSelect = opts.onSelect; onChange = opts.onChange;
     sampleEl = opts.sampleEl || null; clockFor = opts.clockFor || null;
     freezeAt = opts.freezeAt || null; beginFrame = opts.beginFrame || null; getFrozen = opts.getFrozen || null; restoreFrozen = opts.restoreFrozen || null;
-    onGate = opts.onGate || null;
+    onGate = opts.onGate || null; getView2d = opts.getView2d || null;
   }
 
   function geomOf(rec) { return Studio.geom(rec); }
@@ -129,31 +134,46 @@ window.Editor3D = (() => {
     bindPointer();
   }
 
+  // Preset motions (spin/float/pulse) come from the sampler every frame instead; a model's own animation keeps playing,
+  // so the editor shows the model as it will move in the experience.
   function stripAnim(root) {
-    [root, ...root.querySelectorAll("[animation__spin],[animation__float],[animation__pulse],[model-clips]")].forEach((n) => {
+    [root, ...root.querySelectorAll("[animation__spin],[animation__float],[animation__pulse]")].forEach((n) => {
       n.removeAttribute("animation__spin"); n.removeAttribute("animation__float");
-      n.removeAttribute("animation__pulse"); n.removeAttribute("model-clips");
+      n.removeAttribute("animation__pulse");
     });
     root.querySelectorAll("[data-el-id]").forEach((n) => { n.object3D.visible = true; });
     root.object3D.visible = true;
   }
 
-  let artNode = null;
+  // The artwork plane is rebuilt only when the artwork itself (blob or target rect) changes. It used to be removed on
+  // every edit and re-added after the image reloaded, so the artwork vanished for a moment each time; now a replacement
+  // is built next to the old plane, which goes only once the new texture is on screen.
+  let artNode = null, artSerial = 0;
   async function rebuildArtwork() {
     const rec = getRec(); if (!rec || !rec.target || !rec.assets.__artwork) return;
-    if (artNode) { artNode.remove(); artNode = null; }
+    const blob = rec.assets.__artwork, key = JSON.stringify(rec.target.artRect);
+    if (artNode && artNode.__blob === blob && artNode.__key === key) return;
     const g = geomOf(rec), r = rec.target.artRect;
-    const url = URL.createObjectURL(rec.assets.__artwork);
+    const url = URL.createObjectURL(blob);
     const img = await Studio.loadImage(url);
-    img.id = "editor-3d-artwork";
+    if (!host || !rig) return;
+    img.id = "editor-3d-artwork-" + (++artSerial);
     host.querySelector("#editor-3d-media").appendChild(img);
-    artNode = document.createElement("a-plane");
-    artNode.setAttribute("material", { src: "#editor-3d-artwork", shader: "flat" });
-    artNode.setAttribute("width", g.artW); artNode.setAttribute("height", g.artH);
+    const node = document.createElement("a-plane");
+    node.__blob = blob; node.__key = key;
+    node.setAttribute("material", { src: "#" + img.id, shader: "flat" });
+    node.setAttribute("width", g.artW); node.setAttribute("height", g.artH);
     const acx = ((r.x + r.w / 2) / Studio.TARGET_W - 0.5) * g.tw;
     const acy = 0.5 - (r.y + r.h / 2) / Studio.TARGET_H;
-    artNode.setAttribute("position", `${acx} ${acy} 0`);
-    rig.appendChild(artNode); Studio.pushBack(artNode);
+    node.setAttribute("position", `${acx} ${acy} 0`);
+    const old = artNode; artNode = node;
+    rig.appendChild(node); Studio.pushBack(node);
+    if (old) {
+      let gone = false;
+      const drop = () => { if (gone) return; gone = true; const oi = old.__img; old.remove(); if (oi) { try { URL.revokeObjectURL(oi.src); } catch (e) {} oi.remove(); } };
+      node.addEventListener("materialtextureloaded", drop, { once: true }); setTimeout(drop, 1500);
+    }
+    node.__img = img;
   }
 
   function rebuildElements() {
@@ -208,8 +228,13 @@ window.Editor3D = (() => {
     node.object3D.rotation.set((el.rotX || 0) * Math.PI / 180, (el.rotY || 0) * Math.PI / 180, ((s ? s.rot : el.rot || 0)) * Math.PI / 180);
     const sc = s ? s.scale : 1;
     node.object3D.scale.set(sc, sc, sc);
-    const vis = s ? !!s.visible : true;
+    // 2D mode shows only what the flat canvas cannot draw in its final look; inside a group, each child is decided alone
+    const vis = (s ? !!s.visible : true) && (mode === "3d" || el.type === "group" || overlayType(el));
     if (node.object3D.visible !== vis) node.object3D.visible = vis;
+    if (el.type === "group") node.querySelectorAll("[data-el-id]").forEach((n) => {
+      const on = mode === "3d" || overlayType(rec.elements.find((x) => x.id === n.dataset.elId));
+      if (n.object3D && n.object3D.visible !== on) n.object3D.visible = on;
+    });
     const op = s ? s.opacity : (el.opacity == null ? 1 : el.opacity);
     if (node.__op3d !== op) { Studio.applyOpacity(node, op); node.__op3d = op; }
   }
@@ -274,7 +299,7 @@ window.Editor3D = (() => {
     // keep the tool buttons out from under the handles: dock them in the screen corner farthest from the gizmo
     if (toolRow) {
       const right = ndc.x < 0, bottom = ndc.y > 0; // gizmo in left half -> buttons right; gizmo in upper half -> buttons bottom
-      toolRow.style.top = bottom ? "auto" : "8px"; toolRow.style.bottom = bottom ? "8px" : "auto";
+      toolRow.style.top = bottom ? "auto" : right ? "54px" : "8px"; // top-right corner holds the editor's full-screen button toolRow.style.bottom = bottom ? "8px" : "auto";
       toolRow.style.left = right ? "auto" : "8px"; toolRow.style.right = right ? "8px" : "auto";
       toolRow.style.insetInlineStart = "auto"; toolRow.style.alignItems = right ? "flex-end" : "flex-start";
       toolRow.style.flexDirection = bottom ? "column-reverse" : "column";
@@ -283,7 +308,7 @@ window.Editor3D = (() => {
 
   function refreshGizmo() {
     clearGizmo();
-    const rec = getRec(); if (!rec || !active) return;
+    const rec = getRec(); if (!rec || !active || mode !== "3d") return;
     const id = getSelected(); if (!id) return;
     const el = rec.elements.find((x) => x.id === id);
     const node = elNode(id);
@@ -679,10 +704,27 @@ window.Editor3D = (() => {
       const old = host;
       hide();
       if (old) { old.querySelectorAll("#editor-3d-media > *").forEach((n) => { try { if (n.src && n.src.startsWith("blob:")) URL.revokeObjectURL(n.src); } catch (e) {} }); old.remove(); }
-      mounted = false; sceneEl = null; host = null; rig = null; cam = null; toolRow = null; scCanvas = null; lastFitKey = ""; lastSig = null;
+      mounted = false; sceneEl = null; host = null; rig = null; cam = null; toolRow = null; scCanvas = null; lastFitKey = ""; lastSig = null; artNode = null;
       gizmo = null; helper = null; orb = null;
-      await show();
+      const was = mode; rigRot3d = null;
+      await (was === "2d" ? overlay(true) : show());
     } finally { remounting = false; }
+  }
+
+  // Host look per mode: the full workspace (own background, touches, tools, orbit) or the transparent 2D layer.
+  function applyMode() {
+    if (!host) return;
+    const flat = mode === "2d";
+    host.style.background = flat ? "transparent" : "#d9dde3";
+    host.style.pointerEvents = flat ? "none" : "auto";
+    if (toolRow) toolRow.style.display = flat ? "none" : "flex";
+    if (!flat) { host.style.left = host.style.top = host.style.width = host.style.height = ""; host.style.inset = "0"; host.dataset.box = ""; }
+    if (rig) {
+      if (flat) { if (!rigRot3d) rigRot3d = Object.assign({}, rig.getAttribute("rotation")); rig.setAttribute("rotation", "0 0 0"); } // the flat view is always face-on
+      else if (rigRot3d) { rig.setAttribute("rotation", rigRot3d); rigRot3d = null; }
+    }
+    if (artNode && artNode.object3D) artNode.object3D.visible = !flat;
+    if (sceneEl) try { sceneEl.resize(); } catch (e) {}
   }
 
   async function show() {
@@ -691,7 +733,9 @@ window.Editor3D = (() => {
       const rec = getRec(); if (!rec || !rec.target) return;
       wrapEl.style.position = "relative";
       const firstMount = !mounted;
+      mode = "3d";
       await mount();
+      applyMode();
       layout(); lastSig = firstMount ? compositionSig(rec) : null; // re-shown: may be stale, rebuild once on next sync
       wrapEl.querySelector("#preview").style.visibility = "hidden";
       host.style.display = "block";
@@ -710,6 +754,55 @@ window.Editor3D = (() => {
     clearGizmo();
   }
 
+  // 2D mode layer on/off (the editor asks on every 2D frame; cheap when nothing changes). Off while the 3D view is up.
+  async function overlay(on) {
+    if (active && mode === "3d") return;
+    if (!on) { if (active) hide(); return; }
+    if (active || busy) return;
+    busy = true;
+    try {
+      const rec = getRec(); if (!rec || !rec.target) return;
+      wrapEl.style.position = "relative";
+      const firstMount = !mounted;
+      mode = "2d";
+      await mount();
+      applyMode(); clearGizmo();
+      lastSig = firstMount ? compositionSig(rec) : null;
+      host.style.display = "block";
+      active = true;
+      cancelAnimationFrame(sampleRaf); sampleRaf = requestAnimationFrame(sampleLoop);
+    } finally { busy = false; }
+  }
+  // True when the 2D layer is drawing this element (model loaded, particles or keyed video built): the canvas then
+  // leaves its body to the layer and draws only the selection marks.
+  function drawsIn2d(id) {
+    if (!active || mode !== "2d" || !rig) return false;
+    const rec = getRec(); if (!rec || !overlayType(rec.elements.find((x) => x.id === id))) return false;
+    const n = rig.querySelector('[data-el-id="' + id + '"]');
+    if (!n || !n.object3D) return false;
+    const m = n.querySelector("[gltf-model]");
+    if (m) return !!m.getObject3D("mesh");
+    return n.object3D.children.length > 0;
+  }
+
+  // Frame the 2D layer: same box as the canvas, orthographic camera spanning exactly what the canvas shows (zoom included).
+  function frame2d() {
+    const rec = getRec(), v = getView2d && getView2d(), c = wrapEl.querySelector("#preview");
+    if (!rec || !rec.target || !v || !v.view.W || !c || !sceneEl) return;
+    const w = v.view.cw, h = v.view.ch, box = [c.offsetLeft, c.offsetTop, w, h].join(",");
+    if (host.dataset.box !== box) {
+      host.dataset.box = box;
+      Object.assign(host.style, { inset: "auto", left: c.offsetLeft + "px", top: c.offsetTop + "px", width: w + "px", height: h + "px" });
+      try { sceneEl.resize(); } catch (e) {}
+    }
+    if (!ortho) ortho = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.01, 100);
+    const g = geomOf(rec), r = rec.target.artRect, k = g.artW / v.view.W / (v.zoom || 1);
+    const xc = (r.x / Studio.TARGET_W - 0.5) * g.tw + g.artW / 2, yc = 0.5 - r.y / Studio.TARGET_H - g.artH / 2;
+    ortho.left = -w / 2 * k; ortho.right = w / 2 * k; ortho.top = h / 2 * k; ortho.bottom = -h / 2 * k;
+    ortho.position.set(xc, yc, 10); ortho.updateProjectionMatrix();
+    if (sceneEl.camera !== ortho) sceneEl.camera = ortho;
+  }
+
   // Timeline linkage: every frame, mirror the 2D canvas's sampled world into the 3D
   // scene (live playback, frozen playhead, sequence state) and keep the gizmo on it.
   let sampleRaf = 0, lastFitKey = "", wdTime = -1, wdAt = 0, wdRestarts = 0;
@@ -718,7 +811,9 @@ window.Editor3D = (() => {
     if (!remounting && sceneWasReset()) { remount(); return; }
     // A viewport change (rotation) can leave A-Frame on its fallback camera at the origin, which
     // makes every projection (and the gizmo fit) NaN. Keep the editor's own camera the active one.
-    if (cam && sceneEl && cam.components && cam.components.camera) {
+    if (artNode && artNode.object3D && artNode.object3D.visible !== (mode === "3d")) artNode.object3D.visible = mode === "3d"; // the 2D canvas draws the artwork itself
+    if (mode === "2d") frame2d();
+    else if (cam && sceneEl && cam.components && cam.components.camera) {
       let own = cam.getObject3D("camera");
       if (!own && cam.components.camera.camera) { own = cam.components.camera.camera; cam.setObject3D("camera", own); lastFitKey = ""; }
       if (own && sceneEl.camera !== own) { sceneEl.camera = own; lastFitKey = ""; }
@@ -767,14 +862,20 @@ window.Editor3D = (() => {
   // texture (program re-link, texture re-upload, white flashes until the new textures land), so it
   // only runs when the composition actually changed: element data, the target, or any asset blob.
   const blobIds = new WeakMap(); let blobSerial = 0;
+  // Placement, turn, opacity, timeline and preset motion of a top-level layer are applied every frame (applySampled),
+  // so changing them needs no rebuild: a rebuild reloads every model, which blinked them out after each drag.
+  // Grouped children keep every field, since their placement is built into the group.
+  const LIVE_KEYS = new Set(["x", "y", "z", "rot", "rotX", "rotY", "opacity", "timeline", "anim"]);
   function compositionSig(rec) {
     if (!rec) return "";
+    const inGroup = new Set(); rec.elements.forEach((g) => { if (g.type === "group") (g.children || []).forEach((id) => inGroup.add(id)); });
+    const els = rec.elements.map((el) => { if (inGroup.has(el.id)) return el; const o = {}; for (const k in el) if (!LIVE_KEYS.has(k)) o[k] = el[k]; return o; });
     const assets = Object.keys(rec.assets || {}).sort().map((k) => {
       const v = rec.assets[k]; if (!v || typeof v !== "object") return k + ":" + String(v);
       if (!blobIds.has(v)) blobIds.set(v, ++blobSerial);
       return k + ":" + blobIds.get(v) + ":" + (v.size || 0) + ":" + (v.type || "");
     }).join("|");
-    return JSON.stringify([rec.elements, rec.target, rec.sequences, rec.tracks]) + "#" + assets;
+    return JSON.stringify([els, rec.target, rec.sequences, rec.tracks]) + "#" + assets;
   }
   function sync() {
     // composition changed underneath us; throttled because draw() fires on rAF too
@@ -788,5 +889,5 @@ window.Editor3D = (() => {
     rebuildArtwork().then(() => ensureMedia(getRec())).then(rebuildElements);
   }
 
-  return { init, show, hide, sync, isActive: () => active, refreshGizmo, _test: { alphaAt, pickOrder, rebuilds: () => rebuildCount, gizmo: () => gizmo, node: (id) => elNode(id), scene: () => sceneEl, helper: () => helper, drag: () => gizmoDrag } };
+  return { init, show, hide, overlay, drawsIn2d, needsOverlay: (rec) => !!rec && rec.elements.some(overlayType), sync, isActive: () => active && mode === "3d", refreshGizmo, _test: { mode: () => mode, alphaAt, pickOrder, rebuilds: () => rebuildCount, gizmo: () => gizmo, node: (id) => elNode(id), scene: () => sceneEl, helper: () => helper, drag: () => gizmoDrag } };
 })();
