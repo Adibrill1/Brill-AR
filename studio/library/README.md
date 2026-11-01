@@ -1,6 +1,6 @@
 # Starter library
 
-Six groups, shown with filters in the editor (הוספה ← ספריית התחלה); one tap on an item adds it.
+Groups shown with filters in the editor (הוספה ← ספריית התחלה); one tap on an item adds it.
 
 ## Original items
 Generated for Brill-AR from geometric shapes, procedural motion, synthesized sine waves and original octahedron
@@ -30,11 +30,11 @@ dartboard, football, ArmChair_01. (File names are lower-case.)
 
 The models are static; motion is added in the editor (spin, float, pulse, timeline).
 
-## Animated 3D models: Quaternius (CC0) — `models/q-*.glb`, `models/qm-*.glb`, `thumbs/q-*.png`, `thumbs/qm-*.png`
-33 rigged, animated low-poly models by Quaternius (https://quaternius.com), CC0 1.0 per the License.txt in each pack
+## Animated 3D models: Quaternius (CC0) — `models/q*-*.glb`, `thumbs/q*-*.png`
+81 rigged, animated low-poly models by Quaternius (https://quaternius.com), CC0 1.0 per the License.txt in each pack
 (free for any use, no credit needed; credited here as a courtesy). The glTF variants were downloaded from the packs'
 public Google Drive folders and packed to one GLB each by `tools/gltf-to-glb.mjs`; geometry, skins, animations and
-textures unchanged. Thumbnails are rendered from the GLB, posed 0.3 s into the move the item starts on
+textures unchanged (first two packs below). Thumbnails are rendered from the GLB, posed 0.3 s into the move the item starts on
 (`tools/make-graphics.cjs mthumb`).
 
 - Ultimate Animated Animal Pack (`q-`): alpaca, bull, cow, deer, donkey, fox, horse, horse_white, husky, shibainu,
@@ -43,7 +43,18 @@ textures unchanged. Thumbnails are rendered from the GLB, posed 0.3 s into the m
   demon, ghost, greendemon, mushroom, panda, penguin, pig, skull, tree, yellowdragon, yeti. Moves include Dance, Idle,
   Yes, No, Jump, Walk; the flying ones (bat, bee, cthulhu, yellowdragon) have Flying. Started on Dance or Flying.
 
-The move is chosen in the editor's model panel; the library only sets the starting one.
+- More packs, converted from their FBX files with the editor's own bundled converter (AssimpJS, the same one the
+  editor uses for FBX uploads) by `tools/fbx-to-glb.cjs`: Animated Fish Pack (`qf-`: dolphin, fish1, fish2, fish3,
+  manta_ray, shark, whale), Cute Fish Pack (`qc-`: clownfish, koi, goldfish, bluetang, puffer, betta, anglerfish,
+  lionfish, mandarinfish, swordfish, sunfish, blobfish), Animated Dinosaur Pack (`qd-`: apatosaurus,
+  parasaurolophus, stegosaurus, trex, triceratops, velociraptor), Farm Animal Pack (`qa-`: sheep, pig, pug, zebra) and
+  Animated Robot (`qr-robot`). These keep the FBX's centimetre units (the editor fits every model to its layer width).
+- Ultimate Monsters pack (`qu-`, glTF with a shared texture atlas, packed to GLB): bunny, frog, birb, mushroomking,
+  cactoro, dino, blob_cat, blob_dog, blob_pinkblob, blob_wizard, blob_mushnub, dragon, glub, ghost, squidle, hywirl,
+  pigeon, alpaking.
+
+All Quaternius packs above are CC0 1.0 per their pack pages and License.txt files. The move is chosen in the editor's
+model panel; the library only sets the starting one (swimming, Idle, Wave, Dance or Flying).
 
 ## Particle styles — `particles/<sprite>.png`, `thumbs/p-<id>.png`
 Eight ready particle layers. Each sprite is a 128px white shape drawn in code by `tools/make-graphics.cjs sprites`

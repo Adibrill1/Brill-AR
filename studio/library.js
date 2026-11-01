@@ -40,7 +40,26 @@ window.StarterLibrary = (() => {
     ['qm-cyclops','ענק חד־עין','Dance',.35],['qm-deer','אייל קטן','Dance',.35],['qm-demon','שדון אדום','Dance',.35],['qm-ghost','רוח רפאים','Dance',.35],
     ['qm-greendemon','שדון ירוק','Dance',.35],['qm-mushroom','פטרייה','Dance',.35],['qm-panda','פנדה','Dance',.35],['qm-penguin','פינגווין','Dance',.35],
     ['qm-pig','חזיר','Dance',.35],['qm-skull','גולגולת','Dance',.35],['qm-tree','עץ','Dance',.35],['qm-yellowdragon','דרקון צהוב','Flying',.35],['qm-yeti','יטי','Dance',.35]
-  ].map(([id,name,clip,w]) => ({id,name,detail:'תלת־ממד בתנועה · חינמי (CC0)',kind:'model',file:'models/'+id+'.glb',thumb:'thumbs/'+id+'.png',clip,w,group:'animated'}));
+    ,
+    // converted from the packs' FBX with the editor's own converter (AssimpJS): fish, dinosaurs, farm animals, robot
+    ['qf-dolphin','דולפין','Armature|Swim',.45],['qf-fish1','דג ים ורוד','Armature|Swim',.4],['qf-fish3','דג פסים כתום','Armature|Swim',.35],
+    ['qf-manta_ray','טריגון מנטה','Armature|Swim',.5],['qf-shark','כריש','Armature|Swim',.5],['qf-whale','לווייתן','Armature|Swim',.6],['qf-fish2','דג כחול־צהוב','Armature|Swim.001',.35],
+    ['qc-clownfish','דג ליצן','Fish_Armature|Swimming_Normal',.3],['qc-koi','קוי','Fish_Armature|Swimming_Normal',.3],['qc-goldfish','דג זהב','Fish_Armature|Swimming_Normal',.3],
+    ['qc-bluetang','דג כחול','Fish_Armature|Swimming_Normal',.3],['qc-puffer','אבו־נפחא','Fish_Armature|Swimming_Normal',.3],['qc-betta','דג קרב','Fish_Armature|Swimming_Normal',.3],
+    ['qc-anglerfish','דג פנס','Fish_Armature|Swimming_Normal',.3],['qc-lionfish','דג אריה','Fish_Armature|Swimming_Normal',.3],['qc-mandarinfish','דג מנדרינה','Fish_Armature|Swimming_Normal',.3],
+    ['qc-swordfish','דג חרב','Fish_Armature|Swimming_Normal',.35],['qc-sunfish','דג שמש','Fish_Armature|Swimming_Normal',.3],['qc-blobfish','דג טיפה','Fish_Armature|Swimming_Normal',.3],
+    ['qd-apatosaurus','אפטוזאורוס','Armature|Apatosaurus_Idle',.6],['qd-parasaurolophus','פראסאורולופוס','Armature|Parasaurolophus_Idle',.55],['qd-stegosaurus','סטגוזאורוס','Armature|Stegosaurus_Idle',.55],
+    ['qd-trex','טירנוזאורוס','Armature|TRex_Idle',.55],['qd-triceratops','טריצרטופס','Armature|Triceratops_Idle',.55],['qd-velociraptor','ולוסירפטור','Armature|Velociraptor_Idle',.5],
+    ['qa-sheep','כבשה','Armature|Idle',.45],['qa-pig','חזרזיר','Armature|Idle',.45],['qa-pug','כלב פאג','Armature|Idle',.4],['qa-zebra','זברה','Armature|Idle',.5],
+    ['qr-robot','רובוט מנופף','RobotArmature|Robot_Wave',.35],
+    // Ultimate Monsters pack (glTF + atlas texture, packed to GLB)
+    ['qu-bunny','ארנב','Wave',.35],['qu-frog','צפרדע','Wave',.35],['qu-birb','ציפור כחולה','Wave',.35],['qu-mushroomking','מלך הפטריות','Wave',.35],
+    ['qu-cactoro','קקטוס בכובע','Wave',.35],['qu-dino','דינו סגול','Wave',.35],['qu-blob_cat','חתול עגול','Dance',.3],['qu-blob_dog','כלב עגול','Dance',.3],
+    ['qu-blob_pinkblob','כדור ורוד','Dance',.3],['qu-blob_wizard','קוסם קטן','Dance',.3],['qu-blob_mushnub','פטרייה קטנה','Dance',.3],['qu-dragon','דרקון כתום','Flying_Idle',.35],
+    ['qu-glub','עטלפון','Flying_Idle',.35],['qu-ghost','רוח מעופפת','Flying_Idle',.35],['qu-squidle','יצור כנפיים','Flying_Idle',.35],['qu-hywirl','תמנון סגול','Flying_Idle',.35],
+    ['qu-pigeon','יונה','Flying_Idle',.35],['qu-alpaking','אלפקה מעופפת','Flying_Idle',.35]
+  ].map(([id,name,clip,w]) => ({id,name,detail:'תלת־ממד בתנועה · חינמי (CC0)',kind:'model',file:'models/'+id+'.glb',thumb:'thumbs/'+id+'.png',clip,w,
+    group:/^q[fc]-/.test(id)?'sea':/^qd-/.test(id)?'dino':/^q[mur]-/.test(id)?'creature':'animal'}));
   // Ready particle styles: a sprite drawn here (white, tinted by the colours) and the particle settings it starts with
   const particleStyles = [
     ['hearts','לבבות עולים','heart',{count:60,size:22,speed:.8,color:'#ff4d7a',color2:'#ffa3c4',direction:0,lifetime:3,life2:5,fade:true}],
@@ -58,7 +77,7 @@ window.StarterLibrary = (() => {
     ['sun','שמש'],['moon','ירח'],['flower','פרח'],['crown','כתר'],['star','כוכב'],['butterfly','פרפר']
   ].map(([id,name]) => ({id:'st-'+id,name,detail:'מדבקה · תמונה שקופה',kind:'image',file:'stickers/'+id+'.png',thumb:'thumbs/st-'+id+'.png',group:'sticker'}));
   const entries = [...originals, ...models, ...animated, ...particleStyles, ...stickers, ...loops];
-  const groups = [['all','הכול'],['model','תלת־ממד'],['animated','בתנועה'],['particles','חלקיקים'],['sticker','מדבקות'],['loop','לולאות וידאו'],['original','מקוריים']];
+  const groups = [['all','הכול'],['model','תלת־ממד'],['animal','חיות בתנועה'],['sea','ים'],['dino','דינוזאורים'],['creature','דמויות'],['particles','חלקיקים'],['sticker','מדבקות'],['loop','לולאות וידאו'],['original','מקוריים']];
   const MIME = {glb:'model/gltf-binary',mp4:'video/mp4',png:'image/png',gif:'image/gif',wav:'audio/wav'};
   async function open(importAsset) {
     const dialog = document.createElement('dialog'); dialog.id='starter-library'; dialog.dir='rtl';

@@ -107,7 +107,11 @@
         </div>
       </div>
       <label>גודל <input type="range" id="sl-scale" min="0.05" max="2" step="0.01"></label>
-      <label>סיבוב <input type="range" id="sl-rot" min="-180" max="180" step="1"></label>
+      <div id="row-rot3"><!-- one panel child (shell.js groups the panel by child index) -->
+        <label>סיבוב <input type="range" id="sl-rot" min="-180" max="180" step="1"></label>
+        <label id="row-tilt-x">הטיה קדימה/אחורה <input type="range" id="sl-rotx" min="-180" max="180" step="1"></label>
+        <label id="row-tilt-y">הטיה לצדדים <input type="range" id="sl-roty" min="-180" max="180" step="1"></label>
+      </div>
       <label>עומק (צפ לעומת היצירה) <input type="range" id="sl-z" min="0" max="0.5" step="0.005"></label>
       <label>שקיפות <input type="range" id="sl-opacity" min="0" max="1" step="0.01"></label>
       <div class="numgrid">

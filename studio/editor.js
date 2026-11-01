@@ -1048,6 +1048,9 @@
     document.addEventListener("visibilitychange", () => { if (document.visibilityState === "hidden") flushSlider(true); });
     $("sl-scale").oninput = e => updS(el => panelWrite(el, "w", parseFloat(e.target.value)));
     $("sl-rot").oninput = e => updS(el => panelWrite(el, "rot", Studio.snapAngle(parseFloat(e.target.value)))); // snaps near multiples of 90°; the number field stays exact
+    // tilts have no timeline channel: a base edit on every time point (as in the 3D view); same 90° snap
+    $("sl-rotx").oninput = e => updS(el => { el.rotX = Studio.snapAngle(parseFloat(e.target.value)); });
+    $("sl-roty").oninput = e => updS(el => { el.rotY = Studio.snapAngle(parseFloat(e.target.value)); });
     $("sl-z").oninput = e => updS(el => panelWrite(el, "z", parseFloat(e.target.value)));
     $("sl-vol").oninput = (e) => updS((el) => { el.volume = parseFloat(e.target.value); });
     $("sl-opacity").oninput = (e) => updS((el) => panelWrite(el, "opacity", parseFloat(e.target.value)));
@@ -1262,6 +1265,8 @@
     const sv = elKeyed(el) ? Studio.sampleTimeline(el, editorClock3D(el)) : null; // panel mirrors the canvas: sampled frame when keyed
     $("sl-scale").value = sv ? el.w * (sv.scale || 1) : el.w;
     $("sl-rot").value = sv ? sv.rot || 0 : el.rot || 0;
+    $("sl-rotx").value = el.rotX || 0; $("sl-roty").value = el.rotY || 0;
+    $("row-tilt-x").hidden = $("row-tilt-y").hidden = el.type === "sound";
     $("sl-z").value = sv ? sv.z || 0 : el.z || 0;
     $("sl-opacity").value = sv ? (sv.opacity == null ? 1 : sv.opacity) : el.opacity == null ? 1 : el.opacity;
     $("row-volume").hidden = el.type !== "video" && el.type !== "sound";
@@ -1459,6 +1464,13 @@
   let fullEdit = false;
   // Rotation knob of a selected layer's box (canvas px): ROT_KNOB_PX above the top edge's middle, turned with the layer.
   const ROT_KNOB_PX = 26;
+  // Tilt knobs (same colours as the 3D view's buttons): green beside the right edge turns the layer sideways (rotY,
+  // drag left/right), red beside the left edge tilts it forward/back (rotX, drag up/down); 0.5° per pixel. Both sit
+  // at the sides: below the layer the 2D/3D pill can cover them.
+  function tiltHandles(b) {
+    const c = Math.cos(b.rot), s = Math.sin(b.rot), at = (x, y) => ({ x: b.cx + x * c - y * s, y: b.cy + x * s + y * c });
+    return { y: at(b.w / 2 + 20, 0), x: at(-b.w / 2 - 20, 0) };
+  }
   function rotHandle(b) {
     const s = Math.sin(b.rot), c = Math.cos(b.rot), up = (d) => ({ x: b.cx + d * s, y: b.cy - d * c });
     const e = up(b.h / 2), k = up(b.h / 2 + ROT_KNOB_PX);
@@ -1589,11 +1601,11 @@
       ctx.rotate(-effRot * Math.PI / 180);
       ctx.globalAlpha = ts ? ts.opacity : (el.opacity == null ? 1 : el.opacity); // the layer's own opacity, as in the experience
       const m = el.assetId && media[el.assetId];
-      // models, particles and green-screen video are drawn in their final look by the real scene layer over this canvas
+      // models, particles, green-screen video and layers tilted on the other axes are drawn in their final look by the real scene layer over this canvas
       const real = viewMode === "2d" && typeof Editor3D !== "undefined" && Editor3D.drawsIn2d(el.id);
       if (real) {
         if (el.type === "model" || el.type === "particles") needsAnim = true; // the layer animates; keep the marks in step
-      } else if (viewMode === "2d" && (el.type === "model" || el.type === "particles" || (el.type === "video" && el.chroma && el.chroma.enabled)) && typeof Editor3D !== "undefined") {
+      } else if (viewMode === "2d" && typeof Editor3D !== "undefined" && Editor3D.overlayType(el)) {
         needsAnim = true; // the real layer is still loading it: keep redrawing so the placeholder below gives way as soon as it is ready
       }
       if (real) {
@@ -1657,6 +1669,9 @@
         ctx.save(); ctx.strokeStyle = "#2266ff"; ctx.lineWidth = 2; ctx.beginPath(); ctx.moveTo(rh.ex, rh.ey); ctx.lineTo(rh.x, rh.y); ctx.stroke();
         ctx.beginPath(); ctx.arc(rh.x, rh.y, 10, 0, 7); ctx.fillStyle = "#fff"; ctx.fill(); ctx.stroke();
         ctx.fillStyle = "#2266ff"; ctx.font = "bold 13px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("⟳", rh.x, rh.y + 1); ctx.restore();
+        if (el.type !== "sound") { const th = tiltHandles(boxes[el.id]);
+          for (const [pt, col, glyph] of [[th.y, "#2f9e44", "⤿"], [th.x, "#e03131", "⤾"]]) { ctx.save(); ctx.beginPath(); ctx.arc(pt.x, pt.y, 10, 0, 7); ctx.fillStyle = "#fff"; ctx.fill(); ctx.lineWidth = 2; ctx.strokeStyle = col; ctx.stroke();
+            ctx.fillStyle = col; ctx.font = "bold 13px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(glyph, pt.x, pt.y + 1); ctx.restore(); } }
       }
     }
     const selEl = rec.elements.find((x) => x.id === selectedId);
@@ -1755,6 +1770,12 @@
       const sel = rec.elements.find((x) => x.id === selectedId);
       if (sel && sel.type !== "group" && boxes[sel.id]) {
         const b = boxes[sel.id], rh = rotHandle(b);
+        if (sel.type !== "sound") { const th = tiltHandles(b);
+          for (const [pt, key] of [[th.y, "rotY"], [th.x, "rotX"]]) if (Math.hypot(p.x - pt.x, p.y - pt.y) < 18) {
+            if (elKeyed(sel)) msg("שינוי הטיה הוא ערך בסיס: חל על כל נקודות הזמן של האלמנט");
+            drag = { mode: "tilt", key, id: sel.id, start: p, v0: sel[key] || 0, snap: JSON.stringify(rec.elements), snapT: tlScrubT };
+            c.setPointerCapture(e.pointerId); return;
+          } }
         if (Math.hypot(p.x - rh.x, p.y - rh.y) < 22) {
           const preT = tlScrubT, keyT = prepare2DKeyedDrag(sel, "rot");
           if (typeof keyT === "string") { msg(keyT); return; }
@@ -1834,6 +1855,9 @@
         if (snapOn && !e.altKey) { const g = {}; if (Math.abs(nx) < 0.018) { nx = 0; g.v = true; } if (Math.abs(ny) < 0.014) { ny = 0; g.h = true; } if (g.v || g.h) drag.guide = g; }
         if (drag.keyT != null) { const k = keyAtT(el, drag.keyT); k.x = nx; k.y = ny; }
         else { el.x = nx; el.y = ny; }
+      } else if (drag.mode === "tilt") {
+        const d = drag.key === "rotY" ? p.x - drag.start.x : p.y - drag.start.y;
+        el[drag.key] = Studio.snapAngle(Math.round((((drag.v0 + d * 0.5 + 180) % 360 + 360) % 360 - 180) * 10) / 10);
       } else if (drag.mode === "rotate") {
         // screen y points down, so turning clockwise lowers rot; snaps to 0/±90/±180 within 6°
         let deg = drag.rot0 - (Math.atan2(p.y - drag.cy, p.x - drag.cx) - drag.a0) * 180 / Math.PI;

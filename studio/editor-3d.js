@@ -21,7 +21,8 @@ window.Editor3D = (() => {
   // framed by an orthographic camera to match it pixel for pixel, drawing in their final look only the layers the
   // canvas cannot (3D models, particles, green-screen video). The canvas keeps every touch and draws the rest.
   let mode = "3d", ortho = null, getView2d = null, rigRot3d = null;
-  function overlayType(el) { return !!el && (el.type === "model" || el.type === "particles" || (el.type === "video" && !!(el.chroma && el.chroma.enabled))); }
+  // a layer tilted on the other axes (rotX/rotY) is one too: the flat canvas can only turn it in its own plane
+  function overlayType(el) { return !!el && (el.type === "model" || el.type === "particles" || (el.type === "video" && !!(el.chroma && el.chroma.enabled)) || (el.type !== "sound" && el.type !== "group" && !!(el.rotX || el.rotY))); }
 
   function init(opts) {
     wrapEl = opts.wrap; getRec = opts.getRec; getSelected = opts.getSelected;
@@ -86,9 +87,9 @@ window.Editor3D = (() => {
     sceneEl.setAttribute("device-orientation-permission-ui", "enabled: false");
     sceneEl.style.position = "absolute"; sceneEl.style.inset = "0";
     const l1 = document.createElement("a-light");
-    l1.setAttribute("type", "directional"); l1.setAttribute("intensity", "0.6"); l1.setAttribute("position", "1 1 1");
+    l1.setAttribute("type", "directional"); l1.setAttribute("intensity", "0.5"); l1.setAttribute("position", "1 1 1"); // same lights as the experience (player.js, previewer.js)
     const l2 = document.createElement("a-light");
-    l2.setAttribute("type", "ambient"); l2.setAttribute("intensity", "1.1");
+    l2.setAttribute("type", "ambient"); l2.setAttribute("intensity", "1");
     sceneEl.appendChild(l1); sceneEl.appendChild(l2);
     rig = document.createElement("a-entity"); rig.setAttribute("id", "editor-3d-rig");
     sceneEl.appendChild(rig);
@@ -214,11 +215,11 @@ window.Editor3D = (() => {
     return { ts: Studio.toTargetSpace(rec, eff, el.aspect || 1), s };
   }
 
+  // toTargetSpace already places the layer in target space (artwork offset included), exactly where applySampled puts
+  // its node. Adding the artwork centre again put the handles beside the layer on any artwork that does not fill the
+  // 3:4 target (a square picture, for one).
   function placementCenter(rec, ts) {
-    const g = geomOf(rec); const r = rec.target.artRect;
-    const acx = ((r.x + r.w / 2) / Studio.TARGET_W - 0.5) * g.tw;
-    const acy = 0.5 - (r.y + r.h / 2) / Studio.TARGET_H;
-    return new THREE.Vector3(acx + ts.x, acy + ts.y, ts.z);
+    return new THREE.Vector3(ts.x, ts.y, ts.z);
   }
 
   function applySampled(rec, el, node, idx) {
@@ -314,10 +315,7 @@ window.Editor3D = (() => {
     const node = elNode(id);
     if (!el || !node) return;
     const ts = sampledTs(rec, el).ts;
-    const g = geomOf(rec);
-    const r = rec.target.artRect;
     const center = placementCenter(rec, ts);
-    const acx = center.x - ts.x, acy = center.y - ts.y;
     // Selection box from the known element geometry (rig-local -> world): the DOM
     // node's object3D lags attribute writes, so setFromObject would misplace or
     // empty the box right after edits/rebuilds.
@@ -495,6 +493,24 @@ window.Editor3D = (() => {
     // gizmo handles first
     if (gizmo) {
       let hits = ray.intersectObjects(gizmo.children, true);
+      // Rotate tool on a phone: the rings cover the layer, and the tilt rings (rotX/rotY) are edge-on from the front. So
+      // a press well inside the blue ring (its inner 70%), not on a ring's own line, tilts the layer freely, like turning a
+      // ball (the free tilt below); the blue ring keeps the flat turn. Tilt rings still work when seen from the side.
+      if (gizmoMode === "rotate" && !hits.some((h) => !h.object.userData.proxy)) { // a press on a ring's own line keeps that ring
+        const ring = gizmo.children[2], cam0 = cam.getObject3D("camera") || sceneEl.camera, rect = sceneEl.canvas.getBoundingClientRect();
+        const toPx = (v) => { v.project(cam0); return { x: rect.left + (v.x + 1) / 2 * rect.width, y: rect.top + (1 - v.y) / 2 * rect.height }; };
+        sceneEl.object3D.updateMatrixWorld(true);
+        const c = toPx(gizmo.getWorldPosition(new THREE.Vector3())), edge = toPx(ring.localToWorld(new THREE.Vector3(ring.geometry.parameters.radius, 0, 0)));
+        if (Math.hypot(e.clientX - c.x, e.clientY - c.y) < Math.hypot(edge.x - c.x, edge.y - c.y) * 0.7) { // the inner 70%: the blue ring's wide grab zone keeps the rim
+          const el = rec.elements.find((x) => x.id === getSelected());
+          if (el && el.type !== "sound") {
+            if (hasKeys(el) && onGate) onGate(TILT_NOTE);
+            gizmoDrag = { id: e.pointerId, el, part: "tilt", screen: { x: e.clientX, y: e.clientY }, rotX0: el.rotX || 0, rotY0: el.rotY || 0, keyT: null, snap: JSON.stringify(rec.elements), snapT: getFrozen ? getFrozen() : null };
+            if (sceneEl.canvas.setPointerCapture) sceneEl.canvas.setPointerCapture(e.pointerId);
+            e.preventDefault(); e.stopPropagation(); return;
+          }
+        }
+      }
       if (hits.length) {
         tapAlt = null;
         { // a plain tap on a handle that sits over ANOTHER layer's visible pixels selects that layer (a drag still moves the handle)
@@ -565,7 +581,20 @@ window.Editor3D = (() => {
     if (hits.length) {
       let o = hits[0].object;
       while (o && !(o.el && o.el.getAttribute && o.el.getAttribute("data-el-root"))) o = o.parent;
-      if (o && o.el) { onSelect(o.el.getAttribute("data-el-root")); e.preventDefault(); return; }
+      if (o && o.el) {
+        const hitId = o.el.getAttribute("data-el-root");
+        // rotate tool: a drag on the selected layer itself tilts it freely (sideways drag -> rotY, up/down -> rotX, 0.5°/px)
+        if (gizmoMode === "rotate" && hitId === getSelected()) {
+          const el = rec.elements.find((x) => x.id === hitId);
+          if (el && el.type !== "sound") {
+            if (hasKeys(el) && onGate) onGate(TILT_NOTE);
+            gizmoDrag = { id: e.pointerId, el, part: "tilt", screen: { x: e.clientX, y: e.clientY }, rotX0: el.rotX || 0, rotY0: el.rotY || 0, keyT: null, snap: JSON.stringify(rec.elements), snapT: getFrozen ? getFrozen() : null };
+            if (sceneEl.canvas.setPointerCapture) sceneEl.canvas.setPointerCapture(e.pointerId);
+            e.preventDefault(); e.stopPropagation(); return;
+          }
+        }
+        onSelect(hitId); e.preventDefault(); return;
+      }
     }
     // empty space: orbit
     orb = { x: e.clientX, y: e.clientY };
@@ -584,6 +613,12 @@ window.Editor3D = (() => {
       }
       e.preventDefault();
       return;
+    }
+    if (gizmoDrag && e.pointerId === gizmoDrag.id && gizmoDrag.part === "tilt") {
+      const el = gizmoDrag.el, norm = (d) => ((d + 180) % 360 + 360) % 360 - 180;
+      el.rotY = Studio.snapAngle(Math.round(norm(gizmoDrag.rotY0 + (e.clientX - gizmoDrag.screen.x) * 0.5) * 10) / 10);
+      el.rotX = Studio.snapAngle(Math.round(norm(gizmoDrag.rotX0 + (e.clientY - gizmoDrag.screen.y) * 0.5) * 10) / 10);
+      refreshGizmo(); e.preventDefault(); return;
     }
     if (gizmoDrag && e.pointerId === gizmoDrag.id && gizmoDrag.part) {
       const rec = getRec(); if (!rec) return;
@@ -897,5 +932,5 @@ window.Editor3D = (() => {
     rebuildArtwork().then(() => ensureMedia(getRec())).then(rebuildElements);
   }
 
-  return { init, show, hide, overlay, drawsIn2d, needsOverlay: (rec) => !!rec && rec.elements.some(overlayType), sync, isActive: () => active && mode === "3d", refreshGizmo, _test: { mode: () => mode, alphaAt, pickOrder, rebuilds: () => rebuildCount, gizmo: () => gizmo, node: (id) => elNode(id), scene: () => sceneEl, helper: () => helper, drag: () => gizmoDrag } };
+  return { init, show, hide, overlay, drawsIn2d, overlayType, needsOverlay: (rec) => !!rec && rec.elements.some(overlayType), sync, isActive: () => active && mode === "3d", refreshGizmo, _test: { mode: () => mode, alphaAt, pickOrder, rebuilds: () => rebuildCount, gizmo: () => gizmo, node: (id) => elNode(id), scene: () => sceneEl, helper: () => helper, drag: () => gizmoDrag } };
 })();
