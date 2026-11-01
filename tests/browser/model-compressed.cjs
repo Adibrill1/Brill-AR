@@ -42,11 +42,13 @@ const moved=await p.evaluate(async()=>{const els=[...document.querySelectorAll('
   await new Promise(r=>setTimeout(r,1200));
   const t1=comp&&comp.action?comp.action.time:-1;const s1=snap();
   let d=0;for(let i=0;i<s0.length;i++)for(let j=0;j<s0[i].length;j++)if(Math.abs(s0[i][j]-s1[i][j])>1e-4)d++;
-  return {t0,t1,bones:bones.length,changed:d};});
+  const dur=comp&&comp.action?comp.action.getClip().duration:0;
+  return {t0,t1,dur,adv:dur?((t1-t0)%dur+dur)%dur:-1,bones:bones.length,changed:d};});
 assert.ok(!moved.error,moved.error||'');
-assert.ok(moved.t1>moved.t0,'mixer action time advances: '+JSON.stringify(moved));
+// the clip loops (about 2 s), so 1.2 s later the action time may have wrapped: compare it modulo the clip length
+assert.ok(moved.adv>.05,'mixer action time advances: '+JSON.stringify(moved));
 assert.ok(moved.bones>=2&&moved.changed>0,'skinned bones actually move: '+JSON.stringify(moved));
-console.log('PASS skinned Draco model animates in preview (mixer time '+moved.t0.toFixed(2)+'s -> '+moved.t1.toFixed(2)+'s, '+moved.changed+' bone values changed across '+moved.bones+' bones)');
+console.log('PASS skinned Draco model animates in preview (mixer time '+moved.t0.toFixed(2)+'s -> '+moved.t1.toFixed(2)+'s in a '+moved.dur.toFixed(2)+'s loop, '+moved.changed+' bone values changed across '+moved.bones+' bones)');
 // 390px capture of the animated compressed scene
 await p.setViewportSize({width:390,height:844});await p.waitForTimeout(700);
 await p.screenshot({path:'/downloads/model-compressed-390.png'});

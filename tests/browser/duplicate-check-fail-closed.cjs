@@ -7,7 +7,10 @@ await p.goto(base+'/index.html');await p.waitForSelector('#element-list li');
 const star=path.resolve('studio/library/star.png'),ring=path.resolve('studio/library/ring.png');
 const state=()=>p.evaluate(async()=>({n:(await (window.__all||Studio.all).call(Studio)).length,msg:(document.getElementById('msg')||{}).textContent||'',note:(document.getElementById('safety-note')||{}).textContent||''}));
 const hasArt=(id)=>p.evaluate(async id=>!!((await Studio.load(id)).assets||{}).__artwork,id);
-const uploadInto=async(file)=>{await p.locator('#file-artwork').setInputFiles(file);await p.waitForTimeout(1200);};
+// wait for the outcome, not a fixed time (a busy machine needs longer): clear the messages, then wait until one is written
+const settle=async(act)=>{await p.evaluate(()=>{for(const id of ['msg','safety-note']){const e=document.getElementById(id);if(e)e.textContent='';}});await act();
+  await p.waitForFunction(()=>['msg','safety-note'].some(id=>((document.getElementById(id)||{}).textContent||'').trim()),null,{timeout:15000}).catch(()=>{});await p.waitForTimeout(300);};
+const uploadInto=(file)=>settle(()=>p.locator('#file-artwork').setInputFiles(file));
 const injectedMsg=/לא הצלחנו לבדוק/;
 // A: star accepted
 await p.locator('#btn-new').click();await uploadInto(star);await p.waitForSelector('#sec-elements:not([hidden])');
@@ -24,7 +27,7 @@ await p.evaluate(()=>{window.__failAll=false;});assert.equal(await hasArt(idB),f
 console.log('PASS injected read failure: refused, says check unavailable, nothing written');
 // injected fingerprint failure
 await p.evaluate(()=>{window.__fd=Studio.fingerprintDistance;Studio.fingerprintDistance=function(){throw new Error('injected fingerprint failure');};});
-await uploadInto(ring);s=await state();assert.ok(injectedMsg.test(s.msg),'fingerprint failure says unavailable: '+s.msg);assert.ok(s.msg.includes('יצירה חדשה'),'the message names the project the check stalled on, to help diagnosis: '+s.msg);assert.equal(await hasArt(idB),false,'fingerprint failure uploaded nothing');
+await uploadInto(ring);s=await state();assert.ok(injectedMsg.test(s.msg),'fingerprint failure says unavailable: '+s.msg);assert.ok(/הבדיקה נתקעה ביצירה '[^']+'/.test(s.msg),'the message names the project the check stalled on, to help diagnosis: '+s.msg); // whichever project is compared first (a demo or the new one), so no fixed nameassert.equal(await hasArt(idB),false,'fingerprint failure uploaded nothing');
 await p.evaluate(()=>{Studio.fingerprintDistance=window.__fd;});
 console.log('PASS injected fingerprint failure: refused, nothing written');
 // retry after the cause is resolved works
@@ -32,7 +35,7 @@ await uploadInto(ring);await p.waitForSelector('#sec-elements:not([hidden])');as
 console.log('PASS retry succeeds once the check can run');
 // import path
 const json=await p.evaluate(async id=>Studio.exportJSON(await Studio.load(id)),idB);
-const imp=async()=>{await p.locator('#file-import').setInputFiles({name:'copy.json',mimeType:'application/json',buffer:Buffer.from(typeof json==='string'?json:JSON.stringify(json))});await p.waitForTimeout(1500);};
+const imp=()=>settle(()=>p.locator('#file-import').setInputFiles({name:'copy.json',mimeType:'application/json',buffer:Buffer.from(typeof json==='string'?json:JSON.stringify(json))}));
 await p.evaluate(()=>{window.__failAll=true;});await imp();s=await state();
 assert.ok(injectedMsg.test(s.note)||injectedMsg.test(s.msg),'import with failing check says unavailable: '+s.msg+' / '+s.note);assert.ok(!/הייבוא הצליח/.test(s.msg),'import did not report success');
 await p.evaluate(()=>{window.__failAll=false;});await imp();s=await state();assert.ok(/זהה או דומה מדי/.test(s.msg)&&!injectedMsg.test(s.msg),'after the cause is resolved the check runs again and reports the real duplicate: '+s.msg);

@@ -44,8 +44,8 @@ process.env.HER_EXPORT_FIXTURE='/downloads/file-6b0534f1.json'; // her private e
    // path traversal in an asset reference
    const evil=await mk([['experience.json',fflate.strToU8(JSON.stringify({format:'ar-studio/1',name:'x',elements:[],assets:{a:{file:'assets/../../etc/x',type:'text/plain',size:1}}}))],['assets/x.bin',new Uint8Array([1])]]);
    try{await Studio.importZIP(evil,{save:false});out.traversal='NOT-REJECTED';}catch(e){out.traversal=e.message;}
-   // oversized entry: declared originalSize above the cap must be filtered without inflation
-   const big=new Uint8Array(21*1024*1024);
+   // oversized entry: declared originalSize above the per-file cap (Studio.LIMITS.maxEntryBytes, raised from 20 MB to 50 MB for videos) must be filtered without inflation
+   const big=new Uint8Array(Studio.LIMITS.maxEntryBytes+1024*1024);
    const zipBig=await (()=>{const parts=[];const z=new fflate.Zip((e,c)=>parts.push(c));const m=new fflate.ZipPassThrough('experience.json');z.add(m);m.push(fflate.strToU8(JSON.stringify({format:'ar-studio/1',name:'x',elements:[],assets:{a:{file:'assets/big.bin',type:'application/octet-stream',size:big.length}}})),true);const f=new fflate.ZipPassThrough('assets/big.bin');z.add(f);f.push(big,true);z.end();return new Promise(r=>setTimeout(()=>r(new Blob(parts)),80));})();
    try{await Studio.importZIP(zipBig,{save:false});out.oversize='NOT-REJECTED';}catch(e){out.oversize=e.message;}
    // plain bad archive
@@ -56,7 +56,9 @@ process.env.HER_EXPORT_FIXTURE='/downloads/file-6b0534f1.json'; // her private e
  assert.notEqual(safety.oversize,'NOT-REJECTED','oversized entry rejected: '+safety.oversize);
  assert.equal(safety.garbage,'rejected','non-zip rejected');
  console.log(`PASS zip transport: byte-exact round trip + canonical compat; sizes zip=${r.zipSize} json=${r.jsonLen} raw=${r.totalBytes}; heap-delta zip=${Math.round(r.mZip.peak/1024)}KB json=${Math.round(r.mJson.peak/1024)}KB (headless approximation)`);
- // her real 9.4MB export: JSON -> record -> ZIP -> record, byte-exact assets both ways
+ // her real 9.4MB export: JSON -> record -> ZIP -> record, byte-exact assets both ways. Private file, never in the repo:
+ // the server serves it from HER_EXPORT_FIXTURE; on a machine without that file this part is skipped (and says so).
+ if(!require('fs').existsSync(process.env.HER_EXPORT_FIXTURE)){console.log('SKIP her real export round trip: '+process.env.HER_EXPORT_FIXTURE+' not on this machine');return;}
  const her=await p.evaluate(async()=>{
    const text=await (await fetch('/her-export.json')).text();
    const rec=await Studio.importJSON(text,{save:false});

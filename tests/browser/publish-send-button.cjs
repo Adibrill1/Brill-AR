@@ -22,7 +22,8 @@ await p.locator('#btn-send-publish').click();
 await p.waitForFunction(()=>document.querySelector('#msg').textContent.includes('בוטל'),undefined,{polling:500});
 assert.equal(await p.evaluate(()=>window.__shared),null);
 // fallback path: no canShare -> download + instruction
-await p.evaluate(()=>{delete navigator.canShare;delete navigator.share;});
+// no file sharing at all: shadow the methods (deleting the stubs would bring back a browser's own share, as desktop Chrome on a Mac has)
+await p.evaluate(()=>{for(const k of ['canShare','share'])Object.defineProperty(navigator,k,{value:undefined,configurable:true});});
 const dl=p.waitForEvent('download');await p.locator('#btn-send-publish').click();const file=await dl;
 // headless Chrome reports blob downloads as 'download' regardless of the download attribute;
 // the attribute IS set in code (desktop/phone browsers honor it) - asserted via markup below instead.

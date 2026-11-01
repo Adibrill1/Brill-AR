@@ -7,7 +7,9 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
  const ctx=await b.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true});const p=await ctx.newPage();
  await p.goto(base+'/index.html');await p.waitForFunction(()=>document.querySelector('#exp-select').options.length>0);
  const id=await p.evaluate(async()=>{const r=Studio.blankExperience('guardpanel');r.target={artRect:{x:0,y:0,w:768,h:768},natural:{w:768,h:768}};const c=document.createElement('canvas');c.width=768;c.height=768;const g=c.getContext('2d');g.fillStyle='#ffffff';g.fillRect(0,0,768,768);r.assets.__artwork=await new Promise(res=>c.toBlob(res));
-  const K=(x,y)=>({loop:false,keys:[{t:0,x,y,z:0,rot:0,opacity:1,scale:1,tap:'none'},{t:2,x,y,z:0,rot:0,opacity:1,scale:1,tap:'none'}]});
+  // the last key sits far out (60 s) so the live playhead is still between the keys when the test edits, however slowly the page loaded
+  // (with it at 2 s a slow load froze the playhead on that key and the edit updated it instead of adding one)
+  const K=(x,y)=>({loop:false,keys:[{t:0,x,y,z:0,rot:0,opacity:1,scale:1,tap:'none'},{t:60,x,y,z:0,rot:0,opacity:1,scale:1,tap:'none'}]});
   const curve={id:'curve',name:'CV',type:'text',text:'CV',color:'#0000ff',x:0,y:.2,w:.15,rot:0,timeline:Object.assign(K(0,.2),{xyMap:{baseX:0,baseY:.2,matrix:[1,0,0,1,0,0]}})};
   const keyd={id:'keyd',name:'KD',type:'text',text:'KD',color:'#aa00aa',x:-.25,y:-.2,w:.15,rot:0,timeline:K(-.25,-.2)};
   const grp={id:'grp',name:'GR',type:'group',x:-.2,y:.3,w:.2,rot:0,children:['gc'],timeline:K(-.2,.3)};
@@ -30,8 +32,8 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
  let s1=await state();
  assert.ok(!s1.liveHidden,'panel edit on a keyed element froze the playhead');
  assert.strictEqual(s1.keyd.x,-.25,'base x untouched');
- assert.strictEqual(s1.keyd.timeline.keys.length,3,'one key added');
- const nk=s1.keyd.timeline.keys.find(k=>k.t!==0&&k.t!==2);
+ assert.strictEqual(s1.keyd.timeline.keys.length,3,'one key added: '+JSON.stringify(s1.keyd.timeline.keys.map(k=>[k.t,k.x])));
+ const nk=s1.keyd.timeline.keys.find(k=>k.t!==0&&k.t!==60);
  assert.ok(nk&&Math.abs(nk.x-0.1)<1e-6,'new key carries the typed x: '+JSON.stringify(nk));
  assert.strictEqual(s1.numX,'0.10','panel reflects the new sampled x: '+s1.numX);
  // 2. same keyed element: opacity slider + rot/size numerics land on the same frozen key
