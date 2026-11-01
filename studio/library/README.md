@@ -103,3 +103,11 @@ Thumbnails show the effect over a sample backdrop through the same key.
 w-sun, w-partly, w-clouds (15 s loop), w-raincloud, w-rain, w-storm, w-lightning, w-hail, w-snow, w-rainbow, w-wind,
 w-fog (12 s loop), w-tornado, w-night. Clouds are drawn light: with the soft black key their shaded undersides read as
 thinner cloud rather than dark grey.
+
+### Cosmic and particle effects (same folder, `fx/k-*.mp4`; drawn by `tools/cosmic-fx.js`)
+Original drawings in the spirit of animated WebGL hero backgrounds (particle vortex, dotted globe and the like); no
+third-party code or artwork is used. Thousands of points are placed in 3D, projected by a simple pinhole camera and
+added together on black, so the soft black key keeps only the light. Every motion repeats a whole number of times per
+loop. 8 s loops except k-saturn and k-constellation (10 s) and k-globe and k-galaxy (12 s); encoded at CRF 25 because
+the dense point fields cost far more bits than the other effects.
+k-tornado, k-saturn, k-blackhole, k-globe, k-galaxy, k-dna, k-gyro, k-sphere, k-terrain, k-constellation, k-orb, k-fibres.

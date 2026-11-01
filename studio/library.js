@@ -130,8 +130,14 @@ window.StarterLibrary = (() => {
     ['w-storm','סערה וברקים',1],['w-lightning','ברקים',.9],['w-hail','ברד',1],['w-snow','שלג',1],['w-rainbow','קשת בענן',.8],
     ['w-wind','רוח ועלים',1],['w-fog','ערפל',1],['w-tornado','טורנדו',.6],['w-night','לילה עם ירח',.8]
   ].map(([id,name,w]) => ({id:'fx-'+id,name,detail:'מזג אוויר · לולאה · ללא צליל',kind:'video',file:'fx/'+id+'.mp4',thumb:'thumbs/fx-'+id+'.jpg',w,chroma:{enabled:true,color:'#000000',threshold:.35},group:'weather'}));
-  const entries = [...originals, ...scenes, ...effects, ...weather, ...made, ...models, ...animated, ...particleStyles, ...stickers, ...loops];
-  const groups = [['all','הכול'],['scene','סצנות בתנועה'],['fx','אפקטים מרחפים'],['weather','מזג אוויר'],['made','מקוריים בתנועה'],['model','תלת־ממד'],['animal','חיות בתנועה'],['sea','ים'],['dino','דינוזאורים'],['creature','דמויות'],['particles','חלקיקים'],['sticker','מדבקות'],['loop','לולאות וידאו'],['original','מקוריים']];
+  // Cosmic / particle effects, same kind of keyed loop (8-12 s): thousands of points drawn in 3D (tools/cosmic-fx.js)
+  const cosmic = [
+    ['k-tornado','מערבולת חלקיקים',.6],['k-saturn','שבתאי מחלקיקים',.8],['k-blackhole','חור שחור ודיסקת אור',.8],['k-globe','גלובוס נקודות',.6],
+    ['k-galaxy','גלקסיה ספירלית',.8],['k-dna','סליל DNA',.45],['k-gyro','טבעות מסתובבות',.6],['k-sphere','כדור חלקיקים נושם',.55],
+    ['k-terrain','נוף קווים',1],['k-constellation','קבוצת כוכבים',.8],['k-orb','כדור קוסמי',.55],['k-fibres','סיבי אור',.8]
+  ].map(([id,name,w]) => ({id:'fx-'+id,name,detail:'חלל וחלקיקים · לולאה · ללא צליל',kind:'video',file:'fx/'+id+'.mp4',thumb:'thumbs/fx-'+id+'.jpg',w,chroma:{enabled:true,color:'#000000',threshold:.35},group:'cosmic'}));
+  const entries = [...originals, ...scenes, ...effects, ...weather, ...cosmic, ...made, ...models, ...animated, ...particleStyles, ...stickers, ...loops];
+  const groups = [['all','הכול'],['scene','סצנות בתנועה'],['fx','אפקטים מרחפים'],['weather','מזג אוויר'],['cosmic','חלל וחלקיקים'],['made','מקוריים בתנועה'],['model','תלת־ממד'],['animal','חיות בתנועה'],['sea','ים'],['dino','דינוזאורים'],['creature','דמויות'],['particles','חלקיקים'],['sticker','מדבקות'],['loop','לולאות וידאו'],['original','מקוריים']];
   const MIME = {glb:'model/gltf-binary',mp4:'video/mp4',png:'image/png',gif:'image/gif',wav:'audio/wav'};
   async function open(importAsset) {
     const dialog = document.createElement('dialog'); dialog.id='starter-library'; dialog.dir='rtl';
