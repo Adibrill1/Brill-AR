@@ -129,6 +129,13 @@ window.StarterLibrary = (() => {
     ['fireworks','זיקוקים',1],['light-rays','קרני אור צבעוניות',.9],['portal','שער קסם',.7],['aurora','זוהר צפוני',1],['flames','להבות',.5],
     ['enso','מעגל מכחול',.6],['plasma','כדור פלזמה',.55],['bauhaus','צורות באוהאוס',.7],['warp','קפיצה לחלל',1]
   ].map(([id,name,w]) => ({id:'fx-'+id,name,detail:'אפקט מרחף · לולאה · ללא צליל',kind:'video',file:'fx/'+id+'.mp4',thumb:'thumbs/fx-'+id+'.jpg',w,chroma:{enabled:true,color:'#000000',threshold:.35},group:'fx'}));
+  // The floating effects as 3D models (tools/make-real-models.py, outside this repository): glow is unlit colour in
+  // translucent shells, one looping clip "Loop" each: [file id, Hebrew name, start width]
+  const fx3d = [
+    ['plasma','כדור פלזמה בתלת־ממד',.35],['neon-love','שלט ניאון: אהבה',.5],['neon-mazal','שלט ניאון: מזל טוב',.6],['neon-heart','לב ניאון פועם',.4],
+    ['retro-sun','שמש רטרו ורשת',.6],['fireworks','זיקוקים',.7],['light-rays','קרני אור צבעוניות',.7],['portal','שער קסם מאבן',.5],
+    ['aurora','זוהר צפוני',.8],['flames','מדורה',.45],['enso','מעגל מכחול',.5],['bauhaus','צורות באוהאוס',.65],['warp','קפיצה לחלל',.7]
+  ].map(([id,name,w]) => ({id:'fx3d-'+id,name,detail:'אפקט בתלת־ממד · לולאה',kind:'model',file:'models/fx3d-'+id+'.glb',thumb:'thumbs/fx3d-'+id+'.png',clip:'Loop',w,group:'fx3d'}));
   // Weather, same kind of keyed loop (clouds 15 s, fog 12 s, the rest 6 s): [file id, Hebrew name, start width]
   const weather = [
     ['w-sun','שמש זורחת',.6],['w-partly','שמש ועננים',.7],['w-clouds','עננים נודדים',1],['w-raincloud','ענן גשם',.6],['w-rain','גשם',1],
@@ -141,8 +148,8 @@ window.StarterLibrary = (() => {
     ['k-galaxy','גלקסיה ספירלית',.8],['k-dna','סליל DNA',.45],['k-gyro','טבעות מסתובבות',.6],['k-sphere','כדור חלקיקים נושם',.55],
     ['k-terrain','נוף קווים',1],['k-constellation','קבוצת כוכבים',.8],['k-orb','כדור קוסמי',.55],['k-fibres','סיבי אור',.8]
   ].map(([id,name,w]) => ({id:'fx-'+id,name,detail:'חלל וחלקיקים · לולאה · ללא צליל',kind:'video',file:'fx/'+id+'.mp4',thumb:'thumbs/fx-'+id+'.jpg',w,chroma:{enabled:true,color:'#000000',threshold:.35},group:'cosmic'}));
-  const entries = [...originals, ...scenes, ...effects, ...weather, ...cosmic, ...made, ...models, ...animated, ...particleStyles, ...stickers, ...loops];
-  const groups = [['all','הכול'],['scene','סצנות בתנועה'],['fx','אפקטים מרחפים'],['weather','מזג אוויר'],['cosmic','חלל וחלקיקים'],['made','מקוריים בתנועה'],['model','תלת־ממד'],['animal','חיות בתנועה'],['sea','ים'],['dino','דינוזאורים'],['creature','דמויות'],['particles','חלקיקים'],['sticker','מדבקות'],['loop','לולאות וידאו'],['original','מקוריים']];
+  const entries = [...originals, ...scenes, ...effects, ...fx3d, ...weather, ...cosmic, ...made, ...models, ...animated, ...particleStyles, ...stickers, ...loops];
+  const groups = [['all','הכול'],['scene','סצנות בתנועה'],['fx','אפקטים מרחפים'],['fx3d','אפקטים בתלת־ממד'],['weather','מזג אוויר'],['cosmic','חלל וחלקיקים'],['made','מקוריים בתנועה'],['model','תלת־ממד'],['animal','חיות בתנועה'],['sea','ים'],['dino','דינוזאורים'],['creature','דמויות'],['particles','חלקיקים'],['sticker','מדבקות'],['loop','לולאות וידאו'],['original','מקוריים']];
   const MIME = {glb:'model/gltf-binary',mp4:'video/mp4',png:'image/png',gif:'image/gif',wav:'audio/wav'};
   async function open(importAsset) {
     const dialog = document.createElement('dialog'); dialog.id='starter-library'; dialog.dir='rtl';

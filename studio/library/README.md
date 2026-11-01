@@ -116,3 +116,14 @@ added together on black, so the soft black key keeps only the light. Every motio
 loop. 8 s loops except k-saturn and k-constellation (10 s) and k-globe and k-galaxy (12 s); encoded at CRF 25 because
 the dense point fields cost far more bits than the other effects.
 k-tornado, k-saturn, k-blackhole, k-globe, k-galaxy, k-dna, k-gyro, k-sphere, k-terrain, k-constellation, k-orb, k-fibres.
+
+## Floating effects in 3D — `models/fx3d-*.glb`, `thumbs/fx3d-*.png`
+Thirteen 3D versions of the floating light effects, built in Blender by `tools/make-real-models.py` (outside this
+repository), each with one looping clip "Loop". Glow is unlit colour (KHR_materials_unlit) wrapped in translucent shells
+or drawn from gradient-alpha textures made in the script; solid parts use Poly Haven (CC0) textures (lichen_rock for the
+portal and the campfire stones, bark_brown_02 for the logs, plywood as a paint normal map). The neon signs are the words
+in Amatic Hebrew (SIL Open Font License, see `cache/fonts` in the work folder), turned into tubes, on clear acrylic with
+stand-offs. plasma (a plasma lamp), neon-love, neon-mazal, neon-heart, retro-sun (a sliced sun over a running neon
+grid), fireworks, light-rays, portal (a stone ring with a swirling vortex), aurora, flames (a campfire), enso (an ink
+brush circle drawn in the air), bauhaus (painted shapes on a plinth), warp (starlight streaks rushing out of the
+picture). Thumbnails are rendered from the GLB (`tools/make-graphics.cjs mthumb`).
