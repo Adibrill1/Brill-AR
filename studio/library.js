@@ -124,8 +124,14 @@ window.StarterLibrary = (() => {
     ['fireworks','זיקוקים',1],['light-rays','קרני אור צבעוניות',.9],['portal','שער קסם',.7],['aurora','זוהר צפוני',1],['flames','להבות',.5],
     ['enso','מעגל מכחול',.6],['plasma','כדור פלזמה',.55],['bauhaus','צורות באוהאוס',.7],['warp','קפיצה לחלל',1]
   ].map(([id,name,w]) => ({id:'fx-'+id,name,detail:'אפקט מרחף · לולאה · ללא צליל',kind:'video',file:'fx/'+id+'.mp4',thumb:'thumbs/fx-'+id+'.jpg',w,chroma:{enabled:true,color:'#000000',threshold:.35},group:'fx'}));
-  const entries = [...originals, ...scenes, ...effects, ...made, ...models, ...animated, ...particleStyles, ...stickers, ...loops];
-  const groups = [['all','הכול'],['scene','סצנות בתנועה'],['fx','אפקטים מרחפים'],['made','מקוריים בתנועה'],['model','תלת־ממד'],['animal','חיות בתנועה'],['sea','ים'],['dino','דינוזאורים'],['creature','דמויות'],['particles','חלקיקים'],['sticker','מדבקות'],['loop','לולאות וידאו'],['original','מקוריים']];
+  // Weather, same kind of keyed loop (clouds 15 s, fog 12 s, the rest 6 s): [file id, Hebrew name, start width]
+  const weather = [
+    ['w-sun','שמש זורחת',.6],['w-partly','שמש ועננים',.7],['w-clouds','עננים נודדים',1],['w-raincloud','ענן גשם',.6],['w-rain','גשם',1],
+    ['w-storm','סערה וברקים',1],['w-lightning','ברקים',.9],['w-hail','ברד',1],['w-snow','שלג',1],['w-rainbow','קשת בענן',.8],
+    ['w-wind','רוח ועלים',1],['w-fog','ערפל',1],['w-tornado','טורנדו',.6],['w-night','לילה עם ירח',.8]
+  ].map(([id,name,w]) => ({id:'fx-'+id,name,detail:'מזג אוויר · לולאה · ללא צליל',kind:'video',file:'fx/'+id+'.mp4',thumb:'thumbs/fx-'+id+'.jpg',w,chroma:{enabled:true,color:'#000000',threshold:.35},group:'weather'}));
+  const entries = [...originals, ...scenes, ...effects, ...weather, ...made, ...models, ...animated, ...particleStyles, ...stickers, ...loops];
+  const groups = [['all','הכול'],['scene','סצנות בתנועה'],['fx','אפקטים מרחפים'],['weather','מזג אוויר'],['made','מקוריים בתנועה'],['model','תלת־ממד'],['animal','חיות בתנועה'],['sea','ים'],['dino','דינוזאורים'],['creature','דמויות'],['particles','חלקיקים'],['sticker','מדבקות'],['loop','לולאות וידאו'],['original','מקוריים']];
   const MIME = {glb:'model/gltf-binary',mp4:'video/mp4',png:'image/png',gif:'image/gif',wav:'audio/wav'};
   async function open(importAsset) {
     const dialog = document.createElement('dialog'); dialog.id='starter-library'; dialog.dir='rtl';
@@ -133,7 +139,7 @@ window.StarterLibrary = (() => {
     const title=document.createElement('h2');title.textContent='ספריית התחלה';
     const close=document.createElement('button');close.textContent='סגירה';close.className='ghost';close.onclick=()=>dialog.close();
     head.append(title,close);dialog.append(head);
-    const note=document.createElement('p');note.className='hint';note.textContent=entries.length+' פריטים. נגיעה בפריט מוסיפה אותו ליצירה: מודלים חינמיים (CC0), גם בתנועה, אפקטים מרחפים, חלקיקים, מדבקות, לולאות מהסטודיו שלך ופריטים מקוריים. נשמרים עם היצירה במכשיר, בלי חשבון ובלי תשלום.';dialog.append(note);
+    const note=document.createElement('p');note.className='hint';note.textContent=entries.length+' פריטים. נגיעה בפריט מוסיפה אותו ליצירה: מודלים חינמיים (CC0), גם בתנועה, אפקטים מרחפים, מזג אוויר, חלקיקים, מדבקות, לולאות מהסטודיו שלך ופריטים מקוריים. נשמרים עם היצירה במכשיר, בלי חשבון ובלי תשלום.';dialog.append(note);
     const filters=document.createElement('div');filters.className='library-filters';filters.setAttribute('role','group');filters.setAttribute('aria-label','סוג פריט');dialog.append(filters);
     const grid=document.createElement('div');grid.className='library-grid';dialog.append(grid);
     const status=document.createElement('p');status.setAttribute('role','status');dialog.append(status);

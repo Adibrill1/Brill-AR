@@ -98,3 +98,8 @@ repo; only the rendered letters are in the videos, the font file is not shipped.
 
 neon-love, neon-mazal, neon-heart, retro-sun, fireworks, light-rays, portal, aurora, flames, enso, plasma, bauhaus, warp.
 Thumbnails show the effect over a sample backdrop through the same key.
+
+### Weather (same folder, `fx/w-*.mp4`; drawn by `tools/weather-fx.js`)
+w-sun, w-partly, w-clouds (15 s loop), w-raincloud, w-rain, w-storm, w-lightning, w-hail, w-snow, w-rainbow, w-wind,
+w-fog (12 s loop), w-tornado, w-night. Clouds are drawn light: with the soft black key their shaded undersides read as
+thinner cloud rather than dark grey.
