@@ -1,7 +1,8 @@
 /* Starter library. Selection copies an asset into the current local experience, so export/import does not
    depend on a future catalog fetch. Groups: the original items, CC0 3D models from Poly Haven (packed to
    GLB at 1K textures), animated CC0 models by Quaternius, particle styles and stickers drawn in code
-   (tools/make-graphics.cjs), and video loops rendered from the user's own Styles studio (720×720, with music).
+   (tools/make-graphics.cjs), video loops rendered from the user's own Styles studio (720×720, with music), and
+   floating light effects drawn in code on black (tools/make-effects.cjs), added with the soft black (glow) key.
    Credits and sources: library/README.md. */
 window.StarterLibrary = (() => {
   const originals = [
@@ -116,8 +117,15 @@ window.StarterLibrary = (() => {
       M('m-balloons','בלונים','Loop',{ w: .7, timeline: path(12, 12, (f) => ({ y: -.7 + 1.4 * f, opacity: f < .06 || f > .94 ? 0 : 1 })) }),
       P('confetti','קונפטי',{ count: 150, size: 14, speed: .9, color: '#ff4d6d', color2: '#ffd23f', direction: 180, lifetime: 3, life2: 5 },{ w: 1, h: .6, y: .2 })]]
   ].map(([id,name,detail,parts]) => ({id:'sc-'+id,name,detail:'סצנה בתנועה · '+detail,kind:'scene',parts,thumb:'thumbs/sc-'+id+'.png',group:'scene'}));
-  const entries = [...originals, ...scenes, ...made, ...models, ...animated, ...particleStyles, ...stickers, ...loops];
-  const groups = [['all','הכול'],['scene','סצנות בתנועה'],['made','מקוריים בתנועה'],['model','תלת־ממד'],['animal','חיות בתנועה'],['sea','ים'],['dino','דינוזאורים'],['creature','דמויות'],['particles','חלקיקים'],['sticker','מדבקות'],['loop','לולאות וידאו'],['original','מקוריים']];
+  // Floating light effects: 6 s loops on black, keyed by the soft glow key so only the light floats over the artwork.
+  // [file id, Hebrew name, start width]
+  const effects = [
+    ['neon-love','שלט ניאון: אהבה',.6],['neon-mazal','שלט ניאון: מזל טוב',.7],['neon-heart','לב ניאון פועם',.45],['retro-sun','שמש רטרו',.7],
+    ['fireworks','זיקוקים',1],['light-rays','קרני אור צבעוניות',.9],['portal','שער קסם',.7],['aurora','זוהר צפוני',1],['flames','להבות',.5],
+    ['enso','מעגל מכחול',.6],['plasma','כדור פלזמה',.55],['bauhaus','צורות באוהאוס',.7],['warp','קפיצה לחלל',1]
+  ].map(([id,name,w]) => ({id:'fx-'+id,name,detail:'אפקט מרחף · לולאה · ללא צליל',kind:'video',file:'fx/'+id+'.mp4',thumb:'thumbs/fx-'+id+'.jpg',w,chroma:{enabled:true,color:'#000000',threshold:.35},group:'fx'}));
+  const entries = [...originals, ...scenes, ...effects, ...made, ...models, ...animated, ...particleStyles, ...stickers, ...loops];
+  const groups = [['all','הכול'],['scene','סצנות בתנועה'],['fx','אפקטים מרחפים'],['made','מקוריים בתנועה'],['model','תלת־ממד'],['animal','חיות בתנועה'],['sea','ים'],['dino','דינוזאורים'],['creature','דמויות'],['particles','חלקיקים'],['sticker','מדבקות'],['loop','לולאות וידאו'],['original','מקוריים']];
   const MIME = {glb:'model/gltf-binary',mp4:'video/mp4',png:'image/png',gif:'image/gif',wav:'audio/wav'};
   async function open(importAsset) {
     const dialog = document.createElement('dialog'); dialog.id='starter-library'; dialog.dir='rtl';
@@ -125,7 +133,7 @@ window.StarterLibrary = (() => {
     const title=document.createElement('h2');title.textContent='ספריית התחלה';
     const close=document.createElement('button');close.textContent='סגירה';close.className='ghost';close.onclick=()=>dialog.close();
     head.append(title,close);dialog.append(head);
-    const note=document.createElement('p');note.className='hint';note.textContent=entries.length+' פריטים. נגיעה בפריט מוסיפה אותו ליצירה: מודלים חינמיים (CC0), גם בתנועה, חלקיקים, מדבקות, לולאות מהסטודיו שלך ופריטים מקוריים. נשמרים עם היצירה במכשיר, בלי חשבון ובלי תשלום.';dialog.append(note);
+    const note=document.createElement('p');note.className='hint';note.textContent=entries.length+' פריטים. נגיעה בפריט מוסיפה אותו ליצירה: מודלים חינמיים (CC0), גם בתנועה, אפקטים מרחפים, חלקיקים, מדבקות, לולאות מהסטודיו שלך ופריטים מקוריים. נשמרים עם היצירה במכשיר, בלי חשבון ובלי תשלום.';dialog.append(note);
     const filters=document.createElement('div');filters.className='library-filters';filters.setAttribute('role','group');filters.setAttribute('aria-label','סוג פריט');dialog.append(filters);
     const grid=document.createElement('div');grid.className='library-grid';dialog.append(grid);
     const status=document.createElement('p');status.setAttribute('role','status');dialog.append(status);
@@ -147,7 +155,7 @@ window.StarterLibrary = (() => {
           }
           const response=await fetch('library/'+item.file);if(!response.ok)throw Error('download');
           const blob=await response.blob(),base=item.file.split('/').pop(),type=MIME[base.split('.').pop()]||blob.type;
-          await importAsset(item.kind,new File([blob],base,{type}),{name:item.name,loop:item.kind!=='sound',clip:item.clip,w:item.w,particles:item.particles});
+          await importAsset(item.kind,new File([blob],base,{type}),{name:item.name,loop:item.kind!=='sound',clip:item.clip,w:item.w,particles:item.particles,chroma:item.chroma});
           dialog.close();
         }catch(e){status.textContent='הפריט לא נטען. אפשר לנסות שוב.';}
         finally{busy=false;grid.querySelectorAll('button').forEach(b=>b.disabled=false);}

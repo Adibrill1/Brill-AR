@@ -411,13 +411,18 @@ const Studio = (() => {
   // Chroma-key video: samples the video texture with a key-color discard shader.
   // Works in both preview and AR modes (replaces the plain/fade video path when enabled).
   // The keying shader, standalone so it can be driven by any texture (video or test canvas).
+  // A black key is a soft "glow" key for light effects drawn on black: alpha follows brightness and the colour is
+  // un-premultiplied, so the result is c + behind*(1-max(c)) - glows stay soft instead of being cut at an edge.
   function makeChromaMaterial(texture, color, threshold) {
+    const key = new THREE.Color(color || "#00ff00");
     return new THREE.ShaderMaterial({
-      uniforms: { map: { value: texture }, keyColor: { value: new THREE.Color(color || "#00ff00") }, thresh: { value: threshold == null ? 0.35 : threshold } },
+      uniforms: { map: { value: texture }, keyColor: { value: key }, thresh: { value: threshold == null ? 0.35 : threshold }, glow: { value: key.r + key.g + key.b < 0.15 ? 1 : 0 } },
       transparent: true,
       vertexShader: "varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }",
-      fragmentShader: "uniform sampler2D map; uniform vec3 keyColor; uniform float thresh; varying vec2 vUv;" +
-        "void main(){ vec4 c = texture2D(map, vUv); float d = distance(c.rgb, keyColor); if (d < thresh) discard; gl_FragColor = c; }"
+      fragmentShader: "uniform sampler2D map; uniform vec3 keyColor; uniform float thresh; uniform float glow; varying vec2 vUv;" +
+        "void main(){ vec4 c = texture2D(map, vUv);" +
+        " if (glow > 0.5) { float m = max(c.r, max(c.g, c.b)); if (m < thresh * 0.15) discard; gl_FragColor = vec4(c.rgb / m, m); return; }" +
+        " float d = distance(c.rgb, keyColor); if (d < thresh) discard; gl_FragColor = c; }"
     });
   }
   // AR video lifecycle, mirroring xrextras-target-video-fade but on our own exact

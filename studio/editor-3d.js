@@ -781,8 +781,16 @@ window.Editor3D = (() => {
     } finally { busy = false; }
   }
 
+  // The layer's own video copies (keyed clips) run while it is shown, as in the experience, and rest when it is hidden.
+  let clipCheck = 0;
+  function playClips(on) {
+    if (on && ++clipCheck % 30) return;
+    const assets = host && host.querySelector("#editor-3d-media"); if (!assets) return;
+    assets.querySelectorAll("video").forEach((v) => { if (!on) v.pause(); else if (v.paused && !(v.ended && !v.loop)) v.play().catch(() => {}); });
+  }
   function hide() {
     active = false;
+    playClips(false);
     cancelAnimationFrame(sampleRaf);
     if (host) host.style.display = "none";
     const c = wrapEl && wrapEl.querySelector("#preview");
@@ -857,6 +865,7 @@ window.Editor3D = (() => {
     // A viewport change (rotation) can leave A-Frame on its fallback camera at the origin, which
     // makes every projection (and the gizmo fit) NaN. Keep the editor's own camera the active one.
     if (artNode && artNode.object3D && artNode.object3D.visible !== (mode === "3d")) artNode.object3D.visible = mode === "3d"; // the 2D canvas draws the artwork itself
+    playClips(true);
     if (mode === "2d") frame2d();
     else if (cam && sceneEl && cam.components && cam.components.camera) {
       let own = cam.getObject3D("camera");

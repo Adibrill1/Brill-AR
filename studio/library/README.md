@@ -87,3 +87,14 @@ default length (8–10 s) and music. Posters are a frame at 60% of the loop.
 synthwave, bauhaus, stained-glass, dark-tech, lowpoly-island, impasto-oil, ukiyo-wave, sand-painting.
 impasto-oil, ukiyo-wave and sand-painting "paint themselves" from blank: they work best as a one-time reveal
 (turn the layer's loop off).
+
+## Floating light effects — `fx/<id>.mp4`, `thumbs/fx-<id>.jpg`
+Drawn in code for Brill-AR (`tools/make-effects.cjs`): 720×720, 30 fps, 6 s seamless loops on pure black, H.264 High,
+no audio. The library adds them as video layers keyed with the soft black ("glow") key (chroma colour `#000000`):
+alpha follows brightness, so glows stay soft over the artwork. Looks follow the user's Styles studio (neon-sign,
+synthwave, stained-glass, ink-brush, bauhaus); no studio file is copied. The Hebrew neon signs are drawn with Amatic SC
+Hebrew (SIL Open Font License 1.1, Copyright 2015 The Amatic SC Project Authors), taken from the user's Ai.Brill.Movies
+repo; only the rendered letters are in the videos, the font file is not shipped.
+
+neon-love, neon-mazal, neon-heart, retro-sun, fireworks, light-rays, portal, aurora, flames, enso, plasma, bauhaus, warp.
+Thumbnails show the effect over a sample backdrop through the same key.

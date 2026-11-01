@@ -718,6 +718,8 @@
         el.h = (el.w / el.aspect) * artRatio;
         v.loop = true; v.play().catch(() => {});
         media[assetId] = v;
+        if (options.w > 0) { el.w = Math.min(2, options.w); el.h = (el.w / el.aspect) * artRatio; }
+        if (options.chroma) el.chroma = Object.assign({}, options.chroma); // library light effects come keyed (black = soft glow key)
       } else {
         el.aspect = 1;
         el.h = el.w * artRatio;
