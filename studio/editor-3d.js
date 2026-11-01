@@ -390,8 +390,9 @@ window.Editor3D = (() => {
     if (gizmoMode === "rotate") {
       const ringProxies = [];
       const mkRing = (axis, color, name, rotEuler) => {
-        const mat = new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.95, side: THREE.DoubleSide });
-        const ring = new THREE.Mesh(new THREE.TorusGeometry(L * 0.75, 0.02, 10, 48), mat);
+        const mat = new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.9, side: THREE.DoubleSide });
+        // thin line-like rings (tube 3% of the radius) so they do not hide the artwork; the wide hit ring below keeps them easy to grab
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(L * 0.75, L * 0.75 * 0.03, 8, 64), mat);
         ring.renderOrder = 10001;
         ring.rotation.set(rotEuler[0], rotEuler[1], rotEuler[2]);
         ring.userData = { axis, gizmoPart: name };
