@@ -93,37 +93,19 @@ synthwave, bauhaus, stained-glass, dark-tech, lowpoly-island, impasto-oil, ukiyo
 impasto-oil, ukiyo-wave and sand-painting "paint themselves" from blank: they work best as a one-time reveal
 (turn the layer's loop off).
 
-## Floating light effects — `fx/<id>.mp4`, `thumbs/fx-<id>.jpg`
-Drawn in code for Brill-AR (`tools/make-effects.cjs`): 720×720, 30 fps, 6 s seamless loops on pure black, H.264 High,
-no audio. The library adds them as video layers keyed with the soft black ("glow") key (chroma colour `#000000`):
-alpha follows brightness, so glows stay soft over the artwork. Looks follow the user's Styles studio (neon-sign,
-synthwave, stained-glass, ink-brush, bauhaus); no studio file is copied. The Hebrew neon signs are drawn with Amatic SC
-Hebrew (SIL Open Font License 1.1, Copyright 2015 The Amatic SC Project Authors), taken from the user's Ai.Brill.Movies
-repo; only the rendered letters are in the videos, the font file is not shipped.
-
-neon-love, neon-mazal, neon-heart, retro-sun, fireworks, light-rays, portal, aurora, flames, enso, plasma, bauhaus, warp.
-Thumbnails show the effect over a sample backdrop through the same key.
-
-### Weather (same folder, `fx/w-*.mp4`; drawn by `tools/weather-fx.js`)
-w-sun, w-partly, w-clouds (15 s loop), w-raincloud, w-rain, w-storm, w-lightning, w-hail, w-snow, w-rainbow, w-wind,
-w-fog (12 s loop), w-tornado, w-night. Clouds are drawn light: with the soft black key their shaded undersides read as
-thinner cloud rather than dark grey.
-
-### Cosmic and particle effects (same folder, `fx/k-*.mp4`; drawn by `tools/cosmic-fx.js`)
-Original drawings in the spirit of animated WebGL hero backgrounds (particle vortex, dotted globe and the like); no
-third-party code or artwork is used. Thousands of points are placed in 3D, projected by a simple pinhole camera and
-added together on black, so the soft black key keeps only the light. Every motion repeats a whole number of times per
-loop. 8 s loops except k-saturn and k-constellation (10 s) and k-globe and k-galaxy (12 s); encoded at CRF 25 because
-the dense point fields cost far more bits than the other effects.
-k-tornado, k-saturn, k-blackhole, k-globe, k-galaxy, k-dna, k-gyro, k-sphere, k-terrain, k-constellation, k-orb, k-fibres.
+## Floating effects, weather and cosmic effects — 3D only
+These groups ("אפקטים מרחפים", "מזג אוויר", "חלל וחלקיקים") used to be keyed video loops (`fx/*.mp4`, drawn by
+`tools/make-effects.cjs`, `tools/weather-fx.js` and `tools/cosmic-fx.js` outside this repository). They are now 3D models
+only: the videos and their thumbnails were removed (they remain in git history). The soft black ("glow") key itself is
+still in the app for the user's own videos.
 
 ## Floating effects in 3D — `models/fx3d-*.glb`, `thumbs/fx3d-*.png`
-Thirteen 3D versions of the floating light effects, built in Blender by `tools/make-real-models.py` (outside this
+The thirteen floating light effects as 3D models, built in Blender by `tools/make-real-models.py` (outside this
 repository), each with one looping clip "Loop". Glow is unlit colour (KHR_materials_unlit) wrapped in translucent shells
 or drawn from gradient-alpha textures made in the script; solid parts use Poly Haven (CC0) textures (lichen_rock for the
 portal and the campfire stones, bark_brown_02 for the logs, plywood as a paint normal map). The neon signs are the words
-in Amatic Hebrew (SIL Open Font License, see `cache/fonts` in the work folder), turned into tubes, on clear acrylic with
-stand-offs. plasma (a plasma lamp), neon-love, neon-mazal, neon-heart, retro-sun (a sliced sun over a running neon
+in Amatic Hebrew (SIL Open Font License 1.1, Copyright 2015 The Amatic SC Project Authors; only the letter shapes are in
+the models), turned into tubes on a black acrylic board in a metal foot, like a desk neon sign. plasma (a plasma lamp), neon-love, neon-mazal, neon-heart, retro-sun (a sliced sun over a running neon
 grid), fireworks, light-rays, portal (a stone ring with a swirling vortex), aurora, flames (a campfire), enso (an ink
 brush circle drawn in the air), bauhaus (painted shapes on a plinth), warp (starlight streaks rushing out of the
 picture). Thumbnails are rendered from the GLB (`tools/make-graphics.cjs mthumb`).
@@ -135,3 +117,6 @@ rain, hail and snow fall in seamless cycles and fade at the ends of each fall; f
 moon's surface is drawn in the script. Cosmic effects are clouds of glowing dots (each an octahedron, merged into a few
 meshes that turn and breathe as wholes); the line terrain moves by two blended shape keys (glTF morph targets); the
 fibre lamp's tips change colour by three overlapping tip sets that grow and shrink in turn.
+Everything is built to be seen from any side: light rays and the sun's rays point in every direction, the portal has a
+tunnel behind its ring, the aurora's curtains stand on an arc, the rainbow is round tubes, clouds are as deep as they are
+tall, rain, hail and snow fall through a deep box, lightning zigzags in depth, fog is crossing soft layers.
