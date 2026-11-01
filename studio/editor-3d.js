@@ -724,6 +724,7 @@ window.Editor3D = (() => {
       else if (rigRot3d) { rig.setAttribute("rotation", rigRot3d); rigRot3d = null; }
     }
     if (artNode && artNode.object3D) artNode.object3D.visible = !flat;
+    if (!flat) points3d();
     if (sceneEl) try { sceneEl.resize(); } catch (e) {}
   }
 
@@ -801,6 +802,13 @@ window.Editor3D = (() => {
     ortho.left = -w / 2 * k; ortho.right = w / 2 * k; ortho.top = h / 2 * k; ortho.bottom = -h / 2 * k;
     ortho.position.set(xc, yc, 10); ortho.updateProjectionMatrix();
     if (sceneEl.camera !== ortho) sceneEl.camera = ortho;
+    // Particle points are sized in screen pixels under an orthographic camera (no distance scaling), so give them the
+    // pixel size they have in the 3D view's perspective (fov 50) at this zoom; points3d() puts the original back.
+    const ppu = (sceneEl.canvas ? sceneEl.canvas.height : h) / (ortho.top - ortho.bottom), px = ppu * Math.tan(25 * Math.PI / 180);
+    rig.object3D.traverse((o) => { if (!o.isPoints || !o.material) return; const m = o.material; if (m.userData.size3d == null) m.userData.size3d = m.size; m.size = m.userData.size3d * px; });
+  }
+  function points3d() {
+    if (rig && rig.object3D) rig.object3D.traverse((o) => { if (o.isPoints && o.material && o.material.userData.size3d != null) o.material.size = o.material.userData.size3d; });
   }
 
   // Timeline linkage: every frame, mirror the 2D canvas's sampled world into the 3D

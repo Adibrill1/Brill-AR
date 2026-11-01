@@ -573,8 +573,21 @@
       box.appendChild(body); box.appendChild(row); wrap.appendChild(box);
       document.body.appendChild(wrap);
     });
+    // A ready particle style from the starter library: its sprite becomes the layer's custom particle image.
+    const addLibraryParticles = async (f, options) => {
+      { const blocked = Studio.addBlocker(rec, { layers: 1, bytes: f.size }); if (blocked) { msg(blocked); return; } }
+      const spriteAssetId = Studio.newId();
+      rec.assets[spriteAssetId] = await Studio.ownBlob(f);
+      const el = Studio.normEl({ id: Studio.newId(), type: "particles", name: options.name || "חלקיקים", x: 0, y: 0, w: 0.6, h: 0.6, rot: 0, z: 0, flush: true, seq: curSeq,
+        particles: Object.assign({ count: 120, color: "#ffffff" }, options.particles || {}, { preset: "custom", spriteAssetId }) });
+      rec.elements.push(el); selectedId = el.id;
+      await saveGuarded(rec);
+      msg("נוספו חלקיקים. אפשר לשנות צבע, כמות ומהירות בלוח למטה.");
+      render();
+    };
     const importAssetNow = async (kind, f, options = {}) => {
       if (!f) return;
+      if (kind === "particles") return addLibraryParticles(f, options);
       let importNote = "",videoInfo=null;
       { const capMB = Math.round(Studio.LIMITS.maxEntryBytes / 1048576);
         if (f.size > Studio.LIMITS.maxEntryBytes) { msg(kind === 'video' ? 'קובץ גדול מדי (מעל ' + capMB + 'MB). נסי סרטון קצר יותר או דחיסה ל־MP4' : 'קובץ גדול מדי (מעל ' + capMB + 'MB).'); return; } }
@@ -610,11 +623,11 @@
           } catch (ez) { msg("לא ניתן לייבא את ה־zip: " + ez.message); return; }
         }
         if (/\.fbx$/i.test(f.name)) {
-          if (!(await confirmDialog("המרת FBX היא ניסיונית: מודלים סטטיים בלבד, עד 20MB. חומרים או מאפיינים מיוחדים עשויים להשתנות. אין תמיכה בשלד/הנפשה או טקסטורות חיצוניות. לתוצאה נאמנה למקור עדיף לייצא GLB מהתוכנה המקורית. הקובץ מומר במכשיר, בלי העלאה לשרת.", "המרה ובדיקה"))) return;
+          if (!(await confirmDialog("המרת FBX: עד 20MB, כולל שלד ותנועות שבתוך הקובץ. חומרים או מאפיינים מיוחדים עשויים להשתנות, וטקסטורות צריכות להיות בתוך הקובץ. בדקי את הצורה ואת התנועה בתצוגה המקדימה. לתוצאה הכי נאמנה עדיף GLB מהתוכנה המקורית. הקובץ מומר במכשיר, בלי העלאה לשרת.", "המרה ובדיקה"))) return;
           try {
             const bytes = await window.fbxToGlb(f);
             f = new File([bytes], f.name.replace(/\.fbx$/i, ".glb"), { type: "model/gltf-binary" });
-            importNote = "FBX הומר כמודל סטטי. בדקי צורה, כיוון וחומרים בתצוגה המקדימה לפני שימוש.";
+            importNote = "FBX הומר. בדקי צורה, כיוון, חומרים ותנועה בתצוגה המקדימה לפני שימוש.";
           } catch (err) { msg("ה־FBX לא נוסף: " + err.message); return; }
         }
         if (/\.obj$/i.test(f.name)) { // Wavefront OBJ -> transcode to GLB (geometry only)
@@ -656,7 +669,9 @@
                    assetId, x: 0, y: 0, w: kind === "video" ? 1.0 : 0.3, h: null, rot: 0, z: 0, flush: true, seq: curSeq }); // flush with the artwork plane (z=0): layers keep their order through the existing per-layer tie-break
       if (kind === "video" || kind === "sound") { el.volume = kind === "sound" ? 0.8 : 1; el.loop = true; }
       if (kind === "model") { el.w = 0.4; el.z = 0; el.seat = "plane"; el.aspect = 1; // seat="plane": the model's back face rests on the artwork (older models keep their centered placement)
-        try { el.clipDurations = (await Studio.modelClipInfo(f)).map(c => c.duration); } catch {}
+        try { const clips = await Studio.modelClipInfo(f); el.clipDurations = clips.map(c => c.duration);
+          if (options.clip) { const i = clips.findIndex((c) => c.name === options.clip); if (i >= 0) el.modelClip = i; } } catch {} // library models start on a calm move (Idle), not the file's first clip
+        if (options.w > 0) el.w = Math.min(2, options.w);
       }
       if (kind === "image") {
         const durl = await Studio.blobToDataURL(f);
@@ -927,7 +942,7 @@
       restoreFrozen:(t)=>restoreFrozen(t),
       onGate:(text)=>msg(text),
       getView2d:()=>({view,zoom:viewZoom})});
-    new IntersectionObserver(es=>{wrapOnScreen=es[0].isIntersecting;sync3d();}).observe($("canvas-wrap"));
+    new IntersectionObserver(es=>{wrapOnScreen=es[0].isIntersecting;sync3d();draw();}).observe($("canvas-wrap")); // draw() also starts or stops the 2D real-scene layer
     bindFullEdit();
     $('btn-duplicate-el').onclick=()=>queueExperience(async()=>{{const b=Studio.addBlocker(rec,{layers:1});if(b){msg(b);return;}}const id=Studio.duplicateLayer(rec,selectedId);if(!id)return;selectedId=id;await saveGuarded(rec);await hydrate();render();});
     const restore=direction=>queueExperience(async()=>{const restored=await Studio.restoreHistory(rec.id,direction);if(!restored)return;rec=restored;selectedId=null;checkedIds.clear();tlScrubT=null;resetSeq();await hydrate();render();});
@@ -1578,6 +1593,10 @@
       const real = viewMode === "2d" && typeof Editor3D !== "undefined" && Editor3D.drawsIn2d(el.id);
       if (real) {
         if (el.type === "model" || el.type === "particles") needsAnim = true; // the layer animates; keep the marks in step
+      } else if (viewMode === "2d" && (el.type === "model" || el.type === "particles" || (el.type === "video" && el.chroma && el.chroma.enabled)) && typeof Editor3D !== "undefined") {
+        needsAnim = true; // the real layer is still loading it: keep redrawing so the placeholder below gives way as soon as it is ready
+      }
+      if (real) {
       } else if (el.type === "video" && m && m.readyState >= 2) {
         const c=el.crop||{x:0,y:0,w:1,h:1},iw=m.videoWidth,ih=m.videoHeight;ctx.drawImage(m,c.x*iw,c.y*ih,c.w*iw,c.h*ih,-wpx/2,-hpx/2,wpx,hpx);
       } else if (el.type === "image" && m) {

@@ -15,8 +15,7 @@ self.onmessage=async(e)=>{
   const json=JSON.parse(new TextDecoder().decode(out.subarray(20,20+view.getUint32(12,true))));
   let unsafe=false;const visit=o=>{if(!o||typeof o!=='object')return;for(const[k,v]of Object.entries(o)){if(k==='uri'&&typeof v==='string'&&!v.startsWith('data:'))unsafe=true;else if(typeof v==='object')visit(v);}};visit(json);
   if(unsafe)throw Error('המודל מפנה לטקסטורות חיצוניות שאינן כלולות. יצאו GLB מוטמע במקום.');
-  // Embedded clips are preserved by converter but not yet driven by our runtime.
-  if((json.animations||[]).length||json.skins?.length)throw Error('FBX עם הנפשה או שלד עדיין אינו נתמך. יצאו GLB ובדקו הנפשה בתוכנת המקור.');
+  // Skeletons and animation clips are kept: the editor and the experience play a model's own clips (model-clips).
   if(!json.meshes?.length)throw Error('לא נמצאה גיאומטריה במודל.');
   const copy=out.slice();self.postMessage({bytes:copy.buffer},[copy.buffer]);
  }catch(err){self.postMessage({error:err.message||String(err)});}

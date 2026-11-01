@@ -22,3 +22,8 @@ Fixtures here are test inputs only. They are not part of the shipped studio.
 - clock-12s.mp4, crop-video.mp4, crop-video.mov, visual-2x1.mp4: ffmpeg-encoded synthetic clips (container tag Lavf58.76.100): test-pattern with burned-in timecode, colour bars, and red/blue halves. The exact ffmpeg commands are not recorded in this repository; provenance is from content inspection and the encoder tag, not from a recorded script.
 - crop-animated.gif (2 frames, 40x20) and target-a.png, target-a2.png, target-b.png (generated noise and gradient patterns for duplicate-target tests): synthetic, no recorded generator.
 - No fixture here is user artwork or user footage.
+
+## dolphin-anim.fbx
+"Dolphin" from the Animated Fish Pack by Quaternius (https://quaternius.com/packs/animatedfish.html), CC0 1.0 per the
+pack's License.txt. Binary FBX with a 13-joint skeleton and one clip ("Swim"); used unchanged to test FBX import with
+animation.

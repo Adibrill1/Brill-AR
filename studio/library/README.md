@@ -1,6 +1,6 @@
 # Starter library
 
-Three groups, shown with filters in the editor (הוספה ← ספריית התחלה).
+Six groups, shown with filters in the editor (הוספה ← ספריית התחלה); one tap on an item adds it.
 
 ## Original items
 Generated for Brill-AR from geometric shapes, procedural motion, synthesized sine waves and original octahedron
@@ -29,6 +29,30 @@ carrot_cake, Ukulele_01, boombox, cassette_player, Camera_01, Television_01, ala
 dartboard, football, ArmChair_01. (File names are lower-case.)
 
 The models are static; motion is added in the editor (spin, float, pulse, timeline).
+
+## Animated 3D models: Quaternius (CC0) — `models/q-*.glb`, `models/qm-*.glb`, `thumbs/q-*.png`, `thumbs/qm-*.png`
+33 rigged, animated low-poly models by Quaternius (https://quaternius.com), CC0 1.0 per the License.txt in each pack
+(free for any use, no credit needed; credited here as a courtesy). The glTF variants were downloaded from the packs'
+public Google Drive folders and packed to one GLB each by `tools/gltf-to-glb.mjs`; geometry, skins, animations and
+textures unchanged. Thumbnails are rendered from the GLB, posed 0.3 s into the move the item starts on
+(`tools/make-graphics.cjs mthumb`).
+
+- Ultimate Animated Animal Pack (`q-`): alpaca, bull, cow, deer, donkey, fox, horse, horse_white, husky, shibainu,
+  stag, wolf. 12–13 moves each (Idle, Walk, Gallop, Eating, Jump, Attack…); the library starts them on Idle (cow: Eating).
+- Cute Animated Monsters Pack (`qm-`): alien, alien_tall, bat, bee, cactus, chicken, crab, cthulhu, cyclops, deer,
+  demon, ghost, greendemon, mushroom, panda, penguin, pig, skull, tree, yellowdragon, yeti. Moves include Dance, Idle,
+  Yes, No, Jump, Walk; the flying ones (bat, bee, cthulhu, yellowdragon) have Flying. Started on Dance or Flying.
+
+The move is chosen in the editor's model panel; the library only sets the starting one.
+
+## Particle styles — `particles/<sprite>.png`, `thumbs/p-<id>.png`
+Eight ready particle layers. Each sprite is a 128px white shape drawn in code by `tools/make-graphics.cjs sprites`
+(heart, petal, snowflake, leaf, sparkle, bubble, star, confetti), tinted in the experience by the layer's colours; the
+style's settings (count, size, speed, direction, lifetime, colour range, fade) are in `library.js` and stay editable.
+
+## Stickers — `stickers/<id>.png` (512px), `thumbs/st-<id>.png`
+Twelve transparent PNG stickers drawn in code with a white die-cut edge (`tools/make-graphics.cjs stickers`): heart,
+sparkle, speech bubble, arrow, cloud, rainbow, sun, moon, flower, crown, star, butterfly. No external artwork.
 
 ## Video loops: the user's Styles studio — `loops/`, `thumbs/loop-<id>.jpg`
 Rendered by the user's own local Styles studio (code-drawn styles with synthesized music; its third-party parts are

@@ -1,6 +1,7 @@
 /* Starter library. Selection copies an asset into the current local experience, so export/import does not
-   depend on a future catalog fetch. Three groups: the original items, CC0 3D models from Poly Haven (packed to
-   GLB at 1K textures), and video loops rendered from the user's own Styles studio (720×720, with music).
+   depend on a future catalog fetch. Groups: the original items, CC0 3D models from Poly Haven (packed to
+   GLB at 1K textures), animated CC0 models by Quaternius, particle styles and stickers drawn in code
+   (tools/make-graphics.cjs), and video loops rendered from the user's own Styles studio (720×720, with music).
    Credits and sources: library/README.md. */
 window.StarterLibrary = (() => {
   const originals = [
@@ -29,8 +30,35 @@ window.StarterLibrary = (() => {
     ['synthwave','סינת׳ווייב',10],['bauhaus','באוהאוס',8],['stained-glass','ויטראז׳',9],['dark-tech','טכנולוגיה על שחור',9],
     ['lowpoly-island','אי לואו־פולי',10],['impasto-oil','צבע שמן עבה',9],['ukiyo-wave','אוקיו־אה',9],['sand-painting','ציור בחול',10]
   ].map(([id,name,sec]) => ({id:'loop-'+id,name,detail:'לולאת וידאו · '+sec+' שניות · עם מוזיקה',kind:'video',file:'loops/'+id+'.mp4',thumb:'thumbs/loop-'+id+'.jpg',group:'loop'}));
-  const entries = [...originals, ...models, ...loops];
-  const groups = [['all','הכול'],['model','תלת־ממד'],['loop','לולאות וידאו'],['original','מקוריים']];
+  // Animated CC0 models by Quaternius (packed to GLB): [file id, Hebrew name, the move they start on, start width]
+  const animated = [
+    ['q-alpaca','אלפקה','Idle',.5],['q-bull','שור','Idle',.55],['q-cow','פרה','Eating',.55],['q-deer','איילה','Idle',.5],
+    ['q-donkey','חמור','Idle',.5],['q-fox','שועל','Idle',.5],['q-horse','סוס','Idle',.55],['q-horse_white','סוס לבן','Idle',.55],
+    ['q-husky','האסקי','Idle',.5],['q-shibainu','כלב שיבה','Idle',.5],['q-stag','אייל','Idle',.55],['q-wolf','זאב','Idle',.5],
+    ['qm-alien','חייזר','Dance',.35],['qm-alien_tall','חייזר גבוה','Dance',.35],['qm-bat','עטלף','Flying',.35],['qm-bee','דבורה','Flying',.35],
+    ['qm-cactus','קקטוס','Dance',.35],['qm-chicken','אפרוח','Dance',.35],['qm-crab','סרטן','Dance',.35],['qm-cthulhu','תמנון מעופף','Flying',.35],
+    ['qm-cyclops','ענק חד־עין','Dance',.35],['qm-deer','אייל קטן','Dance',.35],['qm-demon','שדון אדום','Dance',.35],['qm-ghost','רוח רפאים','Dance',.35],
+    ['qm-greendemon','שדון ירוק','Dance',.35],['qm-mushroom','פטרייה','Dance',.35],['qm-panda','פנדה','Dance',.35],['qm-penguin','פינגווין','Dance',.35],
+    ['qm-pig','חזיר','Dance',.35],['qm-skull','גולגולת','Dance',.35],['qm-tree','עץ','Dance',.35],['qm-yellowdragon','דרקון צהוב','Flying',.35],['qm-yeti','יטי','Dance',.35]
+  ].map(([id,name,clip,w]) => ({id,name,detail:'תלת־ממד בתנועה · חינמי (CC0)',kind:'model',file:'models/'+id+'.glb',thumb:'thumbs/'+id+'.png',clip,w,group:'animated'}));
+  // Ready particle styles: a sprite drawn here (white, tinted by the colours) and the particle settings it starts with
+  const particleStyles = [
+    ['hearts','לבבות עולים','heart',{count:60,size:22,speed:.8,color:'#ff4d7a',color2:'#ffa3c4',direction:0,lifetime:3,life2:5,fade:true}],
+    ['petals','עלי כותרת נושרים','petal',{count:70,size:18,speed:.6,color:'#ffb7c9',color2:'#ffffff',direction:180,lifetime:4,life2:7,fade:true}],
+    ['snow','שלג','snowflake',{count:120,size:14,speed:.4,color:'#ffffff',color2:'#cfe8ff',direction:180,lifetime:5,life2:9,fade:true}],
+    ['leaves','עלי שלכת','leaf',{count:50,size:22,speed:.5,color:'#e8742a',color2:'#f6c343',direction:180,lifetime:4,life2:7,fade:true}],
+    ['gold','אבק זהב','sparkle',{count:140,size:12,speed:.3,color:'#ffd94d',color2:'#fff3b0',direction:-2,lifetime:1.5,life2:3,fade:true,endSize:.3}],
+    ['bubbles','בועות','bubble',{count:40,size:24,speed:.5,color:'#bfe9ff',color2:'#ffffff',direction:0,lifetime:3,life2:6,fade:true}],
+    ['stars','כוכבים מתפזרים','star',{count:80,size:16,speed:.5,color:'#ffffff',color2:'#ffe680',direction:-3,lifetime:2,life2:4,fade:true,endSize:.2}],
+    ['confetti','קונפטי','confetti',{count:150,size:14,speed:.9,color:'#ff4d6d',color2:'#4dc3ff',direction:180,lifetime:3,life2:5}]
+  ].map(([id,name,sprite,particles]) => ({id:'p-'+id,name,detail:'חלקיקים · אפשר לשנות צבע וכמות',kind:'particles',file:'particles/'+sprite+'.png',thumb:'thumbs/p-'+id+'.png',particles,group:'particles'}));
+  // Stickers drawn here (transparent PNG, die-cut look): [file id, Hebrew name]
+  const stickers = [
+    ['heart','לב'],['sparkle','ניצוץ'],['speech','בועת דיבור'],['arrow','חץ'],['cloud','ענן'],['rainbow','קשת בענן'],
+    ['sun','שמש'],['moon','ירח'],['flower','פרח'],['crown','כתר'],['star','כוכב'],['butterfly','פרפר']
+  ].map(([id,name]) => ({id:'st-'+id,name,detail:'מדבקה · תמונה שקופה',kind:'image',file:'stickers/'+id+'.png',thumb:'thumbs/st-'+id+'.png',group:'sticker'}));
+  const entries = [...originals, ...models, ...animated, ...particleStyles, ...stickers, ...loops];
+  const groups = [['all','הכול'],['model','תלת־ממד'],['animated','בתנועה'],['particles','חלקיקים'],['sticker','מדבקות'],['loop','לולאות וידאו'],['original','מקוריים']];
   const MIME = {glb:'model/gltf-binary',mp4:'video/mp4',png:'image/png',gif:'image/gif',wav:'audio/wav'};
   async function open(importAsset) {
     const dialog = document.createElement('dialog'); dialog.id='starter-library'; dialog.dir='rtl';
@@ -38,7 +66,7 @@ window.StarterLibrary = (() => {
     const title=document.createElement('h2');title.textContent='ספריית התחלה';
     const close=document.createElement('button');close.textContent='סגירה';close.className='ghost';close.onclick=()=>dialog.close();
     head.append(title,close);dialog.append(head);
-    const note=document.createElement('p');note.className='hint';note.textContent=entries.length+' פריטים. נגיעה בפריט מוסיפה אותו ליצירה: מודלים חינמיים (CC0), לולאות מהסטודיו שלך ופריטים מקוריים. נשמרים עם היצירה במכשיר, בלי חשבון ובלי תשלום.';dialog.append(note);
+    const note=document.createElement('p');note.className='hint';note.textContent=entries.length+' פריטים. נגיעה בפריט מוסיפה אותו ליצירה: מודלים חינמיים (CC0), גם בתנועה, חלקיקים, מדבקות, לולאות מהסטודיו שלך ופריטים מקוריים. נשמרים עם היצירה במכשיר, בלי חשבון ובלי תשלום.';dialog.append(note);
     const filters=document.createElement('div');filters.className='library-filters';filters.setAttribute('role','group');filters.setAttribute('aria-label','סוג פריט');dialog.append(filters);
     const grid=document.createElement('div');grid.className='library-grid';dialog.append(grid);
     const status=document.createElement('p');status.setAttribute('role','status');dialog.append(status);
@@ -56,7 +84,7 @@ window.StarterLibrary = (() => {
         try{
           const response=await fetch('library/'+item.file);if(!response.ok)throw Error('download');
           const blob=await response.blob(),base=item.file.split('/').pop(),type=MIME[base.split('.').pop()]||blob.type;
-          await importAsset(item.kind,new File([blob],base,{type}),{name:item.name,loop:item.kind!=='sound'});
+          await importAsset(item.kind,new File([blob],base,{type}),{name:item.name,loop:item.kind!=='sound',clip:item.clip,w:item.w,particles:item.particles});
           dialog.close();
         }catch(e){status.textContent='הפריט לא נטען. אפשר לנסות שוב.';}
         finally{busy=false;grid.querySelectorAll('button').forEach(b=>b.disabled=false);}
