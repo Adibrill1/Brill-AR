@@ -97,6 +97,14 @@ button.small { font-size: 13px; padding: 6px 10px; }
 #shell-tabs { display: none; }
 #panel-subtabs { display: none; }
 #stage { display: contents; }
+/* computer: the artwork view stays pinned at the top while the page scrolls under it, as on the phone; its height is
+   capped (--cap) so the controls below keep room. Exactly the screens the phone rules below do not match. */
+@media (min-width: 821px) and (pointer: fine), (min-width: 821px) and (pointer: none), (min-width: 821px) and (min-height: 561px) {
+  body.shell #stage { display: block; position: sticky; top: 0; z-index: 20; background: #f4f2ee; max-width: 640px; margin: 0 auto; padding: 4px 14px; box-sizing: border-box; box-shadow: 0 6px 10px -8px rgba(41,37,53,.35); --cap: 52vh; }
+  body.shell #stage[data-view="3d"] { --cap: 60vh; }
+  body.shell[data-tab="create"] #stage { display: none; }
+  body.shell #canvas-wrap { width: min(100%, calc(var(--cap, 52vh) * var(--ar, 1))); margin: 0 auto; }
+}
 @media (max-width: 820px), (pointer: coarse) and (max-height: 560px) {
   body.shell { padding-bottom: 64px; }
   body.shell #shell-tabs { display: flex; position: fixed; inset: auto 0 0 0; z-index: 70; background: #fff; border-top: 1px solid #b9b4c7; padding-bottom: env(safe-area-inset-bottom); }

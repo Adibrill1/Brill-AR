@@ -5,13 +5,11 @@
   const nav = document.createElement("nav"); nav.id = "shell-tabs"; nav.setAttribute("aria-label", "שלבי העבודה");
   tabs.forEach(([k, t]) => { const b = document.createElement("button"); b.type = "button"; b.dataset.tab = k; b.textContent = t; b.addEventListener("click", () => setTab(k)); nav.appendChild(b); });
   document.body.appendChild(nav);
-  // the artwork canvas moves (same node, same id) out of the long card into a pinned stage at the top
+  // the artwork canvas moves (same node, same id) out of the long card into a pinned stage at the top (phone and computer)
   const stage = document.createElement("div"); stage.id = "stage";
   document.querySelector("main").before(stage);
   { const wrap = document.getElementById("canvas-wrap"); const home = document.createComment("canvas-home"); wrap.before(home);
-    const mq = matchMedia("(max-width: 820px), (pointer: coarse) and (max-height: 560px)");
-    const place = () => { if (mq.matches) { if (wrap.parentNode !== stage) stage.appendChild(wrap); } else if (wrap.parentNode === stage) home.after(wrap); };
-    place(); mq.addEventListener("change", () => { place(); setTimeout(() => dispatchEvent(new Event("resize")), 0); }); }
+    stage.appendChild(wrap); }
   function setTab(k) {
     document.body.dataset.tab = k;
     nav.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.tab === k)));
@@ -26,7 +24,7 @@
   // keep the canvas aspect when its height is capped: width follows height via --ar (never stretch)
   const cv = document.getElementById("preview");
   const fit = () => { if (cv.width && cv.height) { const v = (cv.width / cv.height).toFixed(4); const old = parseFloat(stage.style.getPropertyValue("--ar")); if (!(Math.abs(old - v) < 0.02)) { stage.style.setProperty("--ar", v); setTimeout(() => dispatchEvent(new Event("resize")), 0); } } sp(); };
-  const sp = () => { const narrow = matchMedia("(max-width: 820px), (pointer: coarse) and (max-height: 560px)").matches; const vis = stage.offsetHeight; document.documentElement.style.scrollPaddingTop = narrow && vis ? vis + 4 + "px" : ""; const hd = document.querySelector("header"); const avail = innerHeight - (stage.offsetHeight + (hd ? hd.offsetHeight : 0)) - 53 - 6; document.documentElement.style.setProperty("--sheet-max", narrow ? Math.max(150, Math.min(Math.round(innerHeight * 0.42), avail)) + "px" : ""); const pn = document.getElementById("panel"); const ph = pn && !pn.hidden ? pn.offsetHeight : 0; document.documentElement.style.setProperty("--toast-bottom", narrow ? (ph ? ph + 53 + 8 : 70) + "px" : ""); document.documentElement.style.scrollPaddingBottom = narrow ? (ph ? ph + 57 + 6 : 70) + "px" : ""; };
+  const sp = () => { const narrow = matchMedia("(max-width: 820px), (pointer: coarse) and (max-height: 560px)").matches; const vis = stage.offsetHeight; document.documentElement.style.scrollPaddingTop = vis ? vis + 4 + "px" : ""; const hd = document.querySelector("header"); const avail = innerHeight - (stage.offsetHeight + (hd ? hd.offsetHeight : 0)) - 53 - 6; document.documentElement.style.setProperty("--sheet-max", narrow ? Math.max(150, Math.min(Math.round(innerHeight * 0.42), avail)) + "px" : ""); const pn = document.getElementById("panel"); const ph = pn && !pn.hidden ? pn.offsetHeight : 0; document.documentElement.style.setProperty("--toast-bottom", narrow ? (ph ? ph + 53 + 8 : 70) + "px" : ""); document.documentElement.style.scrollPaddingBottom = narrow ? (ph ? ph + 57 + 6 : 70) + "px" : ""; };
   new ResizeObserver(sp).observe(stage); { const pn0 = document.getElementById("panel"); new ResizeObserver(sp).observe(pn0); new MutationObserver(sp).observe(pn0, { attributes: true, attributeFilter: ["hidden"] }); } addEventListener("resize", sp);
   new MutationObserver(fit).observe(cv, { attributes: true, attributeFilter: ["width", "height"] }); fit();
   // 3D view needs room for the gizmo and the docked rotation buttons: taller stage while 3D is on

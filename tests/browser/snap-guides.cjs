@@ -2,7 +2,7 @@
 // shows a pink guide line during the drag, can be turned off (checkbox or Alt), and never snaps when far from the centre.
 const {chromium}=require('playwright-core'),assert=require('assert/strict'),server=require('../../server/server');
 (async()=>{await new Promise(r=>server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+server.address().port,b=await chromium.launch({executablePath:'/usr/bin/google-chrome',headless:true,args:['--no-sandbox','--use-gl=angle','--use-angle=swiftshader']});
-const p=await (await b.newContext({viewport:{width:1280,height:900}})).newPage();let pageErrors=0;p.on('pageerror',()=>pageErrors++);
+const p=await (await b.newContext({viewport:{width:1280,height:1500}})).newPage();let pageErrors=0;p.on('pageerror',()=>pageErrors++);
 await p.goto(base+'/index.html');await p.waitForSelector('#element-list li');
 await p.locator('#btn-text').click();await p.waitForSelector('#panel:not([hidden])');await p.waitForTimeout(500);
 const geo=()=>p.evaluate(()=>{const c=document.getElementById('preview'),r=c.getBoundingClientRect(),id=Object.keys(window.__testBoxes)[Object.keys(window.__testBoxes).length-1];const bx=window.__testBoxes[id];return {l:r.left,t:r.top,cw:r.width,ch:r.height,bx,id}});
