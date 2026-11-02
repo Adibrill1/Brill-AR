@@ -92,6 +92,13 @@ style's settings (count, size, speed, direction, lifetime, colour range, fade) a
 Twelve transparent PNG stickers drawn in code with a white die-cut edge (`tools/make-graphics.cjs stickers`): heart,
 sparkle, speech bubble, arrow, cloud, rainbow, sun, moon, flower, crown, star, butterfly. No external artwork.
 
+## Ready time cubes (`kind: 'timecube'` in library.js) — `thumbs/tc-<id>.png`
+Eight time cubes made from the video loops below (no new video files: each entry points at `loops/<id>.mp4`). Adding
+one bakes the clip's first 8 s into the time cube's frame atlas on the device, as the "+ קוביית זמן" button does, with
+the entry's slice direction, edges on, depth 0.75 and start width 0.5. Loops that open on a blank page (ukiyo-wave,
+sand-painting, impasto-oil, bauhaus) are cut from the front so the front face plays the clip; the island is cut from the
+top and the stained glass from the right. Thumbnails are the real bake rendered alone, cut part-way, at 160px.
+
 ## Video loops: the user's Styles studio — `loops/`, `thumbs/loop-<id>.jpg`
 Rendered by the user's own local Styles studio (code-drawn styles with synthesized music; its third-party parts are
 MIT, as recorded in that studio's THIRD_PARTY.md) with `engine/render.mjs --style <id> --size 720x720 --fps 30` and a

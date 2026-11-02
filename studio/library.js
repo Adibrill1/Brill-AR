@@ -40,6 +40,13 @@ window.StarterLibrary = (() => {
     ['synthwave','סינת׳ווייב',10],['bauhaus','באוהאוס',8],['stained-glass','ויטראז׳',9],['dark-tech','טכנולוגיה על שחור',9],
     ['lowpoly-island','אי לואו־פולי',10],['impasto-oil','צבע שמן עבה',9],['ukiyo-wave','אוקיו־אה',9],['sand-painting','ציור בחול',10]
   ].map(([id,name,sec]) => ({id:'loop-'+id,name,detail:'לולאת וידאו · '+sec+' שניות · עם מוזיקה',kind:'video',file:'loops/'+id+'.mp4',thumb:'thumbs/loop-'+id+'.jpg',group:'loop'}));
+  // Time cubes made from the same loops: the clip is baked into the cube on the device when added (first 8 s).
+  // Loops that open on a blank page are cut from the front, so the front face plays the clip.
+  // [loop id, Hebrew name, slice direction]
+  const cubes = [
+    ['synthwave','סינת׳ווייב','front'],['ukiyo-wave','אוקיו־אה','front'],['lowpoly-island','אי לואו־פולי','top'],['stained-glass','ויטראז׳','right'],
+    ['dark-tech','טכנולוגיה על שחור','front'],['sand-painting','ציור בחול','front'],['impasto-oil','צבע שמן עבה','front'],['bauhaus','באוהאוס','front']
+  ].map(([id,name,dir]) => ({id:'tc-'+id,name:'קוביית זמן: '+name,detail:'קוביית זמן · תלת־ממד · הזמן הוא העומק',kind:'timecube',file:'loops/'+id+'.mp4',thumb:'thumbs/tc-'+id+'.png',w:.5,timecube:{dir,edges:true,depth:.75},group:'timecube'}));
   // Animated CC0 models by Quaternius (packed to GLB): [file id, Hebrew name, the move they start on, start width]
   const animated = [
     ['q-alpaca','אלפקה','Idle',.5],['q-bull','שור','Idle',.55],['q-cow','פרה','Eating',.55],['q-deer','איילה','Idle',.5],
@@ -144,8 +151,8 @@ window.StarterLibrary = (() => {
     ['k-galaxy','גלקסיה ספירלית',.7],['k-dna','סליל DNA',.3],['k-gyro','טבעות מסתובבות',.5],['k-sphere','כדור חלקיקים נושם',.45],
     ['k-terrain','נוף קווים',.9],['k-constellation','קבוצת כוכבים',.7],['k-orb','כדור קוסמי',.45],['k-fibres','מנורת סיבים אופטיים',.45]
   ].map(([id,name,w]) => ({id:'fx3d-'+id,name,detail:'חלל · תלת־ממד · לולאה',kind:'model',file:'models/fx3d-'+id+'.glb',thumb:'thumbs/fx3d-'+id+'.png',clip:'Loop',w,group:'cosmic'}));
-  const entries = [...originals, ...scenes, ...fx3d, ...w3d, ...k3d, ...made, ...models, ...scans, ...animated, ...particleStyles, ...stickers, ...loops];
-  const groups = [['all','הכול'],['scene','סצנות בתנועה'],['fx','אפקטים מרחפים'],['weather','מזג אוויר'],['cosmic','חלל וחלקיקים'],['made','מקוריים בתנועה'],['model','תלת־ממד'],['animal','חיות בתנועה'],['sea','ים'],['dino','דינוזאורים'],['creature','דמויות'],['particles','חלקיקים'],['sticker','מדבקות'],['loop','לולאות וידאו'],['original','מקוריים']];
+  const entries = [...originals, ...scenes, ...fx3d, ...w3d, ...k3d, ...made, ...cubes, ...models, ...scans, ...animated, ...particleStyles, ...stickers, ...loops];
+  const groups = [['all','הכול'],['scene','סצנות בתנועה'],['fx','אפקטים מרחפים'],['weather','מזג אוויר'],['cosmic','חלל וחלקיקים'],['made','מקוריים בתנועה'],['timecube','קוביות זמן'],['model','תלת־ממד'],['animal','חיות בתנועה'],['sea','ים'],['dino','דינוזאורים'],['creature','דמויות'],['particles','חלקיקים'],['sticker','מדבקות'],['loop','לולאות וידאו'],['original','מקוריים']];
   const MIME = {glb:'model/gltf-binary',mp4:'video/mp4',png:'image/png',gif:'image/gif',wav:'audio/wav'};
   async function open(importAsset) {
     const dialog = document.createElement('dialog'); dialog.id='starter-library'; dialog.dir='rtl';
@@ -175,7 +182,7 @@ window.StarterLibrary = (() => {
           }
           const response=await fetch('library/'+item.file);if(!response.ok)throw Error('download');
           const blob=await response.blob(),base=item.file.split('/').pop(),type=MIME[base.split('.').pop()]||blob.type;
-          await importAsset(item.kind,new File([blob],base,{type}),{name:item.name,loop:item.kind!=='sound',clip:item.clip,w:item.w,particles:item.particles,chroma:item.chroma});
+          await importAsset(item.kind,new File([blob],base,{type}),{name:item.name,loop:item.kind!=='sound',clip:item.clip,w:item.w,particles:item.particles,chroma:item.chroma,timecube:item.timecube});
           dialog.close();
         }catch(e){status.textContent='הפריט לא נטען. אפשר לנסות שוב.';}
         finally{busy=false;grid.querySelectorAll('button').forEach(b=>b.disabled=false);}
