@@ -13,9 +13,17 @@
 <header>
   <h1>סטודיו AR</h1>
   <p class="sub">בונים חוויה מעל יצירה: מעלים תמונה, מוסיפים אלמנטים, מסדרים ובודקים בטלפון.</p>
+  <button id="btn-gallery" type="button" class="ghost small">הגלריה שלי</button>
 </header>
 
 <main>
+  <section class="card" id="sec-gallery" aria-label="הגלריה שלי">
+    <div class="row spread"><h2>הגלריה שלי</h2>
+      <button id="btn-gallery-new" type="button">+ יצירה חדשה</button>
+      <button id="btn-gallery-back" type="button" class="ghost">חזרה לעריכה</button></div>
+    <p class="hint">כל היצירות שלך, החדשה ביותר ראשונה. נגיעה בתמונה פותחת את היצירה.</p>
+    <div id="gallery-grid" class="gallery-grid"></div>
+  </section>
   <section class="card" id="sec-exp">
     <div class="row spread">
       <label>גלריה:</label>

@@ -808,29 +808,91 @@
       await refreshExpSelect(); render();
       msg("יצירה חדשה - התחילי בהעלאת תמונת יצירה.");
     }); };
-    $("btn-del-exp").onclick = async () => {
-      if (!confirm("למחוק את היצירה הזו לגמרי?")) return;
-      return queueExperience(async () => {
+    const deleteCurrent = () => queueExperience(async () => {
       await Studio.del(rec.id);
       const all = await Studio.all();
       rec = all[0] || (demoAllowed ? await Studio.seedDemo(true) : await blankCreation());
       selectedId = null; checkedIds.clear(); tlScrubT = null; resetSeq();
       await hydrate(); await refreshExpSelect(); render();
-      });
+    });
+    $("btn-del-exp").onclick = async () => {
+      if (!confirm("למחוק את היצירה הזו לגמרי?")) return;
+      return deleteCurrent();
     };
+    const openExperience = (id) => queueExperience(async () => {
+      const r = await Studio.load(id);
+      if (!r) return; // keep the current experience instead of wiping the editor
+      rec = r;
+      selectedId = null; checkedIds.clear(); tlScrubT = null;
+      if (typeof setTestMode === "function") setTestMode(false); diagLog.length = 0; diagLastPlaying.clear();
+      resetSeq();
+      await hydrate(); await refreshExpSelect(); render(); renderSaveState();
+    });
     $("exp-select").onchange = (e) => {
       const id = e.target.value;
       if (!confirmUnsavedSwitch()) { e.target.value = rec.id; return; }
-      queueExperience(async () => {
-        const r = await Studio.load(id);
-        if (!r) return; // keep the current experience instead of wiping the editor
-        rec = r;
-        selectedId = null; checkedIds.clear(); tlScrubT = null;
-        if (typeof setTestMode === "function") setTestMode(false); diagLog.length = 0; diagLastPlaying.clear();
-        resetSeq();
-        await hydrate(); await refreshExpSelect(); render(); renderSaveState();
-      });
+      openExperience(id);
     };
+    // ---------- the gallery: every creation as a card - open, rename, duplicate, delete ----------
+    let galleryURLs = [];
+    const renderGallery = () => Studio.all().then((list) => {
+      const grid = $("gallery-grid"); if (!grid) return;
+      galleryURLs.forEach((u) => URL.revokeObjectURL(u)); galleryURLs = [];
+      grid.innerHTML = "";
+      list.map((r) => (r.id === rec.id ? rec : r)).sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0)).forEach((r) => {
+        const card = document.createElement("div"); card.className = "gallery-card" + (r.id === rec.id ? " current" : ""); card.dataset.id = r.id;
+        const art = r.assets && r.assets.__artwork;
+        const th = document.createElement(art ? "img" : "button"); th.className = "g-thumb" + (art ? "" : " empty");
+        if (art) { const u = URL.createObjectURL(art); galleryURLs.push(u); th.src = u; th.alt = r.name || ""; th.setAttribute("role", "button"); th.tabIndex = 0; } else { th.type = "button"; th.textContent = "בלי תמונה עדיין"; }
+        th.onclick = () => openFromGallery(r.id);
+        const body = document.createElement("div"); body.className = "g-body";
+        const name = document.createElement("div"); name.className = "g-name"; name.textContent = r.name || "ללא שם";
+        const n = (r.elements || []).length, when = r.updatedAt ? new Date(r.updatedAt).toLocaleDateString("he-IL") : "";
+        const meta = document.createElement("div"); meta.className = "g-meta"; meta.textContent = (n === 1 ? "שכבה אחת" : n + " שכבות") + (when ? " · עודכנה " + when : "");
+        body.append(name, meta);
+        if (r.id === rec.id) { const now = document.createElement("div"); now.className = "g-now"; now.textContent = "פתוחה עכשיו"; body.appendChild(now); }
+        const acts = document.createElement("div"); acts.className = "g-actions";
+        const btn = (label, cls, fn) => { const b = document.createElement("button"); b.type = "button"; b.className = cls; b.textContent = label; b.onclick = fn; acts.appendChild(b); return b; };
+        btn("פתיחה", "", () => openFromGallery(r.id)).dataset.act = "open";
+        btn("שינוי שם", "ghost", () => startRename(card, r)).dataset.act = "rename";
+        btn("שכפול", "ghost", () => duplicateExperience(r.id)).dataset.act = "dup";
+        btn("מחיקה", "ghost danger", () => deleteFromGallery(r)).dataset.act = "del";
+        body.appendChild(acts); card.append(th, body); grid.appendChild(card);
+      });
+    });
+    const openFromGallery = async (id) => {
+      if (id !== rec.id) { if (!confirmUnsavedSwitch()) return; await openExperience(id); }
+      if (window.Shell) window.Shell.showWork();
+    };
+    const startRename = (card, r) => {
+      const box = card.querySelector(".g-name"); if (box.querySelector("input")) return;
+      const inp = document.createElement("input"); inp.type = "text"; inp.maxLength = 60; inp.value = r.name || ""; inp.setAttribute("aria-label", "שם היצירה");
+      box.textContent = ""; box.appendChild(inp); inp.focus(); inp.select();
+      let done = false;
+      const finish = (keep) => { if (done) return; done = true; const v = inp.value.trim().slice(0, 60);
+        if (!keep || !v || v === r.name) { if (keep && !v) msg("השם לא יכול להיות ריק."); renderGallery(); return; }
+        queueExperience(async () => {
+          if (r.id === rec.id) { rec.name = v; await saveGuarded(rec); } // the open one: its in-memory copy is the one that saves next
+          else { const o = await Studio.load(r.id); if (!o) return; o.name = v; await Studio.save(o); }
+          await refreshExpSelect(); await renderGallery(); msg("השם נשמר: " + v);
+        }); };
+      inp.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); finish(true); } else if (e.key === "Escape") { e.preventDefault(); finish(false); } };
+      inp.onblur = () => finish(true);
+    };
+    const duplicateExperience = (id) => queueExperience(async () => {
+      const src = id === rec.id ? rec : await Studio.load(id); if (!src) return;
+      const copy = structuredClone(src); // the stored files (blobs) are shared by value, the copy edits apart
+      copy.id = Studio.newId(); copy.name = ((src.name || "יצירה") + " (עותק)").slice(0, 60); copy.createdAt = copy.updatedAt = Date.now();
+      await Studio.save(copy); await refreshExpSelect(); await renderGallery(); msg("נוצר עותק: " + copy.name);
+    });
+    const deleteFromGallery = (r) => {
+      if (!confirm("למחוק את \"" + (r.name || "היצירה") + "\" לגמרי? אי אפשר לבטל את זה.")) return;
+      if (r.id === rec.id) return deleteCurrent().then(renderGallery);
+      return queueExperience(async () => { await Studio.del(r.id); await refreshExpSelect(); await renderGallery(); msg("היצירה נמחקה."); });
+    };
+    $("btn-gallery-new").onclick = () => { $("btn-new").click(); queueExperience(async () => { if (window.Shell) window.Shell.showWork(); }); };
+    new MutationObserver(() => { if (document.body.dataset.tab === "gallery") renderGallery(); }).observe(document.body, { attributes: true, attributeFilter: ["data-tab"] });
+    if (document.body.dataset.tab === "gallery") renderGallery();
     $("btn-export").onclick = () => queueExperience(async () => {
       let json; try { json = await Studio.exportJSON(rec); } catch (e) { notice("export", exportFailMsg(e)); msg("הייצוא לא הושלם - הפרטים בהודעה למעלה."); return; }
       const a = document.createElement("a");

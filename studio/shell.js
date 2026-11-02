@@ -1,7 +1,7 @@
 /* Phone shell (stage 1): bottom tab bar over the EXISTING cards. No data paths, ids or handlers change:
    it only toggles which card is visible (CSS, body[data-tab]) and pins the artwork canvas while editing. */
 (function () {
-  const tabs = [["create", "יצירה"], ["layers", "שכבות"], ["motion", "תנועה"], ["check", "בדיקה ושמירה"]];
+  const tabs = [["gallery", "גלריה"], ["create", "יצירה"], ["layers", "שכבות"], ["motion", "תנועה"], ["check", "בדיקה ושמירה"]];
   const nav = document.createElement("nav"); nav.id = "shell-tabs"; nav.setAttribute("aria-label", "שלבי העבודה");
   tabs.forEach(([k, t]) => { const b = document.createElement("button"); b.type = "button"; b.dataset.tab = k; b.textContent = t; b.addEventListener("click", () => setTab(k)); nav.appendChild(b); });
   document.body.appendChild(nav);
@@ -18,9 +18,14 @@
   }
   const has = () => !document.getElementById("sec-arrange").hidden;
   setTab(has() ? "layers" : "create");
-  // artwork appears (sec-arrange un-hides) -> go to layers once; hides (switch to a project without artwork) -> create
+  // the gallery (all creations): a tab on the phone, a header button on the computer; editor.js opens the work with showWork
+  window.Shell = { setTab, showWork: () => setTab(has() ? "layers" : "create") };
+  document.getElementById("btn-gallery").addEventListener("click", () => setTab(document.body.dataset.tab === "gallery" ? (has() ? "layers" : "create") : "gallery"));
+  document.getElementById("btn-gallery-back").addEventListener("click", () => window.Shell.showWork());
+  // artwork appears (sec-arrange un-hides) -> go to layers once; hides (switch to a project without artwork) -> create.
+  // The gallery stays open while its actions switch creations.
   let was = has();
-  new MutationObserver(() => { const n = has(); if (n !== was) { was = n; setTab(n ? "layers" : "create"); } }).observe(document.getElementById("sec-arrange"), { attributes: true, attributeFilter: ["hidden"] });
+  new MutationObserver(() => { const n = has(); if (n !== was) { was = n; if (document.body.dataset.tab !== "gallery") setTab(n ? "layers" : "create"); } }).observe(document.getElementById("sec-arrange"), { attributes: true, attributeFilter: ["hidden"] });
   // keep the canvas aspect when its height is capped: width follows height via --ar (never stretch)
   const cv = document.getElementById("preview");
   const fit = () => { if (cv.width && cv.height) { const v = (cv.width / cv.height).toFixed(4); const old = parseFloat(stage.style.getPropertyValue("--ar")); if (!(Math.abs(old - v) < 0.02)) { stage.style.setProperty("--ar", v); setTimeout(() => dispatchEvent(new Event("resize")), 0); } } sp(); };
