@@ -44,7 +44,16 @@ vintage_telephone_wall_clock, wall_clock, watering_can_metal_01, wine_barrel_01,
 wooden_crate_01. Left out after a look: vintage_wooden_drawer_01 (its geometry breaks apart in three.js) and
 vintage_oil_lamp (its glass chimney draws black).
 
-The models are static; motion is added in the editor (spin, float, pulse, timeline).
+Each model (except fancy_picture_frame_01, which holds the user's artwork and stays still) carries one looping clip
+"Loop", added by `tools/make-ph-loops.py` (Blender, headless; outside this repository) from the static GLB above: the
+rocking chair rocks on its runners, clock second hands tick (once round a minute; clocks without one run their hands
+as a time-lapse), the kettle, pot, tea set, croissant and coffee cups steam, candles and lanterns flicker, lamps and
+bulbs glow (an old filament flickers now and then), lids, doors and drawers open and close, reels and wheels turn,
+the chess set plays 1. e4 e5 2. Nf3 Nc6 and takes it back, darts fly into the dartboard, the TV shows static, plants
+sway in a breeze (two morph targets), balls bounce, the duck bobs among ripples, and statues, vases with a pattern and
+cakes turn slowly as on a display stand. Steam, glows, drops and the like are the script's own meshes with soft
+textures it draws; they rest at a tiny scale in the file (the clip scales them up), so the editor's fit to width sees
+the model alone. The scan's own geometry, materials and image bytes are kept as they were.
 
 ## Scanned model with a looping move — `models/sk-gramophone.glb`, `thumbs/sk-gramophone.png`
 "Gramophone with a wooden sound horn" by Virtual Museums of Małopolska (Wirtualne Muzea Małopolski),

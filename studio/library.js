@@ -14,6 +14,9 @@ window.StarterLibrary = (() => {
     {id:'gem',name:'אבן סגולה',detail:'תלת-ממד · GLB',kind:'model',file:'gem.glb',icon:'◇'}
   ].map((e) => ({...e, group:'original'}));
   // Poly Haven (CC0): [file id, Hebrew name]
+  // Poly Haven models, each with its own looping move added in Blender (tools/make-ph-loops.py) - a rocking chair
+  // rocks, clock hands tick, a kettle steams - except the frame, which holds the user's artwork and stays still
+  const STILL = new Set(['fancy_picture_frame_01']);
   const models = [
     ['fancy_picture_frame_01','מסגרת מוזהבת מעוטרת'],['ornate_mirror_01','מראה מעוטרת'],['marble_bust_01','פסל ראש משיש'],
     ['horse_statue_01','פסל סוס'],['concrete_cat_statue','פסל חתול מבטון'],['carved_wooden_elephant','פיל מגולף מעץ'],
@@ -40,7 +43,7 @@ window.StarterLibrary = (() => {
     ['tea_set_01','ערכת תה'],['throw_pillows_01','כריות נוי'],['vintage_cabinet_01','מזנון עתיק'],['vintage_electric_kettle','קומקום עתיק'],['vintage_flashlight','פנס יד עתיק'],
     ['vintage_microwave','מיקרוגל רטרו'],['retro_multimeter','מד חשמל רטרו'],['vintage_stapler','שדכן רטרו'],['vintage_telephone_wall_clock','טלפון קיר עתיק'],['wall_clock','שעון קיר'],
     ['watering_can_metal_01','משפך'],['wine_barrel_01','חבית יין'],['wooden_bucket_02','דלי עץ'],['wooden_candlestick','פמוט עץ'],['wooden_crate_01','ארגז עץ']
-  ].map(([id,name]) => ({id:'ph-'+id,name,detail:'תלת־ממד · חינמי (CC0)',kind:'model',file:'models/'+id+'.glb',thumb:'thumbs/'+id+'.png',group:'model'}));
+  ].map(([id,name]) => ({id:'ph-'+id,name,detail:STILL.has(id)?'תלת־ממד · חינמי (CC0)':'תלת־ממד בתנועה · חינמי (CC0)',kind:'model',file:'models/'+id+'.glb',thumb:'thumbs/'+id+'.png',clip:STILL.has(id)?undefined:'Loop',group:'model'}));
   // Scanned CC0 models with a looping move added (tools/make-gramophone.py): [file id, Hebrew name, start width]
   const scans = [
     ['sk-gramophone','גרמופון עם תקליט מסתובב',.5]

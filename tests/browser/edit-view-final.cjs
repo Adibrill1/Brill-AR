@@ -25,9 +25,11 @@ const purple=await p.evaluate(()=>{const c=document.querySelector('#preview'),b=
 assert.ok(!(purple[0]<120&&purple[2]>100&&purple[1]<90),'no purple "3D" placeholder under the real model: '+purple);
 // (2) 3D: moving and turning rebuild nothing (artwork plane and model stay the same nodes)
 await p.click('#btn-3d');await p.waitForFunction(()=>Editor3D.isActive()&&Editor3D._test.node('m1'),null,{timeout:20000});await p.waitForTimeout(800);
-const before=await p.evaluate(()=>{window.__art0=document.querySelector('#editor-3d-rig > a-plane:not([data-el-root])');window.__m0=Editor3D._test.node('m1');return Editor3D._test.rebuilds();});
+// select the lantern first: the panel stores an animated model's clip lengths on the layer once (a real edit, one
+// rebuild), which the 3D view picks up on its next sync - let that happen before counting
 await p.evaluate(()=>[...document.querySelectorAll('#element-list li')].find(li=>li.textContent.includes('פנס')).click());
-await p.waitForTimeout(300);
+await p.waitForTimeout(800);await p.evaluate(()=>Editor3D.sync());await p.waitForTimeout(1200);
+const before=await p.evaluate(()=>{window.__art0=document.querySelector('#editor-3d-rig > a-plane:not([data-el-root])');window.__m0=Editor3D._test.node('m1');return Editor3D._test.rebuilds();});
 await p.evaluate(()=>{for(const [id,v] of [['num-x','0.1'],['num-rot','30']]){const i=document.getElementById(id);i.value=v;i.dispatchEvent(new Event('input',{bubbles:true}));i.dispatchEvent(new Event('change',{bubbles:true}));}});
 await p.waitForTimeout(1500);
 const after=await p.evaluate(()=>({n:Editor3D._test.rebuilds(),sameArt:window.__art0===document.querySelector('#editor-3d-rig > a-plane:not([data-el-root])')&&window.__art0.isConnected,sameModel:window.__m0===Editor3D._test.node('m1')}));
