@@ -22,7 +22,7 @@ window.Editor3D = (() => {
   // canvas cannot (3D models, particles, green-screen video). The canvas keeps every touch and draws the rest.
   let mode = "3d", ortho = null, getView2d = null, rigRot3d = null, frontBtn = null;
   // a layer tilted on the other axes (rotX/rotY) is one too: the flat canvas can only turn it in its own plane
-  function overlayType(el) { return !!el && (el.type === "model" || el.type === "particles" || (el.type === "video" && !!(el.chroma && el.chroma.enabled)) || (el.type !== "sound" && el.type !== "group" && !!(el.rotX || el.rotY))); }
+  function overlayType(el) { return !!el && (el.type === "model" || el.type === "particles" || el.type === "timecube" || (el.type === "video" && !!(el.chroma && el.chroma.enabled)) || (el.type !== "sound" && el.type !== "group" && !!(el.rotX || el.rotY))); }
 
   function init(opts) {
     wrapEl = opts.wrap; getRec = opts.getRec; getSelected = opts.getSelected;
@@ -38,10 +38,10 @@ window.Editor3D = (() => {
   // after the first mount used to get no node (the entity then rendered as a blank white plane).
   async function ensureMedia(rec) {
     const assets = host && host.querySelector("#editor-3d-media"); if (!assets) return;
-    const keep = new Set(rec.elements.filter((el) => el.type !== "model").map((el) => "m3-" + el.id)); // models load from their own URL
+    const keep = new Set(rec.elements.filter((el) => el.type !== "model" && el.type !== "timecube").map((el) => "m3-" + el.id)); // models and time cubes load from their own URL
     assets.querySelectorAll('[id^="m3-"]').forEach((n) => { if (keep.has(n.id)) return; try { if (n.src && n.src.startsWith("blob:")) { THREE.Cache.remove(n.src); URL.revokeObjectURL(n.src); } } catch (e) {} n.remove(); }); // layers of another creation, or deleted
     for (const el of rec.elements) {
-      if (!el.assetId || !rec.assets[el.assetId] || el.type === "model") continue;
+      if (!el.assetId || !rec.assets[el.assetId] || el.type === "model" || el.type === "timecube") continue; // these load from their own URL
       const blob = rec.assets[el.assetId], mid = "m3-" + el.id;
       const old = assets.querySelector('[id="' + mid + '"]');
       if (old && old.__blob === blob) continue; // already registered for this exact asset

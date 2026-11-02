@@ -154,7 +154,7 @@
   let artworkImg = null;       // HTMLImageElement of artwork
   let drag = null;
 
-  const ICONS = { video: "🎬 ", image: "🖼️ ", sound: "🎵 ", text: "🔤 ", model: "🧊 ", particles: "✨ ", group: "📦 " };
+  const ICONS = { video: "🎬 ", image: "🖼️ ", sound: "🎵 ", text: "🔤 ", model: "🧊 ", particles: "✨ ", group: "📦 ", timecube: "⏳ " };
 
   // ---------- boot ----------
   // The real site never creates a sample creation: an empty gallery starts with one blank creation. Local servers
@@ -612,6 +612,17 @@
       if (kind === "scene") return addLibraryScene(f.parts, options);
       if (kind === "particles") return addLibraryParticles(f, options);
       let importNote = "",videoInfo=null;
+      let cube = null;
+      if (kind === "timecube") { // bake the clip into the frame atlas; only the atlas is kept
+        const status = $("video-upload-status"); status.hidden = false;
+        const say = (t) => { msg(t); status.textContent = t; };
+        say("בונה קוביית זמן…");
+        try { cube = await Studio.bakeTimeCube(f, { onProgress: (k) => say("בונה קוביית זמן… " + Math.round(k * 100) + "%") }); }
+        catch (err) { say("קוביית הזמן לא נוצרה: " + err.message); return; }
+        status.hidden = true;
+        if (cube.trimmed) importNote = "קוביית הזמן נבנתה מ־" + Math.round(cube.meta.dur) + " השניות הראשונות של הסרטון.";
+        f = new File([cube.blob], (f.name || "clip").replace(/\.[^.]+$/, "") + "-timecube.jpg", { type: "image/jpeg" });
+      }
       { const capMB = Math.round(Studio.LIMITS.maxEntryBytes / 1048576);
         if (f.size > Studio.LIMITS.maxEntryBytes) { msg(kind === 'video' ? 'קובץ גדול מדי (מעל ' + capMB + 'MB). נסי סרטון קצר יותר או דחיסה ל־MP4' : 'קובץ גדול מדי (מעל ' + capMB + 'MB).'); return; } }
       if(kind==='video'){
@@ -688,7 +699,7 @@
       const assetId = Studio.newId();
       rec.assets[assetId] = await Studio.ownBlob(f);
       const artRatio = rec.target.artRect.w / rec.target.artRect.h;
-      const el = Studio.normEl({ id: Studio.newId(), type: kind, name: { video: "סרטון", image: "תמונה", sound: "צליל", model: "מודל 3D" }[kind] + " " + (rec.elements.filter((x) => x.type === kind).length + 1),
+      const el = Studio.normEl({ id: Studio.newId(), type: kind, name: { video: "סרטון", image: "תמונה", sound: "צליל", model: "מודל 3D", timecube: "קוביית זמן" }[kind] + " " + (rec.elements.filter((x) => x.type === kind).length + 1),
                    assetId, x: 0, y: 0, w: kind === "video" ? 1.0 : 0.3, h: null, rot: 0, z: 0, flush: true, seq: curSeq }); // flush with the artwork plane (z=0): layers keep their order through the existing per-layer tie-break
       if (kind === "video" || kind === "sound") { el.volume = kind === "sound" ? 0.8 : 1; el.loop = true; }
       if (kind === "model") { el.w = 0.4; el.z = 0; el.seat = "plane"; el.aspect = 1; // seat="plane": the model's back face rests on the artwork (older models keep their centered placement)
@@ -710,6 +721,10 @@
         }
         if (mm.staticFallback) importNote = (mm.gifError === "interlaced" ? "ה־GIF הזה שמור בשיטת שילוב (interlaced) שלא נתמכת - מוצג כתמונה סטטית." : "ה־GIF לא נטען כאנימציה - מוצג כתמונה סטטית.");
         el.h = (el.w / el.aspect) * artRatio;
+      } else if (kind === "timecube") {
+        el.w = options.w > 0 ? Math.min(2, options.w) : 0.5; el.z = 0; el.aspect = cube.aspect;
+        el.h = (el.w / el.aspect) * artRatio;
+        el.timecube = Object.assign({}, cube.meta, { dir: "front", edges: true, depth: 0.75 }, options.timecube || {});
       } else if (kind === "video") {
         const v = document.createElement("video");
         v.muted = true; v.playsInline = true; v.src = URL.createObjectURL(rec.assets[assetId]); // the stored copy; a data URL of the whole clip could run a phone out of memory
@@ -750,6 +765,7 @@
     $("file-image").onchange = addFile("image");
     $("file-sound").onchange = addFile("sound");
     $("file-model").onchange = addFile("model");
+    $("file-timecube").onchange = addFile("timecube");
 
     $("btn-particles").onclick = async () => {
       { const blocked = Studio.addBlocker(rec, { layers: 1 }); if (blocked) { msg(blocked); return; } }
@@ -1103,6 +1119,10 @@
     $("sel-spatial-mode").onchange = (e) => upd((el) => { el.spatialMode = e.target.value; });
     $("num-spatial-in").onchange = (e) => upd((el) => { el.spatialInner = Math.max(0.05, parseFloat(e.target.value) || 0.35); });
     $("num-spatial-out").onchange = (e) => upd((el) => { el.spatialOuter = Math.max(0.1, parseFloat(e.target.value) || 1.4); });
+    $("sel-tc-dir").onchange = (e) => upd((el) => { el.timecube = Object.assign({}, el.timecube, { dir: e.target.value }); });
+    $("ck-tc-edges").onchange = (e) => upd((el) => { el.timecube = Object.assign({}, el.timecube, { edges: e.target.checked }); });
+    $("sl-tc-depth").oninput = (e) => { $("tc-depth-val").textContent = (+e.target.value).toFixed(2); };
+    $("sl-tc-depth").onchange = (e) => upd((el) => { el.timecube = Object.assign({}, el.timecube, { depth: Math.max(0.2, Math.min(2, parseFloat(e.target.value) || 0.75)) }); });
     $("sel-preset").onchange = (e) => upd((el) => { el.particles = Object.assign({}, el.particles, { preset: e.target.value }); });
     $("btn-psprite").onclick = () => $("file-psprite").click();
     $("file-psprite").onchange = async (e) => {
@@ -1313,6 +1333,8 @@
     $('row-crop').hidden=!['image','video'].includes(el.type);if(['image','video'].includes(el.type)){const c=el.crop||{x:0,y:0,w:1,h:1};for(const k of ['x','y','w','h'])$('crop-'+k).value=Math.round(c[k]*10000)/100;}
     $("row-chroma").hidden = el.type !== "video";
     $("row-particles").hidden = el.type !== "particles";
+    $("row-timecube").hidden = el.type !== "timecube";
+    if (el.type === "timecube") { const tc = el.timecube || {}; $("sel-tc-dir").value = tc.dir || "front"; $("ck-tc-edges").checked = tc.edges !== false; $("sl-tc-depth").value = tc.depth || 0.75; $("tc-depth-val").textContent = (tc.depth || 0.75).toFixed(2); }
     if (el.type === "particles") {
       const pc = el.particles || {};
       $('num-plife').value=pc.lifetime||0;$('num-plife2').value=pc.life2||0;$('ck-pcolor2').checked=!!pc.color2;if(pc.color2)$('in-pcolor2').value=pc.color2;$('num-pendsize').value=pc.endSize==null?1:pc.endSize;$('sel-pemitter').value=pc.emitter||'box';$('in-pendcolor').value=pc.endColor||pc.color||'#ffd94d';$('ck-pfade').checked=!!pc.fade;
@@ -1629,7 +1651,7 @@
       // models, particles, green-screen video and layers tilted on the other axes are drawn in their final look by the real scene layer over this canvas
       const real = viewMode === "2d" && typeof Editor3D !== "undefined" && Editor3D.drawsIn2d(el.id);
       if (real) {
-        if (el.type === "model" || el.type === "particles") needsAnim = true; // the layer animates; keep the marks in step
+        if (el.type === "model" || el.type === "particles" || el.type === "timecube") needsAnim = true; // the layer animates; keep the marks in step
       } else if (viewMode === "2d" && typeof Editor3D !== "undefined" && Editor3D.overlayType(el)) {
         needsAnim = true; // the real layer is still loading it: keep redrawing so the placeholder below gives way as soon as it is ready
       }
@@ -1657,6 +1679,12 @@
         ctx.textAlign = "center"; ctx.textBaseline = "middle";
         if (typeof Editor3D !== "undefined" && Editor3D.modelError(el.id)) { ctx.font = Math.round(Math.min(wpx, hpx) / 6) + "px sans-serif"; ctx.fillText("לא נטען", 0, 2); } // failed twice in the real-scene layer
         else ctx.fillText("3D", 0, 2);
+      } else if (el.type === "timecube") {
+        ctx.beginPath(); ctx.rect(-wpx / 2, -hpx / 2, wpx, hpx);
+        ctx.fillStyle = "rgba(20,90,120,0.55)"; ctx.fill();
+        ctx.strokeStyle = "rgba(255,255,255,0.8)"; ctx.setLineDash([5, 4]); ctx.stroke(); ctx.setLineDash([]);
+        ctx.fillStyle = "#fff"; ctx.font = Math.round(Math.min(wpx, hpx) / 3.2) + "px sans-serif";
+        ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText("⏳", 0, 2);
       } else if (el.type === "sound") {
         ctx.beginPath(); ctx.arc(0, 0, Math.min(wpx, hpx) / 2, 0, 7);
         ctx.fillStyle = "rgba(30,60,120,0.85)"; ctx.fill();

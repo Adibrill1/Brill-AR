@@ -496,6 +496,119 @@ const Studio = (() => {
       audio.setMediaElementSource(m.node);audio.gain.gain.value=1;m.three=audio;
     }};if(scene.hasLoaded)route();else scene.addEventListener('loaded',route,{once:true});return listener;
   }
+  // ---------- time cube ----------
+  // A short video becomes a box whose depth is time: the front face is the frame at the current slice, and the top and
+  // side faces are slit-scans (each frame's edge row/column stacked along the depth). Our own take on the technique.
+  // The clip is baked once, on import, into an atlas of small frames (one JPEG, left to right then down); the box's
+  // shader reads that atlas as a volume - (u, v) inside a frame, t across frames - so every face shows the right slice.
+  const TIMECUBE_DIRS = ["front", "back", "left", "right", "top", "bottom"];
+  function validTimeCube(el) {
+    if (el.type !== "timecube") return true;
+    const c = el.timecube; if (!c || typeof c !== "object" || Array.isArray(c)) return false;
+    const int = (v, lo, hi) => Number.isInteger(v) && v >= lo && v <= hi, num = (v, lo, hi) => Number.isFinite(v) && v >= lo && v <= hi;
+    if (!int(c.cols, 1, 256) || !int(c.rows, 1, 256) || !int(c.frames, 2, 512) || c.cols * c.rows < c.frames) return false;
+    if (!int(c.fw, 8, 1024) || !int(c.fh, 8, 1024) || !num(c.dur, 0.1, 60)) return false;
+    if (c.dir != null && !TIMECUBE_DIRS.includes(c.dir)) return false;
+    if (c.edges != null && typeof c.edges !== "boolean") return false;
+    if (c.depth != null && !num(c.depth, 0.1, 3)) return false;
+    return true;
+  }
+  // Bake a clip (its first maxDur seconds) into the frame atlas. Frames are long-side px on their long side, about
+  // 24 per second, at most maxFrames, and the atlas stays within 4096 px (the phone texture limit).
+  async function bakeTimeCube(blob, o = {}) {
+    const maxDur = o.maxDur || 8, long = o.long || 256, maxFrames = o.maxFrames || 120;
+    const url = URL.createObjectURL(blob), v = document.createElement("video");
+    v.muted = true; v.playsInline = true; v.setAttribute("playsinline", ""); v.preload = "auto";
+    try {
+      await new Promise((res, rej) => { const t = setTimeout(() => rej(Error("טעינת הסרטון לא הסתיימה")), 20000); v.onloadeddata = () => { clearTimeout(t); res(); }; v.onerror = () => { clearTimeout(t); rej(Error("הדפדפן לא הצליח לקרוא את הסרטון")); }; v.src = url; v.load(); });
+      try { await v.play(); } catch (e) {} v.pause(); // iPhone: a clip that never played can hand back black frames on seek
+      const dur = Math.min(maxDur, v.duration || 0);
+      if (!(dur >= 0.3) || !v.videoWidth || !v.videoHeight) throw Error("הסרטון קצר מדי או לא קריא");
+      const aspect = v.videoWidth / v.videoHeight;
+      const fw = aspect >= 1 ? long : Math.max(16, Math.round(long * aspect)), fh = aspect >= 1 ? Math.max(16, Math.round(long / aspect)) : long;
+      const cols = Math.max(1, Math.floor(4096 / fw));
+      const frames = Math.max(2, Math.min(maxFrames, Math.round(dur * 24), cols * Math.floor(4096 / fh)));
+      const rows = Math.ceil(frames / cols);
+      const cv = document.createElement("canvas"); cv.width = cols * fw; cv.height = rows * fh;
+      const g = cv.getContext("2d");
+      const seek = (t) => new Promise((res) => { let done = false; const fin = () => { if (done) return; done = true; v.removeEventListener("seeked", fin); requestAnimationFrame(() => res()); }; v.addEventListener("seeked", fin); setTimeout(fin, 3000); v.currentTime = t; });
+      for (let i = 0; i < frames; i++) {
+        await seek((i + 0.5) * dur / frames);
+        g.drawImage(v, (i % cols) * fw, Math.floor(i / cols) * fh, fw, fh);
+        if (o.onProgress) o.onProgress((i + 1) / frames);
+      }
+      const out = await new Promise((res) => cv.toBlob(res, "image/jpeg", 0.85));
+      if (!out) throw Error("שמירת הקובייה נכשלה");
+      return { blob: out, aspect: fw / fh, meta: { cols, rows, frames, fw, fh, dur: Math.round(dur * 1000) / 1000 }, trimmed: (v.duration || 0) > maxDur + 0.05 };
+    } finally { v.removeAttribute("src"); v.load(); URL.revokeObjectURL(url); }
+  }
+  // The box: one mesh, cut down to the part of the volume that is still there. The cut moves through the volume once
+  // per `period` seconds (the clip's own length, so the front face plays at real speed) along `dir`; `edges` draws
+  // light box edges. The back face rests on the layer plane, like a seated 3D model.
+  function ensureTimeCubeComponent() {
+    if (!window.AFRAME || AFRAME.components["time-cube"]) return;
+    const VS = "uniform vec3 vMin; uniform vec3 vMax; varying vec3 vL; varying vec3 vQ; varying vec3 vN;\n" +
+      "void main(){ vL = position + 0.5; vQ = vec3(mix(vMin.xy, vMax.xy, vL.xy), mix(vMax.z, vMin.z, vL.z)); vN = normal;\n" +
+      "  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }";
+    const FS = "uniform sampler2D atlas; uniform vec2 grid; uniform float frames; uniform vec2 tileTexel; uniform vec3 ew; uniform float edges;\n" +
+      "varying vec3 vL; varying vec3 vQ; varying vec3 vN;\n" +
+      "vec3 tile(float i, vec2 uv){ float c = mod(i, grid.x), r = floor(i / grid.x); uv = clamp(uv, tileTexel * 0.5, 1.0 - tileTexel * 0.5);\n" +
+      "  return texture2D(atlas, vec2((c + uv.x) / grid.x, 1.0 - (r + 1.0 - uv.y) / grid.y)).rgb; }\n" +
+      "void main(){ float f = clamp(vQ.z, 0.0, 1.0) * (frames - 1.0), i0 = floor(f);\n" +
+      "  vec3 col = mix(tile(i0, vQ.xy), tile(min(i0 + 1.0, frames - 1.0), vQ.xy), f - i0);\n" +
+      "  col *= 0.86 + 0.14 * abs(vN.z);\n" + // the cut face full bright, the slit-scan sides a touch darker: reads as a box
+      "  vec3 d = min(vL, 1.0 - vL); float n = step(d.x, ew.x) + step(d.y, ew.y) + step(d.z, ew.z);\n" +
+      "  if (edges > 0.5 && n >= 2.0) col = mix(col, vec3(1.0), 0.8);\n" +
+      "  gl_FragColor = vec4(col, 1.0); }";
+    AFRAME.registerComponent("time-cube", {
+      schema: { src: { type: "string" }, cols: { type: "int", default: 1 }, rows: { type: "int", default: 1 }, frames: { type: "int", default: 2 },
+        fw: { type: "int", default: 256 }, fh: { type: "int", default: 144 }, width: { default: 0.4 }, height: { default: 0.3 }, depth: { default: 0.3 },
+        dir: { default: "front" }, edges: { default: true }, period: { default: 5 } },
+      init() {
+        this.mat = new THREE.ShaderMaterial({ vertexShader: VS, fragmentShader: FS, uniforms: {
+          atlas: { value: null }, grid: { value: new THREE.Vector2(1, 1) }, frames: { value: 2 }, tileTexel: { value: new THREE.Vector2(1 / 256, 1 / 144) },
+          vMin: { value: new THREE.Vector3(0, 0, 0) }, vMax: { value: new THREE.Vector3(1, 1, 1) }, ew: { value: new THREE.Vector3(0.01, 0.01, 0.01) }, edges: { value: 1 } } });
+        this.mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), this.mat);
+        this.mesh.visible = false; // until the frames are in
+        this.el.setObject3D("mesh", this.mesh);
+        this.t0 = null;
+      },
+      update(old) {
+        const d = this.data, u = this.mat.uniforms;
+        u.grid.value.set(d.cols, d.rows); u.frames.value = d.frames; u.tileTexel.value.set(1 / d.fw, 1 / d.fh); u.edges.value = d.edges ? 1 : 0;
+        if (d.src && d.src !== old.src) {
+          new THREE.TextureLoader().load(d.src, (tex) => {
+            if (this.data.src !== d.src) { tex.dispose(); return; }
+            tex.minFilter = THREE.LinearFilter; tex.magFilter = THREE.LinearFilter; tex.generateMipmaps = false; // no mipmaps: they would bleed one frame into the next
+            tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+            if (u.atlas.value) u.atlas.value.dispose();
+            u.atlas.value = tex; this.mesh.visible = true;
+            this.el.emit("timecube-loaded", {}, false);
+          }, undefined, () => this.el.emit("timecube-error", {}, false));
+        }
+        this.place(0);
+      },
+      // s: how much of the volume is cut away along the slice direction (0..0.97)
+      place(s) {
+        const d = this.data, mn = [0, 0, 0], mx = [1, 1, 1];
+        ({ front: () => { mn[2] = s; }, back: () => { mx[2] = 1 - s; }, left: () => { mn[0] = s; }, right: () => { mx[0] = 1 - s; }, top: () => { mx[1] = 1 - s; }, bottom: () => { mn[1] = s; } }[d.dir] || (() => {}))();
+        const u = this.mat.uniforms; u.vMin.value.set(mn[0], mn[1], mn[2]); u.vMax.value.set(mx[0], mx[1], mx[2]);
+        const sx = d.width * (mx[0] - mn[0]), sy = d.height * (mx[1] - mn[1]), sz = d.depth * (mx[2] - mn[2]);
+        this.mesh.scale.set(sx, sy, sz);
+        // volume (u, v, t) -> box space: x, y centred on the layer; t = 0 at the front (z = depth), t = 1 on the plane (z = 0)
+        this.mesh.position.set(((mn[0] + mx[0]) / 2 - 0.5) * d.width, ((mn[1] + mx[1]) / 2 - 0.5) * d.height, (1 - (mn[2] + mx[2]) / 2) * d.depth);
+        const e = 0.012 * Math.min(d.width, d.height); // edge line width: the same on every face
+        u.ew.value.set(e / Math.max(sx, 1e-4), e / Math.max(sy, 1e-4), e / Math.max(sz, 1e-4));
+        this.cut = s;
+      },
+      tick(t) {
+        if (this.t0 == null) this.t0 = t;
+        const p = Math.max(0.5, this.data.period);
+        this.place((((t - this.t0) / 1000) % p) / p * 0.97);
+      },
+      remove() { this.el.removeObject3D("mesh"); this.mesh.geometry.dispose(); if (this.mat.uniforms.atlas.value) this.mat.uniforms.atlas.value.dispose(); this.mat.dispose(); }
+    });
+  }
   function validParticles(el){const p=el.particles;if(!p)return true;if(typeof p!=='object'||Array.isArray(p))return false;for(const [k,min,max]of [['lifetime',0,60],['endSize',0,5],['count',10,500],['size',2,60],['speed',.2,3]])if(p[k]!=null&&(!Number.isFinite(p[k])||p[k]<min||p[k]>max))return false;if(p.emitter!=null&&!['box','disc','sphere'].includes(p.emitter))return false;if(p.direction!=null&&(!Number.isInteger(p.direction)||p.direction<-3||p.direction>359))return false;if(p.spread!=null&&(!Number.isFinite(p.spread)||p.spread<.1||p.spread>2))return false;if(p.endColor!=null&&!/^#[0-9a-f]{6}$/i.test(p.endColor))return false;if(p.life2!=null&&(!Number.isFinite(p.life2)||p.life2<0||p.life2>60))return false;if(p.color2!=null&&p.color2!==''&&!/^#[0-9a-f]{6}$/i.test(p.color2))return false;if(p.fade!=null&&typeof p.fade!=='boolean')return false;return true;}
   function validCrop(el){const c=el.crop;return !c||['image','video'].includes(el.type)&&['x','y','w','h'].every(k=>Number.isFinite(c[k]))&&c.x>=0&&c.y>=0&&c.w>=.01&&c.h>=.01&&c.x+c.w<=1.000001&&c.y+c.h<=1.000001;}
   function setImageCrop(rec,el,crop){
@@ -680,6 +793,12 @@ const Studio = (() => {
         });
         e.appendChild(inner);
       }
+    } else if (el.type === "timecube") {
+      ensureTimeCubeComponent();
+      e = document.createElement("a-entity");
+      const blob = rec.assets && rec.assets[el.assetId], tc = el.timecube || {};
+      if (blob && validTimeCube(el)) e.setAttribute("time-cube", { src: blobURL(blob), cols: tc.cols, rows: tc.rows, frames: tc.frames, fw: tc.fw, fh: tc.fh,
+        width: ts.w, height: ts.h, depth: ts.w * (tc.depth || 0.75), dir: tc.dir || "front", edges: tc.edges !== false, period: tc.dur });
     } else if (el.type === "text") {
       e = document.createElement("a-plane");
       const tb = drawTextCanvas(el, 128);
@@ -702,7 +821,7 @@ const Studio = (() => {
     e.setAttribute("position", pos);
     e.setAttribute("rotation", rot);
     e.dataset.elId = el.id;
-    if (el.flush) { const ro = 1 + idx; const apply = () => { const o = e.object3D; if (!o) return; o.traverse((m) => { if (m.isMesh || m.isPoints) { m.renderOrder = ro; if (el.type !== 'model' && m.material) { const ms = Array.isArray(m.material) ? m.material : [m.material]; ms.forEach((mm) => { mm.depthWrite = false; }); } } }); }; e.addEventListener('object3dset', apply); e.addEventListener('model-loaded', apply); e.addEventListener('materialtextureloaded', apply); e.addEventListener('componentchanged', (ev) => { if (ev.detail && ev.detail.name === 'material') apply(); }); apply(); setTimeout(apply, 600); setTimeout(apply, 2500); }
+    if (el.flush) { const ro = 1 + idx; const apply = () => { const o = e.object3D; if (!o) return; o.traverse((m) => { if (m.isMesh || m.isPoints) { m.renderOrder = ro; if (el.type !== 'model' && el.type !== 'timecube' && m.material) { const ms = Array.isArray(m.material) ? m.material : [m.material]; ms.forEach((mm) => { mm.depthWrite = false; }); } } }); }; e.addEventListener('object3dset', apply); e.addEventListener('model-loaded', apply); e.addEventListener('materialtextureloaded', apply); e.addEventListener('componentchanged', (ev) => { if (ev.detail && ev.detail.name === 'material') apply(); }); apply(); setTimeout(apply, 600); setTimeout(apply, 2500); }
     e._studioFrame = { ox, oy, oz, angle, baseRotation: opts.baseRotation || 0, zTie: tie };
     const hasTl = ActionCore.list(rec).some(q=>q.actions.some(a=>a.type!=="sequence"&&a.layerId===el.id)) || el.timeline && Array.isArray(el.timeline.keys) && el.timeline.keys.length;
     if (el.anim === "spin" && !hasTl) e.setAttribute("animation__spin", `property: rotation; to: 0 0 ${(el.rot || 0) - (opts.baseRotation || 0) + 360}; loop: true; dur: 14000; easing: linear`);
@@ -1347,11 +1466,12 @@ const Studio = (() => {
     if (!Array.isArray(o.elements) || o.elements.length > LIM.layers) throw new Error("bad elements (maximum" + LIM.layers + ")");
     const ids = new Set();
     for (const el of o.elements) {
-      if (!el || !["video","image","sound","text","model","particles","group"].includes(el.type)) throw new Error("bad element type");
+      if (!el || !["video","image","sound","text","model","particles","group","timecube"].includes(el.type)) throw new Error("bad element type");
       if (typeof el.id !== "string" || !/^[a-zA-Z0-9_-]{1,128}$/.test(el.id) || ids.has(el.id)) throw new Error("bad or duplicate element id");
       ids.add(el.id);
       for (const key of ["x","y","z","w","h","rot","rotX","rotY","opacity","aspect","volume"]) if (el[key] != null && (typeof el[key] !== "number" || !Number.isFinite(el[key]))) throw new Error("bad numeric field");
       if(!validParticles(el))throw new Error('bad particles');
+      if(!validTimeCube(el))throw new Error('bad time cube');
       // bindTap may navigate to el.tapUrl on tap - refuse script-executing schemes
       // (normalized: browsers ignore case and embedded whitespace/control chars in schemes).
       if (el.tapUrl != null) {
@@ -1656,7 +1776,7 @@ const Studio = (() => {
   }
 
   return { TARGET_W, TARGET_H, newId, inspectVideo, validateModelBlob, prepareModelBlob, modelCompressionKinds, DECODER_DRACO_PATH, DECODER_MESHOPT_PATH, modelClipNames, modelClipInfo, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
-           audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, blobURL, releaseBlobURL, blobURLs, historyState, restoreHistory, duplicateLayer, exportJSON, missingAssets, importJSON, exportZIP, importZIP, zipToJSON, fetchPublished, ownBlob, assetHealth, fileHealth, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, artworkFingerprint, fingerprintDistance, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
+           audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, blobURL, releaseBlobURL, blobURLs, historyState, restoreHistory, duplicateLayer, exportJSON, missingAssets, importJSON, exportZIP, importZIP, zipToJSON, fetchPublished, ownBlob, assetHealth, fileHealth, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, ensureTimeCubeComponent, bakeTimeCube, validTimeCube, TIMECUBE_DIRS, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, artworkFingerprint, fingerprintDistance, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
            load: id=>settledRead(id), all: ()=>settledRead(), del: delExperience, LIMITS, mediaBytes, pushBack, addBlocker, publishBlocker, restoreBlocker, exportWarning, exportJSONSize,
            onSaveState, installSaveGuard, saveState, soundOnTouch, snapAngle, syncMedia,
            _testHoldSave:p=>{saveHold=p;}, _testFailSave:m=>{failSave=m;}, _testFailPut:o=>{failPut=o?{...o}:null;} };
