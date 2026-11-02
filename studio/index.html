@@ -90,7 +90,8 @@
       <div id="row-crop" hidden>
         <strong>חיתוך תמונה / וידאו ללא מחיקת המקור</strong>
         <div class="row"><label>משמאל % <input id="crop-x" type="number" min="0" max="99" step="1"></label><label>מלמעלה % <input id="crop-y" type="number" min="0" max="99" step="1"></label><label>רוחב % <input id="crop-w" type="number" min="1" max="100" step="1"></label><label>גובה % <input id="crop-h" type="number" min="1" max="100" step="1"></label></div>
-        <div class="row"><button id="btn-crop-drag" type="button">✂️ חיתוך בגרירה</button><button id="crop-reset" class="ghost">שחזור התמונה המלאה</button></div>
+        <div class="row"><button id="btn-crop-drag" type="button">✂️ חיתוך על חלון העריכה</button><button id="crop-reset" class="ghost">שחזור התמונה המלאה</button></div>
+        <div class="row crop-shapes" id="crop-shapes"><span class="mini-label">צורה:</span><button type="button" class="ghost small" data-r="free">חופשי</button><button type="button" class="ghost small" data-r="art">כמו תמונת המקור</button><button type="button" class="ghost small" data-r="1">ריבוע</button><button type="button" class="ghost small" data-r="1.7778">16:9</button><button type="button" class="ghost small" data-r="0.5625">9:16</button></div>
         <p class="hint">התמונה המקורית נשמרת; רק האזור המוצג משתנה. אפשר לשכפל ולחתוך כל עותק בנפרד. תמונות, GIF ווידאו. חיתוך לא משנה את הקובץ המקורי.</p>
       </div>
       <div id="row-model" hidden>

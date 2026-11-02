@@ -1,8 +1,9 @@
 const {chromium}=require('playwright-core'),assert=require('node:assert/strict');const server=require('../../server/server');
 // Images and videos: "מילוי תמונת המקור" lays the layer exactly over the whole artwork (a centred crop to the artwork's
 // shape, width to match, centred, flat), "↻ סיבוב 90°" turns it a quarter and fills again (sideways shape); the canvas
-// shows it edge to edge. "✂️ חיתוך בגרירה" opens the whole source with the kept region as a box: pulling a corner or
-// a shape chip sets the region, "אישור" saves it (the file stays whole), "ביטול" keeps the old one. A keyed layer is
+// shows it edge to edge. ✂️ crops right on the canvas: the whole source shows faintly, a corner or a drag of the kept
+// region changes only what is kept (the picture stays put), a shape chip fixes its shape. The Delete key removes the
+// selected element (not while typing in a field). A keyed layer is
 // left alone. The time cube / chroma rows keep their sheet tabs. Headless Chrome, phone size; not an iPhone.
 (async()=>{await new Promise(r=>server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+server.address().port,b=await chromium.launch({executablePath:'/usr/bin/google-chrome',headless:true,args:['--no-sandbox']});try{
 const p=await (await b.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true})).newPage();const pageErrors=[];p.on('pageerror',e=>pageErrors.push(String(e)));
@@ -39,24 +40,41 @@ q=await px();for(const k of ['tl','br','bl','mid'])assert.ok(q[k][0]>200&&q[k][1
 await p.locator('#btn-fill-rot').click();await p.waitForTimeout(600);e=await el('pic');assert.ok(e.rot===180&&near(e.w,1),'turn again: 180, upright shape');
 await p.locator('#btn-fill-rot').click();await p.waitForTimeout(600);e=await el('pic');assert.ok(e.rot===-90&&near(e.w,1024/768),'and -90');
 await p.locator('#btn-fill-rot').click();await p.waitForTimeout(600);e=await el('pic');assert.ok(e.rot===0&&near(e.w,1),'and back to 0');
-// crop by dragging: full picture first, then pull the bottom-right corner in by a quarter
+// crop on the canvas itself (✂️): full picture first; pull the bottom-right corner in by a quarter - the picture stays put
 await tab('look');await p.locator('#crop-reset').click();await p.waitForTimeout(600);
-await p.locator('#btn-crop-drag').click();await p.waitForSelector('#crop-modal .crop-rect');await p.waitForTimeout(400);
-const st=await p.evaluate(()=>{const r=document.querySelector('#crop-modal .crop-stage').getBoundingClientRect(),h=document.querySelector('#crop-modal i[data-h="se"]').getBoundingClientRect();return {w:r.width,h:r.height,hx:h.x+h.width/2,hy:h.y+h.height/2};});
-assert.ok(st.w>100&&st.h>100,'the whole source shows: '+JSON.stringify(st));
-const drag=async(x0,y0,x1,y1)=>{await p.evaluate(([x0,y0,x1,y1])=>{const t=document.elementFromPoint(x0,y0),o={pointerId:7,pointerType:'touch',isPrimary:true,bubbles:true,cancelable:true};t.dispatchEvent(new PointerEvent('pointerdown',{...o,clientX:x0,clientY:y0}));for(let i=1;i<=5;i++)t.dispatchEvent(new PointerEvent('pointermove',{...o,clientX:x0+(x1-x0)*i/5,clientY:y0+(y1-y0)*i/5}));t.dispatchEvent(new PointerEvent('pointerup',{...o,clientX:x1,clientY:y1}));},[x0,y0,x1,y1]);};
-const s2=await p.evaluate(()=>{const h=document.querySelector('#crop-modal i[data-h="se"]').getBoundingClientRect();return {x:h.x+h.width/2,y:h.y+h.height/2};});
-await drag(s2.x,s2.y,s2.x-st.w*.25,s2.y-st.h*.25);
-await p.locator('#crop-ok').click();await p.waitForTimeout(700);e=await el('pic');
-assert.ok(near(e.crop.x,0,.01)&&near(e.crop.y,0,.01)&&near(e.crop.w,.75,.02)&&near(e.crop.h,.75,.02),'drag crop: corner pulled in a quarter: '+JSON.stringify(e.crop));
-// shape chip: square, then cancel keeps the saved crop; then OK with 16:9
-await p.locator('#btn-crop-drag').click();await p.waitForSelector('#crop-modal');await p.locator('#crop-modal [data-r="1.7778"]').click();await p.locator('#crop-cancel').click();await p.waitForTimeout(400);
-e=await el('pic');assert.ok(near(e.crop.w,.75,.02)&&near(e.crop.h,.75,.02),'cancel keeps the saved crop');
-await p.locator('#btn-crop-drag').click();await p.waitForSelector('#crop-modal');await p.locator('#crop-modal [data-r="1.7778"]').click();await p.locator('#crop-ok').click();await p.waitForTimeout(700);
-e=await el('pic');assert.ok(near(e.aspect,16/9,.01)&&near(e.crop.w,1)&&near(e.crop.h,.5625,.003),'16:9 chip: the region has that shape: '+JSON.stringify({a:e.aspect,c:e.crop}));
+assert.ok(await p.locator('#btn-crop').isVisible(),'✂️ on the canvas for an image');await p.locator('#btn-crop').click();await p.waitForTimeout(300);
+assert.ok(await p.evaluate(()=>document.querySelector('#btn-crop').classList.contains('on')),'crop mode on');
+const ses=await p.context().newCDPSession(p);
+const tdrag=async(x0,y0,x1,y1)=>{await ses.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:x0,y:y0}]});for(let i=1;i<=6;i++){await ses.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:x0+(x1-x0)*i/6,y:y0+(y1-y0)*i/6}]});await p.waitForTimeout(25);}await ses.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await p.waitForTimeout(600);};
+const bx=()=>p.evaluate(()=>{const b=window.__testBoxes.pic,r=document.querySelector('#preview').getBoundingClientRect();return {x:r.left+b.cx,y:r.top+b.cy,w:b.w,h:b.h};});
+let B=await bx();await tdrag(B.x+B.w/2,B.y+B.h/2,B.x+B.w/4,B.y+B.h/4);e=await el('pic');
+assert.ok(near(e.crop.x,0,.01)&&near(e.crop.y,0,.01)&&near(e.crop.w,.75,.02)&&near(e.crop.h,.75,.02),'corner pulled in a quarter: '+JSON.stringify(e.crop));
+assert.ok(near(e.w,.75,.02)&&near(e.x,-.125,.01)&&near(e.y,.09375,.01),'the picture stays put (smaller box, moved to the kept part): '+JSON.stringify({w:e.w,x:e.x,y:e.y}));
+B=await bx();await tdrag(B.x,B.y,B.x+B.w/6,B.y+B.h/6);e=await el('pic');
+assert.ok(near(e.crop.x,.125,.015)&&near(e.crop.y,.125,.015)&&near(e.crop.w,.75,.02),'dragging the kept region moves the crop: '+JSON.stringify(e.crop));
+assert.ok(near(e.x,0,.015)&&near(e.y,0,.015),'over the still picture: '+JSON.stringify({x:e.x,y:e.y}));
+// a tap outside the picture ends cropping; the item stays selected
+const out=await p.evaluate(()=>{const r=document.querySelector('#preview').getBoundingClientRect();return {x:r.left+6,y:r.top+r.height-6};});
+await p.touchscreen.tap(out.x,out.y);await p.waitForTimeout(400);
+assert.equal(await p.evaluate(()=>document.querySelector('#btn-crop').classList.contains('on')),false,'tap outside ends cropping');
+assert.ok(await p.evaluate(()=>[...document.querySelectorAll('#element-list li')].some(l=>l.className==='sel')),'and keeps the selection');
+// shape chip 16:9: the kept region takes that shape (and cropping is on); Escape ends it
+await p.locator('#crop-shapes [data-r="1.7778"]').click();await p.waitForTimeout(700);e=await el('pic');
+assert.ok(near(e.aspect,16/9,.01)&&near(e.crop.w,1,.002)&&near(e.crop.h,.5625,.003),'16:9 chip: the region has that shape: '+JSON.stringify({a:e.aspect,c:e.crop}));
+assert.ok(await p.evaluate(()=>document.querySelector('#btn-crop').classList.contains('on')),'chip turns cropping on');
+await p.keyboard.press('Escape');await p.waitForTimeout(300);assert.equal(await p.evaluate(()=>document.querySelector('#btn-crop').classList.contains('on')),false,'Escape ends cropping');
+await p.locator('#crop-shapes [data-r="free"]').click();await p.waitForTimeout(300);
+// 3D view: no ✂️ (a 2D-view tool)
+await p.locator('#btn-3d').click();await p.waitForTimeout(1500);assert.equal(await p.locator('#btn-crop').isVisible(),false,'no ✂️ in the 3D view');
+await p.locator('#btn-2d').click();await p.waitForTimeout(800);assert.ok(await p.locator('#btn-crop').isVisible(),'✂️ back in 2D');
 // a keyed layer: fill leaves it alone, with a message
 await pick('KD');await tab('pos');const k0=await el('kd');await p.locator('#btn-fill-art').click();await p.waitForTimeout(600);
 assert.deepEqual(await el('kd'),k0,'keyed layer unchanged');assert.ok((await p.locator('#msg').textContent()).includes('נקודות זמן'),'and a message says why');
+// Delete key: not while typing in a field; otherwise it removes the selected element
+await pick('PIC');await tab('look');await p.locator('#crop-x').focus();await p.keyboard.press('Backspace');await p.waitForTimeout(400);
+assert.ok(await el('pic'),'Backspace in a field does not delete the element');
+await p.evaluate(()=>document.activeElement.blur());await p.keyboard.press('Delete');await p.waitForTimeout(700);
+assert.equal(await el('pic'),undefined,'Delete removes the selected element');assert.ok(await p.locator('#panel').isHidden(),'nothing selected after');
 assert.deepEqual(pageErrors,[],'no page errors');
-console.log('PASS editor-crop-fill: fill covers the artwork exactly (and turned a quarter), drag-crop and shape chips set the region, cancel keeps it, keyed layer left alone');
+console.log('PASS editor-crop-fill: fill covers the artwork exactly (and turned a quarter), crop on the canvas (corners, moving the region, shape chips, tap outside/Escape end it), keyed layer left alone, Delete key');
 }finally{await b.close();server.close();}})().catch(e=>{console.error(e&&e.stack||e);process.exit(1)});
