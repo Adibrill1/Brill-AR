@@ -347,6 +347,50 @@ const Studio = (() => {
     });
   }
 
+  // Steadier lock on the artwork in AR. The image tracker's raw pose shakes a little from frame to frame (glare, a
+  // glossy print, a steep angle) and xrextras copies it straight onto the target. This component keeps a One Euro
+  // filtered pose instead - strong smoothing while the picture is still, little lag while it moves (the cut-off rises
+  // with speed, measured in artwork sizes per second so the tuning holds near or far) - and writes it in tick, after
+  // the tracker's events, whatever order the listeners run in. A found artwork snaps to its pose; a lost one stays on
+  // screen for `hold` ms, so a moment of glare does not blink the layers off.
+  function ensureSteadyTargetComponent() {
+    if (!window.AFRAME || AFRAME.components["steady-target"]) return;
+    const alpha = (cutoff, dt) => 1 / (1 + 1 / (2 * Math.PI * cutoff * dt));
+    AFRAME.registerComponent("steady-target", {
+      schema: { name: { default: "artwork" }, minCutoff: { default: 0.6 }, beta: { default: 4 }, hold: { default: 400 } },
+      init() {
+        this.f = null; this.lostAt = 0;
+        const mine = (d) => d && d.name === this.data.name;
+        this.onUpdated = ({ detail }) => { if (mine(detail)) this.sample(detail, false); };
+        this.onFound = ({ detail }) => { if (mine(detail)) { this.lostAt = 0; this.sample(detail, true); } };
+        this.onLost = ({ detail }) => { if (mine(detail)) this.lostAt = performance.now(); };
+        const sc = this.el.sceneEl;
+        sc.addEventListener("xrimagefound", this.onFound); sc.addEventListener("xrimageupdated", this.onUpdated); sc.addEventListener("xrimagelost", this.onLost);
+      },
+      sample(d, snap) {
+        const now = performance.now(), p = d.position, q = d.rotation, s = d.scale || 1;
+        const rp = new THREE.Vector3(p.x, p.y, p.z), rq = new THREE.Quaternion(q.x, q.y, q.z, q.w);
+        const f = this.f;
+        if (snap || !f) { this.f = { p: rp.clone(), q: rq.clone(), s, rp, rq, v: 0, w: 0, t: now }; return; }
+        const dt = Math.max(1 / 120, Math.min(0.25, (now - f.t) / 1000)); f.t = now;
+        const v = rp.distanceTo(f.rp) / s / dt, w = rq.angleTo(f.rq) / dt; // artwork sizes per second, radians per second
+        f.rp = rp; f.rq = rq;
+        const ad = alpha(1, dt); f.v += (v - f.v) * ad; f.w += (w - f.w) * ad; // smoothed speeds (1 Hz)
+        const ap = alpha(this.data.minCutoff + this.data.beta * f.v, dt), aq = alpha(this.data.minCutoff + this.data.beta * f.w, dt);
+        f.p.lerp(rp, ap); f.s += (s - f.s) * ap; f.q.slerp(rq, aq);
+      },
+      tick() {
+        const f = this.f, o = this.el.object3D; if (!f) return;
+        o.position.copy(f.p); o.quaternion.copy(f.q); o.scale.setScalar(f.s);
+        if (this.lostAt) { const held = performance.now() - this.lostAt < this.data.hold; o.visible = held; if (!held) this.lostAt = 0; }
+      },
+      remove() {
+        const sc = this.el.sceneEl;
+        sc.removeEventListener("xrimagefound", this.onFound); sc.removeEventListener("xrimageupdated", this.onUpdated); sc.removeEventListener("xrimagelost", this.onLost);
+      }
+    });
+  }
+
   // Particles: lightweight THREE.Points emitter (sparkle rises, confetti falls).
   function ensureParticlesComponent() {
     if (!window.AFRAME || AFRAME.components["particles"]) return;
@@ -1656,7 +1700,7 @@ const Studio = (() => {
   }
 
   return { TARGET_W, TARGET_H, newId, inspectVideo, validateModelBlob, prepareModelBlob, modelCompressionKinds, DECODER_DRACO_PATH, DECODER_MESHOPT_PATH, modelClipNames, modelClipInfo, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
-           audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, blobURL, releaseBlobURL, blobURLs, historyState, restoreHistory, duplicateLayer, exportJSON, missingAssets, importJSON, exportZIP, importZIP, zipToJSON, fetchPublished, ownBlob, assetHealth, fileHealth, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, artworkFingerprint, fingerprintDistance, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
+           audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, blobURL, releaseBlobURL, blobURLs, historyState, restoreHistory, duplicateLayer, exportJSON, missingAssets, importJSON, exportZIP, importZIP, zipToJSON, fetchPublished, ownBlob, assetHealth, fileHealth, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, ensureSteadyTargetComponent, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, artworkFingerprint, fingerprintDistance, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
            load: id=>settledRead(id), all: ()=>settledRead(), del: delExperience, LIMITS, mediaBytes, pushBack, addBlocker, publishBlocker, restoreBlocker, exportWarning, exportJSONSize,
            onSaveState, installSaveGuard, saveState, soundOnTouch, snapAngle, syncMedia,
            _testHoldSave:p=>{saveHold=p;}, _testFailSave:m=>{failSave=m;}, _testFailPut:o=>{failPut=o?{...o}:null;} };
