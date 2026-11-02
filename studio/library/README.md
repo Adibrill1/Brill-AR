@@ -35,6 +35,15 @@ rendered from the edited model.
 
 The models are static; motion is added in the editor (spin, float, pulse, timeline).
 
+## Scanned model with a looping move — `models/sk-gramophone.glb`, `thumbs/sk-gramophone.png`
+"Gramophone with a wooden sound horn" by Virtual Museums of Małopolska (Wirtualne Muzea Małopolski),
+https://sketchfab.com/3d-models/gramophone-with-a-wooden-sound-horn-45e30e0d5d1946b5bda80e336e2435a5, CC0 1.0 per the
+license.txt in the download (credit not required; given here as a courtesy). Built with `tools/make-gramophone.py`
+(Blender, headless): the ~640k-triangle scan decimated to ~100k, textures shrunk to 2K/1K JPEG, scaled to real size
+(the box is ~30 cm wide), and a 7-inch shellac record added on the felt platter (grooves as a normal map, a red label
+with gold print, all drawn in the script). The platter, record and spindle turn at 75 rpm in the one looping clip
+"Loop" (4 s). It sits in the 3D models filter.
+
 ## Animated 3D models: Quaternius (CC0) — `models/q*-*.glb`, `thumbs/q*-*.png`
 81 rigged, animated low-poly models by Quaternius (https://quaternius.com), CC0 1.0 per the License.txt in each pack
 (free for any use, no credit needed; credited here as a courtesy). The glTF variants were downloaded from the packs'

@@ -31,6 +31,10 @@ window.StarterLibrary = (() => {
     ['wicker_basket_01','סל נצרים'],['book_encyclopedia_set_01','אנציקלופדיה ישנה'],['vintage_binocular','משקפת עתיקה'],
     ['magnifying_glass_01','זכוכית מגדלת'],['vintage_microscope','מיקרוסקופ עתיק'],['lifebuoy','גלגל הצלה'],['dutch_ship_medium','ספינת מפרש']
   ].map(([id,name]) => ({id:'ph-'+id,name,detail:'תלת־ממד · חינמי (CC0)',kind:'model',file:'models/'+id+'.glb',thumb:'thumbs/'+id+'.png',group:'model'}));
+  // Scanned CC0 models with a looping move added (tools/make-gramophone.py): [file id, Hebrew name, start width]
+  const scans = [
+    ['sk-gramophone','גרמופון עם תקליט מסתובב',.5]
+  ].map(([id,name,w]) => ({id,name,detail:'תלת־ממד בתנועה · סריקה חינמית (CC0)',kind:'model',file:'models/'+id+'.glb',thumb:'thumbs/'+id+'.png',clip:'Loop',w,group:'model'}));
   // Rendered from the Styles studio: [style id, Hebrew name, seconds]
   const loops = [
     ['synthwave','סינת׳ווייב',10],['bauhaus','באוהאוס',8],['stained-glass','ויטראז׳',9],['dark-tech','טכנולוגיה על שחור',9],
@@ -140,7 +144,7 @@ window.StarterLibrary = (() => {
     ['k-galaxy','גלקסיה ספירלית',.7],['k-dna','סליל DNA',.3],['k-gyro','טבעות מסתובבות',.5],['k-sphere','כדור חלקיקים נושם',.45],
     ['k-terrain','נוף קווים',.9],['k-constellation','קבוצת כוכבים',.7],['k-orb','כדור קוסמי',.45],['k-fibres','מנורת סיבים אופטיים',.45]
   ].map(([id,name,w]) => ({id:'fx3d-'+id,name,detail:'חלל · תלת־ממד · לולאה',kind:'model',file:'models/fx3d-'+id+'.glb',thumb:'thumbs/fx3d-'+id+'.png',clip:'Loop',w,group:'cosmic'}));
-  const entries = [...originals, ...scenes, ...fx3d, ...w3d, ...k3d, ...made, ...models, ...animated, ...particleStyles, ...stickers, ...loops];
+  const entries = [...originals, ...scenes, ...fx3d, ...w3d, ...k3d, ...made, ...models, ...scans, ...animated, ...particleStyles, ...stickers, ...loops];
   const groups = [['all','הכול'],['scene','סצנות בתנועה'],['fx','אפקטים מרחפים'],['weather','מזג אוויר'],['cosmic','חלל וחלקיקים'],['made','מקוריים בתנועה'],['model','תלת־ממד'],['animal','חיות בתנועה'],['sea','ים'],['dino','דינוזאורים'],['creature','דמויות'],['particles','חלקיקים'],['sticker','מדבקות'],['loop','לולאות וידאו'],['original','מקוריים']];
   const MIME = {glb:'model/gltf-binary',mp4:'video/mp4',png:'image/png',gif:'image/gif',wav:'audio/wav'};
   async function open(importAsset) {
