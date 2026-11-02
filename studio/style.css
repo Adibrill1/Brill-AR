@@ -273,3 +273,17 @@ body.full-edit #canvas-wrap, body.shell.full-edit #canvas-wrap { position: fixed
 body.full-edit #view-pill { z-index: 9100; }
 body.full-edit #msg { z-index: 9100; }
 body.full-edit #stage[data-view="3d"] #editor-3d-host { top: calc(56px + env(safe-area-inset-top)) !important; } /* 3D tools below the full-screen bar */
+
+/* crop by dragging (editor.js openCropper) */
+#crop-modal { position: fixed; inset: 0; z-index: 10000; background: rgba(10,10,14,.78); display: flex; align-items: center; justify-content: center; padding: 16px; box-sizing: border-box; }
+#crop-modal .crop-card { background: #fff; color: #222; border-radius: 14px; padding: 12px; max-width: min(720px, 100%); max-height: 100%; overflow: auto; box-sizing: border-box; }
+#crop-modal .crop-stage { position: relative; overflow: hidden; margin: 0 auto; width: fit-content; touch-action: none; user-select: none; -webkit-user-select: none; }
+#crop-modal .crop-stage img, #crop-modal .crop-stage video { display: block; max-width: min(680px, calc(100vw - 56px)); max-height: 60vh; pointer-events: none; }
+#crop-modal .crop-rect { position: absolute; box-sizing: border-box; border: 2px solid #fff; box-shadow: 0 0 0 9999px rgba(0,0,0,.55); cursor: move; touch-action: none; }
+#crop-modal .crop-rect i { position: absolute; width: 26px; height: 26px; background: #fff; border: 2px solid #7c5cff; border-radius: 50%; box-sizing: border-box; }
+/* corners sit just inside the box, so they stay grabbable when the box reaches the stage's (clipped) edge */
+#crop-modal .crop-rect i[data-h="nw"] { left: -2px; top: -2px; cursor: nwse-resize; } #crop-modal .crop-rect i[data-h="ne"] { right: -2px; top: -2px; cursor: nesw-resize; }
+#crop-modal .crop-rect i[data-h="sw"] { left: -2px; bottom: -2px; cursor: nesw-resize; } #crop-modal .crop-rect i[data-h="se"] { right: -2px; bottom: -2px; cursor: nwse-resize; }
+#crop-modal .row { margin-top: 10px; gap: 6px; flex-wrap: wrap; }
+#crop-modal .crop-shapes button { font-size: 13px; padding: 6px 10px; background: #f1eff7; color: #333; border: 1px solid #cfc9dc; } #crop-modal .crop-shapes button.on { background: #222; color: #fff; border-color: #222; }
+#crop-modal .crop-card button.ghost { background: #fff; color: #333; border: 1px solid #bbb; } /* the dark phone theme's light-on-dark ghost buttons would vanish on the white card */

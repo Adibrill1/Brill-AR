@@ -35,7 +35,7 @@
   new MutationObserver(view).observe(b3, { attributes: true, attributeFilter: ["class"] }); view();
   // Selected-element sheet: the existing #panel (same inputs/handlers) shown as a bottom sheet with sub-tabs.
   const panel = document.getElementById("panel"), kids = [...panel.children];
-  const groups = { pos: [1, 6, 7, 8, 10], look: [2, 3, 4, 5, 9, 17, 18], motion: [11, 13, 14, 15, 16], tap: [12] };
+  const groups = { pos: [1, 6, 7, 8, 10, 20], look: [2, 3, 4, 5, 9, 17, 18, 19], motion: [11, 13, 14, 15, 16], tap: [12] };
   for (const [g, idx] of Object.entries(groups)) idx.forEach((i) => { if (kids[i]) kids[i].dataset.sub = g; });
   const sub = document.createElement("div"); sub.id = "panel-subtabs"; sub.setAttribute("role", "tablist");
   [["pos", "מיקום"], ["look", "מראה"], ["motion", "תנועה וצליל"], ["tap", "נגיעה וזמן"]].forEach(([k, t]) => {

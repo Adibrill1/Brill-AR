@@ -1064,10 +1064,71 @@
       if(Studio.validCrop({...el,crop:c}))Studio.setImageCrop(rec,el,c);else msg('החיתוך חייב להישאר בתוך התמונה ולכלול שטח');
     });
     $('crop-reset').onclick=()=>upd(el=>Studio.setImageCrop(rec,el,{x:0,y:0,w:1,h:1}));
+    $('btn-crop-drag').onclick=()=>{const el=cur();if(el&&['image','video'].includes(el.type))openCropper(el);};
+    // Lay an image/video exactly over the whole artwork: a centred crop to the artwork's shape (turned a quarter: to its
+    // sideways shape), width to match, centred, flat on the plane. A keyed layer keeps its motion, so it is left alone.
+    const fillArt=(el,rot)=>{
+      if(elKeyed(el)){msg('לשכבה יש נקודות זמן (תנועה): המילוי לא חל עליה. אפשר למחוק את נקודות הזמן ואז למלא.');return;}
+      const g=Studio.geom(rec),A=g.artW/g.artH,turned=Math.abs(rot)===90,T=turned?1/A:A,c=el.crop||{x:0,y:0,w:1,h:1},sA=(el.aspect||1)/(c.w/c.h);
+      const crop=sA>T?{x:(1-T/sA)/2,y:0,w:T/sA,h:1}:{x:0,y:(1-sA/T)/2,w:1,h:sA/T};
+      Studio.setImageCrop(rec,el,crop);
+      el.w=turned?1/A:1;el.h=el.w/el.aspect*g.artW/g.artH;el.x=0;el.y=0;el.z=0;el.rot=rot;el.rotX=0;el.rotY=0;
+    };
+    $('btn-fill-art').onclick=()=>upd(el=>fillArt(el,[90,-90,180].includes(el.rot)?el.rot:0));
+    $('btn-fill-rot').onclick=()=>upd(el=>fillArt(el,{0:90,90:180,180:-90,'-90':0}[Math.round(el.rot||0)]??90));
     $('video-aspect-reset').onclick=()=>queueExperience(async()=>{
       const el=rec.elements.find(x=>x.id===selectedId);if(!el||el.type!=='video')return;
       try{const info=await Studio.inspectVideo(rec.assets[el.assetId]),c=el.crop||{w:1,h:1};el.aspect=info.width/info.height*c.w/c.h;el.h=el.w/el.aspect*(rec.target.artRect.w/rec.target.artRect.h);await saveGuarded(rec);renderPanel();draw();msg('פרופורציות הסרטון שוחזרו בלי לשנות את המקור');}catch(error){msg('לא ניתן לשחזר פרופורציות: '+error.message);}
     });
+    // Crop by dragging: the whole source in a window with the kept region as a box (move it, or pull a corner); a shape
+    // chip fixes its proportions. Saves only the region; the file stays whole.
+    const openCropper = (el) => {
+      const blob = rec.assets[el.assetId]; if (!blob) { msg("הקובץ עוד לא נטען"); return; }
+      const url = URL.createObjectURL(blob), isV = el.type === "video", g = Studio.geom(rec);
+      const ov = document.createElement("div"); ov.id = "crop-modal"; ov.setAttribute("role", "dialog"); ov.setAttribute("aria-label", "חיתוך");
+      ov.innerHTML = '<div class="crop-card"><div class="crop-stage">' + (isV ? '<video muted playsinline loop autoplay></video>' : '<img alt="">') +
+        '<div class="crop-rect"><i data-h="nw"></i><i data-h="ne"></i><i data-h="sw"></i><i data-h="se"></i></div></div>' +
+        '<div class="row crop-shapes"><button type="button" data-r="free" class="on">חופשי</button><button type="button" data-r="art">כמו תמונת המקור</button><button type="button" data-r="1">ריבוע</button><button type="button" data-r="1.7778">16:9</button><button type="button" data-r="0.5625">9:16</button></div>' +
+        '<div class="row"><button type="button" id="crop-ok">אישור</button><button type="button" id="crop-all" class="ghost">כל התמונה</button><button type="button" id="crop-cancel" class="ghost">ביטול</button></div></div>';
+      document.body.appendChild(ov);
+      const media = ov.querySelector(isV ? "video" : "img"), stage = ov.querySelector(".crop-stage"), box = ov.querySelector(".crop-rect");
+      let c = { ...(el.crop || { x: 0, y: 0, w: 1, h: 1 }) }, ratio = null, sA = (el.aspect || 1) / (c.w / c.h);
+      const show = () => { Object.assign(box.style, { left: c.x * 100 + "%", top: c.y * 100 + "%", width: c.w * 100 + "%", height: c.h * 100 + "%" }); };
+      const fitRatio = (R) => { const k = R / sA; c = k < 1 ? { x: (1 - k) / 2, y: 0, w: k, h: 1 } : { x: 0, y: (1 - 1 / k) / 2, w: 1, h: 1 / k }; show(); };
+      media.addEventListener(isV ? "loadedmetadata" : "load", () => { const w = isV ? media.videoWidth : media.naturalWidth, h = isV ? media.videoHeight : media.naturalHeight; if (w && h) sA = w / h; });
+      media.src = url; show();
+      const close = () => { ov.remove(); URL.revokeObjectURL(url); };
+      ov.querySelectorAll(".crop-shapes button").forEach((b) => b.onclick = () => {
+        ov.querySelectorAll(".crop-shapes button").forEach((x) => x.classList.toggle("on", x === b));
+        ratio = b.dataset.r === "free" ? null : b.dataset.r === "art" ? g.artW / g.artH : +b.dataset.r;
+        if (ratio) fitRatio(ratio);
+      });
+      let dr = null; const MIN = 0.05;
+      box.addEventListener("pointerdown", (e) => {
+        e.preventDefault(); e.stopPropagation(); try { box.setPointerCapture(e.pointerId); } catch (_) {}
+        dr = { h: e.target.dataset.h || "move", x: e.clientX, y: e.clientY, c0: { ...c }, r: stage.getBoundingClientRect() };
+      });
+      box.addEventListener("pointermove", (e) => {
+        if (!dr) return;
+        const dx = (e.clientX - dr.x) / dr.r.width, dy = (e.clientY - dr.y) / dr.r.height, o = dr.c0;
+        if (dr.h === "move") { c = { ...o, x: Math.max(0, Math.min(1 - o.w, o.x + dx)), y: Math.max(0, Math.min(1 - o.h, o.y + dy)) }; show(); return; }
+        const W = dr.h.includes("w"), N = dr.h.includes("n");
+        const ax = W ? o.x + o.w : o.x, ay = N ? o.y + o.h : o.y; // the opposite corner stays put
+        let w = Math.max(MIN, Math.min(W ? ax : 1 - ax, o.w + (W ? -dx : dx))), h = Math.max(MIN, Math.min(N ? ay : 1 - ay, o.h + (N ? -dy : dy)));
+        if (ratio) { const k = ratio / sA; h = w / k; const hMax = N ? ay : 1 - ay; if (h > hMax) { h = hMax; w = h * k; } const wMax = W ? ax : 1 - ax; if (w > wMax) { w = wMax; h = w / k; } }
+        c = { x: W ? ax - w : ax, y: N ? ay - h : ay, w, h }; show();
+      });
+      const up = () => { dr = null; }; box.addEventListener("pointerup", up); box.addEventListener("pointercancel", up);
+      ov.querySelector("#crop-all").onclick = () => { ratio = null; ov.querySelectorAll(".crop-shapes button").forEach((x) => x.classList.toggle("on", x.dataset.r === "free")); c = { x: 0, y: 0, w: 1, h: 1 }; show(); };
+      ov.querySelector("#crop-cancel").onclick = close;
+      ov.addEventListener("pointerdown", (e) => { if (e.target === ov) close(); });
+      ov.querySelector("#crop-ok").onclick = () => {
+        const r3 = (v) => Math.round(v * 10000) / 10000, cc = { x: r3(c.x), y: r3(c.y), w: r3(Math.min(c.w, 1 - c.x)), h: r3(Math.min(c.h, 1 - c.y)) };
+        close();
+        if (!Studio.validCrop({ ...el, crop: cc })) { msg("החיתוך חייב להישאר בתוך התמונה ולכלול שטח"); return; }
+        upd((x) => Studio.setImageCrop(rec, x, cc));
+      };
+    };
     // panel bindings
     const cur = () => rec.elements.find((x) => x.id === selectedId);
     const transform = applyBaseProp;
@@ -1331,7 +1392,7 @@
     $("num-z").closest("label").hidden = false;
     $("sel-tap").closest("label").hidden = isGroup;
     $('row-video-aspect').hidden=el.type!=='video';
-    $('row-crop').hidden=!['image','video'].includes(el.type);if(['image','video'].includes(el.type)){const c=el.crop||{x:0,y:0,w:1,h:1};for(const k of ['x','y','w','h'])$('crop-'+k).value=Math.round(c[k]*10000)/100;}
+    $('row-crop').hidden=$('row-fill').hidden=!['image','video'].includes(el.type);if(['image','video'].includes(el.type)){const c=el.crop||{x:0,y:0,w:1,h:1};for(const k of ['x','y','w','h'])$('crop-'+k).value=Math.round(c[k]*10000)/100;}
     $("row-chroma").hidden = el.type !== "video";
     $("row-particles").hidden = el.type !== "particles";
     $("row-timecube").hidden = el.type !== "timecube";
