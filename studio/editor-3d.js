@@ -707,8 +707,8 @@ window.Editor3D = (() => {
         onSelect(hitId); e.preventDefault(); return;
       }
     }
-    // empty space: orbit
-    orb = { x: e.clientX, y: e.clientY };
+    // empty space: orbit; a tap there (no drag) lets go of the selection, as in the 2D view
+    orb = { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, tap: true };
   }
 
   function move(e) {
@@ -797,7 +797,7 @@ window.Editor3D = (() => {
       rot.x = Math.max(-85, Math.min(85, rot.x + (e.clientY - orb.y) * 0.25)); // short of straight above/below, where the turn flips
       rig.setAttribute("rotation", rot);
       fitGizmoToView();
-      orb = { x: e.clientX, y: e.clientY };
+      orb.x = e.clientX; orb.y = e.clientY;
     }
   }
 
@@ -901,6 +901,7 @@ window.Editor3D = (() => {
         onSelect(ta.id);
       } else onChange();
     }
+    if (orb && orb.tap && e && e.type === "pointerup" && Math.hypot(e.clientX - orb.x0, e.clientY - orb.y0) < 8 && getSelected()) onSelect(null);
     orb = null;
   }
 

@@ -1993,6 +1993,8 @@
       const z = Math.max(VIEW_ZOOM_MIN, Math.min(VIEW_ZOOM_MAX, viewZoom * k));
       if (z !== viewZoom) { viewZoom = z; draw(); }
     };
+    // the frame around the canvas (full-screen editing): a tap there lets go of the selection too
+    $("canvas-wrap").addEventListener("click", (e) => { if (e.target === e.currentTarget && selectedId && !testMode) { selectedId = null; renderList(); renderPanel(); draw(); Editor3D.refreshGizmo(); } });
     c.addEventListener("wheel", (e) => {
       e.preventDefault(); // never scroll the page under the editor, nor zoom the whole page on a trackpad pinch
       wheelStep(Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)), { x: e.clientX, y: e.clientY });
