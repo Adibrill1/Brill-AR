@@ -40,7 +40,7 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
  await p.touchscreen.tap(sx,sy);
  try{await p.waitForFunction(()=>document.querySelector('#panel-name').textContent.includes('FR'),{timeout:2500});}
  catch(e){throw new Error('tap at zoom '+z+' did not select FR (mapping broken)');}
- // 2b. a two-finger gesture that BEGINS on an element must not leave the first finger's partial edit:
+ // 2b. a two-finger gesture that BEGINS on an element (second finger off it) must not leave the first finger's partial edit:
  // drag FR with one finger, bring the second finger down for a pinch - the drag rolls back, the view zooms
  const dragPinch=async(px,py,qx,qy)=>{ // one finger drags from (px,py), second finger lands at (qx,qy) for a pinch; returns after both lift
   await ses.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:px,y:py,id:1}]});
@@ -82,7 +82,7 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
  await p.evaluate(()=>{const w=document.querySelector('#canvas-wrap');scrollTo(0,w.getBoundingClientRect().top+scrollY-8);});await p.waitForTimeout(300);
  box=await p.locator('#preview').boundingBox();
  const kdS2={x:box.x+box.width*(0.5-(0.25/0.75)*0.5*parseFloat((await state()).zoom)),y:box.y+box.height/2};
- await dragPinch(kdS2.x,kdS2.y,kdS2.x+60,kdS2.y);
+ await dragPinch(kdS2.x,kdS2.y,kdS2.x+150,kdS2.y); // second finger well off KD (drawn larger here): two fingers on an item resize it (editor-pinch-resize)
  let tl3=await tlState();
  assert.strictEqual(tl3.time,tl2.time,'deliberate freeze survived the cancelled drag: '+JSON.stringify(tl3));
  assert.ok(!tl3.liveHidden,'live-resume button still visible for the preserved freeze');

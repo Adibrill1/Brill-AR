@@ -1744,13 +1744,16 @@
       if (viewZoom !== 1) { x = r.width / 2 + (x - r.width / 2) / viewZoom; y = r.height / 2 + (y - r.height / 2) / viewZoom; }
       return { x, y };
     };
-    // Two-finger pinch zooms the editing view: the second finger cancels any element drag
-    // (persisting what landed so far) and takes over until a finger lifts.
+    // Two-finger pinch: when both fingers land on an item (its box, give or take PINCH_MARGIN px, so a small item can be
+    // pinched too), the pinch resizes that item, like the corner handle; anywhere else it zooms the editing view. The
+    // second finger cancels the first finger's drag and takes over until a finger lifts.
     const pinchPtrs = new Map(); // pointerId -> client coords
-    let pinch2d = null;          // {d0, zoom0}
+    let pinch2d = null;          // {d0, zoom0} or {d0, item: true}
     const pinchStart = (e) => {
-      // A two-finger gesture must never edit the scene: roll back whatever the first finger's
-      // drag moved (base props or a just-created key) before it can persist, then zoom.
+      // Roll back whatever the first finger's drag moved (base props or a just-created key) before it can persist.
+      const PINCH_MARGIN = 20, inBox = (id, cp) => { const b = boxes[id]; if (!b) return false; const q = pos({ clientX: cp.x, clientY: cp.y }), dx = q.x - b.cx, dy = q.y - b.cy, co = Math.cos(-b.rot), si = Math.sin(-b.rot); return Math.abs(dx * co - dy * si) <= b.w / 2 + PINCH_MARGIN && Math.abs(dx * si + dy * co) <= b.h / 2 + PINCH_MARGIN; };
+      const cand = drag && drag.id && !String(drag.mode).startsWith("env") ? drag.id : null;
+      const onItem = cand && [...pinchPtrs.values()].every((cp) => inBox(cand, cp)) ? cand : null;
       if (drag) {
         const d = drag; drag = null;
         if (d.snap) {
@@ -1760,13 +1763,36 @@
         }
       }
       const [a, b] = [...pinchPtrs.values()];
-      pinch2d = { d0: Math.hypot(a.x - b.x, a.y - b.y) || 1, zoom0: viewZoom };
+      const d0 = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+      const el = onItem && rec.elements.find((x) => x.id === onItem);
+      if (el && el.type !== "sound") {
+        const preT = tlScrubT, keyT = prepare2DKeyedDrag(el, "scale");
+        if (typeof keyT === "string") msg(keyT);
+        else {
+          drag = { mode: "pinch", id: el.id, origW: el.w, snap: JSON.stringify(rec.elements), snapT: preT };
+          if (keyT != null) { drag.keyT = keyT; drag.s0 = Studio.sampleTimeline(el, editorClock3D(el)).scale; }
+          pinch2d = { d0, item: true };
+        }
+      }
+      if (!pinch2d) pinch2d = { d0, zoom0: viewZoom };
       try { c.setPointerCapture(e.pointerId); } catch (_) {}
       e.preventDefault();
+    };
+    // Resize an item by a ratio of its size at the start of the gesture (corner handle and pinch)
+    const scaleItem = (el, ratio) => {
+      if (drag.keyT != null) { keyAtT(el, drag.keyT).scale = Math.max(.05, Math.min(4, (drag.s0 || 1) * ratio)); return; }
+      const w = Math.max(.05, Math.min(2, drag.origW * ratio));
+      if (el.type === "group") Studio.transformGroup(rec, el, {w});
+      else { const f = w / el.w; el.w = w; if (el.h != null) el.h = Math.max(.02,el.h*f); }
     };
     const pinchMove = () => {
       const [a, b] = [...pinchPtrs.values()];
       const d1 = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+      if (pinch2d.item) {
+        const el = drag && rec.elements.find((x) => x.id === drag.id);
+        if (el) { scaleItem(el, d1 / pinch2d.d0); draw(); renderPanel(); }
+        return;
+      }
       const z = Math.max(VIEW_ZOOM_MIN, Math.min(VIEW_ZOOM_MAX, pinch2d.zoom0 * d1 / pinch2d.d0));
       if (z !== viewZoom) { viewZoom = z; draw(); }
     };
@@ -1898,14 +1924,10 @@
         if (drag.mode === "env-out") el.spatialOuter = Math.max(dd.inner + .01, Math.min(20, dScene));
         else el.spatialInner = Math.max(.05, Math.min(Math.min(5, dd.outer - .01), dScene));
       } else {
+        if (drag.mode === "pinch") return; // the remaining finger of a pinch: nothing until it lifts
         const d0 = Math.hypot(drag.start.x - drag.cx, drag.start.y - drag.cy) || 1;
         const d1 = Math.hypot(p.x - drag.cx, p.y - drag.cy);
-        if (drag.keyT != null) { keyAtT(el, drag.keyT).scale = Math.max(.05, Math.min(4, (drag.s0 || 1) * (d1 / d0))); }
-        else {
-          const w = Math.max(.05, Math.min(2, drag.origW * (d1 / d0)));
-          if (el.type === "group") Studio.transformGroup(rec, el, {w});
-          else { const f = w / el.w; el.w = w; if (el.h != null) el.h = Math.max(.02,el.h*f); }
-        }
+        scaleItem(el, d1 / d0);
 
       }
       draw();

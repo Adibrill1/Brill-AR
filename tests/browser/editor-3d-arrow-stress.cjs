@@ -31,8 +31,8 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
  const ses=await ctx.newCDPSession(p);
  const sbox=await p.evaluate(()=>{const r=Editor3D._test.scene().canvas.getBoundingClientRect();return {x:r.left,y:r.top,width:r.width,height:r.height};});
  const cx=sbox.x+sbox.width/2,cy=sbox.y+sbox.height/2;
- await ses.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:cx-30,y:cy,id:1},{x:cx+30,y:cy,id:2}]});
- await ses.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:cx-80,y:cy,id:1},{x:cx+80,y:cy,id:2}]});
+ await ses.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:cx-75,y:cy,id:1},{x:cx+75,y:cy,id:2}]}); // fingers off the small selected FX: two fingers on an item resize it (editor-pinch-resize)
+ await ses.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:cx-130,y:cy,id:1},{x:cx+130,y:cy,id:2}]});
  await ses.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});await p.waitForTimeout(400);
  await checkAll('pinched-in FX');
  const z1=await p.evaluate(()=>{let z=null;Editor3D._test.scene().querySelectorAll('[camera]').forEach(n=>{z=n.getAttribute('position').z;});return z;});

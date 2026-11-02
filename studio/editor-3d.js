@@ -15,7 +15,7 @@ window.Editor3D = (() => {
   // Two-finger pinch zooms the embedded 3D view (camera dolly, same range as the wheel):
   // the second finger cancels any gizmo drag (persisting it) and takes over until a finger lifts.
   const pinchPtrs = new Map(); // pointerId -> client coords
-  let pinch3d = null;          // {d0, z0}
+  let pinch3d = null;          // {d0, z0} (camera) or {d0, item} (resizing the selected item)
   let toolRow = null;
   // "3d": the full 3D workspace (gizmo, orbit). "2d": the same scene as a transparent layer over the flat 2D canvas,
   // framed by an orthographic camera to match it pixel for pixel, drawing in their final look only the layers the
@@ -291,7 +291,8 @@ window.Editor3D = (() => {
     const { ts, s } = sampledTs(rec, el);
     node.object3D.position.set(ts.x, ts.y, (ts.z || 0) + (el.flush ? 0 : idx * 0.001));
     node.object3D.rotation.set((el.rotX || 0) * Math.PI / 180, (el.rotY || 0) * Math.PI / 180, ((s ? s.rot : el.rot || 0)) * Math.PI / 180);
-    const sc = s ? s.scale : 1;
+    const it = pinch3d && pinch3d.item && pinch3d.item.keyT == null && pinch3d.item.el.id === el.id ? pinch3d.item : null;
+    const sc = (s ? s.scale : 1) * (it ? it.f : 1); // a pinch in progress on an unkeyed item: drawn bigger/smaller, saved on lift
     node.object3D.scale.set(sc, sc, sc);
     // 2D mode shows only what the flat canvas cannot draw in its final look; inside a group, each child is decided alone
     const vis = (s ? !!s.visible : true) && (mode === "3d" || el.type === "group" || overlayType(el));
@@ -540,8 +541,10 @@ window.Editor3D = (() => {
   function down(e) {
     pinchPtrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pinchPtrs.size === 2) {
-      // A two-finger gesture must never edit the scene: roll back whatever the first finger's
-      // gizmo drag moved (base props or a just-created key) before it can persist, then zoom.
+      // Two fingers: when both land on the selected item (its outline on screen, give or take 20px, so a small item can be
+      // pinched too), the pinch resizes it; anywhere else it moves the camera closer/farther. Either way, roll back
+      // whatever the first finger's gizmo drag moved (base props or a just-created key) before it can persist.
+      const onItem = active && mode === "3d" && [...pinchPtrs.values()].every((cp) => onSelectedOutline(cp, 20));
       if (gizmoDrag) {
         const gd = gizmoDrag; gizmoDrag = null;
         const r = getRec();
@@ -549,7 +552,14 @@ window.Editor3D = (() => {
       }
       orb = null;
       const [a, b] = [...pinchPtrs.values()];
-      pinch3d = { d0: Math.hypot(a.x - b.x, a.y - b.y) || 1, z0: cam.getAttribute("position").z };
+      const d0 = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+      pinch3d = { d0, z0: cam.getAttribute("position").z };
+      const r = getRec(), el = onItem && r && r.elements.find((x) => x.id === getSelected());
+      if (el && el.type !== "sound") {
+        const keyT = el.type === "group" && hasKeys(el) ? "gate" : prepareKeyedDrag(el, "scale");
+        if (keyT === "gate") { if (onGate) onGate(gateMsg(el)); }
+        else pinch3d = { d0, item: { el, keyT, f: 1, s0: keyT != null && sampleEl ? sampleEl(el).scale : 1, snap: JSON.stringify(r.elements), snapT: getFrozen ? getFrozen() : null } };
+      }
       if (sceneEl.canvas.setPointerCapture) try { sceneEl.canvas.setPointerCapture(e.pointerId); } catch (_) {}
       e.preventDefault(); e.stopPropagation();
       return;
@@ -670,7 +680,13 @@ window.Editor3D = (() => {
   function move(e) {
     if (pinchPtrs.has(e.pointerId)) pinchPtrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pinch3d) {
-      if (pinchPtrs.size >= 2) {
+      if (pinchPtrs.size >= 2 && pinch3d.item) {
+        const [a, b] = [...pinchPtrs.values()], it = pinch3d.item;
+        const base = it.keyT != null ? it.s0 : 1, lo = it.keyT != null ? 0.05 : 0.05 / (it.el.w || 1), hi = it.keyT != null ? 4 : 2 / (it.el.w || 1);
+        it.f = Math.max(lo / base, Math.min(hi / base, (Math.hypot(a.x - b.x, a.y - b.y) || 1) / pinch3d.d0)); // same limits as the corner handle
+        if (it.keyT != null) keyAt(it.el, it.keyT).scale = it.s0 * it.f; // a key at the frozen playhead; the sampler draws it
+        refreshGizmo(); // the drawn size follows it.f (applySampled) until the fingers lift
+      } else if (pinchPtrs.size >= 2) {
         const [a, b] = [...pinchPtrs.values()];
         const d1 = Math.hypot(a.x - b.x, a.y - b.y) || 1;
         const p = cam.getAttribute("position");
@@ -806,8 +822,42 @@ window.Editor3D = (() => {
     onChange();
   }
 
+  // Is a screen point on the selected item's on-screen outline (the box around its drawn parts), give or take margin px?
+  function onSelectedOutline(cp, margin) {
+    const id = getSelected(), node = id && elNode(id); if (!node || !node.object3D) return false;
+    const camObj = cam.getObject3D("camera") || sceneEl.camera, rect = sceneEl.canvas.getBoundingClientRect();
+    sceneEl.object3D.updateMatrixWorld(true);
+    // particles fly far beyond the layer: their outline is the layer's own rectangle, not the cloud
+    const el = (getRec() || { elements: [] }).elements.find((x) => x.id === id);
+    let box;
+    if (el && el.type === "particles") { const { ts } = sampledTs(getRec(), el); box = new THREE.Box3(new THREE.Vector3(-ts.w / 2, -ts.h / 2, 0), new THREE.Vector3(ts.w / 2, ts.h / 2, 0)).applyMatrix4(node.object3D.matrixWorld); }
+    else box = new THREE.Box3().setFromObject(node.object3D);
+    if (box.isEmpty()) return false;
+    let l = Infinity, r = -Infinity, t = Infinity, b = -Infinity;
+    for (let i = 0; i < 8; i++) {
+      const v = new THREE.Vector3(i & 1 ? box.max.x : box.min.x, i & 2 ? box.max.y : box.min.y, i & 4 ? box.max.z : box.min.z).project(camObj);
+      const x = rect.left + (v.x + 1) / 2 * rect.width, y = rect.top + (1 - v.y) / 2 * rect.height;
+      l = Math.min(l, x); r = Math.max(r, x); t = Math.min(t, y); b = Math.max(b, y);
+    }
+    return cp.x >= l - margin && cp.x <= r + margin && cp.y >= t - margin && cp.y <= b + margin;
+  }
+
+  // A finished pinch on an item: an unkeyed item takes the new width for good (a group scales with its members); a keyed
+  // one already has its key. A pinch that changed nothing saves nothing.
+  function endItemPinch(it) {
+    const rec = getRec(); if (!rec) return;
+    if (Math.abs(it.f - 1) < 0.005) { if (it.keyT != null) { rec.elements = JSON.parse(it.snap); rebuildElements(); if (restoreFrozen) restoreFrozen(it.snapT); } refreshGizmo(); return; }
+    if (it.keyT == null) {
+      const w = Math.round(Math.max(0.05, Math.min(2, it.el.w * it.f)) * 1000) / 1000;
+      if (it.el.type === "group") Studio.transformGroup(rec, it.el, { w });
+      else { const f = w / it.el.w; it.el.w = w; if (it.el.h != null) it.el.h = Math.max(0.02, it.el.h * f); }
+    }
+    refreshGizmo();
+    onChange();
+  }
+
   function up(e) {
-    if (e && pinchPtrs.has(e.pointerId)) { pinchPtrs.delete(e.pointerId); if (pinch3d && pinchPtrs.size < 2) pinch3d = null; }
+    if (e && pinchPtrs.has(e.pointerId)) { pinchPtrs.delete(e.pointerId); if (pinch3d && pinchPtrs.size < 2) { const it = pinch3d.item; pinch3d = null; if (it) endItemPinch(it); } }
     if (gizmoDrag) {
       const gd = gizmoDrag; gizmoDrag = null;
       const ta = tapAlt; tapAlt = null;
