@@ -102,28 +102,40 @@ window.Editor3D = (() => {
     // move/rotate tool toggle (Artivive: tool buttons at the top-left of the 3D view)
     toolRow = document.createElement("div");
     toolRow.id = "editor-3d-tools";
-    toolRow.style.cssText = "position:absolute;top:8px;left:8px;z-index:6;display:flex;flex-direction:column;gap:6px";
+    // the column is as wide as its widest row: its empty area lets touches through to the scene, only the buttons take them
+    toolRow.style.cssText = "position:absolute;top:8px;left:8px;z-index:6;display:flex;flex-direction:column;gap:6px;pointer-events:none;direction:ltr"; // ltr: "flex-start" is the left edge on this right-to-left page
     const toggleRow = document.createElement("div"); toggleRow.style.cssText = "display:flex;gap:6px"; toolRow.appendChild(toggleRow);
-    for (const [mode, label, tid] of [["move", "↔", "btn-3d-move"], ["rotate", "⟳", "btn-3d-rotate"]]) {
+    // Icons are drawn (SVG), not typed: the iPhone turned the "↔" character into a grey emoji tile. The dark fill marks the
+    // tool in use; the short Hebrew word says what each one does.
+    const ICON_MOVE = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 1.5v13M1.5 8h13M8 1.5 5.8 3.7M8 1.5l2.2 2.2M8 14.5l-2.2-2.2M8 14.5l2.2-2.2M1.5 8l2.2-2.2M1.5 8l2.2 2.2M14.5 8l-2.2-2.2M14.5 8l-2.2 2.2"/></svg>';
+    const ICON_ROT = '<svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M13.5 8A5.5 5.5 0 1 1 11.6 3.8"/><path d="M12.2 1.2l-.4 2.9-2.9-.4"/></svg>';
+    for (const [mode, icon, word, tid] of [["move", ICON_MOVE, "הזזה", "btn-3d-move"], ["rotate", ICON_ROT, "סיבוב", "btn-3d-rotate"]]) {
       const b = document.createElement("button");
-      b.id = tid; b.type = "button"; b.textContent = label; b.title = mode;
-      b.style.cssText = "width:34px;height:34px;border-radius:8px;border:1px solid #b9b4c7;background:rgba(255,255,255,.94);font:600 16px/1 sans-serif;color:#292535;cursor:pointer";
+      b.id = tid; b.type = "button"; b.innerHTML = icon + "<span>" + word + "</span>"; for (const c of b.children) c.style.pointerEvents = "none"; // the button itself takes the touch b.title = mode === "move" ? "הזזת הפריט (חיצים)" : "סיבוב הפריט (חישוקים)";
+      b.style.cssText = "pointer-events:auto;height:34px;padding:0 8px;display:flex;align-items:center;gap:4px;border-radius:8px;border:1px solid #b9b4c7;background:rgba(255,255,255,.94);font:600 13px/1 sans-serif;color:#292535;cursor:pointer";
       b.onclick = () => { gizmoMode = mode; syncToolButtons(); refreshGizmo(); };
       toggleRow.appendChild(b);
     }
-    // back to the front view: the artwork face-on at the starting distance
+    // bottom-left corner of the view, apart from the tool column: "חזית" (back to the front view: the artwork face-on at
+    // the starting distance) and "העמדה" (stand the selected item upright on the artwork, the artwork as a floor)
+    const bar = document.createElement("div");
+    bar.id = "editor-3d-view-btns"; bar.style.cssText = "position:absolute;left:8px;bottom:8px;z-index:6;display:flex;gap:6px;direction:ltr";
+    const BAR_BTN = "height:34px;padding:0 10px;border-radius:8px;border:1px solid #b9b4c7;background:rgba(255,255,255,.94);font:600 13px/1 sans-serif;color:#292535;cursor:pointer";
     const front = document.createElement("button");
-    front.id = "btn-3d-front"; front.type = "button"; front.textContent = "חזית"; front.title = "חזרה למבט מלפנים";
-    front.style.cssText = "position:absolute;left:8px;bottom:8px;z-index:6;height:34px;padding:0 10px;border-radius:8px;border:1px solid #b9b4c7;background:rgba(255,255,255,.94);font:600 13px/1 sans-serif;color:#292535;cursor:pointer";
+    front.id = "btn-3d-front"; front.type = "button"; front.textContent = "חזית"; front.title = "חזרה למבט מלפנים"; front.style.cssText = BAR_BTN;
     front.onclick = () => { if (!rig || !cam) return; rig.setAttribute("rotation", "0 0 0"); cam.setAttribute("position", "0 0 1.15"); fitGizmoToView(); refreshGizmo(); };
-    frontBtn = front; // in the bottom-left corner of the view, apart from the tool column
+    const stand = document.createElement("button");
+    stand.id = "btn-3d-stand"; stand.type = "button"; stand.textContent = "העמדה"; stand.title = "העמדת הפריט שנבחר ניצב על תמונת המקור"; stand.style.cssText = BAR_BTN;
+    stand.onclick = () => standUpright();
+    bar.append(front, stand);
+    frontBtn = bar;
     // Screen-space rotation buttons (curved arrows): fixed size, always inside the view, docked beside the move/rotate toggle
     // in the screen corner farthest from the selected element, so they never sit on top of the 3D handles.
     const ROT_BTNS = [["rot", "⟳", "#1971c2", "btn-rot-z", "סיבוב"], ["rotX", "⤾", "#e03131", "btn-rot-x", "הטיה אנכית"], ["rotY", "⤿", "#2f9e44", "btn-rot-y", "הטיה אופקית"]];
     for (const [part, glyph, color, tid, title] of ROT_BTNS) {
       const b = document.createElement("button");
       b.id = tid; b.type = "button"; b.textContent = glyph; b.title = title; b.dataset.part = part;
-      b.style.cssText = "width:44px;height:44px;border-radius:50%;border:2px solid " + color + ";background:rgba(255,255,255,.96);color:" + color + ";font:700 24px/1 sans-serif;cursor:grab;touch-action:none;padding:0";
+      b.style.cssText = "pointer-events:auto;width:44px;height:44px;border-radius:50%;border:2px solid " + color + ";background:rgba(255,255,255,.96);color:" + color + ";font:700 24px/1 sans-serif;cursor:grab;touch-action:none;padding:0";
       b.addEventListener("pointerdown", (e) => startScreenRotate(part, e, b));
       b.addEventListener("pointermove", (e) => { if (gizmoDrag && gizmoDrag.id === e.pointerId) move(e); });
       b.addEventListener("pointerup", (e) => { if (gizmoDrag && gizmoDrag.id === e.pointerId) up(e); });
@@ -349,12 +361,14 @@ window.Editor3D = (() => {
     const margin = Math.min((1 - Math.abs(ndc.x)) * visW, (1 - Math.abs(ndc.y)) * visH) / 2;
     const s = Math.max(0.18, Math.min(1.6, Math.min((0.26 * visH) / base, (0.85 * Math.max(margin, 0.05 * visH)) / base)));
     gizmo.scale.setScalar(s);
-    // keep the tool buttons out from under the handles: dock them in the screen corner farthest from the gizmo
+    // keep the tool buttons out from under the handles: dock them on the side away from the gizmo
     if (toolRow) {
-      const right = ndc.x < 0, bottom = ndc.y > 0; // gizmo in left half -> buttons right; gizmo in upper half -> buttons bottom
-      toolRow.style.top = bottom ? "auto" : right ? "54px" : "8px"; // top-right corner holds the editor's full-screen button toolRow.style.bottom = bottom ? "8px" : "auto";
+      // The column stays at the top edge (the bottom holds "חזית"/"העמדה" and the 3D/2D switch); with the handles in the
+      // upper half its order flips so the rotation buttons come first.
+      const right = ndc.x < 0, bottom = ndc.y > 0; // gizmo in left half -> buttons right
+      toolRow.style.top = right ? "54px" : "8px"; toolRow.style.bottom = "auto"; // top-right corner holds the editor's full-screen button
       toolRow.style.left = right ? "auto" : "8px"; toolRow.style.right = right ? "8px" : "auto";
-      toolRow.style.insetInlineStart = "auto"; toolRow.style.alignItems = right ? "flex-end" : "flex-start";
+      toolRow.style.alignItems = right ? "flex-end" : "flex-start"; // the column is left-to-right, so left/right/flex-start mean what they say
       toolRow.style.flexDirection = bottom ? "column-reverse" : "column";
     }
   }
@@ -728,8 +742,9 @@ window.Editor3D = (() => {
     }
     if (orb) {
       const rot = rig.getAttribute("rotation");
-      rot.y = Math.max(-70, Math.min(70, rot.y + (e.clientX - orb.x) * 0.25)); // the artwork never turns edge-on or away (it vanished into the grey)
-      rot.x = Math.max(-35, Math.min(35, rot.x + (e.clientY - orb.y) * 0.25));
+      // all the way round: the artwork is two-sided, so it shows from behind too ("חזית" brings the face back)
+      rot.y = ((rot.y + (e.clientX - orb.x) * 0.25 + 180) % 360 + 360) % 360 - 180;
+      rot.x = Math.max(-85, Math.min(85, rot.x + (e.clientY - orb.y) * 0.25)); // short of straight above/below, where the turn flips
       rig.setAttribute("rotation", rot);
       fitGizmoToView();
       orb = { x: e.clientX, y: e.clientY };
@@ -752,6 +767,43 @@ window.Editor3D = (() => {
     const rot0 = (keyT != null && part === "rot" && sampleEl) ? sampleEl(el).rot : el.rot || 0;
     gizmoDrag = { id: e.pointerId, el, axis: null, plane: null, angleOf: null, a0: 0, screen: { x: e.clientX, y: e.clientY, cx: c.x, cy: c.y, sa: Math.atan2(e.clientY - c.y, e.clientX - c.x) }, rot0, rotX0: el.rotX || 0, rotY0: el.rotY || 0, part, keyT, snap: JSON.stringify(rec.elements), snapT: getFrozen ? getFrozen() : null };
     try { btn.setPointerCapture(e.pointerId); } catch (err) {}
+  }
+
+  // "העמדה": the selected item stands upright on the artwork, as if the artwork were a floor - tilted 90° forward
+  // (its top out of the picture, its face toward the picture's bottom edge), square to it, and lifted so its lowest
+  // point just touches the picture. The lift is measured on the item as drawn, so models, text and images all land
+  // on the surface. A keyed item gets its height and in-plane turn as a key at the frozen playhead; the tilt is a base
+  // value (no timeline channel). The view then leans back so the standing item is seen, not edge-on.
+  function standUpright() {
+    const rec = getRec(); if (!rec || !active) return;
+    const el = rec.elements.find((x) => x.id === getSelected());
+    if (!el || el.type === "sound") { if (onGate) onGate("בחרי פריט כדי להעמיד אותו על התמונה"); return; }
+    if (el.type === "group") { if (onGate) onGate("אפשר להעמיד פריט בודד, לא קבוצה"); return; }
+    const node = elNode(el.id); if (!node || !node.object3D) return;
+    const keyT = prepareKeyedDrag(el, "z");
+    if (keyT === "gate") { if (onGate) onGate(gateMsg(el)); return; }
+    if (keyT != null && onGate) onGate(TILT_NOTE);
+    el.rotX = 90; el.rotY = 0;
+    if (keyT != null) keyAt(el, keyT).rot = 0; else el.rot = 0;
+    const idx = Studio.topLevelElements(rec).indexOf(el);
+    applySampled(rec, el, node, idx);
+    // lowest point of the item, in the artwork's own space (z = out of the picture)
+    rig.object3D.updateMatrixWorld(true);
+    const inv = new THREE.Matrix4().copy(rig.object3D.matrixWorld).invert(), box = new THREE.Box3(), part = new THREE.Box3();
+    node.object3D.traverse((o) => {
+      if (!o.isMesh && !o.isPoints) return;
+      if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+      part.copy(o.geometry.boundingBox).applyMatrix4(new THREE.Matrix4().multiplyMatrices(inv, o.matrixWorld)); box.union(part);
+    });
+    const { ts } = sampledTs(rec, el), zNow = ts.z || 0;
+    const zTouch = box.isEmpty() ? (ts.h || 0) / 2 : zNow - box.min.z; // nothing drawn yet: a flat item reaches half its height down
+    const z = Math.round(Math.min(2, Math.max(-0.5, zTouch)) * 1000) / 1000;
+    if (keyT != null) keyAt(el, keyT).z = z; else el.z = z;
+    applySampled(rec, el, node, idx);
+    const r = rig.getAttribute("rotation");
+    if (Math.abs(r.x) < 15) { r.x = -55; rig.setAttribute("rotation", r); } // face-on, a standing item is a thin line
+    fitGizmoToView(); refreshGizmo();
+    onChange();
   }
 
   function up(e) {
