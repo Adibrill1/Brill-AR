@@ -7,7 +7,9 @@ const {chromium}=require('playwright-core'),assert=require('assert/strict'),path
 const p=await b.newPage({viewport:{width:1280,height:900}});
 await p.goto(base+'/index.html');await p.waitForSelector('#element-list li');
 await p.locator('#btn-new').click();await p.locator('#file-artwork').setInputFiles(path.resolve('studio/library/star.png'));await p.waitForSelector('#sec-elements:not([hidden])');
-const set=async(sel,v)=>{await p.locator(sel).fill(v);await p.locator(sel).dispatchEvent('change');};
+// fill, then leave the field: the browser's own change fires once there (a manual change event left a second, native
+// one to fire when the next field took focus; its save re-rendered the panel and reset the field being filled)
+const set=async(sel,v)=>{await p.locator(sel).fill(v);await p.locator(sel).blur();};
 await p.locator('#btn-particles').click();await p.waitForFunction(()=>document.querySelectorAll('#element-list li').length===1);
 await p.locator('#sel-pdir-mode').selectOption('random');
 const id=await p.evaluate(()=>document.querySelector('#exp-select').value);
