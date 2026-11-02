@@ -126,7 +126,6 @@
 
   const target = document.createElement("xrextras-named-image-target");
   target.setAttribute("name", "artwork");
-  Studio.ensureSteadyTargetComponent(); target.setAttribute("steady-target", "name: artwork"); // smooths the tracker's shake (shared.js)
   Studio.topLevelElements(rec).forEach((el, idx) => {
     const e = Studio.buildElementEntity(rec, el, idx, "ar");
     if (!e) return; // sound: no visual node
