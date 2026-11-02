@@ -10,8 +10,10 @@ await p.locator('#btn-new').click();await p.locator('#file-artwork').setInputFil
 const set=async(sel,v)=>{await p.locator(sel).fill(v);await p.locator(sel).dispatchEvent('change');};
 await p.locator('#btn-particles').click();await p.waitForFunction(()=>document.querySelectorAll('#element-list li').length===1);
 await p.locator('#sel-pdir-mode').selectOption('random');
-await set('#num-pspread','.3');await set('#num-pcount','50');
 const id=await p.evaluate(()=>document.querySelector('#exp-select').value);
+// one field at a time: a save re-renders the panel, which would reset a field filled before that save lands
+await set('#num-pspread','.3');await waitFor(p,async id=>(await Studio.load(id)).elements[0].particles.spread===.3,id);await p.waitForTimeout(300);
+await set('#num-pcount','50');
 await waitFor(p,async id=>{const r=await Studio.load(id);const pc=r.elements[0].particles;return pc.direction===-2&&pc.spread===.3&&pc.count===50;},id); // saves are async; never navigate ahead of them
 // persistence through reload
 await p.goto(base+'/index.html');await p.waitForFunction(()=>document.querySelectorAll('#exp-select option').length>0);
