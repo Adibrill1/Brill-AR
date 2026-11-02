@@ -13,7 +13,7 @@ geometry, not copied from stock or Artivive. No external artwork.
 - orbit.mp4 / orbit-poster.png: original two-second orbital geometric animation, H264/yuv420p, 256x256, no audio.
 
 ## 3D models: Poly Haven (CC0) — `models/`, `thumbs/<id>.png`
-53 models from https://polyhaven.com, all under CC0 (public domain dedication: free for any use, no credit needed;
+103 models from https://polyhaven.com, all under CC0 (public domain dedication: free for any use, no credit needed;
 credited here as a courtesy). Downloaded with the 1K glTF variant through the Poly Haven API and packed to a single
 GLB per model by `tools/gltf-to-glb.mjs` (outside this repository); geometry, materials and textures unchanged.
 One change: `fancy_picture_frame_01` has its inner painting node (`fancy_picture_frame_01_canvas`) removed from the
@@ -32,6 +32,17 @@ vintage_grandfather_clock_01, wicker_basket_01, book_encyclopedia_set_01, vintag
 vintage_microscope, lifebuoy, dutch_ship_medium. (File names are lower-case.) vintage_suitcase comes as a pair; the second
 suitcase's nodes are dropped (`--drop-node vintage_suitcase_02_bottom/_clasp/_handle/_top`) and its thumbnail is
 rendered from the edited model.
+
+Added later, packed the same way with no changes (50): american_football, bananas, baseball_01, brass_candleholders,
+brass_pot_01, brass_vase_01, brass_vase_03, bronze_shark_statue, bronze_whale_statue, bull_head, cardboard_box_01,
+carved_wooden_plate, CashRegister_01, ceramic_vase_02, Chandelier_03, chemistry_set, classic_laptop, CoffeeCart_01,
+desk_lamp_arm_01, fishermans_hat, food_avocado_01, food_pears_asian_01, gothic_statue, horse_head, jug_01,
+korean_public_payphone_01, lambis_shell, lion_head, Megaphone_01, postcard_set_01, pot_enamel_01, potted_plant_02,
+Rockingchair_01, round_spectacles, street_lamp_01, tea_set_01, throw_pillows_01, vintage_cabinet_01,
+vintage_electric_kettle, vintage_flashlight, vintage_microwave, retro_multimeter, vintage_stapler,
+vintage_telephone_wall_clock, wall_clock, watering_can_metal_01, wine_barrel_01, wooden_bucket_02, wooden_candlestick,
+wooden_crate_01. Left out after a look: vintage_wooden_drawer_01 (its geometry breaks apart in three.js) and
+vintage_oil_lamp (its glass chimney draws black).
 
 The models are static; motion is added in the editor (spin, float, pulse, timeline).
 

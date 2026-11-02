@@ -29,7 +29,17 @@ window.StarterLibrary = (() => {
     ['filmstrip_projector_8mm','מקרן סרטים'],['vintage_video_camera','מצלמת קולנוע ישנה'],['spinning_wheel_01','גלגל טוויה'],
     ['strawberry_chocolate_cake','עוגת שוקולד ותותים'],['chess_set','לוח שחמט'],['vintage_grandfather_clock_01','שעון סבא'],
     ['wicker_basket_01','סל נצרים'],['book_encyclopedia_set_01','אנציקלופדיה ישנה'],['vintage_binocular','משקפת עתיקה'],
-    ['magnifying_glass_01','זכוכית מגדלת'],['vintage_microscope','מיקרוסקופ עתיק'],['lifebuoy','גלגל הצלה'],['dutch_ship_medium','ספינת מפרש']
+    ['magnifying_glass_01','זכוכית מגדלת'],['vintage_microscope','מיקרוסקופ עתיק'],['lifebuoy','גלגל הצלה'],['dutch_ship_medium','ספינת מפרש'],
+    ['american_football','כדור פוטבול'],['bananas','בננות'],['baseball_01','כדור בייסבול'],['brass_candleholders','פמוטים מפליז'],['brass_pot_01','סיר פליז'],
+    ['brass_vase_01','אגרטל פליז'],['brass_vase_03','כד פליז'],['bronze_shark_statue','פסל כריש מברונזה'],['bronze_whale_statue','פסל לווייתן מברונזה'],['bull_head','פסל ראש שור'],
+    ['cardboard_box_01','קופסת קרטון'],['carved_wooden_plate','צלחת עץ מגולפת'],['cashregister_01','קופה רושמת'],['ceramic_vase_02','כד קרמיקה לבן'],['chandelier_03','נברשת נרות'],
+    ['chemistry_set','ערכת כימיה'],['classic_laptop','מחשב נייד ישן'],['coffeecart_01','עגלת קפה'],['desk_lamp_arm_01','מנורת שולחן'],['fishermans_hat','כובע דייגים'],
+    ['food_avocado_01','אבוקדו'],['food_pears_asian_01','אגסים'],['gothic_statue','פסל גותי'],['horse_head','פסל ראש סוס'],['jug_01','כד פרחוני'],
+    ['korean_public_payphone_01','טלפון ציבורי'],['lambis_shell','צדף ים'],['lion_head','פסל ראש אריה'],['megaphone_01','מגפון'],['postcard_set_01','גלויות'],
+    ['pot_enamel_01','סיר אמייל'],['potted_plant_02','צמח בעציץ חרס'],['rockingchair_01','כיסא נדנדה'],['round_spectacles','משקפיים עגולים'],['street_lamp_01','פנס רחוב'],
+    ['tea_set_01','ערכת תה'],['throw_pillows_01','כריות נוי'],['vintage_cabinet_01','מזנון עתיק'],['vintage_electric_kettle','קומקום עתיק'],['vintage_flashlight','פנס יד עתיק'],
+    ['vintage_microwave','מיקרוגל רטרו'],['retro_multimeter','מד חשמל רטרו'],['vintage_stapler','שדכן רטרו'],['vintage_telephone_wall_clock','טלפון קיר עתיק'],['wall_clock','שעון קיר'],
+    ['watering_can_metal_01','משפך'],['wine_barrel_01','חבית יין'],['wooden_bucket_02','דלי עץ'],['wooden_candlestick','פמוט עץ'],['wooden_crate_01','ארגז עץ']
   ].map(([id,name]) => ({id:'ph-'+id,name,detail:'תלת־ממד · חינמי (CC0)',kind:'model',file:'models/'+id+'.glb',thumb:'thumbs/'+id+'.png',group:'model'}));
   // Scanned CC0 models with a looping move added (tools/make-gramophone.py): [file id, Hebrew name, start width]
   const scans = [
