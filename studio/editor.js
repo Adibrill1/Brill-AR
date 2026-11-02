@@ -1121,6 +1121,7 @@
     $("num-spatial-out").onchange = (e) => upd((el) => { el.spatialOuter = Math.max(0.1, parseFloat(e.target.value) || 1.4); });
     $("sel-tc-dir").onchange = (e) => upd((el) => { el.timecube = Object.assign({}, el.timecube, { dir: e.target.value }); });
     $("ck-tc-edges").onchange = (e) => upd((el) => { el.timecube = Object.assign({}, el.timecube, { edges: e.target.checked }); });
+    $("ck-tc-fixed").onchange = (e) => upd((el) => { el.timecube = Object.assign({}, el.timecube, { fixed: e.target.checked }); });
     $("sl-tc-depth").oninput = (e) => { $("tc-depth-val").textContent = (+e.target.value).toFixed(2); };
     $("sl-tc-depth").onchange = (e) => upd((el) => { el.timecube = Object.assign({}, el.timecube, { depth: Math.max(0.2, Math.min(2, parseFloat(e.target.value) || 0.75)) }); });
     $("sel-preset").onchange = (e) => upd((el) => { el.particles = Object.assign({}, el.particles, { preset: e.target.value }); });
@@ -1334,7 +1335,7 @@
     $("row-chroma").hidden = el.type !== "video";
     $("row-particles").hidden = el.type !== "particles";
     $("row-timecube").hidden = el.type !== "timecube";
-    if (el.type === "timecube") { const tc = el.timecube || {}; $("sel-tc-dir").value = tc.dir || "front"; $("ck-tc-edges").checked = tc.edges !== false; $("sl-tc-depth").value = tc.depth || 0.75; $("tc-depth-val").textContent = (tc.depth || 0.75).toFixed(2); }
+    if (el.type === "timecube") { const tc = el.timecube || {}; $("sel-tc-dir").value = tc.dir || "front"; $("ck-tc-edges").checked = tc.edges !== false; $("ck-tc-fixed").checked = tc.fixed === true; $("sl-tc-depth").value = tc.depth || 0.75; $("tc-depth-val").textContent = (tc.depth || 0.75).toFixed(2); }
     if (el.type === "particles") {
       const pc = el.particles || {};
       $('num-plife').value=pc.lifetime||0;$('num-plife2').value=pc.life2||0;$('ck-pcolor2').checked=!!pc.color2;if(pc.color2)$('in-pcolor2').value=pc.color2;$('num-pendsize').value=pc.endSize==null?1:pc.endSize;$('sel-pemitter').value=pc.emitter||'box';$('in-pendcolor').value=pc.endColor||pc.color||'#ffd94d';$('ck-pfade').checked=!!pc.fade;
@@ -1777,9 +1778,10 @@
     // second finger cancels the first finger's drag and takes over until a finger lifts.
     const pinchPtrs = new Map(); // pointerId -> client coords
     let pinch2d = null;          // {d0, zoom0} or {d0, item: true}
+    // Is a screen point on an item's box, give or take 20px (so a small item can be pinched or wheeled too)?
+    const PINCH_MARGIN = 20, inBox = (id, cp) => { const b = boxes[id]; if (!b) return false; const q = pos({ clientX: cp.x, clientY: cp.y }), dx = q.x - b.cx, dy = q.y - b.cy, co = Math.cos(-b.rot), si = Math.sin(-b.rot); return Math.abs(dx * co - dy * si) <= b.w / 2 + PINCH_MARGIN && Math.abs(dx * si + dy * co) <= b.h / 2 + PINCH_MARGIN; };
     const pinchStart = (e) => {
       // Roll back whatever the first finger's drag moved (base props or a just-created key) before it can persist.
-      const PINCH_MARGIN = 20, inBox = (id, cp) => { const b = boxes[id]; if (!b) return false; const q = pos({ clientX: cp.x, clientY: cp.y }), dx = q.x - b.cx, dy = q.y - b.cy, co = Math.cos(-b.rot), si = Math.sin(-b.rot); return Math.abs(dx * co - dy * si) <= b.w / 2 + PINCH_MARGIN && Math.abs(dx * si + dy * co) <= b.h / 2 + PINCH_MARGIN; };
       const cand = drag && drag.id && !String(drag.mode).startsWith("env") ? drag.id : null;
       const onItem = cand && [...pinchPtrs.values()].every((cp) => inBox(cand, cp)) ? cand : null;
       if (drag) {
@@ -1836,6 +1838,8 @@
       return null;
     };
     c.addEventListener("pointerdown", (e) => {
+      if (drag && drag.wheel) { clearTimeout(wheelT); end(); } // a press ends a wheel resize at once
+      if (e.pointerType === "mouse") e.preventDefault(); // a mouse drag edits; it never starts selecting the page's text
       pinchPtrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
       if (pinchPtrs.size === 2) { pinchStart(e); return; }
       const p = pos(e);
@@ -1964,6 +1968,38 @@
     const end = async (e) => { if (e && pinchPtrs.has(e.pointerId)) { pinchPtrs.delete(e.pointerId); if (pinch2d && pinchPtrs.size < 2) pinch2d = null; } if (drag) { const d = drag; drag = null; if (d.guide) draw(); await saveGuarded(rec); if (d.keyT != null) { const el = rec.elements.find((x) => x.id === d.id); if (el && el.id === selectedId) renderRuler(el); draw(); } } };
     c.addEventListener("pointerup", end);
     c.addEventListener("pointercancel", end);
+    // Mouse and trackpad: the wheel (a trackpad pinch arrives as a ctrl+wheel, or as Safari's gesture events) does what a
+    // pinch does - over the selected item it resizes it, anywhere else it zooms the view. A run of wheel steps is one
+    // resize, saved once the wheel stops.
+    let wheelT = null;
+    const wheelStep = (k, cp) => {
+      if (testMode || pinch2d) return;
+      const sel = rec.elements.find((x) => x.id === selectedId);
+      if (drag && drag.wheel || !drag && sel && sel.type !== "sound" && inBox(sel.id, cp)) {
+        if (!drag) {
+          const preT = tlScrubT, keyT = prepare2DKeyedDrag(sel, "scale");
+          if (typeof keyT === "string") { msg(keyT); return; }
+          drag = { mode: "pinch", wheel: true, f: 1, id: sel.id, origW: sel.w, snap: JSON.stringify(rec.elements), snapT: preT };
+          if (keyT != null) { drag.keyT = keyT; drag.s0 = Studio.sampleTimeline(sel, editorClock3D(sel)).scale; }
+        }
+        const el = rec.elements.find((x) => x.id === drag.id); if (!el) return;
+        const base = drag.keyT != null ? (drag.s0 || 1) : drag.origW, hi = drag.keyT != null ? 4 : 2; // the corner handle's limits
+        drag.f = Math.max(.05 / base, Math.min(hi / base, drag.f * k));
+        scaleItem(el, drag.f); draw(); renderPanel();
+        clearTimeout(wheelT); wheelT = setTimeout(() => { if (drag && drag.wheel) end(); }, 350);
+        return;
+      }
+      if (drag) return; // mid-drag: leave the view alone
+      const z = Math.max(VIEW_ZOOM_MIN, Math.min(VIEW_ZOOM_MAX, viewZoom * k));
+      if (z !== viewZoom) { viewZoom = z; draw(); }
+    };
+    c.addEventListener("wheel", (e) => {
+      e.preventDefault(); // never scroll the page under the editor, nor zoom the whole page on a trackpad pinch
+      wheelStep(Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)), { x: e.clientX, y: e.clientY });
+    }, { passive: false });
+    let gesture0 = 1; // Safari's trackpad pinch (no fingers on the screen: a phone pinch is pointers, handled above)
+    c.addEventListener("gesturestart", (e) => { if (pinchPtrs.size) return; e.preventDefault(); gesture0 = e.scale || 1; });
+    c.addEventListener("gesturechange", (e) => { if (pinchPtrs.size) return; e.preventDefault(); const k = (e.scale || 1) / gesture0; gesture0 = e.scale || 1; wheelStep(k, { x: e.clientX, y: e.clientY }); });
   }
 
   window.addEventListener("resize", draw);

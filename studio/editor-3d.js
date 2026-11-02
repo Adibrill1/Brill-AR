@@ -15,6 +15,7 @@ window.Editor3D = (() => {
   // Two-finger pinch zooms the embedded 3D view (camera dolly, same range as the wheel):
   // the second finger cancels any gizmo drag (persisting it) and takes over until a finger lifts.
   const pinchPtrs = new Map(); // pointerId -> client coords
+  let wheelItem = null;        // a mouse-wheel resize of the selected item in progress, like pinch3d.item (saved when the wheel stops)
   let pinch3d = null;          // {d0, z0} (camera) or {d0, item} (resizing the selected item)
   let toolRow = null;
   // "3d": the full 3D workspace (gizmo, orbit). "2d": the same scene as a transparent layer over the flat 2D canvas,
@@ -291,7 +292,8 @@ window.Editor3D = (() => {
     const { ts, s } = sampledTs(rec, el);
     node.object3D.position.set(ts.x, ts.y, (ts.z || 0) + (el.flush ? 0 : idx * 0.001));
     node.object3D.rotation.set((el.rotX || 0) * Math.PI / 180, (el.rotY || 0) * Math.PI / 180, ((s ? s.rot : el.rot || 0)) * Math.PI / 180);
-    const it = pinch3d && pinch3d.item && pinch3d.item.keyT == null && pinch3d.item.el.id === el.id ? pinch3d.item : null;
+    const cur = (pinch3d && pinch3d.item) || wheelItem;
+    const it = cur && cur.keyT == null && cur.el.id === el.id ? cur : null;
     const sc = (s ? s.scale : 1) * (it ? it.f : 1); // a pinch in progress on an unkeyed item: drawn bigger/smaller, saved on lift
     node.object3D.scale.set(sc, sc, sc);
     // 2D mode shows only what the flat canvas cannot draw in its final look; inside a group, each child is decided alone
@@ -528,17 +530,49 @@ window.Editor3D = (() => {
       sceneEl.canvas.addEventListener("pointercancel", up);
     };
     bind(); sceneEl.addEventListener("renderstart", bind); sceneEl.addEventListener("loaded", bind);
+    // The wheel (a trackpad pinch is a ctrl+wheel, or Safari's gesture events) does what a pinch does: over the selected
+    // item it resizes it, anywhere else it moves the camera closer/farther. Never scrolls the page under the cursor.
     sceneEl.addEventListener("wheel", (e) => {
-      e.preventDefault(); // zoom the 3D view, never scroll the page under the cursor
-      const p = cam.getAttribute("position");
-      p.z = Math.max(0.5, Math.min(2.4, p.z + e.deltaY * 0.001));
-      cam.setAttribute("position", p);
-      fitGizmoToView();
+      e.preventDefault();
+      wheelStep(Math.exp(-e.deltaY * (e.ctrlKey ? 0.01 : 0.0015)), { x: e.clientX, y: e.clientY });
     }, { passive: false });
+    let gesture0 = 1;
+    sceneEl.addEventListener("gesturestart", (e) => { if (pinchPtrs.size) return; e.preventDefault(); gesture0 = e.scale || 1; });
+    sceneEl.addEventListener("gesturechange", (e) => { if (pinchPtrs.size) return; e.preventDefault(); const k = (e.scale || 1) / gesture0; gesture0 = e.scale || 1; wheelStep(k, { x: e.clientX, y: e.clientY }); });
+    sceneEl.addEventListener("contextmenu", (e) => { if (active) e.preventDefault(); }); // the right button turns the view
+  }
+
+  function finishWheel() { if (!wheelItem) return; const it = wheelItem; wheelItem = null; clearTimeout(it.t); endItemPinch(it); }
+  function wheelStep(k, cp) {
+    if (pinch3d || gizmoDrag) return;
+    const r = getRec(), el = active && mode === "3d" && r && r.elements.find((x) => x.id === getSelected());
+    if (wheelItem || el && el.type !== "sound" && onSelectedOutline(cp, 20)) {
+      if (!wheelItem) {
+        const keyT = el.type === "group" && hasKeys(el) ? "gate" : prepareKeyedDrag(el, "scale");
+        if (keyT === "gate") { if (onGate) onGate(gateMsg(el)); return; }
+        wheelItem = { el, keyT, f: 1, s0: keyT != null && sampleEl ? sampleEl(el).scale : 1, snap: JSON.stringify(r.elements), snapT: getFrozen ? getFrozen() : null };
+      }
+      const it = wheelItem, base = it.keyT != null ? it.s0 : 1, lo = it.keyT != null ? 0.05 : 0.05 / (it.el.w || 1), hi = it.keyT != null ? 4 : 2 / (it.el.w || 1);
+      it.f = Math.max(lo / base, Math.min(hi / base, it.f * k)); // same limits as the corner handle
+      if (it.keyT != null) keyAt(it.el, it.keyT).scale = it.s0 * it.f;
+      refreshGizmo();
+      clearTimeout(it.t); it.t = setTimeout(finishWheel, 350);
+      return;
+    }
+    const p = cam.getAttribute("position");
+    p.z = Math.max(0.5, Math.min(2.4, p.z / k));
+    cam.setAttribute("position", p);
+    fitGizmoToView();
   }
 
   let tapAlt = null;
   function down(e) {
+    finishWheel(); // a press ends a wheel resize at once
+    if (active && e.pointerType === "mouse" && (e.button === 1 || e.button === 2)) { // right/middle button: turn the view, even over a layer
+      orb = { x: e.clientX, y: e.clientY };
+      if (sceneEl.canvas.setPointerCapture) try { sceneEl.canvas.setPointerCapture(e.pointerId); } catch (_) {}
+      e.preventDefault(); return;
+    }
     pinchPtrs.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pinchPtrs.size === 2) {
       // Two fingers: when both land on the selected item (its outline on screen, give or take 20px, so a small item can be

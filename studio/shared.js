@@ -511,6 +511,7 @@ const Studio = (() => {
     if (c.dir != null && !TIMECUBE_DIRS.includes(c.dir)) return false;
     if (c.edges != null && typeof c.edges !== "boolean") return false;
     if (c.depth != null && !num(c.depth, 0.1, 3)) return false;
+    if (c.fixed != null && typeof c.fixed !== "boolean") return false;
     return true;
   }
   // Bake a clip (its first maxDur seconds) into the frame atlas. Frames are long-side px on their long side, about
@@ -550,12 +551,13 @@ const Studio = (() => {
     const VS = "uniform vec3 vMin; uniform vec3 vMax; varying vec3 vL; varying vec3 vQ; varying vec3 vN;\n" +
       "void main(){ vL = position + 0.5; vQ = vec3(mix(vMin.xy, vMax.xy, vL.xy), mix(vMax.z, vMin.z, vL.z)); vN = normal;\n" +
       "  gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }";
-    const FS = "uniform sampler2D atlas; uniform vec2 grid; uniform float frames; uniform vec2 tileTexel; uniform vec3 ew; uniform float edges;\n" +
+    const FS = "uniform sampler2D atlas; uniform vec2 grid; uniform float frames; uniform vec2 tileTexel; uniform vec3 ew; uniform float edges; uniform float flow; uniform vec3 shift;\n" +
       "varying vec3 vL; varying vec3 vQ; varying vec3 vN;\n" +
       "vec3 tile(float i, vec2 uv){ float c = mod(i, grid.x), r = floor(i / grid.x); uv = clamp(uv, tileTexel * 0.5, 1.0 - tileTexel * 0.5);\n" +
       "  return texture2D(atlas, vec2((c + uv.x) / grid.x, 1.0 - (r + 1.0 - uv.y) / grid.y)).rgb; }\n" +
-      "void main(){ float f = clamp(vQ.z, 0.0, 1.0) * (frames - 1.0), i0 = floor(f);\n" +
-      "  vec3 col = mix(tile(i0, vQ.xy), tile(min(i0 + 1.0, frames - 1.0), vQ.xy), f - i0);\n" +
+      "void main(){ vec3 q = flow > 0.5 ? fract(vQ + shift) : vQ;\n" + // fixed size: the volume flows through a whole box
+      "  float f = clamp(q.z, 0.0, 1.0) * (frames - 1.0), i0 = floor(f);\n" +
+      "  vec3 col = mix(tile(i0, q.xy), tile(min(i0 + 1.0, frames - 1.0), q.xy), f - i0);\n" +
       "  col *= 0.86 + 0.14 * abs(vN.z);\n" + // the cut face full bright, the slit-scan sides a touch darker: reads as a box
       "  vec3 d = min(vL, 1.0 - vL); float n = step(d.x, ew.x) + step(d.y, ew.y) + step(d.z, ew.z);\n" +
       "  if (edges > 0.5 && n >= 2.0) col = mix(col, vec3(1.0), 0.8);\n" +
@@ -563,11 +565,12 @@ const Studio = (() => {
     AFRAME.registerComponent("time-cube", {
       schema: { src: { type: "string" }, cols: { type: "int", default: 1 }, rows: { type: "int", default: 1 }, frames: { type: "int", default: 2 },
         fw: { type: "int", default: 256 }, fh: { type: "int", default: 144 }, width: { default: 0.4 }, height: { default: 0.3 }, depth: { default: 0.3 },
-        dir: { default: "front" }, edges: { default: true }, period: { default: 5 } },
+        dir: { default: "front" }, edges: { default: true }, fixed: { default: false }, period: { default: 5 } },
       init() {
         this.mat = new THREE.ShaderMaterial({ vertexShader: VS, fragmentShader: FS, uniforms: {
           atlas: { value: null }, grid: { value: new THREE.Vector2(1, 1) }, frames: { value: 2 }, tileTexel: { value: new THREE.Vector2(1 / 256, 1 / 144) },
-          vMin: { value: new THREE.Vector3(0, 0, 0) }, vMax: { value: new THREE.Vector3(1, 1, 1) }, ew: { value: new THREE.Vector3(0.01, 0.01, 0.01) }, edges: { value: 1 } } });
+          vMin: { value: new THREE.Vector3(0, 0, 0) }, vMax: { value: new THREE.Vector3(1, 1, 1) }, ew: { value: new THREE.Vector3(0.01, 0.01, 0.01) }, edges: { value: 1 },
+          flow: { value: 0 }, shift: { value: new THREE.Vector3(0, 0, 0) } } });
         this.mesh = new THREE.Mesh(new THREE.BoxGeometry(1, 1, 1), this.mat);
         this.mesh.visible = false; // until the frames are in
         this.el.setObject3D("mesh", this.mesh);
@@ -575,7 +578,7 @@ const Studio = (() => {
       },
       update(old) {
         const d = this.data, u = this.mat.uniforms;
-        u.grid.value.set(d.cols, d.rows); u.frames.value = d.frames; u.tileTexel.value.set(1 / d.fw, 1 / d.fh); u.edges.value = d.edges ? 1 : 0;
+        u.grid.value.set(d.cols, d.rows); u.frames.value = d.frames; u.tileTexel.value.set(1 / d.fw, 1 / d.fh); u.edges.value = d.edges ? 1 : 0; u.flow.value = d.fixed ? 1 : 0;
         if (d.src && d.src !== old.src) {
           new THREE.TextureLoader().load(d.src, (tex) => {
             if (this.data.src !== d.src) { tex.dispose(); return; }
@@ -603,8 +606,12 @@ const Studio = (() => {
       },
       tick(t) {
         if (this.t0 == null) this.t0 = t;
-        const p = Math.max(0.5, this.data.period);
-        this.place((((t - this.t0) / 1000) % p) / p * 0.97);
+        const p = Math.max(0.5, this.data.period), ph = (((t - this.t0) / 1000) % p) / p;
+        if (!this.data.fixed) { this.place(ph * 0.97); return; }
+        // fixed size: the box stays whole and the clip flows through it, the way the cut would move (one pass per period)
+        if (this.cut !== 0) this.place(0);
+        const v = { front: [0, 0, ph], back: [0, 0, -ph], left: [ph, 0, 0], right: [-ph, 0, 0], bottom: [0, ph, 0], top: [0, -ph, 0] }[this.data.dir] || [0, 0, ph];
+        this.mat.uniforms.shift.value.set(v[0], v[1], v[2]);
       },
       remove() { this.el.removeObject3D("mesh"); this.mesh.geometry.dispose(); if (this.mat.uniforms.atlas.value) this.mat.uniforms.atlas.value.dispose(); this.mat.dispose(); }
     });
@@ -798,7 +805,7 @@ const Studio = (() => {
       e = document.createElement("a-entity");
       const blob = rec.assets && rec.assets[el.assetId], tc = el.timecube || {};
       if (blob && validTimeCube(el)) e.setAttribute("time-cube", { src: blobURL(blob), cols: tc.cols, rows: tc.rows, frames: tc.frames, fw: tc.fw, fh: tc.fh,
-        width: ts.w, height: ts.h, depth: ts.w * (tc.depth || 0.75), dir: tc.dir || "front", edges: tc.edges !== false, period: tc.dur });
+        width: ts.w, height: ts.h, depth: ts.w * (tc.depth || 0.75), dir: tc.dir || "front", edges: tc.edges !== false, fixed: tc.fixed === true, period: tc.dur });
     } else if (el.type === "text") {
       e = document.createElement("a-plane");
       const tb = drawTextCanvas(el, 128);

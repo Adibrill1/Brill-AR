@@ -32,9 +32,15 @@ assert.ok(await p.locator('#row-timecube').isVisible(),'time cube options in the
 await p.selectOption('#sel-tc-dir','left');await p.waitForTimeout(400);await p.locator('#ck-tc-edges').uncheck();await p.waitForTimeout(900);
 const opt=await p.evaluate(async id=>{const el=(await Studio.load(id)).elements.find(e=>e.type==='timecube'),c=document.querySelector('[time-cube]').components['time-cube'];return {saved:el.timecube,dir:c.data.dir,edges:c.data.edges};},id);
 assert.equal(opt.saved.dir,'left');assert.equal(opt.saved.edges,false);assert.equal(opt.dir,'left','box rebuilt with the new direction');assert.equal(opt.edges,false,'and without edges');
+// fixed size: the box stays whole (no cut) and the clip flows through it instead
+await p.locator('#ck-tc-fixed').check();await p.waitForTimeout(900);
+const fx=await p.evaluate(async id=>{const el=(await Studio.load(id)).elements.find(e=>e.type==='timecube'),c=document.querySelector('[time-cube]').components['time-cube'],m=c.mesh;const a={cut:c.cut,sx:m.scale.x,sh:c.mat.uniforms.shift.value.x,flow:c.mat.uniforms.flow.value};await new Promise(r=>setTimeout(r,700));return {saved:el.timecube.fixed,data:c.data.fixed,a,b:{cut:c.cut,sx:m.scale.x,sh:c.mat.uniforms.shift.value.x}};},id);
+assert.equal(fx.saved,true,'fixed size saved');assert.equal(fx.data,true,'box rebuilt as fixed size');
+assert.ok(fx.a.cut===0&&fx.b.cut===0&&Math.abs(fx.a.sx-fx.b.sx)<1e-9&&fx.a.flow===1,'the box keeps its whole size: '+JSON.stringify(fx));
+assert.ok(Math.abs(fx.b.sh-fx.a.sh)>0.02,'the clip flows through it (left: along x): '+JSON.stringify(fx));
 // export/import round trip and the AR build
-const rt=await p.evaluate(async id=>{const r=await Studio.load(id);const text=await Studio.exportJSON(r);const back=await Studio.importJSON(text,{save:false});const el=back.elements.find(e=>e.type==='timecube');const e=Studio.buildElementEntity(back,el,0,'ar');const a=e&&(e.getDOMAttribute('time-cube')||e.getAttribute('time-cube'));return {ok:!!el,attr:a&&typeof a==='object'?{frames:a.frames,src:!!a.src}:a};},id);
-assert.ok(rt.ok&&rt.attr&&rt.attr.frames>=24&&rt.attr.src,'export/import keeps the time cube and AR builds it: '+JSON.stringify(rt));
+const rt=await p.evaluate(async id=>{const r=await Studio.load(id);const text=await Studio.exportJSON(r);const back=await Studio.importJSON(text,{save:false});const el=back.elements.find(e=>e.type==='timecube');const e=Studio.buildElementEntity(back,el,0,'ar');const a=e&&(e.getDOMAttribute('time-cube')||e.getAttribute('time-cube'));return {ok:!!el,attr:a&&typeof a==='object'?{frames:a.frames,src:!!a.src,fixed:a.fixed}:a};},id);
+assert.ok(rt.ok&&rt.attr&&rt.attr.frames>=24&&rt.attr.src&&rt.attr.fixed===true,'export/import keeps the time cube and AR builds it: '+JSON.stringify(rt));
 assert.deepEqual(pageErrors,[],'no page errors');
-console.log('PASS timecube: baked to a JPEG atlas on import, drawn as a box whose cut moves through time, options rebuild it, export/import and AR build');
+console.log('PASS timecube: baked to a JPEG atlas on import, drawn as a box whose cut moves through time, options rebuild it, fixed size keeps it whole, export/import and AR build');
 }finally{await b.close();server.close();}})().catch(e=>{console.error(e&&e.stack||e);process.exit(1)});

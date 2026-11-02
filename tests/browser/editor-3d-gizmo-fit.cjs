@@ -27,13 +27,14 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
  // 2. view-only: no element data changed by the rescale
  const s1=await state();
  for(const k of ['x','y','rot','rotX','rotY','w']) assert.deepStrictEqual(s1.big[k],s0.big[k],'big.'+k+' unchanged');
- // 3. zoom in (wheel): heads stay in view, scale adapts
- await p.evaluate(()=>{const sc=Editor3D._test.scene();sc.canvas.dispatchEvent(new WheelEvent('wheel',{deltaY:-500,bubbles:true,cancelable:true}));});await p.waitForTimeout(300);
+ // 3. zoom in: heads stay in view, scale adapts
+ // (the camera itself: a wheel over the selected full-frame plane would resize it - editor-mouse-wheel covers the wheel)
+ await p.evaluate(()=>{Editor3D._test.scene().camera.el.setAttribute('position','0 0 0.65');});await p.waitForTimeout(300);
  const sc2=await p.evaluate(()=>Editor3D._test.gizmo().scale.x);
  for(let i=0;i<3;i++) inView(await tipOf(i),'zoomed arrow'+i);
  assert.ok(sc2<sc1,'zoom-in shrinks world size further: '+sc1+' -> '+sc2);
  // 4. small sticker: handles stay grabbable (scale grows, clamped), heads in view
- await p.evaluate(()=>{const sc=Editor3D._test.scene();sc.canvas.dispatchEvent(new WheelEvent('wheel',{deltaY:500,bubbles:true,cancelable:true}));});await p.waitForTimeout(200);
+ await p.evaluate(()=>{Editor3D._test.scene().camera.el.setAttribute('position','0 0 1.15');});await p.waitForTimeout(200);
  await selectEl('SMALL');
  const sc3=await p.evaluate(()=>Editor3D._test.gizmo().scale.x);
  assert.ok(sc3>1&&sc3<=1.6,'small element: gizmo enlarged within clamp, scale='+sc3);
