@@ -113,6 +113,11 @@
       <div id="row-text">
         <label>תוכן הטקסט <textarea id="in-text" rows="2"></textarea></label>
         <div class="row">
+          <label class="inline">סגנון <select id="sel-text-style"><option value="">רגיל</option><option value="cut">אותיות גזורות</option></select></label>
+          <button type="button" id="btn-cut-shuffle" class="ghost small" hidden>ערבוב</button>
+        </div>
+        <div class="row" id="row-text-look">
+          <label class="inline">גופן <select id="sel-font"></select></label>
           <label class="inline">צבע <input type="color" id="in-color" value="#ffffff"></label>
           <label class="check"><input type="checkbox" id="ck-bold" checked> מודגש</label>
         </div>

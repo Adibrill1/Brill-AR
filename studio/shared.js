@@ -642,13 +642,134 @@ const Studio = (() => {
   }
   const ANIMS = ["none", "spin", "float", "pulse"];
 
+  // ---------- text fonts ----------
+  // Hebrew fonts a text layer can use (SIL Open Font License 1.1, from Google Fonts; files and licences in fonts/,
+  // see fonts/README.md): [id, Hebrew name, [[file stem, weight or weight range]...]]. Each stem is two files, the
+  // Hebrew letters and the Latin ones (digits, English, punctuation). They are registered under their own family names
+  // ("BA <id>"), so a font installed on the device never stands in, and a file is fetched only when a layer's text
+  // needs it. Single-weight fonts claim 400-700 so bold text uses the drawn face instead of a smeared fake bold.
+  const FONTS = [
+    ["heebo", "היבו", [["heebo", "400 800"]]], ["rubik", "רוביק", [["rubik", "400 800"]]],
+    ["frank", "פרנק רוהל", [["frank", "400 900"]]], ["david", "דוד", [["david-400", "400"], ["david-700", "700"]]],
+    ["secular", "סקולר", [["secular", "400 700"]]], ["suez", "סואץ", [["suez", "400 700"]]],
+    ["karantina", "קרנטינה", [["karantina-400", "400"], ["karantina-700", "700"]]],
+    ["amatic", "אמטיק", [["amatic-400", "400"], ["amatic-700", "700"]]], ["playpen", "פלייפן", [["playpen", "400 800"]]],
+    ["solitreo", "סוליטריאו", [["solitreo", "400 700"]]], ["bellefair", "בלפייר", [["bellefair", "400 700"]]]
+  ];
+  const FONT_IDS = new Set(FONTS.map((f) => f[0]));
+  const FONT_RANGES = { hebrew: "U+0307-0308, U+0590-05FF, U+200C-2010, U+20AA, U+25CC, U+FB1D-FB4F",
+    latin: "U+0000-00FF, U+0131, U+0152-0153, U+02BB-02BC, U+02C6, U+02DA, U+02DC, U+0304, U+0308, U+0329, U+2000-206F, U+20AC, U+2122, U+2191, U+2193, U+2212, U+2215, U+FEFF, U+FFFD" };
+  const FONT_BASE = new URL("fonts/", (document.currentScript && document.currentScript.src) || location.href).href;
+  const DEVICE_FONT = '-apple-system, "Segoe UI", Arial, sans-serif';
+  const CUT_FONTS = ["heebo", "rubik", "frank", "david", "secular", "suez", "karantina", "amatic", "bellefair"]; // mixed by the cut-letters style (not the big Playpen files)
+  let fontsAdded = false;
+  function addFonts() {
+    if (fontsAdded || typeof FontFace === "undefined" || !document.fonts) return;
+    fontsAdded = true;
+    for (const [id, , faces] of FONTS) for (const [stem, weight] of faces) for (const sub of ["hebrew", "latin"])
+      document.fonts.add(new FontFace("BA " + id, "url(" + FONT_BASE + stem + "-" + sub + ".woff2) format('woff2')", { weight, unicodeRange: FONT_RANGES[sub] }));
+  }
+  function fontStack(id) { return (FONT_IDS.has(id) ? '"BA ' + id + '", ' : "") + DEVICE_FONT; }
+  // Resolves once the fonts a text layer's text needs have loaded (or failed to): true when one arrived just now, so
+  // whatever was drawn before with the device font should be drawn (and measured) again.
+  function loadTextFonts(el) {
+    addFonts();
+    const cut = el.textStyle === "cut", ids = cut ? CUT_FONTS : FONT_IDS.has(el.font) ? [el.font] : [];
+    const text = String(el.text || "") || "א"; // spaces too: they come from the Latin file, and the canvas fetches it for them
+    if (!ids.length || !document.fonts) return Promise.resolve(false);
+    const need = ids.flatMap((id) => (cut ? ["400", "700"] : [el.bold ? "700" : "400"]).map((w) => w + " 32px " + fontStack(id)))
+      .filter((f) => { try { return !document.fonts.check(f, text); } catch (e) { return false; } });
+    if (!need.length) return Promise.resolve(false);
+    return Promise.all(need.map((f) => document.fonts.load(f, text).catch(() => []))).then((got) => got.some((faces) => faces.length > 0));
+  }
+
+  // "Cut letters": every letter on its own scrap of paper, as if cut from a different newspaper or magazine, with its
+  // own font, size, paper and ink, a slight tilt and uneven edges. The look comes from the layer id and el.cutSeed (the
+  // panel's shuffle button changes the seed), so it is the same on every device and every redraw.
+  const CUT_PAPERS = [["#f4f1e8", "#111111"], ["#f4f1e8", "#c8102e"], ["#efe3c2", "#1a1a1a"], ["#c9a66b", "#1a1a1a"], ["#161616", "#ffffff"],
+    ["#161616", "#f5c518"], ["#d7262e", "#ffffff"], ["#f5c518", "#111111"], ["#1f5fbf", "#ffffff"], ["#f08bb1", "#161616"],
+    ["#3d9a5b", "#ffffff"], ["#ffffff", "#1f5fbf"], ["#2bb3b1", "#111111"], ["#e8e8e8", "#7a1fa2"]];
+  function seededRandom(str) { // FNV-1a of the string, then mulberry32
+    let h = 2166136261;
+    for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return () => { h = (h + 0x6D2B79F5) | 0; let t = Math.imul(h ^ (h >>> 15), h | 1); t ^= t + Math.imul(t ^ (t >>> 7), t | 61); return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+  }
+  // The letters of one line in the order they stand from left to right: Hebrew right to left, with Latin words and
+  // numbers left to right inside it (enough of the Unicode bidi rules for a title); brackets in Hebrew are mirrored.
+  const MIRRORED = { "(": ")", ")": "(", "[": "]", "]": "[", "{": "}", "}": "{", "<": ">", ">": "<" };
+  function visualLetters(line) {
+    const chars = typeof Intl !== "undefined" && Intl.Segmenter ? Array.from(new Intl.Segmenter("he", { granularity: "grapheme" }).segment(line), (s) => s.segment) : Array.from(line);
+    const kind = chars.map((ch) => /[\u0590-\u05FF\uFB1D-\uFB4F]/.test(ch) ? "R" : /[\p{L}\p{N}]/u.test(ch) ? "L" : "N");
+    const base = kind.find((k) => k !== "N") || "R";
+    const near = (i, step) => { for (let j = i + step; j >= 0 && j < kind.length; j += step) if (kind[j] !== "N") return kind[j]; return null; };
+    // a bracket pair goes with what it holds: the line's direction if that is inside, else the other one when the
+    // text before it runs that way too ("AR (2026)" in a Hebrew line keeps its brackets with the English)
+    const open = [];
+    chars.forEach((ch, i) => {
+      if ("([{".includes(ch)) open.push(i);
+      else if (")]}".includes(ch) && open.length && "([{".indexOf(chars[open[open.length - 1]]) === ")]}".indexOf(ch)) {
+        const o = open.pop(), inside = kind.slice(o + 1, i), other = base === "R" ? "L" : "R";
+        const d = inside.includes(base) ? base : inside.includes(other) ? ((near(o, -1) || base) === other ? other : base) : null;
+        if (d) kind[o] = kind[i] = d;
+      }
+    });
+    const runs = [];
+    kind.forEach((k, i) => {
+      const d = k !== "N" ? k : near(i, -1) && near(i, -1) === near(i, 1) ? near(i, 1) : base; // a space or mark between two letters of one direction joins them
+      const last = runs[runs.length - 1];
+      if (last && last.d === d) last.c.push(chars[i]); else runs.push({ d, c: [chars[i]] });
+    });
+    if (base === "R") runs.reverse();
+    return runs.flatMap((r) => r.d === "R" ? r.c.slice().reverse().map((ch) => MIRRORED[ch] || ch) : r.c);
+  }
+  function drawCutLetters(el, fontPx) {
+    const rnd = seededRandom(String(el.id || "") + ":" + (Math.floor(el.cutSeed) || 0));
+    const m = document.createElement("canvas").getContext("2d");
+    const lines = String(el.text || "").split("\n").map((line) => visualLetters(line).map((ch) => {
+      if (!ch.trim()) return { space: true, w: fontPx * 0.32 };
+      const size = Math.round(fontPx * (0.82 + rnd() * 0.36)), id = CUT_FONTS[Math.floor(rnd() * CUT_FONTS.length)];
+      const font = (rnd() < 0.6 ? "700" : "400") + " " + size + "px " + fontStack(id);
+      m.font = font;
+      const mt = m.measureText(ch), asc = mt.actualBoundingBoxAscent || size * 0.72, desc = mt.actualBoundingBoxDescent || 0;
+      const left = mt.actualBoundingBoxLeft || 0, right = mt.actualBoundingBoxRight || mt.width;
+      const gw = Math.max(left + right, size * 0.3), gh = Math.max(asc + desc, size * 0.5);
+      const padX = size * (0.1 + rnd() * 0.1), padY = size * (0.08 + rnd() * 0.1), [paper, ink] = CUT_PAPERS[Math.floor(rnd() * CUT_PAPERS.length)];
+      return { ch, font, left, right, asc, desc, paper, ink, w: gw + padX * 2, h: gh + padY * 2, rot: (rnd() - 0.5) * 0.24, dy: (rnd() - 0.5) * size * 0.14,
+        corners: Array.from({ length: 8 }, () => (rnd() - 0.5) * size * 0.12) };
+    }));
+    const gap = fontPx * 0.05, lineH = fontPx * 1.5, pad = Math.round(fontPx * 0.4);
+    const widths = lines.map((l) => l.reduce((s, p, i) => s + p.w + (i ? gap : 0), 0));
+    const c = document.createElement("canvas"), ctx = c.getContext("2d");
+    c.width = Math.ceil(Math.max(1, ...widths) + pad * 2);
+    c.height = Math.ceil(lines.length * lineH + pad * 2);
+    lines.forEach((l, li) => {
+      let x = (c.width - widths[li]) / 2;
+      const cy = pad + lineH * (li + 0.5);
+      for (const p of l) {
+        if (!p.space) {
+          const hw = p.w / 2, hh = p.h / 2, k = p.corners;
+          ctx.save(); ctx.translate(x + hw, cy + p.dy); ctx.rotate(p.rot);
+          ctx.beginPath(); ctx.moveTo(-hw + k[0], -hh + k[1]); ctx.lineTo(hw + k[2], -hh + k[3]); ctx.lineTo(hw + k[4], hh + k[5]); ctx.lineTo(-hw + k[6], hh + k[7]); ctx.closePath();
+          ctx.shadowColor = "rgba(0,0,0,0.35)"; ctx.shadowBlur = fontPx * 0.06; ctx.shadowOffsetY = fontPx * 0.03;
+          ctx.fillStyle = p.paper; ctx.fill();
+          ctx.shadowColor = "transparent"; ctx.font = p.font; ctx.fillStyle = p.ink; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+          ctx.fillText(p.ch, (p.left - p.right) / 2, (p.asc - p.desc) / 2); // the letter's inked box centred on its scrap
+          ctx.restore();
+        }
+        x += p.w + gap;
+      }
+    });
+    return { canvas: c, aspect: c.width / c.height };
+  }
+
   // Draw a text element to an offscreen canvas (used by editor panel preview and player texture).
   // fontPx: reference font size in canvas pixels. Returns {canvas, aspect}.
   function drawTextCanvas(el, fontPx) {
+    if (el.textStyle === "cut") return drawCutLetters(el, fontPx);
     const c = document.createElement("canvas");
     const ctx = c.getContext("2d");
     const weight = el.bold ? "700" : "400";
-    const font = weight + " " + fontPx + 'px -apple-system, "Segoe UI", Arial, sans-serif';
+    const font = weight + " " + fontPx + "px " + fontStack(el.font);
     ctx.font = font;
     const lines = String(el.text || "").split("\n");
     const wMax = Math.max(1, ...lines.map((l) => ctx.measureText(l).width));
@@ -808,10 +929,14 @@ const Studio = (() => {
         width: ts.w, height: ts.h, depth: ts.w * (tc.depth || 0.75), dir: tc.dir || "front", edges: tc.edges !== false, fixed: tc.fixed === true, period: tc.dur });
     } else if (el.type === "text") {
       e = document.createElement("a-plane");
-      const tb = drawTextCanvas(el, 128);
-      const tts = toTargetSpace(rec, el, tb.aspect); // plane must match the canvas aspect or glyphs distort
-      e.setAttribute("material", { src: tb.canvas.toDataURL("image/png"), transparent: true, alphaTest: 0.001, shader: "flat" });
-      e.setAttribute("width", tts.w); e.setAttribute("height", tts.h);
+      const paint = () => {
+        const tb = drawTextCanvas(el, 128);
+        const tts = toTargetSpace(rec, el, tb.aspect); // plane must match the canvas aspect or glyphs distort
+        e.setAttribute("material", { src: tb.canvas.toDataURL("image/png"), transparent: true, alphaTest: 0.001, shader: "flat" });
+        e.setAttribute("width", tts.w); e.setAttribute("height", tts.h);
+      };
+      paint();
+      loadTextFonts(el).then((fresh) => { if (fresh) paint(); }); // the first look may use the device font until the layer's fonts arrive
     } else if (el.type === "sound" && el.spatial) {
       e = document.createElement("a-entity"); // invisible carrier for PositionalAudio
     } else {
@@ -1783,7 +1908,7 @@ const Studio = (() => {
   }
 
   return { TARGET_W, TARGET_H, newId, inspectVideo, validateModelBlob, prepareModelBlob, modelCompressionKinds, DECODER_DRACO_PATH, DECODER_MESHOPT_PATH, modelClipNames, modelClipInfo, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
-           audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, blobURL, releaseBlobURL, blobURLs, historyState, restoreHistory, duplicateLayer, exportJSON, missingAssets, importJSON, exportZIP, importZIP, zipToJSON, fetchPublished, ownBlob, assetHealth, fileHealth, seedDemo, normEl, ANIMS, drawTextCanvas, buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, ensureTimeCubeComponent, bakeTimeCube, validTimeCube, TIMECUBE_DIRS, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, artworkFingerprint, fingerprintDistance, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
+           audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, blobURL, releaseBlobURL, blobURLs, historyState, restoreHistory, duplicateLayer, exportJSON, missingAssets, importJSON, exportZIP, importZIP, zipToJSON, fetchPublished, ownBlob, assetHealth, fileHealth, seedDemo, normEl, ANIMS, drawTextCanvas, loadTextFonts, FONTS: FONTS.map(([id, name]) => ({ id, name })), buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, ensureTimeCubeComponent, bakeTimeCube, validTimeCube, TIMECUBE_DIRS, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, artworkFingerprint, fingerprintDistance, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
            load: id=>settledRead(id), all: ()=>settledRead(), del: delExperience, LIMITS, mediaBytes, pushBack, addBlocker, publishBlocker, restoreBlocker, exportWarning, exportJSONSize,
            onSaveState, installSaveGuard, saveState, soundOnTouch, snapAngle, syncMedia,
            _testHoldSave:p=>{saveHold=p;}, _testFailSave:m=>{failSave=m;}, _testFailPut:o=>{failPut=o?{...o}:null;} };

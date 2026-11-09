@@ -490,12 +490,30 @@
   }
 
   function textBitmap(el) {
-    const key = JSON.stringify([el.text, el.color, el.bold]);
+    const key = JSON.stringify([el.text, el.color, el.bold, el.font, el.textStyle, el.cutSeed]);
     const c = textCache[el.id];
     if (c && c.key === key) return c;
     const out = Studio.drawTextCanvas(el, 64);
     textCache[el.id] = { key, canvas: out.canvas, aspect: out.aspect };
+    Studio.loadTextFonts(el).then((fresh) => { if (fresh) textFontsArrived(el); }); // drawn with the device font until its fonts arrive
     return textCache[el.id];
+  }
+  // A text layer's height follows its drawn text, so it is measured again after every change to the words or the look.
+  function fitText(el) {
+    const tb = textBitmap(el);
+    el.aspect = tb.aspect;
+    el.h = (el.w / el.aspect) * (rec.target.artRect.w / rec.target.artRect.h);
+  }
+  // Its fonts arrived after it was drawn (and maybe measured) with the device font: draw it again, and keep the new
+  // height without a new undo step.
+  function textFontsArrived(el) {
+    delete textCache[el.id];
+    if (rec && rec.elements.includes(el) && el.h != null) {
+      const before = el.aspect;
+      fitText(el);
+      if (!(Math.abs(el.aspect - before) <= before * 0.005)) saveGuarded(rec, { noHistory: true });
+    }
+    draw();
   }
 
   // Name of another creation whose recognition target is the same as / too similar to fp (distance <= 16 of 256 bits), else null.
@@ -1254,14 +1272,13 @@
     $("ck-model-playing").onchange=e=>upd(el=>{el.modelPlaying=e.target.checked;});
     $("ck-model-loop").onchange=e=>upd(el=>{el.modelLoop=e.target.checked;});
     // text controls
-    $("in-text").oninput = (e) => upd((el) => {
-      el.text = e.target.value;
-      const tb = textBitmap(el);
-      el.aspect = tb.aspect;
-      el.h = (el.w / el.aspect) * (rec.target.artRect.w / rec.target.artRect.h);
-    });
+    $("in-text").oninput = (e) => upd((el) => { el.text = e.target.value; fitText(el); });
     $("in-color").oninput = (e) => upd((el) => { el.color = e.target.value; });
-    $("ck-bold").onchange = (e) => upd((el) => { el.bold = e.target.checked; });
+    $("ck-bold").onchange = (e) => upd((el) => { el.bold = e.target.checked; fitText(el); });
+    $("sel-font").replaceChildren(...[["", "גופן המכשיר"], ...Studio.FONTS.map((f) => [f.id, f.name])].map(([v, t]) => { const o = document.createElement("option"); o.value = v; o.textContent = t; return o; }));
+    $("sel-font").onchange = (e) => upd((el) => { if (e.target.value) el.font = e.target.value; else delete el.font; fitText(el); });
+    $("sel-text-style").onchange = (e) => upd((el) => { if (e.target.value === "cut") el.textStyle = "cut"; else delete el.textStyle; fitText(el); });
+    $("btn-cut-shuffle").onclick = () => upd((el) => { el.cutSeed = ((Math.floor(el.cutSeed) || 0) + 1) % 1e6; fitText(el); });
 
     bindCanvas();
   }
@@ -1488,6 +1505,11 @@
       if (document.activeElement !== $("in-text")) $("in-text").value = el.text || "";
       $("in-color").value = el.color || "#ffffff";
       $("ck-bold").checked = el.bold !== false;
+      const cut = el.textStyle === "cut"; // the cut letters choose their own fonts and colours
+      $("sel-text-style").value = cut ? "cut" : "";
+      $("btn-cut-shuffle").hidden = !cut;
+      $("row-text-look").hidden = cut;
+      $("sel-font").value = Studio.FONTS.some((f) => f.id === el.font) ? el.font : "";
     }
     $("num-x").value = (Math.round(((sv ? sv.x : el.x) || 0) * 100) / 100).toFixed(2);
     $("num-y").value = (Math.round(((sv ? sv.y : el.y) || 0) * 100) / 100).toFixed(2);
