@@ -572,6 +572,239 @@ vec4 baFilter(vec2 uv) {
     return c;
   }
 
+  // ---------- pattern layers ----------
+  // A pattern layer is a background or a repeating pattern drawn in code, with no file: el.pattern holds the look,
+  // three colours, size (0-1, bigger motifs), speed (0 = still), a seed for the random looks and a shape. One GLSL
+  // function, bpPattern(uv), paints it: in the 3D/AR plane (studio-pattern patches the plane's own flat material, so
+  // opacity, fades and timelines keep working) and in the 2D editor (patternFrame, plain WebGL). p is in square units
+  // where the height is 1. Our own takes on the classic looks, written here: [id, Hebrew name, colours, start speed].
+  const PATTERNS = [
+    ["liquid", "גרדיאנט נוזלי", ["#ff6b9a", "#7b5cff", "#ffd36e"], 0.35], ["soft", "גרדיאנט רך", ["#ffe3d3", "#ff7a59", "#6d5dfc"], 0.35],
+    ["lights", "אורות רכים", ["#1a1033", "#ffcf6b", "#ff6fb1"], 0.35], ["waves", "גלים", ["#0b3d91", "#2fa4d8", "#bfeaf5"], 0.35],
+    ["rays", "קרני שמש", ["#ffcc33", "#ff9e3d", "#fff3c4"], 0.35], ["topo", "קווי גובה", ["#f4efe6", "#5b5560", "#e4572e"], 0.2],
+    ["marble", "שיש", ["#f5f2ec", "#8c8a93", "#c9a86a"], 0], ["dots", "נקודות", ["#fff4e0", "#ff5a5f", "#2ec4b6"], 0],
+    ["stripes", "פסים", ["#fdf0d5", "#c1121f", "#003049"], 0], ["gingham", "משבצות פיקניק", ["#ffffff", "#f7b2bd", "#e05a70"], 0],
+    ["zigzag", "זיגזג", ["#264653", "#e9c46a", "#f4a261"], 0], ["scales", "גלים יפניים", ["#f1faee", "#457b9d", "#1d3557"], 0],
+    ["hex", "חלת דבש", ["#5a3a0c", "#f6b93b", "#fad390"], 0], ["arcs", "קשתות", ["#fdfcdc", "#0081a7", "#f07167"], 0],
+    ["hearts", "לבבות", ["#ffe5ec", "#ff4d6d", "#c9184a"], 0], ["terrazzo", "טרצו", ["#f2ece4", "#e07a5f", "#3d405b"], 0]
+  ];
+  const PATTERN_IDS = PATTERNS.map((p) => p[0]);
+  // Ready colour sets for any look: [Hebrew name, colours]
+  const PATTERN_PALETTES = [
+    ["שקיעה", ["#ff6b6b", "#ffd166", "#6a4c93"]], ["ים", ["#0b3d91", "#2fa4d8", "#bfeaf5"]], ["פסטל", ["#ffd6e0", "#c1e7e3", "#fff1b6"]],
+    ["יער", ["#1b4332", "#52b788", "#d8f3dc"]], ["לילה וניאון", ["#120458", "#ff00a0", "#00f0ff"]], ["שחור וזהב", ["#111111", "#d4af37", "#f5e6c4"]],
+    ["אדמה", ["#8d5524", "#e0ac69", "#f6e7d7"]], ["שחור ולבן", ["#111111", "#f5f5f5", "#9e9e9e"]]
+  ];
+  // Shapes: the plane's proportions (art: the artwork's own) and the mask the shader cuts
+  const PATTERN_SHAPES = [["art", "כמו תמונת המקור", 0, 0], ["square", "ריבוע", 1, 0], ["circle", "עיגול", 1, 1], ["arch", "קשת", 0.75, 2], ["pill", "פס מעוגל", 3.5, 3]];
+  const PATTERN_GLSL = `
+uniform float bpMode; uniform vec3 bpC1; uniform vec3 bpC2; uniform vec3 bpC3; uniform float bpSize; uniform float bpTime;
+uniform float bpSeed; uniform float bpAspect; uniform float bpShape; uniform float bpPx;
+float bpHash(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031 + bpSeed * 0.0137); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
+vec2 bpHash2(vec2 p) { return vec2(bpHash(p), bpHash(p + 17.31)); }
+float bpNoise(vec2 p) { // gradient noise, about 0..1
+  vec2 i = floor(p), f = fract(p), u = f * f * (3.0 - 2.0 * f);
+  float a = dot(bpHash2(i) * 2.0 - 1.0, f), b = dot(bpHash2(i + vec2(1.0, 0.0)) * 2.0 - 1.0, f - vec2(1.0, 0.0));
+  float c = dot(bpHash2(i + vec2(0.0, 1.0)) * 2.0 - 1.0, f - vec2(0.0, 1.0)), d = dot(bpHash2(i + 1.0) * 2.0 - 1.0, f - 1.0);
+  return 0.5 + mix(mix(a, b, u.x), mix(c, d, u.x), u.y);
+}
+float bpFbm(vec2 p) { float s = 0.0, a = 0.5; for (int i = 0; i < 4; i++) { s += a * bpNoise(p); p = mat2(1.6, 1.2, -1.2, 1.6) * p + 3.7; a *= 0.5; } return s / 0.9375; }
+vec3 bpPick(float i) { i = mod(i, 3.0); return i < 0.5 ? bpC1 : (i < 1.5 ? bpC2 : bpC3); }
+vec3 bpRamp(float x) { x = clamp(x, 0.0, 1.0); return x < 0.5 ? mix(bpC1, bpC2, x * 2.0) : mix(bpC2, bpC3, x * 2.0 - 1.0); }
+vec3 bpBands(float y, float aa) { float i = floor(y); return mix(bpPick(i - 1.0), bpPick(i), smoothstep(0.0, aa, fract(y))); }
+float bpIn(float d, float aa) { return 1.0 - smoothstep(-aa, aa, d); } // 1 inside a shape whose distance d is below 0
+float bpHeart(vec2 p) { // a square turned on its corner with a circle on each upper side
+  p.x = abs(p.x); p.y += 0.06;
+  vec2 q = mat2(0.7071, 0.7071, -0.7071, 0.7071) * (p - vec2(0.0, -0.1));
+  return min(max(abs(q.x), abs(q.y)) - 0.25, length(p - vec2(0.177, 0.077)) - 0.25);
+}
+vec4 bpLinear(vec4 c) { return vec4(mix(c.rgb / 12.92, pow((c.rgb + 0.055) / 1.055, vec3(2.4)), step(0.04045, c.rgb)), c.a); }
+vec4 bpPattern(vec2 uv) {
+  vec2 p = (uv - 0.5) * vec2(bpAspect, 1.0);
+  float t = bpTime, z = clamp(bpSize, 0.0, 1.0);
+  vec3 col = bpC1;
+  if (bpMode < 1.5) { // liquid gradient: the three colours folded into each other by slow, warped noise
+    vec2 q = p * mix(1.5, 0.5, z) + bpSeed * 1.7;
+    vec2 w = vec2(bpNoise(q + vec2(0.0, t * 0.12)), bpNoise(q * 1.3 + vec2(5.2, 1.3) - t * 0.1));
+    col = bpRamp(smoothstep(0.2, 0.8, bpNoise(q * 0.8 + 2.2 * w + vec2(t * 0.05, 0.0))));
+  } else if (bpMode < 2.5) { // soft gradient: two pools of colour drifting over the first, with a fine grain
+    float k = mix(7.0, 1.4, z);
+    vec2 a = vec2(0.3 * bpAspect * cos(t * 0.5 + bpSeed), 0.28 * sin(t * 0.4 + 1.0 + bpSeed));
+    vec2 b = vec2(0.3 * bpAspect * cos(t * 0.37 + 2.6 + bpSeed), 0.28 * sin(t * 0.45 + 4.0));
+    col = mix(col, bpC2, exp(-dot(p - a, p - a) * k));
+    col = mix(col, bpC3, exp(-dot(p - b, p - b) * k));
+    col += (bpHash(floor(uv * vec2(bpAspect, 1.0) * 500.0)) - 0.5) * 0.08;
+  } else if (bpMode < 3.5) { // soft lights rising slowly over a dark ground, three layers deep
+    col = bpC1 * (0.7 + 0.4 * uv.y);
+    for (int i = 0; i < 3; i++) {
+      float l = float(i), n = mix(6.0, 2.0, z) * (1.0 + l * 0.6);
+      vec2 q = p * n + vec2(l * 7.1, -t * (0.3 + 0.15 * l)), id = floor(q), h = bpHash2(id + l * 13.0);
+      float r = 0.16 + 0.12 * bpHash(id + 3.7 + l), d = length(fract(q) - 0.5 - (h - 0.5) * 0.4);
+      float light = step(0.45, bpHash(id + 9.1 + l)) * (smoothstep(r, r * 0.6, d) * 0.75 + smoothstep(r, r * 0.92, d) * 0.25);
+      col += mix(bpC2, bpC3, step(0.5, h.y)) * light * (0.6 - l * 0.15);
+    }
+  } else if (bpMode < 4.5) { // waves: bands of the three colours rolling sideways
+    float n = mix(9.0, 2.2, z);
+    float y = p.y * n + 0.45 * sin(p.x * 2.4 + t * 0.9 + bpSeed) + 0.2 * sin(p.x * 5.3 - t * 1.3);
+    col = bpBands(y, bpPx * n * 2.0) * (0.9 + 0.1 * smoothstep(0.0, 0.35, fract(y)));
+  } else if (bpMode < 5.5) { // sun rays turning slowly around a warm middle
+    float n = floor(mix(16.0, 5.0, z) + 0.5) * 2.0, r = length(p), k = (atan(p.y, p.x) / 6.28318 + t * 0.02) * n;
+    float aa = 3.14159 * bpPx * n / (6.28318 * max(r, 0.02));
+    col = mix(bpC1, bpC2, smoothstep(-aa, aa, sin(k * 3.14159)));
+    col = mix(col, bpC3, smoothstep(0.3, 0.0, r));
+  } else if (bpMode < 6.5) { // contour lines, like a map of hills; every fifth one in the third colour
+    vec2 q = p * mix(2.6, 0.8, z) + vec2(t * 0.05, bpSeed * 1.3);
+    float h = (bpNoise(q) * 0.7 + bpNoise(q * 2.3 + 4.1) * 0.3) * 16.0;
+    float d = abs(fract(h + 0.5) - 0.5), major = 1.0 - step(0.5, mod(floor(h + 0.5), 5.0));
+    col = mix(bpC1, mix(bpC2, bpC3, major), 1.0 - smoothstep(0.05 + major * 0.04, 0.11 + major * 0.04, d));
+  } else if (bpMode < 7.5) { // marble: soft clouds, veins of the second colour and a thin vein of the third
+    vec2 q = p * mix(2.0, 0.7, z) + bpSeed * 2.3;
+    float v = abs(sin((q.x * 0.9 + q.y * 0.4) * 4.5 + bpFbm(q * 1.5 + vec2(t * 0.03, 0.0)) * 14.0));
+    float v2 = abs(sin((q.x * 0.3 - q.y * 0.8) * 2.5 + bpFbm(q * 1.1 + 7.0 - t * 0.02) * 10.0));
+    col = bpC1 * (0.93 + 0.1 * bpFbm(q * 3.0 + 2.0));
+    col = mix(col, bpC2, (1.0 - smoothstep(0.0, 0.18, v)) * 0.55 + (1.0 - smoothstep(0.0, 0.03, v)) * 0.35);
+    col = mix(col, bpC3, (1.0 - smoothstep(0.0, 0.06, v2)) * 0.9);
+  } else { // the repeating patterns, drifting slowly on a slant when there is movement
+    float n = mix(14.0, 2.6, z), aa = bpPx * n * 1.5;
+    vec2 q = p * n + t * vec2(0.5, 0.3);
+    if (bpMode < 8.5) { // dots on offset rows, the rows taking turns between two colours
+      float row = floor(q.y); vec2 g = fract(vec2(q.x + mod(row, 2.0) * 0.5, q.y)) - 0.5;
+      col = mix(bpC1, mod(row, 2.0) < 0.5 ? bpC2 : bpC3, bpIn(length(g) - 0.28, aa));
+    } else if (bpMode < 9.5) { // stripes on a slant
+      col = bpBands((q.x + q.y) * 0.7071, aa);
+    } else if (bpMode < 10.5) { // gingham: crossing bands, the third colour where they cross
+      vec2 f = fract(q), s = smoothstep(0.0, aa, f) - smoothstep(0.5, 0.5 + aa, f);
+      col = mix(mix(bpC1, bpC2, max(s.x, s.y)), bpC3, s.x * s.y);
+    } else if (bpMode < 11.5) { // zigzag
+      col = bpBands(q.y + abs(fract(q.x) - 0.5) * 1.2, aa * 1.6);
+    } else if (bpMode < 12.5) { // fish scales of rings, each row lying over the one above it (tried from the lowest)
+      vec2 s = q * 0.5; // scales twice the size of the other motifs
+      float j = floor(s.y * 4.0), found = 0.0, ring = 0.0;
+      for (int k = 0; k < 4; k++) {
+        float row = j + float(k) - 1.0, off = mod(row, 2.0) * 0.5;
+        float d = length(s - vec2(floor(s.x - off + 0.5) + off, row * 0.25));
+        if (d < 0.5 && found < 0.5) { found = 1.0; ring = d * 8.0; }
+      }
+      col = mix(mod(floor(ring), 2.0) < 0.5 ? bpC2 : bpC3, bpC1, 1.0 - smoothstep(0.1, 0.1 + aa * 4.0, fract(ring)));
+    } else if (bpMode < 13.5) { // honeycomb, a few cells in the third colour
+      vec2 r = vec2(1.0, 1.7320508), a = mod(q, r) - r * 0.5, b = mod(q - r * 0.5, r) - r * 0.5;
+      vec2 g = dot(a, a) < dot(b, b) ? a : b, ag = abs(g);
+      float d = 0.5 - max(dot(ag, vec2(0.5, 0.8660254)), ag.x);
+      vec3 fill = (bpHash(floor((q - g) * 2.0 + 0.5)) < 0.75 ? bpC2 : bpC3) * (0.9 + 0.15 * smoothstep(0.0, 0.45, d));
+      col = mix(bpC1, fill, smoothstep(0.04, 0.04 + aa, d));
+    } else if (bpMode < 14.5) { // arcs: quarter circles turned at random, a thick band with a thin line inside
+      vec2 id = floor(q), g = fract(q) - 0.5;
+      if (bpHash(id) < 0.5) g.x = -g.x;
+      float d = min(abs(length(g - 0.5) - 0.5), abs(length(g + 0.5) - 0.5));
+      col = mix(bpC1, bpC2, bpIn(d - 0.15, aa));
+      col = mix(col, bpC3, bpIn(d - 0.035, aa));
+    } else if (bpMode < 15.5) { // hearts on offset rows, beating gently when there is movement
+      float row = floor(q.y); vec2 g = fract(vec2(q.x + mod(row, 2.0) * 0.5, q.y)) - 0.5;
+      float beat = 1.0 + 0.08 * sin(t * 6.0 + row);
+      col = mix(bpC1, mod(row, 2.0) < 0.5 ? bpC2 : bpC3, bpIn(bpHeart(g * 1.35 / beat), aa * 1.35));
+    } else { // terrazzo: chips of two colours scattered over the first, and small specks
+      vec2 id = floor(q), g = fract(q);
+      for (int y = -1; y <= 1; y++) for (int x = -1; x <= 1; x++) {
+        vec2 o = vec2(float(x), float(y)), c = id + o, h = bpHash2(c), d = g - o - h;
+        float m = -1.0; // an uneven pentagon: the farthest of five turned edges
+        for (int e = 0; e < 5; e++) { float a = h.x * 6.28 + float(e) * 1.2566 + (bpHash(c + float(e) * 3.1) - 0.5) * 0.9; m = max(m, dot(d, vec2(cos(a), sin(a)))); }
+        float chip = step(0.3, bpHash(c + 5.3)) * bpIn(m - (0.11 + 0.2 * bpHash(c + 2.1)), aa);
+        col = mix(col, (bpHash(c + 8.8) < 0.5 ? bpC2 : bpC3) * (0.9 + 0.15 * h.y), chip);
+      }
+      vec2 sq = q * 5.0, sid = floor(sq);
+      float speck = step(0.8, bpHash(sid + 1.7)) * bpIn(length(fract(sq) - 0.5 - (bpHash2(sid + 4.4) - 0.5) * 0.5) - 0.09, aa * 5.0);
+      col = mix(col, bpHash(sid + 6.6) < 0.5 ? bpC2 : bpC3, speck);
+    }
+  }
+  float alpha = 1.0;
+  if (bpShape > 0.5) {
+    float d;
+    if (bpShape < 1.5) d = length(p) - 0.5; // circle
+    else if (bpShape < 2.5) { float r = bpAspect * 0.5; d = p.y < 0.5 - r ? max(abs(p.x) - r, -0.5 - p.y) : length(p - vec2(0.0, 0.5 - r)) - r; } // arch
+    else d = length(vec2(max(abs(p.x) - (bpAspect * 0.5 - 0.5), 0.0), p.y)) - 0.5; // pill
+    alpha = 1.0 - smoothstep(-bpPx * 1.5, 0.0, d);
+  }
+  return vec4(clamp(col, 0.0, 1.0), alpha);
+}
+`;
+  const hexRgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255);
+  function patternDefaults(look) { const d = PATTERNS.find((p) => p[0] === look) || PATTERNS[0]; return { look: d[0], colors: d[2].slice(), size: 0.5, speed: d[3], seed: 0, shape: "art" }; }
+  function patternAspect(rec, shape) { const s = PATTERN_SHAPES.find((x) => x[0] === shape); if (s && s[2]) return s[2]; const g = geom(rec); return g.artW / g.artH; }
+  function validPattern(el) {
+    const p = el.pattern;
+    if (el.type !== "pattern") return p == null;
+    return !!p && PATTERN_IDS.includes(p.look) && Array.isArray(p.colors) && p.colors.length === 3 && p.colors.every((c) => /^#[0-9a-f]{6}$/i.test(c))
+      && [p.size, p.speed].every((v) => Number.isFinite(v) && v >= 0 && v <= 1) && Number.isInteger(p.seed) && p.seed >= 0 && p.seed < 1000 && PATTERN_SHAPES.some((s) => s[0] === p.shape);
+  }
+  // Uniform values for a layer of the given proportions (width / height); px: one pixel in square units
+  function patternValues(el, aspect, px) {
+    const p = el.pattern || patternDefaults(), s = PATTERN_SHAPES.find((x) => x[0] === p.shape);
+    return { bpMode: PATTERN_IDS.indexOf(p.look) + 1 || 1, bpC1: hexRgb(p.colors[0]), bpC2: hexRgb(p.colors[1]), bpC3: hexRgb(p.colors[2]),
+      bpSize: p.size, bpSeed: p.seed, bpAspect: aspect, bpShape: s ? s[3] : 0, bpPx: px };
+  }
+  function patchPatternMaterial(mat, uniforms) {
+    if (!mat || mat._studioPattern === uniforms || mat.isShaderMaterial) return;
+    mat._studioPattern = uniforms;
+    mat.onBeforeCompile = (shader) => {
+      Object.assign(shader.uniforms, uniforms);
+      shader.vertexShader = "#define USE_UV\n" + shader.vertexShader;
+      shader.fragmentShader = "#define USE_UV\n" + shader.fragmentShader.replace(/void main\(\)\s*\{/, PATTERN_GLSL + "\nvoid main() {")
+        .replace("#include <map_fragment>", "diffuseColor *= bpLinear(bpPattern(vUv));"); // the scene works in linear colour
+    };
+    mat.customProgramCacheKey = () => "studio-pattern";
+    mat.needsUpdate = true;
+  }
+  function ensurePatternComponent() {
+    if (!window.AFRAME || AFRAME.components["studio-pattern"]) return;
+    AFRAME.registerComponent("studio-pattern", {
+      schema: { values: { default: "{}" }, speed: { default: 0 } },
+      init() {
+        this.t = 0;
+        this.uniforms = {};
+        for (const k of ["bpMode", "bpSize", "bpTime", "bpSeed", "bpAspect", "bpShape", "bpPx"]) this.uniforms[k] = { value: 0 };
+        for (const k of ["bpC1", "bpC2", "bpC3"]) this.uniforms[k] = { value: new THREE.Vector3() };
+      },
+      update() {
+        const v = JSON.parse(this.data.values);
+        for (const [k, x] of Object.entries(v)) { if (!this.uniforms[k]) continue; if (Array.isArray(x)) this.uniforms[k].value.fromArray(x); else this.uniforms[k].value = x; }
+      },
+      tick(time, dt) { // the material can arrive late or be rebuilt, so it is checked every frame
+        this.t += Math.min(dt || 0, 100) / 1000 * this.data.speed;
+        this.uniforms.bpTime.value = this.t;
+        this.el.object3D.traverse((n) => { if (n.isMesh) patchPatternMaterial(n.material, this.uniforms); });
+      }
+    });
+  }
+  // The 2D editor's copy: the layer drawn into a canvas of the given size (null when WebGL is missing)
+  let patGL;
+  function patternFrame(el, wpx, hpx, timeSec) {
+    if (el.type !== "pattern") return null;
+    if (patGL === undefined) {
+      patGL = null;
+      try {
+        const c = document.createElement("canvas"), gl = c.getContext("webgl", { premultipliedAlpha: false, preserveDrawingBuffer: true });
+        const shader = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
+        const prog = gl.createProgram();
+        gl.attachShader(prog, shader(gl.VERTEX_SHADER, "attribute vec2 pos; varying vec2 vUv; void main() { vUv = pos * 0.5 + 0.5; gl_Position = vec4(pos, 0.0, 1.0); }"));
+        gl.attachShader(prog, shader(gl.FRAGMENT_SHADER, "precision highp float;\nvarying vec2 vUv;\n" + PATTERN_GLSL + "\nvoid main() { gl_FragColor = bpPattern(vUv); }"));
+        gl.linkProgram(prog); if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+        gl.useProgram(prog);
+        gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer()); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+        const at = gl.getAttribLocation(prog, "pos"); gl.enableVertexAttribArray(at); gl.vertexAttribPointer(at, 2, gl.FLOAT, false, 0, 0);
+        patGL = { c, gl, u: (n) => gl.getUniformLocation(prog, n) };
+      } catch (e) { console.warn("pattern preview unavailable", e); }
+    }
+    if (!patGL) return null;
+    const { c, gl, u } = patGL, k = Math.min(2, Math.min(1, 1024 / Math.max(wpx, hpx)) * (window.devicePixelRatio || 1));
+    c.width = Math.max(1, Math.round(wpx * k)); c.height = Math.max(1, Math.round(hpx * k));
+    gl.viewport(0, 0, c.width, c.height);
+    const v = patternValues(el, wpx / hpx, 1 / c.height);
+    for (const [n, x] of Object.entries(v)) { if (Array.isArray(x)) gl.uniform3fv(u(n), x); else gl.uniform1f(u(n), x); }
+    gl.uniform1f(u("bpTime"), (timeSec || 0) * ((el.pattern && el.pattern.speed) || 0));
+    gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    return c;
+  }
+
   // Chroma-key video: samples the video texture with a key-color discard shader.
   // Works in both preview and AR modes (replaces the plain/fade video path when enabled).
   // The keying shader, standalone so it can be driven by any texture (video or test canvas).
@@ -802,6 +1035,7 @@ vec4 baFilter(vec2 uv) {
       if (!el.color) el.color = "#ffffff";
       if (el.bold == null) el.bold = true;
     }
+    if (el.type === "pattern" && !el.pattern) el.pattern = patternDefaults();
     return el;
   }
   const ANIMS = ["none", "spin", "float", "pulse"];
@@ -1101,6 +1335,12 @@ vec4 baFilter(vec2 uv) {
       };
       paint();
       loadTextFonts(el).then((fresh) => { if (fresh) paint(); }); // the first look may use the device font until the layer's fonts arrive
+    } else if (el.type === "pattern") {
+      ensurePatternComponent();
+      e = document.createElement("a-plane");
+      e.setAttribute("material", { shader: "flat", color: "#ffffff", transparent: true });
+      e.setAttribute("width", ts.w); e.setAttribute("height", ts.h);
+      e.setAttribute("studio-pattern", { values: JSON.stringify(patternValues(el, ts.w / ts.h, 1 / 600)), speed: (el.pattern && el.pattern.speed) || 0 });
     } else if (el.type === "sound" && el.spatial) {
       e = document.createElement("a-entity"); // invisible carrier for PositionalAudio
     } else {
@@ -1767,7 +2007,7 @@ vec4 baFilter(vec2 uv) {
     if (!Array.isArray(o.elements) || o.elements.length > LIM.layers) throw new Error("bad elements (maximum" + LIM.layers + ")");
     const ids = new Set();
     for (const el of o.elements) {
-      if (!el || !["video","image","sound","text","model","particles","group","timecube"].includes(el.type)) throw new Error("bad element type");
+      if (!el || !["video","image","sound","text","model","particles","group","timecube","pattern"].includes(el.type)) throw new Error("bad element type");
       if (typeof el.id !== "string" || !/^[a-zA-Z0-9_-]{1,128}$/.test(el.id) || ids.has(el.id)) throw new Error("bad or duplicate element id");
       ids.add(el.id);
       for (const key of ["x","y","z","w","h","rot","rotX","rotY","opacity","aspect","volume"]) if (el[key] != null && (typeof el[key] !== "number" || !Number.isFinite(el[key]))) throw new Error("bad numeric field");
@@ -1781,6 +2021,7 @@ vec4 baFilter(vec2 uv) {
       }
       if(!validCrop(el))throw new Error('bad image crop');
       if(!validFx(el))throw new Error('bad filter');
+      if(!validPattern(el))throw new Error('bad pattern');
       if (el.timeline != null) {
         const tl = el.timeline;
         if (!Array.isArray(tl.keys) || tl.keys.length > 1000) throw new Error("bad timeline keys");
@@ -2078,7 +2319,9 @@ vec4 baFilter(vec2 uv) {
   }
 
   return { TARGET_W, TARGET_H, newId, inspectVideo, validateModelBlob, prepareModelBlob, modelCompressionKinds, DECODER_DRACO_PATH, DECODER_MESHOPT_PATH, modelClipNames, modelClipInfo, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
-           audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, blobURL, releaseBlobURL, blobURLs, historyState, restoreHistory, duplicateLayer, exportJSON, missingAssets, importJSON, exportZIP, importZIP, zipToJSON, fetchPublished, ownBlob, assetHealth, fileHealth, seedDemo, normEl, ANIMS, drawTextCanvas, loadTextFonts, FX: FX.map(([id, name]) => ({ id, name, moving: FX_MOVING.has(id) })), fxFrame, validFx, FONTS: FONTS.map(([id, name]) => ({ id, name })), buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, ensureTimeCubeComponent, bakeTimeCube, validTimeCube, TIMECUBE_DIRS, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, artworkFingerprint, fingerprintDistance, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
+           audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, blobURL, releaseBlobURL, blobURLs, historyState, restoreHistory, duplicateLayer, exportJSON, missingAssets, importJSON, exportZIP, importZIP, zipToJSON, fetchPublished, ownBlob, assetHealth, fileHealth, seedDemo, normEl, ANIMS, drawTextCanvas, loadTextFonts, FX: FX.map(([id, name]) => ({ id, name, moving: FX_MOVING.has(id) })), fxFrame,
+           PATTERNS: PATTERNS.map(([id, name, colors, speed]) => ({ id, name, colors: colors.slice(), speed })), PATTERN_PALETTES: PATTERN_PALETTES.map(([name, colors]) => ({ name, colors: colors.slice() })),
+           PATTERN_SHAPES: PATTERN_SHAPES.map(([id, name]) => ({ id, name })), patternDefaults, patternAspect, patternFrame, validPattern, validFx, FONTS: FONTS.map(([id, name]) => ({ id, name })), buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, ensureTimeCubeComponent, bakeTimeCube, validTimeCube, TIMECUBE_DIRS, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, artworkFingerprint, fingerprintDistance, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
            load: id=>settledRead(id), all: ()=>settledRead(), del: delExperience, LIMITS, mediaBytes, pushBack, addBlocker, publishBlocker, restoreBlocker, exportWarning, exportJSONSize,
            onSaveState, installSaveGuard, saveState, soundOnTouch, snapAngle, syncMedia,
            _testHoldSave:p=>{saveHold=p;}, _testFailSave:m=>{failSave=m;}, _testFailPut:o=>{failPut=o?{...o}:null;} };

@@ -57,6 +57,7 @@
       <button data-add="image">+ תמונה</button>
       <button data-add="sound">+ צליל</button>
       <button id="btn-text">+ טקסט</button>
+      <button id="btn-pattern" title="רקע או דוגמה חוזרת שמצוירים בקוד, בלי קובץ">+ רקע ודוגמה</button>
       <button data-add="model">+ מודל תלת-ממד</button>
       <button id="btn-particles">+ חלקיקים</button>
       <button data-add="timecube" title="סרטון קצר שהופך לקובייה תלת־ממדית: העומק הוא הזמן">+ קוביית זמן</button>
@@ -222,6 +223,25 @@
         <strong>על תמונת המקור</strong>
         <div class="row"><button id="btn-fill-art" type="button">מילוי תמונת המקור</button><button id="btn-fill-rot" type="button" class="ghost">↻ סיבוב 90°</button></div>
         <p class="hint">מניח את התמונה או הסרטון בדיוק על תמונת המקור ומכסה את כולה; מה שחורג נחתך (הקובץ המקורי נשמר). הסיבוב מסובב ברבע סיבוב וממלא מחדש.</p>
+      </div>
+      <div id="row-pattern" hidden><!-- the last panel child: shell.js groups the panel by child index -->
+        <strong>רקע ודוגמה</strong>
+        <div id="pattern-looks" class="swatches" role="group" aria-label="סוג הרקע"></div>
+        <strong>צבעים</strong>
+        <div id="pattern-palettes" class="swatches palettes" role="group" aria-label="ערכות צבע"></div>
+        <div class="row">
+          <label class="inline">צבע 1 <input type="color" id="pat-c1"></label>
+          <label class="inline">צבע 2 <input type="color" id="pat-c2"></label>
+          <label class="inline">צבע 3 <input type="color" id="pat-c3"></label>
+        </div>
+        <label>גודל הדוגמה <input type="range" id="pat-size" min="0" max="1" step="0.01"></label>
+        <label>תנועה <input type="range" id="pat-speed" min="0" max="1" step="0.01"></label>
+        <div class="row">
+          <label class="inline">צורה <select id="pat-shape"></select></label>
+          <button type="button" id="btn-pat-shuffle" class="ghost small">ערבוב</button>
+          <button type="button" id="btn-pat-fill" class="ghost small">מילוי תמונת המקור</button>
+        </div>
+        <p class="hint">מצויר בקוד, בלי קובץ, ונראה חד בכל גודל. תנועה 0 משאירה אותו במקום. ערבוב מסדר מחדש את מה שאקראי בדוגמה.</p>
       </div>
     </div>
   </section>

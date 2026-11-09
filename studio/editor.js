@@ -154,7 +154,7 @@
   let artworkImg = null;       // HTMLImageElement of artwork
   let drag = null;
 
-  const ICONS = { video: "🎬 ", image: "🖼️ ", sound: "🎵 ", text: "🔤 ", model: "🧊 ", particles: "✨ ", group: "📦 ", timecube: "⏳ " };
+  const ICONS = { video: "🎬 ", image: "🖼️ ", sound: "🎵 ", text: "🔤 ", pattern: "🎨 ", model: "🧊 ", particles: "✨ ", group: "📦 ", timecube: "⏳ " };
 
   // ---------- boot ----------
   // The real site never creates a sample creation: an empty gallery starts with one blank creation. Local servers
@@ -514,6 +514,20 @@
     fxCache[el.id] = { key, media: m, canvas: copy };
     return copy;
   }
+  // A pattern layer as the 2D canvas shows it: a still one is kept until it or its drawn size changes, a moving one is
+  // drawn every frame. null: no WebGL (the caller draws a plain stand-in).
+  const patternCache = {};
+  function patternDrawable(el, wpx, hpx) {
+    const still = !(el.pattern && el.pattern.speed > 0);
+    const key = still && JSON.stringify([el.pattern, Math.round(wpx), Math.round(hpx)]), hit = patternCache[el.id];
+    if (still && hit && hit.key === key) return hit.canvas;
+    const out = Studio.patternFrame(el, Math.abs(wpx), Math.abs(hpx), performance.now() / 1000);
+    if (!out || !still) return out;
+    const copy = document.createElement("canvas");
+    copy.width = out.width; copy.height = out.height; copy.getContext("2d").drawImage(out, 0, 0);
+    patternCache[el.id] = { key, canvas: copy };
+    return copy;
+  }
   // A text layer's height follows its drawn text, so it is measured again after every change to the words or the look.
   function fitText(el) {
     const tb = textBitmap(el);
@@ -825,6 +839,20 @@
       selectedId = el.id;
       await saveGuarded(rec);
       msg("נוסף טקסט. ערכי את התוכן בלוח למטה.");
+      render();
+    };
+
+    $("btn-pattern").onclick = async () => {
+      { const blocked = Studio.addBlocker(rec, { layers: 1 }); if (blocked) { msg(blocked); return; } }
+      const g = Studio.geom(rec);
+      const el = Studio.normEl({ id: Studio.newId(), type: "pattern", name: "רקע " + (rec.elements.filter((x) => x.type === "pattern").length + 1),
+                   pattern: Studio.patternDefaults("liquid"), x: 0, y: 0, w: 1, rot: 0, z: 0, flush: true, seq: curSeq });
+      el.aspect = Studio.patternAspect(rec, "art");
+      el.h = el.w / el.aspect * g.artW / g.artH;
+      rec.elements.unshift(el); // over the whole artwork, behind the other layers
+      selectedId = el.id;
+      await saveGuarded(rec);
+      msg("נוסף רקע על כל תמונת המקור, מאחורי כל השכבות. בחרי דוגמה וצבעים בלוח למטה.");
       render();
     };
 
@@ -1299,6 +1327,37 @@
     $("sel-fx").replaceChildren(...[["", "בלי"], ...Studio.FX.map((f) => [f.id, f.name])].map(([v, t]) => { const o = document.createElement("option"); o.value = v; o.textContent = t; return o; }));
     $("sel-fx").onchange = (e) => upd((el) => { if (e.target.value) el.fx = e.target.value; else { delete el.fx; delete el.fxAmount; } });
     $("sl-fx").oninput = (e) => updS((el) => { el.fxAmount = Math.round(parseFloat(e.target.value) * 100) / 100; });
+    // Pattern layers: a swatch per look (drawn by the look's own code, in its own colours, which it brings along), ready
+    // colour sets, the three colours, size, movement, shape, a reshuffle for the random looks, and a fill over the artwork
+    const patUpd = (fn) => upd((el) => { if (el.type === "pattern") fn(el); });
+    const swatch = (label, extra) => { const b = document.createElement("button"); b.type = "button"; b.className = "swatch" + (extra ? " " + extra : ""); b.title = label; b.setAttribute("aria-label", label); return b; };
+    $("pattern-looks").replaceChildren(...Studio.PATTERNS.map((pt) => {
+      const b = swatch(pt.name), pic = document.createElement("span"), name = document.createElement("span");
+      pic.className = "swatch-pic"; name.className = "swatch-name"; name.textContent = pt.name; b.dataset.look = pt.id;
+      const f = Studio.patternFrame({ type: "pattern", pattern: Studio.patternDefaults(pt.id) }, 64, 64, 0);
+      if (f) pic.style.backgroundImage = "url(" + f.toDataURL() + ")";
+      b.append(pic, name);
+      b.onclick = () => patUpd((el) => { const d = Studio.patternDefaults(pt.id); Object.assign(el.pattern, { look: d.look, colors: d.colors, speed: d.speed }); });
+      return b;
+    }));
+    $("pattern-palettes").replaceChildren(...Studio.PATTERN_PALETTES.map((pl) => {
+      const b = swatch(pl.name, "palette"); b.style.background = "linear-gradient(90deg," + pl.colors[0] + " 0 34%," + pl.colors[1] + " 34% 67%," + pl.colors[2] + " 67%)";
+      b.onclick = () => patUpd((el) => { el.pattern.colors = pl.colors.slice(); });
+      return b;
+    }));
+    ["pat-c1", "pat-c2", "pat-c3"].forEach((id, i) => {
+      $(id).oninput = (e) => updS((el) => { if (el.type === "pattern") { el.pattern.colors = el.pattern.colors.slice(); el.pattern.colors[i] = e.target.value; } });
+      $(id).addEventListener("change", () => window.__flushSlider());
+    });
+    $("pat-size").oninput = (e) => updS((el) => { if (el.type === "pattern") el.pattern.size = Math.round(parseFloat(e.target.value) * 100) / 100; });
+    $("pat-speed").oninput = (e) => updS((el) => { if (el.type === "pattern") el.pattern.speed = Math.round(parseFloat(e.target.value) * 100) / 100; });
+    $("pat-shape").replaceChildren(...Studio.PATTERN_SHAPES.map((sh) => { const o = document.createElement("option"); o.value = sh.id; o.textContent = sh.name; return o; }));
+    $("pat-shape").onchange = (e) => patUpd((el) => { const g = Studio.geom(rec); el.pattern.shape = e.target.value; el.aspect = Studio.patternAspect(rec, e.target.value); el.h = el.w / el.aspect * g.artW / g.artH; });
+    $("btn-pat-shuffle").onclick = () => patUpd((el) => { el.pattern.seed = ((el.pattern.seed || 0) + 1) % 1000; });
+    $("btn-pat-fill").onclick = () => patUpd((el) => {
+      if (elKeyed(el)) { msg('לשכבה יש נקודות זמן (תנועה): המילוי לא חל עליה. אפשר למחוק את נקודות הזמן ואז למלא.'); return; }
+      el.pattern.shape = "art"; el.aspect = Studio.patternAspect(rec, "art"); Object.assign(el, { w: 1, h: 1, x: 0, y: 0, z: 0, rot: 0, rotX: 0, rotY: 0 });
+    });
 
     bindCanvas();
   }
@@ -1522,6 +1581,13 @@
     $("row-tapurl").hidden = el.onTap !== "link";
     $("in-tapurl").value = el.tapUrl || "";
     $("row-text").hidden = el.type !== "text";
+    $("row-pattern").hidden = el.type !== "pattern";
+    if (el.type === "pattern") {
+      const p = el.pattern;
+      $("pattern-looks").querySelectorAll(".swatch").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.look === p.look)));
+      ["pat-c1", "pat-c2", "pat-c3"].forEach((id, i) => { if (document.activeElement !== $(id)) $(id).value = p.colors[i]; });
+      $("pat-size").value = p.size; $("pat-speed").value = p.speed; $("pat-shape").value = p.shape;
+    }
     renderTimeline(el);
     if (el.type === "text") {
       if (document.activeElement !== $("in-text")) $("in-text").value = el.text || "";
@@ -1855,6 +1921,11 @@
       } else if (el.type === "text") {
         const tb = textBitmap(el);
         ctx.drawImage(tb.canvas, -wpx / 2, -hpx / 2, wpx, hpx);
+      } else if (el.type === "pattern") {
+        const pic = patternDrawable(el, wpx, hpx);
+        if (pic) ctx.drawImage(pic, -wpx / 2, -hpx / 2, wpx, hpx);
+        else { ctx.fillStyle = el.pattern.colors[0]; ctx.fillRect(-wpx / 2, -hpx / 2, wpx, hpx); }
+        if (el.pattern.speed > 0) needsAnim = true;
       } else if (el.type === "particles") {
         ctx.beginPath(); ctx.arc(0, 0, Math.min(wpx, hpx) / 2, 0, 7);
         ctx.fillStyle = "rgba(200,150,30,0.35)"; ctx.fill();

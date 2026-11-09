@@ -34,7 +34,10 @@ const authFailLog = new Map();
 
 fs.mkdirSync(DATA, { recursive: true });
 
-const EL_TYPES = new Set(["video", "image", "sound", "text", "model", "particles", "group", "timecube"]);
+const EL_TYPES = new Set(["video", "image", "sound", "text", "model", "particles", "group", "timecube", "pattern"]);
+// pattern layers (drawn in code, studio/shared.js PATTERNS): the looks and shapes the editor knows
+const PATTERN_LOOKS = new Set(["liquid", "soft", "lights", "waves", "rays", "topo", "marble", "dots", "stripes", "gingham", "zigzag", "scales", "hex", "arcs", "hearts", "terrazzo"]);
+const PATTERN_SHAPES = new Set(["art", "square", "circle", "arch", "pill"]);
 const ASSET_MIME = /^data:(image\/png|image\/jpeg|image\/webp|image\/gif|video\/mp4|video\/webm|video\/quicktime|audio\/mpeg|audio\/wav|audio\/x-wav|audio\/mp4|audio\/x-m4a|audio\/ogg|model\/gltf-binary|application\/octet-stream);base64,/;
 const NUM_FIELDS = ["x", "y", "w", "h", "rot", "rotX", "rotY", "z", "volume", "opacity", "aspect", "size"];
 
@@ -91,6 +94,7 @@ function validateExport(o) {
     if (!EL_TYPES.has(el.type)) return "element " + i + ": unsupported type " + JSON.stringify(el.type);
     for (const f of NUM_FIELDS) if (el[f] != null && (typeof el[f] !== "number" || !Number.isFinite(el[f]))) return "element " + i + ": bad " + f;
     if(el.particles){const p=el.particles;if(typeof p!=='object'||Array.isArray(p))return 'bad particles';for(const [k,min,max]of [['lifetime',0,60],['endSize',0,5],['count',10,500],['size',2,60],['speed',.2,3]])if(p[k]!=null&&(!Number.isFinite(p[k])||p[k]<min||p[k]>max))return 'bad particles';if(p.emitter!=null&&!['box','disc','sphere'].includes(p.emitter)||p.endColor!=null&&!/^#[0-9a-f]{6}$/i.test(p.endColor)||p.fade!=null&&typeof p.fade!=='boolean')return 'bad particles';}
+    if(el.pattern!=null){const p=el.pattern;if(el.type!=='pattern'||typeof p!=='object'||!PATTERN_LOOKS.has(p.look)||!Array.isArray(p.colors)||p.colors.length!==3||!p.colors.every(c=>typeof c==='string'&&/^#[0-9a-f]{6}$/i.test(c))||![p.size,p.speed].every(v=>Number.isFinite(v)&&v>=0&&v<=1)||!Number.isInteger(p.seed)||p.seed<0||p.seed>=1000||!PATTERN_SHAPES.has(p.shape))return 'element '+i+': bad pattern';}
     if(el.crop){const c=el.crop;if(!['image','video'].includes(el.type)||!['x','y','w','h'].every(k=>Number.isFinite(c[k]))||c.x<0||c.y<0||c.w<.01||c.h<.01||c.x+c.w>1.000001||c.y+c.h>1.000001)return 'bad image crop';}
     if (el.timeline != null) {
       const tl=el.timeline;
