@@ -17,6 +17,7 @@ window.StarterLibrary = (() => {
   // Poly Haven models, each with its own looping move added in Blender (tools/make-ph-loops.py) - a rocking chair
   // rocks, clock hands tick, a kettle steams - except the frame, which holds the user's artwork and stays still
   const STILL = new Set(['fancy_picture_frame_01']);
+  const ANIMAL = new Set(['street_rat']);  // listed with the animals
   const models = [
     ['fancy_picture_frame_01','מסגרת מוזהבת מעוטרת'],['ornate_mirror_01','מראה מעוטרת'],['marble_bust_01','פסל ראש משיש'],
     ['horse_statue_01','פסל סוס'],['concrete_cat_statue','פסל חתול מבטון'],['carved_wooden_elephant','פיל מגולף מעץ'],
@@ -42,8 +43,14 @@ window.StarterLibrary = (() => {
     ['pot_enamel_01','סיר אמייל'],['potted_plant_02','צמח בעציץ חרס'],['rockingchair_01','כיסא נדנדה'],['round_spectacles','משקפיים עגולים'],['street_lamp_01','פנס רחוב'],
     ['tea_set_01','ערכת תה'],['throw_pillows_01','כריות נוי'],['vintage_cabinet_01','מזנון עתיק'],['vintage_electric_kettle','קומקום עתיק'],['vintage_flashlight','פנס יד עתיק'],
     ['vintage_microwave','מיקרוגל רטרו'],['retro_multimeter','מד חשמל רטרו'],['vintage_stapler','שדכן רטרו'],['vintage_telephone_wall_clock','טלפון קיר עתיק'],['wall_clock','שעון קיר'],
-    ['watering_can_metal_01','משפך'],['wine_barrel_01','חבית יין'],['wooden_bucket_02','דלי עץ'],['wooden_candlestick','פמוט עץ'],['wooden_crate_01','ארגז עץ']
-  ].map(([id,name]) => ({id:'ph-'+id,name,detail:STILL.has(id)?'תלת־ממד · חינמי (CC0)':'תלת־ממד בתנועה · חינמי (CC0)',kind:'model',file:'models/'+id+'.glb',thumb:'thumbs/'+id+'.png',clip:STILL.has(id)?undefined:'Loop',group:'model'}));
+    ['watering_can_metal_01','משפך'],['wine_barrel_01','חבית יין'],['wooden_bucket_02','דלי עץ'],['wooden_candlestick','פמוט עץ'],['wooden_crate_01','ארגז עץ'],
+    // plants, fruit and a rat: [id, Hebrew name]; the variant sets keep one plant each (see the library README)
+    ['potted_plant_01','צמח בעציץ טרקוטה'],['shrub_sorrel_01','חמציץ פורח'],['pachira_aquatica_01','פכירה'],['flower_stinkkruid','פרחי בר'],
+    ['leipoldtia_schultzei','סקולנט פורח סגול'],['didelta_spinosa','שיח מדברי'],['othonna_cerarioides','סקולנט שיחי'],['quiver_tree_02','עץ אלואה'],
+    ['jacaranda_tree','עץ סיגלון'],['island_tree_02','עץ ירוק רחב'],['tree_small_02','עץ צעיר'],['fir_sapling','שתיל אשוח'],
+    ['pine_sapling_small','שתיל אורן'],['dead_tree_trunk_02','ענף עץ יבש'],['planter_box_01','אדנית עץ'],['food_kiwi_01','קיווי'],
+    ['food_lime_01','ליים'],['food_lychee_01','ליצ׳י'],['food_ginger_01','ג׳ינג׳ר'],['yellow_onion','בצל'],['sweet_potato','בטטה'],['street_rat','עכברוש']
+  ].map(([id,name]) => ({id:'ph-'+id,name,detail:STILL.has(id)?'תלת־ממד · חינמי (CC0)':'תלת־ממד בתנועה · חינמי (CC0)',kind:'model',file:'models/'+id+'.glb',thumb:'thumbs/'+id+'.png',clip:STILL.has(id)?undefined:'Loop',group:ANIMAL.has(id)?'animal':'model'}));
   // Scanned CC0 models with a looping move added (tools/make-gramophone.py): [file id, Hebrew name, start width]
   const scans = [
     ['sk-gramophone','גרמופון עם תקליט מסתובב',.5]

@@ -13,7 +13,7 @@ geometry, not copied from stock or Artivive. No external artwork.
 - orbit.mp4 / orbit-poster.png: original two-second orbital geometric animation, H264/yuv420p, 256x256, no audio.
 
 ## 3D models: Poly Haven (CC0) — `models/`, `thumbs/<id>.png`
-103 models from https://polyhaven.com, all under CC0 (public domain dedication: free for any use, no credit needed;
+125 models from https://polyhaven.com, all under CC0 (public domain dedication: free for any use, no credit needed;
 credited here as a courtesy). Downloaded with the 1K glTF variant through the Poly Haven API and packed to a single
 GLB per model by `tools/gltf-to-glb.mjs` (outside this repository); geometry, materials and textures unchanged.
 One change: `fancy_picture_frame_01` has its inner painting node (`fancy_picture_frame_01_canvas`) removed from the
@@ -44,13 +44,30 @@ vintage_telephone_wall_clock, wall_clock, watering_can_metal_01, wine_barrel_01,
 wooden_crate_01. Left out after a look: vintage_wooden_drawer_01 (its geometry breaks apart in three.js) and
 vintage_oil_lamp (its glass chimney draws black).
 
+Plants, fruit and a rat, added later (22): potted_plant_01, shrub_sorrel_01, pachira_aquatica_01, flower_stinkkruid,
+leipoldtia_schultzei, didelta_spinosa, othonna_cerarioides, quiver_tree_02, jacaranda_tree, island_tree_02,
+tree_small_02, fir_sapling, pine_sapling_small, dead_tree_trunk_02, planter_box_01, food_kiwi_01, food_lime_01,
+food_lychee_01, food_ginger_01, yellow_onion, sweet_potato, street_rat (listed with the moving animals). Poly Haven
+ships several of the plants as a row of variants; one plant is kept from each (`--drop-node` on the rest):
+shrub_sorrel_01_d, pachira_aquatica_01_bark_d + _leaves_d, othonna_cerarioides_b, fir_sapling_a, pine_sapling_small_a,
+flower_stinkkruid_a_LOD0, didelta_spinosa_small_LOD0, leipoldtia_schultzei_Medium_LOD0; their thumbnails are rendered
+from the kept plant. The trees are far too heavy for a phone as they come (the jacaranda has 3.9 million triangles), so
+`tools/slim-plants.py` (Blender, outside this repository) cuts each material by the same share: leaves are separate
+small pieces, so past a point a random share of whole leaves is removed and the rest grown to keep the crown full;
+trunks and branches are only decimated. Kept: jacaranda_tree 104k triangles, tree_small_02 83k, island_tree_02 84k,
+fir_sapling and pine_sapling_small 60k, potted_plant_01 80k, leipoldtia_schultzei 60k. The five trees' and saplings'
+textures are scaled to 512px by `tools/shrink-images.py` (leaf cut-outs stay PNG, the rest JPEG); the other models keep
+their 1K textures.
+
 Each model (except fancy_picture_frame_01, which holds the user's artwork and stays still) carries one looping clip
 "Loop", added by `tools/make-ph-loops.py` (Blender, headless; outside this repository) from the static GLB above: the
 rocking chair rocks on its runners, clock second hands tick (once round a minute; clocks without one run their hands
 as a time-lapse), the kettle, pot, tea set, croissant and coffee cups steam, candles and lanterns flicker, lamps and
 bulbs glow (an old filament flickers now and then), lids, doors and drawers open and close, reels and wheels turn,
 the chess set plays 1. e4 e5 2. Nf3 Nc6 and takes it back, darts fly into the dartboard, the TV shows static, plants
-sway in a breeze (two morph targets), balls bounce, the duck bobs among ripples, and statues, vases with a pattern and
+sway in a breeze (two morph targets; trees bend by one field of height so trunk, branches and leaves stay joined),
+the rat breathes, lifts its head to sniff, looks around and sweeps its tail (morph targets; it is turned three-quarters
+so its profile shows), the lime rolls and the other fruit rock, balls bounce, the duck bobs among ripples, and statues, vases with a pattern and
 cakes turn slowly as on a display stand. Steam, glows, drops and the like are the script's own meshes with soft
 textures it draws; they rest at a tiny scale in the file (the clip scales them up), so the editor's fit to width sees
 the model alone. The scan's own geometry, materials and image bytes are kept as they were.
