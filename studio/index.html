@@ -101,6 +101,9 @@
         <div class="row"><button id="btn-crop-drag" type="button">✂️ חיתוך על חלון העריכה</button><button id="crop-reset" class="ghost">שחזור התמונה המלאה</button></div>
         <div class="row crop-shapes" id="crop-shapes"><span class="mini-label">צורה:</span><button type="button" class="ghost small" data-r="free">חופשי</button><button type="button" class="ghost small" data-r="art">כמו תמונת המקור</button><button type="button" class="ghost small" data-r="1">ריבוע</button><button type="button" class="ghost small" data-r="1.7778">16:9</button><button type="button" class="ghost small" data-r="0.5625">9:16</button></div>
         <p class="hint">התמונה המקורית נשמרת; רק האזור המוצג משתנה. אפשר לשכפל ולחתוך כל עותק בנפרד. תמונות, GIF ווידאו. חיתוך לא משנה את הקובץ המקורי.</p>
+        <strong>פילטר</strong>
+        <div class="row"><label class="inline">מראה <select id="sel-fx"></select></label><label class="inline">עוצמה <input type="range" id="sl-fx" min="0" max="1" step="0.01" value="0.5"></label></div>
+        <p class="hint">גם הפילטר לא משנה את הקובץ המקורי. VHS, קליידוסקופ וזכוכית זזים כל הזמן.</p>
       </div>
       <div id="row-model" hidden>
         <label>בחירת אנימציה <select id="sel-model-clip"><option value="0">טעינת שמות...</option></select></label>

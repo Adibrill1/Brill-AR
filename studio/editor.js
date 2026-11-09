@@ -498,6 +498,22 @@
     Studio.loadTextFonts(el).then((fresh) => { if (fresh) textFontsArrived(el); }); // drawn with the device font until its fonts arrive
     return textCache[el.id];
   }
+  // An image or video with a filter, as the 2D canvas shows it (null: draw the media as it is). A still look on a still
+  // image is kept until the look, the crop or the drawn size changes; moving looks and video are drawn every frame.
+  const fxCache = {};
+  function fxDrawable(el, m, wpx, hpx) {
+    const look = el.fx && Studio.FX.find((f) => f.id === el.fx);
+    if (!look) return null;
+    const still = !look.moving && el.type === "image" && m.tagName !== "CANVAS";
+    const key = still && JSON.stringify([el.fx, el.fxAmount, el.crop, Math.round(wpx), Math.round(hpx)]), hit = fxCache[el.id];
+    if (still && hit && hit.key === key && hit.media === m) return hit.canvas;
+    const out = Studio.fxFrame(m, el, Math.abs(wpx), Math.abs(hpx), performance.now() / 1000);
+    if (!out || !still) return out;
+    const copy = document.createElement("canvas");
+    copy.width = out.width; copy.height = out.height; copy.getContext("2d").drawImage(out, 0, 0);
+    fxCache[el.id] = { key, media: m, canvas: copy };
+    return copy;
+  }
   // A text layer's height follows its drawn text, so it is measured again after every change to the words or the look.
   function fitText(el) {
     const tb = textBitmap(el);
@@ -1279,6 +1295,10 @@
     $("sel-font").onchange = (e) => upd((el) => { if (e.target.value) el.font = e.target.value; else delete el.font; fitText(el); });
     $("sel-text-style").onchange = (e) => upd((el) => { if (e.target.value === "cut") el.textStyle = "cut"; else delete el.textStyle; fitText(el); });
     $("btn-cut-shuffle").onclick = () => upd((el) => { el.cutSeed = ((Math.floor(el.cutSeed) || 0) + 1) % 1e6; fitText(el); });
+    // image and video filter
+    $("sel-fx").replaceChildren(...[["", "בלי"], ...Studio.FX.map((f) => [f.id, f.name])].map(([v, t]) => { const o = document.createElement("option"); o.value = v; o.textContent = t; return o; }));
+    $("sel-fx").onchange = (e) => upd((el) => { if (e.target.value) el.fx = e.target.value; else { delete el.fx; delete el.fxAmount; } });
+    $("sl-fx").oninput = (e) => updS((el) => { el.fxAmount = Math.round(parseFloat(e.target.value) * 100) / 100; });
 
     bindCanvas();
   }
@@ -1433,7 +1453,9 @@
     $("num-z").closest("label").hidden = false;
     $("sel-tap").closest("label").hidden = isGroup;
     $('row-video-aspect').hidden=el.type!=='video';
-    $('row-crop').hidden=$('row-fill').hidden=!['image','video'].includes(el.type);if(['image','video'].includes(el.type)){const c=el.crop||{x:0,y:0,w:1,h:1};for(const k of ['x','y','w','h'])$('crop-'+k).value=Math.round(c[k]*10000)/100;}
+    $('row-crop').hidden=$('row-fill').hidden=!['image','video'].includes(el.type);
+    if (['image','video'].includes(el.type)) { $('sel-fx').value = Studio.FX.some((f) => f.id === el.fx) ? el.fx : ''; $('sl-fx').value = Number.isFinite(el.fxAmount) ? el.fxAmount : 0.5; $('sl-fx').disabled = !$('sel-fx').value; }
+    if(['image','video'].includes(el.type)){const c=el.crop||{x:0,y:0,w:1,h:1};for(const k of ['x','y','w','h'])$('crop-'+k).value=Math.round(c[k]*10000)/100;}
     $("row-chroma").hidden = el.type !== "video";
     $("row-particles").hidden = el.type !== "particles";
     $("row-timecube").hidden = el.type !== "timecube";
@@ -1821,10 +1843,14 @@
       }
       if (real) {
       } else if (el.type === "video" && m && m.readyState >= 2) {
-        const c=el.crop||{x:0,y:0,w:1,h:1},iw=m.videoWidth,ih=m.videoHeight;ctx.drawImage(m,c.x*iw,c.y*ih,c.w*iw,c.h*ih,-wpx/2,-hpx/2,wpx,hpx);
+        const fx = fxDrawable(el, m, wpx, hpx);
+        if (fx) ctx.drawImage(fx, -wpx / 2, -hpx / 2, wpx, hpx);
+        else { const c=el.crop||{x:0,y:0,w:1,h:1},iw=m.videoWidth,ih=m.videoHeight;ctx.drawImage(m,c.x*iw,c.y*ih,c.w*iw,c.h*ih,-wpx/2,-hpx/2,wpx,hpx); }
       } else if (el.type === "image" && m) {
-        const c=el.crop||{x:0,y:0,w:1,h:1},iw=m.naturalWidth||m.width,ih=m.naturalHeight||m.height;
-        ctx.drawImage(m,c.x*iw,c.y*ih,c.w*iw,c.h*ih,-wpx/2,-hpx/2,wpx,hpx);
+        const fx = fxDrawable(el, m, wpx, hpx);
+        if (fx) { ctx.drawImage(fx, -wpx / 2, -hpx / 2, wpx, hpx); if (Studio.FX.some((f) => f.id === el.fx && f.moving)) needsAnim = true; }
+        else { const c=el.crop||{x:0,y:0,w:1,h:1},iw=m.naturalWidth||m.width,ih=m.naturalHeight||m.height;
+          ctx.drawImage(m,c.x*iw,c.y*ih,c.w*iw,c.h*ih,-wpx/2,-hpx/2,wpx,hpx); }
         if (m.tagName === "CANVAS") needsAnim = true; // animated gif canvas updates itself; keep repainting
       } else if (el.type === "text") {
         const tb = textBitmap(el);

@@ -408,6 +408,170 @@ const Studio = (() => {
     });
   }
 
+  // ---------- filters for image and video layers ----------
+  // el.fx names a look and el.fxAmount (0-1, default 0.5) its strength or size. One GLSL function, baFilter(uv),
+  // replaces the layer's texture lookup: in the 3D/AR material (studio-fx patches the material the layer already has,
+  // so crop, opacity, fades and chroma keying keep working) and in the 2D editor (fxFrame draws through the same code
+  // with plain WebGL). baScale turns texture coordinates into square units where the visible height is 1, so dots,
+  // letters and ribs stay round and even whatever the layer's shape or crop. Our own versions of the classic looks.
+  const FX = [["halftone", "נקודות דפוס"], ["letters", "אותיות"], ["vhs", "VHS"], ["kaleido", "קליידוסקופ"], ["papercut", "נייר גזור"], ["glass", "זכוכית מחורצת"]];
+  const FX_IDS = FX.map((f) => f[0]), FX_MOVING = new Set(["vhs", "kaleido", "glass"]);
+  const FX_GLSL = `
+#if defined(USE_MAP) || defined(BA_FX_SHADER)
+uniform float baMode; uniform float baAmount; uniform float baTime; uniform vec2 baScale; uniform vec2 baTexel; uniform sampler2D baGlyphs;
+float baLum(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
+float baHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
+vec2 baUv(vec2 p) { return p / baScale; }
+vec4 baFilter(vec2 uv) {
+  vec4 src = texture2D(map, uv);
+  vec2 p = uv * baScale;
+  float a = clamp(baAmount, 0.0, 1.0);
+  if (baMode < 0.5) return src;
+  if (baMode < 1.5) { // halftone: dots on a turned grid, bigger where the picture is darker, on newsprint
+    float cell = mix(0.012, 0.06, a);
+    mat2 turn = mat2(0.7071, 0.7071, -0.7071, 0.7071), back = mat2(0.7071, -0.7071, 0.7071, 0.7071);
+    vec2 q = turn * p / cell, mid = floor(q) + 0.5;
+    vec4 c = texture2D(map, baUv(back * mid * cell));
+    float r = sqrt(1.0 - baLum(c.rgb)) * 0.64, ink = 1.0 - smoothstep(r - 0.07, r + 0.07, length(q - mid));
+    return vec4(mix(vec3(0.95, 0.92, 0.85), c.rgb * 0.85, ink), src.a);
+  }
+  if (baMode < 2.5) { // letters: the picture rebuilt from Hebrew letters and signs, fuller ones where it is brighter, on black
+    float cell = mix(0.018, 0.07, a);
+    vec2 q = p / cell, mid = floor(q) + 0.5, g = fract(q);
+    vec4 c = texture2D(map, baUv(mid * cell));
+    float idx = floor(clamp(baLum(c.rgb), 0.0, 0.999) * 12.0);
+    float m = texture2D(baGlyphs, vec2((idx + g.x) / 12.0, g.y)).r;
+    return vec4(min(c.rgb * 1.3 + 0.05, 1.0) * m, src.a);
+  }
+  if (baMode < 3.5) { // VHS: colour channels pulled apart, lines that jump, a slow wobble, scanlines and grain
+    float line = floor(uv.y * 240.0), tick = floor(baTime * 12.0);
+    float jump = step(0.985 - a * 0.06, baHash(vec2(line * 0.07, tick))) * (baHash(vec2(line, tick)) - 0.5) * 0.08 * a;
+    vec2 u = vec2(uv.x + jump + sin(uv.y * 30.0 + baTime * 3.0) * 0.002 * a + sin(uv.y * 3.0 - baTime * 1.3) * 0.004 * a, uv.y);
+    float sh = 0.002 + 0.012 * a;
+    vec4 r = texture2D(map, u + vec2(sh, 0.0)), gr = texture2D(map, u), b = texture2D(map, u - vec2(sh, 0.0));
+    vec3 col = vec3(r.r, gr.g, b.b) * (0.88 + 0.12 * sin(p.y * 900.0)) + (baHash(uv * 500.0 + baTime) - 0.5) * 0.14 * a;
+    return vec4(col * vec3(1.04, 0.96, 1.08), max(src.a, max(r.a, b.a)));
+  }
+  if (baMode < 4.5) { // kaleidoscope: mirrored wedges around the middle, turning slowly
+    float n = floor(mix(4.0, 12.0, a) + 0.5), w = 6.28318 / n;
+    vec2 mid = 0.5 * baScale, d = p - mid;
+    float ang = mod(atan(d.y, d.x) + baTime * 0.15, w);
+    vec2 u = baUv(mid + length(d) * vec2(cos(abs(ang - w * 0.5)), sin(abs(ang - w * 0.5))));
+    return texture2D(map, 1.0 - abs(1.0 - mod(u, 2.0)));
+  }
+  if (baMode < 5.5) { // paper cut: a few flat layers of coloured paper, each casting a soft shadow on the one below
+    float n = floor(mix(3.0, 8.0, a) + 0.5);
+    vec2 o = baTexel * 2.0;
+    vec4 c = (texture2D(map, uv) * 2.0 + texture2D(map, uv + vec2(o.x, 0.0)) + texture2D(map, uv - vec2(o.x, 0.0)) + texture2D(map, uv + vec2(0.0, o.y)) + texture2D(map, uv - vec2(0.0, o.y))) / 6.0;
+    float l = floor(baLum(c.rgb) * n) / n;
+    float above = floor(baLum(texture2D(map, uv + vec2(-0.008, 0.01) / baScale).rgb) * n) / n;
+    vec3 col = min(c.rgb * (l + 0.5 / n) / max(baLum(c.rgb), 0.04), 1.0) * (0.94 + 0.06 * baHash(floor(p * 400.0)));
+    return vec4(col * (above > l + 0.001 ? 0.72 : 1.0), src.a);
+  }
+  // fluted glass: each rib flips and magnifies what is behind it, softly, with a sheen at its edges
+  float w = 1.0 / floor(mix(8.0, 40.0, a) + 0.5), k = p.x / w, local = fract(k) - 0.5;
+  vec2 u = baUv(vec2((floor(k) + 0.5 - local * 0.8) * w, p.y + sin(p.y * 6.0 + baTime * 0.4) * 0.004));
+  vec4 c = (texture2D(map, u) + texture2D(map, u + vec2(baTexel.x * 1.5, 0.0)) + texture2D(map, u - vec2(baTexel.x * 1.5, 0.0))) / 3.0;
+  return vec4(c.rgb * (0.92 + 0.08 * cos(local * 6.28318)) + smoothstep(0.4, 0.5, abs(local)) * 0.18, src.a);
+}
+#endif
+`;
+  function fxMode(el) { const i = FX_IDS.indexOf(el.fx); return ["image", "video"].includes(el.type) && i >= 0 ? i + 1 : 0; }
+  function fxAmount(el) { return Number.isFinite(el.fxAmount) ? Math.max(0, Math.min(1, el.fxAmount)) : 0.5; }
+  function fxScale(el, w, h) { const c = el.crop || { w: 1, h: 1 }; return [(w / h) / c.w, 1 / c.h]; }
+  function validFx(el) { return (el.fx == null || ["image", "video"].includes(el.type) && FX_IDS.includes(el.fx)) && (el.fxAmount == null || Number.isFinite(el.fxAmount) && el.fxAmount >= 0 && el.fxAmount <= 1); }
+  let fxGlyphCanvas = null, fxGlyphTexture = null;
+  function fxGlyphs() { // 12 letters and signs from emptiest to fullest, white on black, one 64px cell each in a row
+    if (fxGlyphCanvas) return fxGlyphCanvas;
+    const font = "700 50px " + DEVICE_FONT, probe = document.createElement("canvas").getContext("2d", { willReadFrequently: true });
+    probe.canvas.width = probe.canvas.height = 64;
+    const ink = (ch) => { probe.fillStyle = "#000"; probe.fillRect(0, 0, 64, 64); probe.fillStyle = "#fff"; probe.font = font; probe.textAlign = "center"; probe.textBaseline = "middle"; probe.fillText(ch, 32, 34);
+      let s = 0; const d = probe.getImageData(0, 0, 64, 64).data; for (let i = 0; i < d.length; i += 4) s += d[i]; return s; };
+    const sorted = Array.from(" ·.:-=+*יורזדנגכבהקפחטצמשםסאת#@").map((ch) => [ch, ink(ch)]).sort((x, y) => x[1] - y[1]);
+    const c = document.createElement("canvas"), g = c.getContext("2d");
+    c.width = 64 * 12; c.height = 64; g.fillStyle = "#000"; g.fillRect(0, 0, c.width, 64); g.fillStyle = "#fff"; g.font = font; g.textAlign = "center"; g.textBaseline = "middle";
+    for (let i = 0; i < 12; i++) g.fillText(sorted[Math.round(i * (sorted.length - 1) / 11)][0], 64 * i + 32, 34);
+    return (fxGlyphCanvas = c);
+  }
+  // Swap the texture lookup in a layer's own material for baFilter: three's built-in materials through their map
+  // chunk, our ShaderMaterials (the chroma key) through their texture2D(map, vUv).
+  function patchFxMaterial(mat, uniforms) {
+    if (!mat || mat._studioFx === uniforms || !(mat.isShaderMaterial ? mat.uniforms && mat.uniforms.map : "map" in mat)) return;
+    mat._studioFx = uniforms;
+    if (mat.isShaderMaterial) mat.defines = Object.assign({}, mat.defines, { BA_FX_SHADER: "" });
+    mat.onBeforeCompile = (shader) => {
+      Object.assign(shader.uniforms, uniforms);
+      const fs = shader.fragmentShader.replace(/void main\(\)\s*\{/, FX_GLSL + "\nvoid main() {");
+      shader.fragmentShader = mat.isShaderMaterial ? fs.replace("texture2D(map, vUv)", "baFilter(vUv)")
+        : fs.replace("#include <map_fragment>", THREE.ShaderChunk.map_fragment.replace(/texture2D\(\s*map,\s*(vMapUv|vUv)\s*\)/, "baFilter( $1 )"));
+    };
+    mat.customProgramCacheKey = () => "studio-fx";
+    mat.needsUpdate = true;
+  }
+  function ensureFxComponent() {
+    if (!window.AFRAME || AFRAME.components["studio-fx"]) return;
+    AFRAME.registerComponent("studio-fx", {
+      schema: { mode: { default: 0 }, amount: { default: 0.5 }, sx: { default: 1 }, sy: { default: 1 } },
+      init() {
+        if (!fxGlyphTexture) { fxGlyphTexture = new THREE.CanvasTexture(fxGlyphs()); fxGlyphTexture.generateMipmaps = false; fxGlyphTexture.minFilter = THREE.LinearFilter; }
+        this.uniforms = { baMode: { value: 0 }, baAmount: { value: 0.5 }, baTime: { value: 0 }, baScale: { value: new THREE.Vector2(1, 1) }, baTexel: { value: new THREE.Vector2(1 / 512, 1 / 512) }, baGlyphs: { value: fxGlyphTexture } };
+      },
+      update() { const u = this.uniforms; u.baMode.value = this.data.mode; u.baAmount.value = this.data.amount; u.baScale.value.set(this.data.sx, this.data.sy); },
+      tick(time) { // the material can arrive late or be rebuilt (texture load, chroma mount), so it is checked every frame
+        this.uniforms.baTime.value = time / 1000;
+        this.el.object3D.traverse((n) => {
+          if (!n.isMesh) return;
+          patchFxMaterial(n.material, this.uniforms);
+          const tex = n.material && (n.material.map || n.material.uniforms && n.material.uniforms.map && n.material.uniforms.map.value), img = tex && tex.image;
+          const w = img && (img.videoWidth || img.naturalWidth || img.width), h = img && (img.videoHeight || img.naturalHeight || img.height);
+          if (w && h) this.uniforms.baTexel.value.set(1 / w, 1 / h);
+        });
+      }
+    });
+  }
+  // The 2D editor's copy: draws media (cropped to el.crop) through baFilter into a canvas of the given size, or
+  // returns null when the layer has no filter or WebGL is missing (the caller then draws the media plainly).
+  let fxGL;
+  function fxFrame(media, el, wpx, hpx, timeSec) {
+    const mode = fxMode(el);
+    if (!mode) return null;
+    if (fxGL === undefined) {
+      fxGL = null;
+      try {
+        const c = document.createElement("canvas"), gl = c.getContext("webgl", { premultipliedAlpha: false, preserveDrawingBuffer: true });
+        const shader = (type, src) => { const s = gl.createShader(type); gl.shaderSource(s, src); gl.compileShader(s); if (!gl.getShaderParameter(s, gl.COMPILE_STATUS)) throw new Error(gl.getShaderInfoLog(s)); return s; };
+        const prog = gl.createProgram();
+        gl.attachShader(prog, shader(gl.VERTEX_SHADER, "attribute vec2 pos; uniform vec4 crop; varying vec2 vUv; void main() { vUv = crop.xy + (pos * 0.5 + 0.5) * crop.zw; gl_Position = vec4(pos, 0.0, 1.0); }"));
+        gl.attachShader(prog, shader(gl.FRAGMENT_SHADER, "precision highp float;\n#define BA_FX_SHADER\nuniform sampler2D map; varying vec2 vUv;\n" + FX_GLSL + "\nvoid main() { gl_FragColor = baFilter(vUv); }"));
+        gl.linkProgram(prog); if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) throw new Error(gl.getProgramInfoLog(prog));
+        gl.useProgram(prog);
+        gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer()); gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, 1, 1]), gl.STATIC_DRAW);
+        const at = gl.getAttribLocation(prog, "pos"); gl.enableVertexAttribArray(at); gl.vertexAttribPointer(at, 2, gl.FLOAT, false, 0, 0);
+        const texture = (unit, source) => { const t = gl.createTexture(); gl.activeTexture(gl.TEXTURE0 + unit); gl.bindTexture(gl.TEXTURE_2D, t);
+          for (const [k, v] of [[gl.TEXTURE_MIN_FILTER, gl.LINEAR], [gl.TEXTURE_MAG_FILTER, gl.LINEAR], [gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE], [gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE]]) gl.texParameteri(gl.TEXTURE_2D, k, v);
+          gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true); if (source) gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source); return t; };
+        texture(1, fxGlyphs()); texture(0, null);
+        const u = (n) => gl.getUniformLocation(prog, n);
+        gl.uniform1i(u("map"), 0); gl.uniform1i(u("baGlyphs"), 1);
+        fxGL = { c, gl, u: { crop: u("crop"), mode: u("baMode"), amount: u("baAmount"), time: u("baTime"), scale: u("baScale"), texel: u("baTexel") } };
+      } catch (e) { console.warn("filter preview unavailable", e); }
+    }
+    if (!fxGL) return null;
+    const { c, gl, u } = fxGL, cr = el.crop || { x: 0, y: 0, w: 1, h: 1 };
+    const iw = media.videoWidth || media.naturalWidth || media.width, ih = media.videoHeight || media.naturalHeight || media.height;
+    if (!iw || !ih) return null;
+    const k = Math.min(1, 1024 / Math.max(wpx, hpx)) * (window.devicePixelRatio || 1);
+    c.width = Math.max(1, Math.round(wpx * Math.min(k, 2))); c.height = Math.max(1, Math.round(hpx * Math.min(k, 2)));
+    gl.viewport(0, 0, c.width, c.height);
+    gl.activeTexture(gl.TEXTURE0); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+    try { gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, media); } catch (e) { return null; }
+    const s = fxScale(el, wpx, hpx);
+    gl.uniform4f(u.crop, cr.x, 1 - cr.y - cr.h, cr.w, cr.h); gl.uniform1f(u.mode, mode); gl.uniform1f(u.amount, fxAmount(el)); gl.uniform1f(u.time, timeSec || 0);
+    gl.uniform2f(u.scale, s[0], s[1]); gl.uniform2f(u.texel, 1 / iw, 1 / ih);
+    gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
+    return c;
+  }
+
   // Chroma-key video: samples the video texture with a key-color discard shader.
   // Works in both preview and AR modes (replaces the plain/fade video path when enabled).
   // The keying shader, standalone so it can be driven by any texture (video or test canvas).
@@ -941,6 +1105,11 @@ const Studio = (() => {
       e = document.createElement("a-entity"); // invisible carrier for PositionalAudio
     } else {
       return null; // sound: no visual node
+    }
+    if (fxMode(el) && e.tagName !== "A-PLANE") { // a filter on the layer's own material (not on the grey stand-in for a video that cannot play)
+      ensureFxComponent();
+      const s = fxScale(el, ts.w, ts.h);
+      e.setAttribute("studio-fx", { mode: fxMode(el), amount: fxAmount(el), sx: s[0], sy: s[1] });
     }
     if(['image','video'].includes(el.type)&&el.crop){
       const applyCrop=()=>{let ready=false;e.object3D.traverse(mesh=>{if(!mesh.geometry?.attributes.uv)return;if(!mesh.geometry._studioCropOwned){mesh.geometry=mesh.geometry.clone();mesh.geometry._studioCropOwned=true;}const uv=mesh.geometry.attributes.uv,c=el.crop;
@@ -1611,6 +1780,7 @@ const Studio = (() => {
         if (/^(javascript|data|vbscript|file):/.test(u)) throw new Error("bad tap url");
       }
       if(!validCrop(el))throw new Error('bad image crop');
+      if(!validFx(el))throw new Error('bad filter');
       if (el.timeline != null) {
         const tl = el.timeline;
         if (!Array.isArray(tl.keys) || tl.keys.length > 1000) throw new Error("bad timeline keys");
@@ -1908,7 +2078,7 @@ const Studio = (() => {
   }
 
   return { TARGET_W, TARGET_H, newId, inspectVideo, validateModelBlob, prepareModelBlob, modelCompressionKinds, DECODER_DRACO_PATH, DECODER_MESHOPT_PATH, modelClipNames, modelClipInfo, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
-           audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, blobURL, releaseBlobURL, blobURLs, historyState, restoreHistory, duplicateLayer, exportJSON, missingAssets, importJSON, exportZIP, importZIP, zipToJSON, fetchPublished, ownBlob, assetHealth, fileHealth, seedDemo, normEl, ANIMS, drawTextCanvas, loadTextFonts, FONTS: FONTS.map(([id, name]) => ({ id, name })), buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, ensureTimeCubeComponent, bakeTimeCube, validTimeCube, TIMECUBE_DIRS, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, artworkFingerprint, fingerprintDistance, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
+           audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, blobURL, releaseBlobURL, blobURLs, historyState, restoreHistory, duplicateLayer, exportJSON, missingAssets, importJSON, exportZIP, importZIP, zipToJSON, fetchPublished, ownBlob, assetHealth, fileHealth, seedDemo, normEl, ANIMS, drawTextCanvas, loadTextFonts, FX: FX.map(([id, name]) => ({ id, name, moving: FX_MOVING.has(id) })), fxFrame, validFx, FONTS: FONTS.map(([id, name]) => ({ id, name })), buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, ensureTimeCubeComponent, bakeTimeCube, validTimeCube, TIMECUBE_DIRS, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, artworkFingerprint, fingerprintDistance, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
            load: id=>settledRead(id), all: ()=>settledRead(), del: delExperience, LIMITS, mediaBytes, pushBack, addBlocker, publishBlocker, restoreBlocker, exportWarning, exportJSONSize,
            onSaveState, installSaveGuard, saveState, soundOnTouch, snapAngle, syncMedia,
            _testHoldSave:p=>{saveHold=p;}, _testFailSave:m=>{failSave=m;}, _testFailPut:o=>{failPut=o?{...o}:null;} };
