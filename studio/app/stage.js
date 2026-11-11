@@ -11,6 +11,7 @@ window.Stage = (() => {
   const view = { W: 0, H: 0, mx: 0, my: 0, cw: 0, ch: 0 };
   const boxes = {};
   let guide = null, cropRatio = null;
+  const pan = { x: 0, y: 0 }; // how far the zoomed-in flat view was dragged, in screen pixels
 
   // ---------- geometry ----------
   function layout() {
@@ -26,7 +27,8 @@ window.Stage = (() => {
     const W = Math.min(cw / (1 + 2 * MARGIN), ch / (1 + 2 * MARGIN) * a);
     Object.assign(view, { cw, ch, W, H: W / a, mx: (cw - W) / 2, my: (ch - W / a) / 2 });
   }
-  const pt = (e) => { const r = canvas.getBoundingClientRect(); return { x: (e.clientX - r.left - view.cw / 2) / zoom + view.cw / 2, y: (e.clientY - r.top - view.ch / 2) / zoom + view.ch / 2 }; };
+  const ptAt = (x, y) => { const r = canvas.getBoundingClientRect(); return { x: (x - r.left - pan.x - view.cw / 2) / zoom + view.cw / 2, y: (y - r.top - pan.y - view.ch / 2) / zoom + view.ch / 2 }; };
+  const pt = (e) => ptAt(e.clientX, e.clientY);
   const local = (b, p) => { const dx = p.x - b.cx, dy = p.y - b.cy, co = Math.cos(-b.rot), si = Math.sin(-b.rot); return { x: dx * co - dy * si, y: dx * si + dy * co }; };
   const world = (b, x, y) => { const co = Math.cos(b.rot), si = Math.sin(b.rot); return { x: b.cx + x * co - y * si, y: b.cy + x * si + y * co }; };
   function boxOf(el, s) {
@@ -224,7 +226,7 @@ window.Stage = (() => {
     if (!ready) return;
     Editor3D.sync();
     if (App.mode3d) return;
-    ctx.translate(view.cw / 2, view.ch / 2); ctx.scale(zoom, zoom); ctx.translate(-view.cw / 2, -view.ch / 2);
+    ctx.translate(view.cw / 2 + pan.x, view.ch / 2 + pan.y); ctx.scale(zoom, zoom); ctx.translate(-view.cw / 2, -view.ch / 2);
     // the soft shadow under the artwork is the costliest part of a frame; a phone goes without it
     if (!COARSE) { ctx.save(); ctx.shadowColor = "rgba(0,0,0,.55)"; ctx.shadowBlur = 40; ctx.shadowOffsetY = 12; ctx.fillStyle = "#000"; ctx.fillRect(view.mx, view.my, view.W, view.H); ctx.restore(); }
     ctx.drawImage(App.art, view.mx, view.my, view.W, view.H);
@@ -291,7 +293,7 @@ window.Stage = (() => {
     }
     const under = hits(p), keep = sel && boxes[sel.id] && !boxes[sel.id].hidden && inside(boxes[sel.id], p);
     const el = keep ? sel : under[0];
-    if (!el) { drag = { mode: "empty", sx: e.clientX, sy: e.clientY }; return; }
+    if (!el) { drag = { mode: "empty", sx: e.clientX, sy: e.clientY, px: pan.x, py: pan.y }; return; }
     drag = { mode: "move", id: el.id, start: p, sx: e.clientX, sy: e.clientY, moved: false, wasSel: keep, under };
     if (!keep) App.select(el.id);
   }
@@ -300,8 +302,10 @@ window.Stage = (() => {
     pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
     if (pinch) return movePinch();
     if (!drag || pointers.size !== 1) return;
+    // a drag on empty space carries the zoomed-in view
+    if (drag.mode === "empty") { if (zoom > 1) setPan(drag.px + e.clientX - drag.sx, drag.py + e.clientY - drag.sy); return; }
     const el = App.el(drag.id), p = pt(e);
-    if (drag.mode === "empty" || drag.mode === "none" || !el) return;
+    if (drag.mode === "none" || !el) return;
     if (drag.mode === "crop") { cropMove(el, drag, p); drag.moved = true; App.changed(false); return; }
     if (drag.mode === "move") {
       if (!drag.moved) {
@@ -348,17 +352,17 @@ window.Stage = (() => {
   }
   function startPinch() {
     const [a, b] = [...pointers.values()], sel = App.sel();
-    const r = canvas.getBoundingClientRect(), mid = { x: ((a.x + b.x) / 2 - r.left - view.cw / 2) / zoom + view.cw / 2, y: ((a.y + b.y) / 2 - r.top - view.ch / 2) / zoom + view.ch / 2 };
+    const mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2, mid = ptAt(mx, my);
     const onItem = sel && sel.type !== "sound" && !App.cropping && boxes[sel.id] && inside(boxes[sel.id], mid, 24 / zoom);
     if (drag && drag.moved) App.changed(true);
     drag = null; guide = null;
-    pinch = { d0: Math.max(10, Math.hypot(a.x - b.x, a.y - b.y)), z0: zoom, item: onItem ? { id: sel.id, st: sizeStart(sel) } : null };
+    pinch = { d0: Math.max(10, Math.hypot(a.x - b.x, a.y - b.y)), z0: zoom, mx, my, px: pan.x, py: pan.y, item: onItem ? { id: sel.id, st: sizeStart(sel) } : null };
   }
   function movePinch() {
     const [a, b] = [...pointers.values()]; if (!a || !b) return;
     const ratio = Math.hypot(a.x - b.x, a.y - b.y) / pinch.d0;
     if (pinch.item) { const el = App.el(pinch.item.id); if (el) { sizeApply(el, pinch.item.st, ratio); App.changed(false); } }
-    else setZoom(pinch.z0 * ratio);
+    else { setZoom(pinch.z0 * ratio); setPan(pinch.px + (a.x + b.x) / 2 - pinch.mx, pinch.py + (a.y + b.y) / 2 - pinch.my); } // two fingers zoom and carry the view along
   }
   function onWheel(e) {
     if (App.mode3d || !App.rec || !App.rec.target) return;
@@ -381,7 +385,12 @@ window.Stage = (() => {
   }
 
   // ---------- zoom, views ----------
-  function setZoom(z) { zoom = clamp(z, 0.5, 4); const l = $("zoom-label"); if (l) l.textContent = Math.round(zoom * 100) + "%"; }
+  // The view can be dragged only as far as the zoom pushed things off the stage; at 100% and below it sits in the middle.
+  function setPan(x, y) {
+    const mx = Math.max(0, view.cw * (zoom - 1) / 2), my = Math.max(0, view.ch * (zoom - 1) / 2);
+    pan.x = clamp(x, -mx, mx); pan.y = clamp(y, -my, my);
+  }
+  function setZoom(z) { zoom = clamp(z, 0.5, 4); setPan(pan.x, pan.y); const l = $("zoom-label"); if (l) l.textContent = Math.round(zoom * 100) + "%"; }
   async function applyMode() {
     const rec = App.rec, on = App.mode3d && shown && rec && rec.target && App.art;
     stage.classList.toggle("is-3d", !!on); stage.classList.toggle("is-crop", App.cropping);
@@ -423,7 +432,7 @@ window.Stage = (() => {
       onChange: () => App.changed(true),
       sampleEl: (el) => (App.rec ? App.sample(el) : null), clockFor: () => App.clock(),
       freezeAt: (t) => App.freeze(t), getFrozen: () => App.frozen, restoreFrozen: (t) => App.freeze(t),
-      onGate: (text) => toast(text), getView2d: () => ({ view, zoom })
+      onGate: (text) => toast(text), getView2d: () => ({ view, zoom, pan })
     });
     canvas.addEventListener("pointerdown", onDown);
     canvas.addEventListener("pointermove", onMove);
@@ -459,5 +468,5 @@ window.Stage = (() => {
     if (shown) { layout(); applyMode(); } else { if (Editor3D.isActive()) Editor3D.hide(); Editor3D.overlay(false); }
   }
 
-  return { init, show, layout, draw, nudge, fitText, setCropRatio, resetCrop, get cropRatio() { return cropRatio; }, get view() { return view; }, get zoom() { return zoom; }, boxes, CROP_TYPES };
+  return { init, show, layout, draw, nudge, fitText, setCropRatio, resetCrop, get cropRatio() { return cropRatio; }, get view() { return view; }, get zoom() { return zoom; }, get pan() { return pan; }, boxes, CROP_TYPES };
 })();

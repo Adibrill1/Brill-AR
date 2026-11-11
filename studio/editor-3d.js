@@ -1043,7 +1043,8 @@ window.Editor3D = (() => {
     const g = geomOf(rec), r = rec.target.artRect, k = g.artW / v.view.W / (v.zoom || 1);
     const xc = (r.x / Studio.TARGET_W - 0.5) * g.tw + g.artW / 2, yc = 0.5 - r.y / Studio.TARGET_H - g.artH / 2;
     ortho.left = -w / 2 * k; ortho.right = w / 2 * k; ortho.top = h / 2 * k; ortho.bottom = -h / 2 * k;
-    ortho.position.set(xc, yc, 10); ortho.updateProjectionMatrix();
+    const pan = v.pan || { x: 0, y: 0 }; // the zoomed-in view dragged aside
+    ortho.position.set(xc - pan.x * k, yc + pan.y * k, 10); ortho.updateProjectionMatrix();
     if (sceneEl.camera !== ortho) sceneEl.camera = ortho;
     // Particle points are sized in screen pixels under an orthographic camera (no distance scaling), so give them the
     // pixel size they have in the 3D view's perspective (fov 50) at this zoom; points3d() puts the original back.

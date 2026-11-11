@@ -31,6 +31,20 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
   assert.equal(await p.locator('#stage-art').isVisible(),false,'the message goes once the artwork is back');
   await p.evaluate(()=>{Studio.blobToDataURL=window.__o;App.rec.assets.__artwork=window.__a;});
 
+  // flat view: zoomed in, a finger on empty space or two fingers together carry the view; at 100% it stays put
+  const flat=(z)=>p.evaluate((z)=>{const c=document.getElementById('preview'),r=c.getBoundingClientRect(),x0=r.left+20,y0=r.top+r.height/2;
+    const ev=(t,id,x,y)=>c.dispatchEvent(new PointerEvent(t,{pointerId:id,pointerType:'touch',isPrimary:id===3,clientX:x,clientY:y,bubbles:true,cancelable:true,button:0,buttons:t==='pointerup'?0:1}));
+    document.getElementById('zoom-label').click();for(let i=0;i<z;i++)document.getElementById('btn-zoom-in').click();
+    ev('pointerdown',3,x0,y0);for(let i=1;i<=6;i++)ev('pointermove',3,x0+i*5,y0+i*2);ev('pointerup',3,x0+30,y0+12);const one={x:Stage.pan.x,y:Stage.pan.y};
+    ev('pointerdown',3,x0,y0);ev('pointerdown',4,x0+60,y0);for(let i=1;i<=6;i++){ev('pointermove',3,x0-i*4,y0);ev('pointermove',4,x0+60-i*4,y0);}ev('pointerup',3,x0-24,y0);ev('pointerup',4,x0+36,y0);
+    return{one,two:{x:Stage.pan.x,y:Stage.pan.y},zoom:Stage.zoom};},z);
+  const still=await flat(0);assert.equal(Math.abs(still.one.x)+Math.abs(still.one.y)+Math.abs(still.two.x),0,'at 100% the view does not move');
+  const moved=await flat(3);
+  assert.ok(Math.abs(moved.one.x-30)<1&&Math.abs(moved.one.y-12)<1,'one finger on empty space drags the zoomed view: '+JSON.stringify(moved));
+  assert.ok(Math.abs(moved.two.x-6)<1,'two fingers moving together drag it too: '+JSON.stringify(moved));
+  await p.evaluate(()=>{document.getElementById('zoom-label').click();});
+  assert.equal(await p.evaluate(()=>Math.abs(Stage.pan.x)+Math.abs(Stage.pan.y)),0,'back at 100% the view is centred again');
+
   // 3D: a layer that covers the artwork leaves no empty space to drag on
   await p.locator('.tab[data-tab="layers"]').click();await p.locator('#btn-add').click();await p.locator('.add-tile',{hasText:'רקע מונפש'}).click();await p.waitForTimeout(900);
   const id=await p.evaluate(()=>App.rec.elements[0].id);
