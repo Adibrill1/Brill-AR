@@ -110,14 +110,28 @@ window.Inspector = (() => {
     T({ label: "חוזר שוב ושוב", get: () => App.sel().loop !== false, set: upd((x, v) => { x.loop = v; }) })
   ];
 
+  // a small still of each pattern look, drawn once
+  const lookPics = {};
+  function lookPic(id) {
+    if (!(id in lookPics)) { try { lookPics[id] = Studio.patternFrame({ type: "pattern", pattern: Studio.patternDefaults(id) }, 64, 64, 1).toDataURL(); } catch (e) { lookPics[id] = ""; } }
+    return lookPics[id] ? h("span.look-pic", { style: { backgroundImage: "url(" + lookPics[id] + ")" } }) : null;
+  }
   function stylePattern() {
     const swatch = (colors) => h("span.swatch", colors.map((c) => h("i", { style: { background: c } })));
     const P = (fn, then) => upd((x, v) => { x.pattern = Object.assign({}, x.pattern); fn(x.pattern, v, x); }, then);
-    const looks = C({ label: "", bare: true, wrap: true, options: Studio.PATTERNS.map((p) => ({ id: p.id, name: p.name })), get: () => App.sel().pattern.look,
+    const looks = C({ label: "", bare: true, wrap: true, options: Studio.PATTERNS.map((p) => ({ id: p.id, name: p.name, swatch: lookPic(p.id) })), get: () => App.sel().pattern.look,
       set: P((p, v) => { const d = Studio.patternDefaults(v); p.look = v; p.colors = d.colors; p.speed = d.speed; }, sync) });
     const pals = C({ label: "ערכות צבע", wrap: true, options: Studio.PATTERN_PALETTES.map((p, i) => ({ id: String(i), swatch: swatch(p.colors), title: p.name })),
       get: () => String(Studio.PATTERN_PALETTES.findIndex((p) => p.colors.join() === App.sel().pattern.colors.join())), set: P((p, v) => { p.colors = Studio.PATTERN_PALETTES[+v].colors.slice(); }, sync) });
-    pals.node.classList.add("swatches");
+    pals.node.classList.add("swatches"); looks.node.classList.add("looks");
+    // the one-tap way back to a pattern that covers the whole artwork
+    const fill = h("button.btn.ghost.small", { type: "button", onclick: () => {
+      const e = App.sel(); if (!e) return;
+      if (App.keyed(e)) return toast("לשכבה הזו יש מסלול תנועה, אז המיקום שלה נקבע שם", { kind: "warn" });
+      e.pattern = Object.assign({}, e.pattern, { shape: "art" }); e.aspect = Studio.patternAspect(App.rec, "art");
+      e.w = e.h = 1; e.x = e.y = e.z = e.rot = 0;
+      App.changed(true); sync();
+    } }, icon("image", 16), h("span", "מילוי תמונת המקור"));
     const col = (i) => K({ label: "צבע " + (i + 1), get: () => App.sel().pattern.colors[i], set: P((p, v) => { p.colors = p.colors.slice(); p.colors[i] = v; }) });
     return [
       UI.group("מראה", looks),
@@ -128,7 +142,7 @@ window.Inspector = (() => {
         S({ label: "וריאציה", min: 0, max: 999, step: 1, get: () => App.sel().pattern.seed, set: P((p, v) => { p.seed = Math.round(v); }) }),
         L({ label: "צורה", options: Studio.PATTERN_SHAPES, get: () => App.sel().pattern.shape,
           set: P((p, v, x) => { p.shape = v; x.aspect = Studio.patternAspect(App.rec, v); x.h = (x.w / x.aspect) * artRatio(); }) }),
-        opacity())
+        fill, opacity())
     ];
   }
 
