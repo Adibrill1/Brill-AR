@@ -2,7 +2,8 @@
 /* App: the creation that is open, what is selected in it, and every change to it. The screens (stage, layers,
    inspector, timeline) never talk to each other: they change things here and listen to what happened.
    Events: "open" (another creation, or the whole record was replaced by undo/redo), "select", "change" (values of
-   layers changed), "structure" (layers added, removed or reordered), "history", "tab", "mode", "time". */
+   layers changed), "structure" (layers added, removed or reordered), "history", "tab", "mode", "time", "art" (the artwork picture
+   loaded, or did not). */
 window.App = (() => {
   const { toast } = UI;
   const subs = {};
@@ -11,7 +12,8 @@ window.App = (() => {
 
   const S = {
     rec: null, selId: null,
-    art: null,            // the artwork as an <img>
+    art: null,            // the artwork as an <img>, or a lighter <canvas> copy of a large one
+    artState: "none",     // "none" | "loading" | "ok" | "error"
     media: {},            // assetId -> <video> | <img> | <canvas> (animated GIF) for the 2D canvas
     frozen: null,         // seconds the playhead is parked at; null = playing
     t0: performance.now(),
@@ -34,35 +36,78 @@ window.App = (() => {
     try { if (m.tagName === "VIDEO") { m.pause(); m.removeAttribute("src"); m.load(); } if (m.__url) URL.revokeObjectURL(m.__url); } catch (e) {}
     delete S.media[id]; delete mediaBlob[id];
   }
+  // A phone sometimes fails the first read of a stored file; another try, or a fresh copy of its bytes, usually works.
+  const wait = (ms) => new Promise((r) => setTimeout(r, ms));
+  async function retry(fn) { let last; for (let i = 0; i < 3; i++) { try { return await fn(); } catch (e) { last = e; await wait(150 * (i + 1)); } } throw last; }
+  async function readAsset(blob) {
+    try { return await retry(() => Studio.blobToDataURL(blob)); }
+    catch (err) {
+      const copy = new Blob([await blob.arrayBuffer()], { type: blob.type || "" });
+      if (!copy.size || copy.size !== blob.size) throw err;
+      return Studio.blobToDataURL(copy);
+    }
+  }
+  // The same stored file, also when undo or a save handed back another object for it: nothing to read again.
+  const sameFile = (a, b) => a === b || !!(a && b && a.size === b.size && a.type === b.type);
+  // The stage draws the artwork on every frame; a phone photo is far larger than the stage needs.
+  function lightCopy(img) {
+    const w = img.naturalWidth, hh = img.naturalHeight, k = Math.min(1, 1600 / Math.max(w, hh));
+    if (k === 1) return img;
+    try {
+      const c = document.createElement("canvas"); c.width = Math.round(w * k); c.height = Math.round(hh * k);
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      return c;
+    } catch (e) { return img; }
+  }
+  let artJob = 0;
+  async function loadArt() {
+    const rec = S.rec, art = rec && rec.assets.__artwork || null, job = ++artJob;
+    if (!art) { artBlob = null; S.art = null; S.artState = "none"; return; }
+    if (S.art && sameFile(art, artBlob)) { artBlob = art; S.artState = "ok"; return; }
+    // what is on screen stays until the new picture is ready
+    if (!S.art) { S.artState = "loading"; emit("art"); }
+    try {
+      const pic = lightCopy(await Studio.loadImage(await readAsset(art)));
+      if (job !== artJob || S.rec !== rec) return;
+      S.art = pic; artBlob = art; S.artState = "ok";
+    } catch (e) {
+      console.warn("artwork", e);
+      if (job !== artJob || S.rec !== rec) return;
+      S.art = null; artBlob = null; S.artState = "error";
+    }
+    emit("art");
+  }
   async function hydrate() {
     const rec = S.rec; if (!rec) return;
-    const art = rec.assets.__artwork || null;
-    if (art !== artBlob) {
-      artBlob = art; S.art = null;
-      if (art) try { S.art = await Studio.loadImage(await Studio.blobToDataURL(art)); } catch (e) { toast("תמונת היצירה לא נטענה", { kind: "error" }); }
-    }
+    await loadArt();
     const keep = new Set();
     for (const e of rec.elements) {
       if ((e.type !== "video" && e.type !== "image") || !e.assetId) continue;
       const blob = rec.assets[e.assetId]; if (!blob) continue;
       keep.add(e.assetId);
-      if (mediaBlob[e.assetId] === blob) continue;
+      if (S.media[e.assetId] && sameFile(mediaBlob[e.assetId], blob)) { mediaBlob[e.assetId] = blob; continue; }
       dropMedia(e.assetId); mediaBlob[e.assetId] = blob;
       try {
         if (e.type === "video") {
+          await retry(() => blob.slice(0, 1).arrayBuffer());
           const v = document.createElement("video");
           v.muted = true; v.loop = true; v.playsInline = true; v.setAttribute("playsinline", ""); v.preload = "auto";
           v.__url = URL.createObjectURL(blob); v.src = v.__url; v.play().catch(() => {});
           S.media[e.assetId] = v;
         } else {
-          S.media[e.assetId] = (await Studio.makeImageMedia(blob, "m-" + e.assetId, null)).node;
+          S.media[e.assetId] = (await retry(() => Studio.makeImageMedia(blob, "m-" + e.assetId, null))).node;
         }
-      } catch (err) { console.warn("media", err); }
+      } catch (err) { console.warn("media", err); delete mediaBlob[e.assetId]; }
     }
     Object.keys(S.media).forEach((id) => { if (!keep.has(id)) dropMedia(id); });
   }
   // iOS pauses muted videos when the page comes back from the background.
-  document.addEventListener("visibilitychange", () => { if (!document.hidden) Object.values(S.media).forEach((m) => { if (m.tagName === "VIDEO" && m.paused) m.play().catch(() => {}); }); });
+  // Back on the page is also the moment to try again whatever did not load.
+  document.addEventListener("visibilitychange", () => {
+    if (document.hidden) return;
+    Object.values(S.media).forEach((m) => { if (m.tagName === "VIDEO" && m.paused) m.play().catch(() => {}); });
+    if (S.rec && S.artState === "error") loadArt();
+  });
 
   // ---------- saving ----------
   let saveTimer = 0;
@@ -94,7 +139,7 @@ window.App = (() => {
   }
   async function close() {
     await flush();
-    S.rec = null; S.selId = null; S.art = null; artBlob = null;
+    S.rec = null; S.selId = null; S.art = null; artBlob = null; S.artState = "none"; artJob++;
     Object.keys(S.media).forEach(dropMedia);
     emit("close");
   }
@@ -181,9 +226,9 @@ window.App = (() => {
   function setCropping(on) { S.cropping = !!on; emit("mode"); }
 
   return {
-    on, emit, el, sel, keyed, clock, sample, hydrate, save, saveSoon, flush, changed, open, close, select, blocked,
+    on, emit, el, sel, keyed, clock, sample, hydrate, loadArt, save, saveSoon, flush, changed, open, close, select, blocked,
     addLayer, removeLayer, duplicateLayer, moveLayer, undo, redo, freeze, replay, keyAt, editKey, setTab, setPane, setMode3d, setCropping,
-    get rec() { return S.rec; }, get selId() { return S.selId; }, get art() { return S.art; }, get media() { return S.media; },
+    get rec() { return S.rec; }, get selId() { return S.selId; }, get art() { return S.art; }, get artState() { return S.artState; }, get media() { return S.media; },
     get frozen() { return S.frozen; }, get tab() { return S.tab; }, get pane() { return S.pane; }, get mode3d() { return S.mode3d; },
     get cropping() { return S.cropping; }, get snap() { return S.snap; }, set snap(v) { S.snap = !!v; },
     set rec(r) { S.rec = r; }

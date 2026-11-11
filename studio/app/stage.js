@@ -5,7 +5,8 @@
    takes the whole stage over in the 3D view. */
 window.Stage = (() => {
   const { $, h, icon, clamp, round, toast } = UI;
-  const MARGIN = 0.14, KNOB = 30, GRAB = 20, ACCENT = "#8b6cff", CROP_TYPES = ["image", "video"];
+  const COARSE = !!(window.matchMedia && matchMedia("(pointer: coarse)").matches);
+  const MARGIN = 0.14, KNOB = 30, GRAB = COARSE ? 28 : 20, ACCENT = "#8b6cff", CROP_TYPES = ["image", "video"]; // a finger needs a wider grip than a mouse
   let stage, wrap, canvas, ctx, dpr = 1, zoom = 1, shown = false, raf = 0;
   const view = { W: 0, H: 0, mx: 0, my: 0, cw: 0, ch: 0 };
   const boxes = {};
@@ -15,7 +16,7 @@ window.Stage = (() => {
   function layout() {
     const rec = App.rec, cw = stage.clientWidth, ch = stage.clientHeight;
     if (!cw || !ch) return;
-    dpr = Math.min(window.devicePixelRatio || 1, 2.5);
+    dpr = Math.min(window.devicePixelRatio || 1, COARSE ? 2 : 2.5); // a phone redraws every frame; 3x there is slow and looks the same
     if (canvas.width !== Math.round(cw * dpr) || canvas.height !== Math.round(ch * dpr)) {
       canvas.width = Math.round(cw * dpr); canvas.height = Math.round(ch * dpr);
       canvas.style.width = cw + "px"; canvas.style.height = ch + "px";
@@ -224,7 +225,8 @@ window.Stage = (() => {
     Editor3D.sync();
     if (App.mode3d) return;
     ctx.translate(view.cw / 2, view.ch / 2); ctx.scale(zoom, zoom); ctx.translate(-view.cw / 2, -view.ch / 2);
-    ctx.save(); ctx.shadowColor = "rgba(0,0,0,.55)"; ctx.shadowBlur = 40; ctx.shadowOffsetY = 12; ctx.fillStyle = "#000"; ctx.fillRect(view.mx, view.my, view.W, view.H); ctx.restore();
+    // the soft shadow under the artwork is the costliest part of a frame; a phone goes without it
+    if (!COARSE) { ctx.save(); ctx.shadowColor = "rgba(0,0,0,.55)"; ctx.shadowBlur = 40; ctx.shadowOffsetY = 12; ctx.fillStyle = "#000"; ctx.fillRect(view.mx, view.my, view.W, view.H); ctx.restore(); }
     ctx.drawImage(App.art, view.mx, view.my, view.W, view.H);
     const selId = App.selId; let selEl = null;
     for (const k in boxes) delete boxes[k];
@@ -381,7 +383,7 @@ window.Stage = (() => {
   // ---------- zoom, views ----------
   function setZoom(z) { zoom = clamp(z, 0.5, 4); const l = $("zoom-label"); if (l) l.textContent = Math.round(zoom * 100) + "%"; }
   async function applyMode() {
-    const rec = App.rec, on = App.mode3d && shown && rec && rec.target;
+    const rec = App.rec, on = App.mode3d && shown && rec && rec.target && App.art;
     stage.classList.toggle("is-3d", !!on); stage.classList.toggle("is-crop", App.cropping);
     $("btn-2d").classList.toggle("on", !App.mode3d); $("btn-3d").classList.toggle("on", App.mode3d);
     $("btn-2d").setAttribute("aria-pressed", String(!App.mode3d)); $("btn-3d").setAttribute("aria-pressed", String(App.mode3d));
@@ -405,9 +407,12 @@ window.Stage = (() => {
     if (t != null) $("time-chip-text").textContent = "עצור ב־" + t.toFixed(1) + " שנ׳";
   }
   function renderEmpty() {
-    const rec = App.rec;
+    const rec = App.rec, st = App.artState, miss = !!rec && !!rec.target && (st === "loading" || st === "error");
     $("stage-empty").hidden = !rec || !!rec.target;
-    $("stage-tools").hidden = !rec || !rec.target;
+    $("stage-tools").hidden = !rec || !rec.target || miss;
+    const box = $("stage-art");
+    box.hidden = !miss; box.dataset.state = st;
+    if (miss) $("stage-art-text").textContent = st === "loading" ? "טוענת את תמונת היצירה…" : "תמונת היצירה לא נקראה מהמכשיר. השכבות שלך שמורות.";
   }
 
   function init() {
@@ -442,6 +447,9 @@ window.Stage = (() => {
     App.on("structure", () => { layout(); renderEmpty(); renderBar(); });
     App.on("change", () => { const el = App.sel(); if (el && $("sel-bar").firstChild && $("sel-bar").firstChild.textContent !== (el.name || "")) renderBar(); });
     App.on("mode", applyMode);
+    App.on("art", () => { layout(); renderEmpty(); applyMode(); });
+    $("btn-art-retry").onclick = () => App.loadArt();
+    $("btn-art-replace").onclick = () => Layers.pickArtwork();
     App.on("time", renderTime);
     App.on("close", () => { if (Editor3D.isActive()) Editor3D.hide(); Editor3D.overlay(false); });
     raf = requestAnimationFrame(frame);

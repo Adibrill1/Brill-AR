@@ -704,11 +704,16 @@ window.Editor3D = (() => {
             e.preventDefault(); e.stopPropagation(); return;
           }
         }
-        onSelect(hitId); e.preventDefault(); return;
+        // a tap on a layer picks it; a drag that starts on one turns the view, so a phone whose stage is covered by
+        // layers can still look around (layers are moved by their arrows)
+        orb = { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, pick: hitId };
+        if (sceneEl.canvas.setPointerCapture) try { sceneEl.canvas.setPointerCapture(e.pointerId); } catch (_) {}
+        e.preventDefault(); return;
       }
     }
     // empty space: orbit; a tap there (no drag) lets go of the selection, as in the 2D view
     orb = { x: e.clientX, y: e.clientY, x0: e.clientX, y0: e.clientY, tap: true };
+    if (sceneEl.canvas.setPointerCapture) try { sceneEl.canvas.setPointerCapture(e.pointerId); } catch (_) {}
   }
 
   function move(e) {
@@ -901,7 +906,9 @@ window.Editor3D = (() => {
         onSelect(ta.id);
       } else onChange();
     }
-    if (orb && orb.tap && e && e.type === "pointerup" && Math.hypot(e.clientX - orb.x0, e.clientY - orb.y0) < 8 && getSelected()) onSelect(null);
+    const still = orb && e && e.type === "pointerup" && Math.hypot(e.clientX - orb.x0, e.clientY - orb.y0) < 8;
+    if (still && orb.pick) onSelect(orb.pick);
+    else if (still && orb.tap && getSelected()) onSelect(null);
     orb = null;
   }
 
