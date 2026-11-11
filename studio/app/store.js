@@ -1,0 +1,191 @@
+"use strict";
+/* App: the creation that is open, what is selected in it, and every change to it. The screens (stage, layers,
+   inspector, timeline) never talk to each other: they change things here and listen to what happened.
+   Events: "open" (another creation, or the whole record was replaced by undo/redo), "select", "change" (values of
+   layers changed), "structure" (layers added, removed or reordered), "history", "tab", "mode", "time". */
+window.App = (() => {
+  const { toast } = UI;
+  const subs = {};
+  const on = (ev, fn) => { ev.split(" ").forEach((e) => (subs[e] || (subs[e] = [])).push(fn)); };
+  const emit = (ev, arg) => { (subs[ev] || []).forEach((fn) => { try { fn(arg); } catch (e) { console.error(e); } }); };
+
+  const S = {
+    rec: null, selId: null,
+    art: null,            // the artwork as an <img>
+    media: {},            // assetId -> <video> | <img> | <canvas> (animated GIF) for the 2D canvas
+    frozen: null,         // seconds the playhead is parked at; null = playing
+    t0: performance.now(),
+    tab: "style",         // inspector tab
+    pane: "layers",       // phone: which pane is under the stage ("layers" | "inspector")
+    mode3d: false, cropping: false, snap: true
+  };
+
+  const el = (id) => (S.rec && S.rec.elements.find((e) => e.id === id)) || null;
+  const sel = () => el(S.selId);
+  const keyed = (e) => !!(e && e.timeline && Array.isArray(e.timeline.keys) && e.timeline.keys.length);
+  const clock = () => (S.frozen != null ? S.frozen : (performance.now() - S.t0) / 1000);
+  const sample = (e) => Studio.sampleComposition(S.rec, e, clock, null);
+
+  // ---------- media for the canvas ----------
+  let artBlob = null;
+  const mediaBlob = {};
+  function dropMedia(id) {
+    const m = S.media[id]; if (!m) return;
+    try { if (m.tagName === "VIDEO") { m.pause(); m.removeAttribute("src"); m.load(); } if (m.__url) URL.revokeObjectURL(m.__url); } catch (e) {}
+    delete S.media[id]; delete mediaBlob[id];
+  }
+  async function hydrate() {
+    const rec = S.rec; if (!rec) return;
+    const art = rec.assets.__artwork || null;
+    if (art !== artBlob) {
+      artBlob = art; S.art = null;
+      if (art) try { S.art = await Studio.loadImage(await Studio.blobToDataURL(art)); } catch (e) { toast("תמונת היצירה לא נטענה", { kind: "error" }); }
+    }
+    const keep = new Set();
+    for (const e of rec.elements) {
+      if ((e.type !== "video" && e.type !== "image") || !e.assetId) continue;
+      const blob = rec.assets[e.assetId]; if (!blob) continue;
+      keep.add(e.assetId);
+      if (mediaBlob[e.assetId] === blob) continue;
+      dropMedia(e.assetId); mediaBlob[e.assetId] = blob;
+      try {
+        if (e.type === "video") {
+          const v = document.createElement("video");
+          v.muted = true; v.loop = true; v.playsInline = true; v.setAttribute("playsinline", ""); v.preload = "auto";
+          v.__url = URL.createObjectURL(blob); v.src = v.__url; v.play().catch(() => {});
+          S.media[e.assetId] = v;
+        } else {
+          S.media[e.assetId] = (await Studio.makeImageMedia(blob, "m-" + e.assetId, null)).node;
+        }
+      } catch (err) { console.warn("media", err); }
+    }
+    Object.keys(S.media).forEach((id) => { if (!keep.has(id)) dropMedia(id); });
+  }
+  // iOS pauses muted videos when the page comes back from the background.
+  document.addEventListener("visibilitychange", () => { if (!document.hidden) Object.values(S.media).forEach((m) => { if (m.tagName === "VIDEO" && m.paused) m.play().catch(() => {}); }); });
+
+  // ---------- saving ----------
+  let saveTimer = 0;
+  function save(opts) {
+    clearTimeout(saveTimer); saveTimer = 0;
+    const rec = S.rec; if (!rec) return Promise.resolve();
+    return Studio.save(rec, opts).then(() => emit("history"), (e) => {
+      if (e && e.deletedElsewhere) { toast("היצירה נמחקה בחלון אחר", { kind: "error" }); location.hash = "#/"; return; }
+      toast("השמירה לא הצליחה. השינוי עדיין כאן, אפשר לנסות שוב.", { kind: "error", action: { label: "לנסות שוב", run: () => save() } });
+    });
+  }
+  // Typing: one save (one undo step) when the hand rests.
+  function saveSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(save, 600); }
+  const flush = () => (saveTimer ? save() : Promise.resolve());
+
+  // A layer's values changed. final=false while a slider or a drag is still moving.
+  function changed(final) { emit("change"); if (final !== false) save(); }
+
+  // ---------- open / close ----------
+  async function open(id) {
+    await flush();
+    const rec = await Studio.load(id);
+    if (!rec) return false;
+    rec.elements = (rec.elements || []).filter(Boolean); rec.elements.forEach(Studio.normEl); rec.assets = rec.assets || {};
+    S.rec = rec; S.selId = null; S.frozen = null; S.t0 = performance.now(); S.cropping = false; S.mode3d = false; S.pane = "layers";
+    await hydrate();
+    emit("open"); emit("history");
+    return true;
+  }
+  async function close() {
+    await flush();
+    S.rec = null; S.selId = null; S.art = null; artBlob = null;
+    Object.keys(S.media).forEach(dropMedia);
+    emit("close");
+  }
+
+  function select(id) {
+    id = id && el(id) ? id : null;
+    if (S.selId === id) return;
+    S.selId = id; S.cropping = false;
+    emit("select");
+  }
+
+  // ---------- layers ----------
+  function blocked(extra) { const b = Studio.addBlocker(S.rec, extra); if (b) toast(b, { kind: "error" }); return !!b; }
+  async function addLayer(e, opts) {
+    Studio.normEl(e);
+    if (opts && opts.behind) S.rec.elements.unshift(e); else S.rec.elements.push(e);
+    await hydrate();
+    S.selId = e.id; S.cropping = false;
+    emit("structure"); emit("select");
+    await save();
+    return e;
+  }
+  const assetUsed = (id) => S.rec.elements.some((e) => e.assetId === id || (e.particles && e.particles.spriteAssetId === id));
+  function sweepAssets() { Object.keys(S.rec.assets).forEach((id) => { if (id !== "__artwork" && !assetUsed(id)) delete S.rec.assets[id]; }); }
+  async function removeLayer(id) {
+    const e = el(id); if (!e) return;
+    const kids = e.type === "group" ? e.children || [] : [];
+    S.rec.elements = S.rec.elements.filter((x) => x.id !== id && !kids.includes(x.id));
+    S.rec.elements.forEach((g) => { if (g.type === "group") g.children = (g.children || []).filter((c) => c !== id); });
+    sweepAssets();
+    if (S.selId === id) { S.selId = null; S.cropping = false; }
+    await hydrate();
+    emit("structure"); emit("select");
+    await save();
+    toast("השכבה נמחקה", { action: { label: "ביטול", run: undo } });
+  }
+  async function duplicateLayer(id) {
+    if (blocked({ layers: 1 })) return;
+    const nid = Studio.duplicateLayer(S.rec, id); if (!nid) return;
+    const c = el(nid);
+    if (!keyed(c) && c.type !== "group") { c.x = UI.clamp((c.x || 0) + 0.05, -0.7, 0.7); c.y = UI.clamp((c.y || 0) - 0.05, -0.7, 0.7); }
+    S.selId = nid; S.cropping = false;
+    emit("structure"); emit("select");
+    await save();
+  }
+  // Order in the list is top first; in the record the last element is on top.
+  function moveLayer(id, to) {
+    const list = S.rec.elements, from = list.findIndex((e) => e.id === id);
+    to = UI.clamp(to, 0, list.length - 1);
+    if (from < 0 || from === to) return;
+    list.splice(to, 0, list.splice(from, 1)[0]);
+    emit("structure"); save();
+  }
+
+  // ---------- undo / redo ----------
+  async function restore(dir) {
+    if (!S.rec) return;
+    await flush();
+    const r = await Studio.restoreHistory(S.rec.id, dir);
+    if (!r) return;
+    r.elements.forEach(Studio.normEl);
+    S.rec = r; if (!el(S.selId)) S.selId = null; S.cropping = false;
+    await hydrate();
+    emit("open"); emit("history");
+  }
+  const undo = () => restore("undo"), redo = () => restore("redo");
+
+  // ---------- playhead ----------
+  function freeze(t) { S.frozen = t == null ? null : Math.max(0, t); if (t == null) S.t0 = performance.now(); emit("time"); }
+  function replay() { S.frozen = null; S.t0 = performance.now(); emit("time"); }
+  // The key of a layer at time t (made when missing): where a drag on a moving layer writes.
+  function keyAt(e, t) { return e.timeline.keys.find((k) => Math.abs(k.t - t) < 1e-6) || Studio.addTimelineKey(e, { t }); }
+  // Before changing place/turn/size of a layer on the canvas: a moving layer is parked on a round time and gets a key there.
+  function editKey(e) {
+    if (!keyed(e)) return null;
+    const t = Math.round(clock() * 10) / 10;
+    freeze(t);
+    return keyAt(e, t);
+  }
+
+  function setTab(tab, pane) { S.tab = tab || S.tab; S.pane = pane || "inspector"; emit("tab"); }
+  function setPane(pane) { S.pane = pane; emit("tab"); }
+  function setMode3d(on) { if (S.mode3d === !!on) return; S.mode3d = !!on; S.cropping = false; emit("mode"); }
+  function setCropping(on) { S.cropping = !!on; emit("mode"); }
+
+  return {
+    on, emit, el, sel, keyed, clock, sample, hydrate, save, saveSoon, flush, changed, open, close, select, blocked,
+    addLayer, removeLayer, duplicateLayer, moveLayer, undo, redo, freeze, replay, keyAt, editKey, setTab, setPane, setMode3d, setCropping,
+    get rec() { return S.rec; }, get selId() { return S.selId; }, get art() { return S.art; }, get media() { return S.media; },
+    get frozen() { return S.frozen; }, get tab() { return S.tab; }, get pane() { return S.pane; }, get mode3d() { return S.mode3d; },
+    get cropping() { return S.cropping; }, get snap() { return S.snap; }, set snap(v) { S.snap = !!v; },
+    set rec(r) { S.rec = r; }
+  };
+})();

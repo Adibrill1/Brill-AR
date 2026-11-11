@@ -2,299 +2,108 @@
 <html lang="he" dir="rtl">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="theme-color" content="#0e0d12">
 <title>סטודיו AR</title>
 <link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
 <link rel="icon" type="image/png" sizes="192x192" href="favicon-192.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <link rel="stylesheet" href="style.css">
 </head>
-<body>
-<header>
-  <h1>סטודיו AR</h1>
-  <p class="sub">בונים חוויה מעל יצירה: מעלים תמונה, מוסיפים אלמנטים, מסדרים ובודקים בטלפון.</p>
-  <button id="btn-gallery" type="button" class="ghost small">הגלריה שלי</button>
-</header>
+<body data-view="home" data-pane="layers">
 
-<main>
-  <section class="card" id="sec-gallery" aria-label="הגלריה שלי">
-    <div class="row spread"><h2>הגלריה שלי</h2>
-      <button id="btn-gallery-new" type="button">+ יצירה חדשה</button>
-      <button id="btn-gallery-back" type="button" class="ghost">חזרה לעריכה</button></div>
-    <p class="hint">כל היצירות שלך, החדשה ביותר ראשונה. נגיעה בתמונה פותחת את היצירה.</p>
-    <div id="gallery-grid" class="gallery-grid"></div>
-  </section>
-  <section class="card" id="sec-exp">
-    <div class="row spread">
-      <label>גלריה:</label>
-      <select id="exp-select"></select>
-      <button id="btn-new" class="ghost">חדש</button>
-      <button id="btn-del-exp" class="ghost danger">מחיקה</button>
-      <button id="btn-file-health" class="ghost" title="בדיקה לקריאה בלבד של הקבצים השמורים">בדיקת קבצים</button>
+<!-- the gallery -->
+<div id="home">
+  <header class="home-top">
+    <div class="brand"><span class="brand-mark" aria-hidden="true"></span><span class="brand-name">סטודיו AR</span></div>
+    <div class="home-actions">
+      <button id="btn-import" type="button" class="btn ghost" data-ic="upload" data-size="18"><span>פתיחת גיבוי</span></button>
+      <button id="btn-new" type="button" class="btn primary" data-ic="plus" data-size="18"><span>יצירה חדשה</span></button>
     </div>
-    <pre id="file-health" hidden style="white-space:pre-wrap;font:13px/1.6 sans-serif;margin:6px 0;direction:rtl;text-align:right;overflow-wrap:anywhere;word-break:break-word"></pre>
-    <div class="row spread">
-      <label for="in-exp-name">שם הפרויקט:</label>
-      <input id="in-exp-name" type="text" maxlength="60" style="flex:1;min-width:0">
-    </div>
-  </section>
+  </header>
+  <main class="home-main">
+    <div class="home-title"><h1>היצירות שלי</h1><span id="home-count"></span></div>
+    <div id="home-grid" class="grid" hidden></div>
+    <section id="home-empty" hidden>
+      <div class="empty-art" aria-hidden="true"><i></i><i></i><i></i></div>
+      <h2>יצירה שמתעוררת לחיים</h2>
+      <p>מעלים תמונה של יצירה, מניחים מעליה סרטון, טקסט, צליל או דמות תלת־ממדית, ומכוונים אליה את המצלמה.</p>
+      <div class="empty-actions">
+        <button id="btn-new-empty" type="button" class="btn primary big" data-ic="plus"><span>יצירה חדשה</span></button>
+        <button id="btn-sample" type="button" class="btn ghost big" data-ic="sparkle"><span>לראות דוגמה</span></button>
+      </div>
+    </section>
+  </main>
+</div>
 
-  <section class="card">
-    <h2><span class="step">1</span> תמונת היצירה</h2>
-    <p class="hint">התמונה שהמצלמה תזהה. צלמי את היצירה ישר מולה, בתאורה טובה.</p>
-    <div class="row">
-      <button id="btn-artwork">העלאת תמונת יצירה</button>
-      <img id="artwork-thumb" alt="" hidden>
-    </div>
-    <input type="file" id="file-artwork" accept="image/jpeg,image/png" hidden>
-  </section>
+<!-- one creation -->
+<div id="editor" hidden>
+  <header id="topbar">
+    <button id="btn-back" type="button" class="icon-btn" title="לכל היצירות" aria-label="לכל היצירות" data-ic="back"></button>
+    <input id="rec-name" type="text" maxlength="60" aria-label="שם היצירה" autocomplete="off">
+    <span id="save-pill" data-state="saved">נשמר</span>
+    <span class="grow"></span>
+    <button id="btn-undo" type="button" class="icon-btn" title="ביטול" aria-label="ביטול" data-ic="undo" disabled></button>
+    <button id="btn-redo" type="button" class="icon-btn" title="החזרה" aria-label="החזרה" data-ic="redo" disabled></button>
+    <button id="btn-preview" type="button" class="btn ghost top-btn" title="לראות איך זה ייראה" aria-label="תצוגה" data-ic="eye" data-size="18"><span>תצוגה</span></button>
+    <button id="btn-share" type="button" class="btn primary top-btn" aria-label="לראות ולשתף" data-ic="share" data-size="18"><span>לראות ולשתף</span></button>
+  </header>
 
-  <section class="card" id="sec-elements" hidden>
-    <h2><span class="step">2</span> אלמנטים</h2>
-    <p class="hint">מה שיופיע מעל היצירה. אפשר כמה אלמנטים יחד.</p>
-    <div class="row">
-      <button data-add="video">+ סרטון</button>
-      <button data-add="image">+ תמונה</button>
-      <button data-add="sound">+ צליל</button>
-      <button id="btn-text">+ טקסט</button>
-      <button id="btn-pattern" title="רקע או דוגמה חוזרת שמצוירים בקוד, בלי קובץ">+ רקע ודוגמה</button>
-      <button data-add="model">+ מודל תלת-ממד</button>
-      <button id="btn-particles">+ חלקיקים</button>
-      <button data-add="timecube" title="סרטון קצר שהופך לקובייה תלת־ממדית: העומק הוא הזמן">+ קוביית זמן</button>
-      <button id="btn-library" class="ghost">ספריית התחלה</button>
+  <aside id="layers-pane" aria-label="שכבות">
+    <div class="pane-head">
+      <h2>שכבות <span id="layer-count"></span></h2>
+      <button id="btn-add" type="button" class="btn primary small" data-ic="plus" data-size="18"><span>הוספה</span></button>
     </div>
-    <div class="row" id="group-bar">
-      <button id="btn-group" disabled>📦 קבץ</button>
-      <button id="btn-ungroup" disabled>פרק קבוצה</button>
-    </div>
-    <p id="video-upload-status" role="status" aria-live="polite" hidden></p>
-    <p class="hint">סרטון נשמר במכשיר, עד 50MB לקובץ. אם MOV לא נקרא בדפדפן, נדרשת המרה ל־MP4 H.264.</p>
-    <ul id="element-list"></ul>
-    <input type="file" id="file-video" accept="video/mp4,video/webm,video/quicktime,.mov" hidden>
-    <input type="file" id="file-image" accept="image/png,image/jpeg,image/gif" hidden>
-    <input type="file" id="file-sound" accept="audio/mpeg,audio/mp4,audio/wav,audio/x-m4a,audio/ogg" hidden>
-    <input type="file" id="file-model" accept=".glb,.gltf,.zip,.obj,.fbx,model/gltf-binary,model/gltf+json,application/zip" hidden>
-    <input type="file" id="file-timecube" accept="video/mp4,video/webm,video/quicktime,.mov" hidden>
-    <input type="file" id="file-psprite" accept="image/png,image/webp" hidden>
-  </section>
+    <div id="layer-list" role="listbox" aria-label="שכבות, העליונה ראשונה"></div>
+    <div id="art-card" hidden></div>
+  </aside>
 
-  <section class="card" id="sec-arrange" hidden>
-    <h2><span class="step">3</span> סידור על היצירה</h2>
-    <p class="hint">גוררים אלמנט כדי להזיז, ומהידית בפינה כדי להקטין ולהגדיל. נגיעה באלמנט בוחרת אותו.</p>
-    <div class="row"><button id="btn-undo" class="ghost small" disabled>ביטול שינוי</button><button id="btn-redo" class="ghost small" disabled>ביצוע חוזר</button><button id="btn-test-mode" class="ghost small">מצב בדיקה</button><label class="snap-toggle"><input type="checkbox" id="ck-snap" checked> הצמדה למרכז בגרירה</label><span id="save-state" class="save-state" hidden></span><span class="hint">עד20שינויים ביצירה הזו, כל עוד העורך פתוח</span></div>
-    <div id="seq-tabs" hidden></div>
-    <section id="action-editor" class="action-editor" hidden></section>
-    <div id="canvas-wrap"><canvas id="preview"></canvas><div id="view-pill" hidden><button id="btn-2d" type="button" class="on">2D</button><button id="btn-3d" type="button">3D</button></div></div>
-    <div id="diag-strip" class="diag-strip" hidden></div>
-    <div id="panel" hidden>
-      <div class="row spread"><strong id="panel-name"></strong>
-        <button id="btn-duplicate-el" class="ghost small">שכפול שכבה</button>
-        <button id="btn-del-el" class="ghost danger">מחיקת אלמנט</button></div>
-      <div class="row" id="row-order">
-        <span class="mini-label">סדר:</span>
-        <button id="btn-layer-down" class="ghost small">מטה (מכוסה)</button>
-        <button id="btn-layer-up" class="ghost small">מעלה (מכסה)</button>
+  <section id="stage" aria-label="היצירה">
+    <div id="canvas-wrap"><canvas id="preview"></canvas></div>
+    <div id="stage-empty" hidden>
+      <div class="empty-art small" aria-hidden="true"><i></i><i></i><i></i></div>
+      <h2>מתחילים בתמונה של היצירה</h2>
+      <p>זו התמונה שהמצלמה תזהה. צילום ישר וחד, בלי השתקפויות.</p>
+      <button id="btn-empty-art" type="button" class="btn primary big" data-ic="upload"><span>העלאת תמונה</span></button>
+    </div>
+    <div id="sel-bar" hidden></div>
+    <div id="time-chip" hidden><span id="time-chip-text"></span><button id="btn-time-live" type="button" data-ic="play" data-size="14"><span>ניגון</span></button></div>
+    <div id="stage-tools" hidden>
+      <div class="seg" role="group" aria-label="מבט">
+        <button id="btn-2d" type="button" class="on" aria-pressed="true">שטוח</button>
+        <button id="btn-3d" type="button" aria-pressed="false">תלת־ממד</button>
       </div>
-      <div id="row-video-aspect" hidden><button id="video-aspect-reset" class="ghost">שחזור פרופורציות הסרטון המקורי</button><p class="hint">שומר על הרוחב, המיקום והחיתוך; מתקן רק את היחס בין רוחב לגובה.</p></div>
-      <div id="row-crop" hidden>
-        <strong>חיתוך תמונה / וידאו ללא מחיקת המקור</strong>
-        <div class="row"><label>משמאל % <input id="crop-x" type="number" min="0" max="99" step="1"></label><label>מלמעלה % <input id="crop-y" type="number" min="0" max="99" step="1"></label><label>רוחב % <input id="crop-w" type="number" min="1" max="100" step="1"></label><label>גובה % <input id="crop-h" type="number" min="1" max="100" step="1"></label></div>
-        <div class="row"><button id="btn-crop-drag" type="button">✂️ חיתוך על חלון העריכה</button><button id="crop-reset" class="ghost">שחזור התמונה המלאה</button></div>
-        <div class="row crop-shapes" id="crop-shapes"><span class="mini-label">צורה:</span><button type="button" class="ghost small" data-r="free">חופשי</button><button type="button" class="ghost small" data-r="art">כמו תמונת המקור</button><button type="button" class="ghost small" data-r="1">ריבוע</button><button type="button" class="ghost small" data-r="1.7778">16:9</button><button type="button" class="ghost small" data-r="0.5625">9:16</button></div>
-        <p class="hint">התמונה המקורית נשמרת; רק האזור המוצג משתנה. אפשר לשכפל ולחתוך כל עותק בנפרד. תמונות, GIF ווידאו. חיתוך לא משנה את הקובץ המקורי.</p>
-        <strong>פילטר</strong>
-        <div class="row"><label class="inline">מראה <select id="sel-fx"></select></label><label class="inline">עוצמה <input type="range" id="sl-fx" min="0" max="1" step="0.01" value="0.5"></label></div>
-        <p class="hint">גם הפילטר לא משנה את הקובץ המקורי. VHS, קליידוסקופ וזכוכית זזים כל הזמן.</p>
-      </div>
-      <div id="row-model" hidden>
-        <label>בחירת אנימציה <select id="sel-model-clip"><option value="0">טעינת שמות...</option></select></label>
-        <label>מספר אנימציה (מתחיל מ־0) <input id="num-model-clip" type="number" min="0" max="99" step="1" value="0"></label>
-        <label>מהירות אנימציה <input id="num-model-speed" type="number" min="0.1" max="4" step="0.1" value="1"></label>
-        <label><input id="ck-model-playing" type="checkbox" checked> ניגון אנימציה</label>
-        <label><input id="ck-model-loop" type="checkbox" checked> לולאת אנימציה</label>
-        <p>השמות נקראים מתוך קובץ המודל. המספר מתייחס לסדר האנימציות בקובץ. אם אין מספר כזה, תיבחר האחרונה. דגם ללא אנימציות נשאר סטטי.</p>
-      </div>
-      <div id="row-text">
-        <label>תוכן הטקסט <textarea id="in-text" rows="2"></textarea></label>
-        <div class="row">
-          <label class="inline">סגנון <select id="sel-text-style"><option value="">רגיל</option><option value="cut">אותיות גזורות</option></select></label>
-          <button type="button" id="btn-cut-shuffle" class="ghost small" hidden>ערבוב</button>
-        </div>
-        <div class="row" id="row-text-look">
-          <label class="inline">גופן <select id="sel-font"></select></label>
-          <label class="inline">צבע <input type="color" id="in-color" value="#ffffff"></label>
-          <label class="check"><input type="checkbox" id="ck-bold" checked> מודגש</label>
-        </div>
-      </div>
-      <label>גודל <input type="range" id="sl-scale" min="0.05" max="2" step="0.01"></label>
-      <div id="row-rot3"><!-- one panel child (shell.js groups the panel by child index) -->
-        <label>סיבוב <input type="range" id="sl-rot" min="-180" max="180" step="1"></label>
-        <label id="row-tilt-x">הטיה קדימה/אחורה <input type="range" id="sl-rotx" min="-180" max="180" step="1"></label>
-        <label id="row-tilt-y">הטיה לצדדים <input type="range" id="sl-roty" min="-180" max="180" step="1"></label>
-      </div>
-      <label>עומק (צפ לעומת היצירה) <input type="range" id="sl-z" min="0" max="0.5" step="0.005"></label>
-      <label>שקיפות <input type="range" id="sl-opacity" min="0" max="1" step="0.01"></label>
-      <div class="numgrid">
-        <label>ימינה/שמאלה <input type="number" id="num-x" step="0.01" min="-0.7" max="0.7"></label>
-        <label>למעלה/למטה <input type="number" id="num-y" step="0.01" min="-0.7" max="0.7"></label>
-        <label>גודל <input type="number" id="num-w" step="0.01" min="0.05" max="2"></label>
-        <label>סיבוב <input type="number" id="num-rot" step="1" min="-180" max="180"></label>
-        <label>עומק <input type="number" id="num-z" step="0.005" min="0" max="0.5"></label>
-        <label>שקיפות <input type="number" id="num-opacity" step="0.05" min="0" max="1"></label>
-      </div>
-      <label>אנימציה
-        <select id="sel-anim">
-          <option value="none">ללא</option>
-          <option value="spin">סיבוב איטי</option>
-          <option value="float">ריחוף עדין</option>
-          <option value="pulse">פעימה</option>
-        </select>
-      </label>
-      <div id="row-tap">
-        <label>נגיעה באלמנט
-          <select id="sel-tap">
-            <option value="none">לא קורה כלום</option>
-            <option value="link">פתיחת קישור</option>
-            <option value="mute">השתקה/הפעלה של הסאונד</option>
-            <option value="sequence">מעבר למצב הבא</option>
-          </select>
-        </label>
-        <label id="row-tapurl">קישור (כתובת מלאה: https://, mailto: או tel:) <input type="url" id="in-tapurl" dir="ltr" placeholder="https://"></label>
-        <label id="row-seq" hidden>מצב תצוגה <select id="sel-seq"></select></label>
-        <label id="row-track" hidden>מסלול שכבה (חופף במקביל) <select id="sel-track"></select></label>
-        <div id="row-timeline" hidden>
-          <strong>תנועה מתוזמנת</strong>
-          <div class="row">
-            <input type="number" id="num-tl-t" min="0" max="60" step="0.1" value="1" style="width:70px"> שניות
-            <input type="number" id="num-tl-scale" min="0.1" max="5" step="0.1" value="1" style="width:64px" title="גודל יחסי בנקודה הזו"> גודל
-            <button id="btn-tl-add" class="ghost">הוספת נקודה מהמצב הנוכחי</button>
-            <label class="check"><input type="checkbox" id="ck-tl-loop"> לולאה</label>
-            <select id="sel-tl-ease" title="עקומת תנועה"><option value="linear">תנועה קבועה</option><option value="easeIn">האצה מהתחלה</option><option value="easeOut">האטה לסוף</option><option value="easeInOut">רך בשני הצדדים</option><option value="elastic">קפיצית (אלסטית)</option></select>
-            <label title="אורך הלולאה בשניות (ריק = עד הנקודה האחרונה)">אורך <input type="number" id="num-tl-dur" min="0" max="120" step="0.5" style="width:60px" placeholder="שניות"></label>
-          </div>
-          <canvas id="tl-ruler" style="width:100%;height:34px;touch-action:none;cursor:ew-resize"></canvas>
-          <div class="row"><span id="tl-time" class="hint"></span><button id="btn-tl-live" class="ghost" hidden>חזרה לניגון חי</button></div>
-          <div class="row"><button id="btn-tl-show" class="ghost small">הצגה בזמן הזה</button><button id="btn-tl-hide" class="ghost small">הסתרה בזמן הזה</button></div>
-          <ul id="tl-keys"></ul>
-          <p class="hint" id="tl-note" hidden>ציר הזמן פעיל - האנימציה הבסיסית מושבתת לאלמנט הזה.</p>
-        </div>
-      </div>
-      <label id="row-volume">עוצמת צליל <input type="range" id="sl-vol" min="0" max="1" step="0.05"></label>
-      <label id="row-loop" class="check"><input type="checkbox" id="ck-loop"> ניגון בלולאה</label>
-      <label id="row-spatial" class="check" hidden><input type="checkbox" id="ck-spatial"> צליל מרחבי (נשמע מהמיקום שלו ביצירה)</label>
-      <div id="row-spatial-opts" class="row" hidden>
-        <select id="sel-spatial-mode"><option value="log">מתחזק עם הקרבה (לא משתתק לגמרי)</option><option value="linear">פעיל רק בתוך רדיוס חיצוני</option></select>
-        <label>רדיוס פנימי <input type="number" id="num-spatial-in" min="0.05" max="5" step="0.05" value="0.35" style="width:64px"></label>
-        <label>רדיוס חיצוני <input type="number" id="num-spatial-out" min="0.1" max="20" step="0.1" value="1.4" style="width:64px"></label>
-        <div class="hint">הטבעות על שטח העריכה מציגות את אזור השמיעה וניתן לגרור אותן (עזר עריכה שלנו; המצבים והרדיוסים מופיעים גם בהדגמה הרשמית של Artivive מממשק ותיק).</div>
-      </div>
-        <div id="row-particles" hidden>
-          <label>סגנון <select id="sel-preset"><option value="sparkle">נצנוצים עולים</option><option value="confetti">קונפטי יורד</option><option value="custom">תמונה משלך</option></select></label>
-          <label id="row-psprite" hidden>דמות החלקיק <button type="button" id="btn-psprite">בחירת תמונה</button> <span id="psprite-name"></span></label>
-          <label>כמות <input type="number" id="num-pcount" min="10" max="500" step="10" value="120"></label>
-          <label>גודל <input type="number" id="num-psize" min="2" max="60" step="1" value="12"></label>
-          <label>מהירות <input type="number" id="num-pspeed" min="0.2" max="3" step="0.1" value="1"></label>
-          <label>צבע <input type="color" id="in-pcolor" value="#ffd94d"></label>
-          <label><input type="checkbox" id="ck-pcolor2"> טווח צבע התחלה <input type="color" id="in-pcolor2" value="#ffffff"></label>
-          <label>אורך חיי חלקיק (שניות; 0 = מימוש ישן) <input id="num-plife" type="number" min="0" max="60" step=".1"></label>
-          <label>טווח חיים: קצה שני (שניות; 0 = אורך קבוע; סדר הקצוות לא משנה) <input id="num-plife2" type="number" min="0" max="60" step=".1"></label>
-          <label>צורת אזור ההתחלה <select id="sel-pemitter"><option value="box">מלבן</option><option value="disc">דיסקה</option><option value="sphere">נפח כדורי</option></select></label>
-          <label>צבע בסוף החיים <input id="in-pendcolor" type="color"></label>
-          <label>גודל בסוף ביחס להתחלה <input id="num-pendsize" type="number" min="0" max="5" step=".1"></label>
-          <label><input id="ck-pfade" type="checkbox"> הופעה והיעלמות הדרגתית לאורך החיים</label>
-          <p class="hint">מהירות, כיוון (כולל אקראי והחוצה מהמרכז), גודל, כמות ורוחב פיזור תואמים את בקרי החלקיקים המתועדים של Artivive. צבע, גודל ודעיכה לפי גיל החלקיק (באורך חיים גדול מ־0) הם כלי יצירה שלנו, לא התנהגות Artivive שאומתה.</p>
-          <label>כיוון <select id="sel-pdir-mode"><option value="preset">ברירת הסגנון</option><option value="angle">זווית מספרית</option><option value="random">אקראי</option><option value="outward">מהמרכז החוצה</option></select></label>
-          <label id="row-pdir" hidden>כיוון (מעלות) <input type="range" id="sl-pdir" min="0" max="359" step="1" value="0"> <input type="number" id="num-pdir" min="0" max="359" step="1" value="0"></label>
-          <label>רוחב אזור הפיזור (יחס לשכבה) <input type="number" id="num-pspread" min="0.1" max="2" step="0.1" value="1"></label>
-        </div>
-        <div id="row-timecube" hidden>
-          <label>כיוון החיתוך <select id="sel-tc-dir"><option value="front">מלפנים לאחור</option><option value="back">מאחור לפנים</option><option value="left">משמאל לימין</option><option value="right">מימין לשמאל</option><option value="top">מלמעלה למטה</option><option value="bottom">מלמטה למעלה</option></select></label>
-          <label>עומק הקובייה (יחס לרוחב) <input type="range" id="sl-tc-depth" min="0.2" max="2" step="0.05" value="0.75"> <span id="tc-depth-val"></span></label>
-          <label class="check"><input type="checkbox" id="ck-tc-edges" checked> קווי מתאר לקובייה</label>
-          <label class="check"><input type="checkbox" id="ck-tc-fixed"> גודל קבוע (הקובייה לא נחתכת, הסרטון זורם בתוכה)</label>
-          <p class="hint">קוביית זמן: כל פריים של הסרטון הוא שכבה בעומק. הפאה החתוכה מראה את הרגע הנוכחי, והצדדים מראים איך שורת הקצה של התמונה השתנתה לאורך הזמן. לסיבוב אוטומטי בחרי "סיבוב" בתנועה.</p>
-        </div>
-        <div id="row-chroma" hidden>
-          <label class="check"><input type="checkbox" id="ck-chroma"> הסרת רקע (מסך ירוק; צבע שחור = אפקט אור רך)</label>
-          <label>צבע מפתח <input type="color" id="in-chroma-color" value="#00ff00"></label>
-          <label>רגישות <input type="range" id="sl-chroma" min="0.1" max="0.8" step="0.05" value="0.35"></label>
-        </div>
-      <div id="row-fill" hidden>
-        <strong>על תמונת המקור</strong>
-        <div class="row"><button id="btn-fill-art" type="button">מילוי תמונת המקור</button><button id="btn-fill-rot" type="button" class="ghost">↻ סיבוב 90°</button></div>
-        <p class="hint">מניח את התמונה או הסרטון בדיוק על תמונת המקור ומכסה את כולה; מה שחורג נחתך (הקובץ המקורי נשמר). הסיבוב מסובב ברבע סיבוב וממלא מחדש.</p>
-      </div>
-      <div id="row-pattern" hidden><!-- the last panel child: shell.js groups the panel by child index -->
-        <strong>רקע ודוגמה</strong>
-        <div id="pattern-looks" class="swatches" role="group" aria-label="סוג הרקע"></div>
-        <strong>צבעים</strong>
-        <div id="pattern-palettes" class="swatches palettes" role="group" aria-label="ערכות צבע"></div>
-        <div class="row">
-          <label class="inline">צבע 1 <input type="color" id="pat-c1"></label>
-          <label class="inline">צבע 2 <input type="color" id="pat-c2"></label>
-          <label class="inline">צבע 3 <input type="color" id="pat-c3"></label>
-        </div>
-        <label>גודל הדוגמה <input type="range" id="pat-size" min="0" max="1" step="0.01"></label>
-        <label>תנועה <input type="range" id="pat-speed" min="0" max="1" step="0.01"></label>
-        <div class="row">
-          <label class="inline">צורה <select id="pat-shape"></select></label>
-          <button type="button" id="btn-pat-shuffle" class="ghost small">ערבוב</button>
-          <button type="button" id="btn-pat-fill" class="ghost small">מילוי תמונת המקור</button>
-        </div>
-        <p class="hint">מצויר בקוד, בלי קובץ, ונראה חד בכל גודל. תנועה 0 משאירה אותו במקום. ערבוב מסדר מחדש את מה שאקראי בדוגמה.</p>
+      <button id="btn-snap" type="button" class="icon-btn on" aria-pressed="true" title="הצמדה למרכז ולקצוות" aria-label="הצמדה למרכז ולקצוות" data-ic="magnet" data-size="18"></button>
+      <div class="seg zoom" role="group" aria-label="זום" dir="ltr">
+        <button id="btn-zoom-out" type="button" title="להתרחק" aria-label="להתרחק" data-ic="zoomOut" data-size="18"></button>
+        <button id="zoom-label" type="button" title="חזרה ל־100%">100%</button>
+        <button id="btn-zoom-in" type="button" title="להתקרב" aria-label="להתקרב" data-ic="zoomIn" data-size="18"></button>
       </div>
     </div>
   </section>
 
-  <section class="card" id="sec-preview" hidden>
-    <h2><span class="step">4</span> בדיקה ושמירה</h2>
-    <div class="col">
-      <button id="btn-edit-ar" class="ghost">עריכה מול המצלמה (ניסיוני)</button>
-      <button id="btn-play" class="primary">תצוגה בטלפון (AR חי)</button>
-      <button id="btn-edit-3d">עריכת מיקום בתלת־ממד</button>
-      <button id="btn-preview3d" class="ghost">תצוגה מקדימה על המסך (בלי מצלמה)</button>
-      <p id="safety-note" class="hint" role="status" hidden style="background:#fff4e5;border:1px solid #f0b35a;border-radius:8px;padding:8px 10px;color:#5a3b00;font-size:14px;line-height:1.45;margin:6px 0"></p>
-      <button id="btn-export" class="ghost">ייצוא לקובץ</button>
-      <button id="btn-export-zip" class="ghost">ייצוא ZIP (קובץ קטן יותר)</button>
-      <div id="publish-box" class="col" style="border-top:1px solid #e5e5ea;padding-top:10px;margin-top:4px">
-        <label class="hint" style="text-align:start">כתובת שרת הפרסום (אם הוגדר):
-          <input type="url" id="in-server" placeholder="https://..." style="width:100%"></label>
-        <label class="hint" style="text-align:start">סיסמת פרסום (מהשרת):
-          <input type="password" id="in-token" style="width:100%"></label>
-        <button id="btn-send-publish" class="primary">שליחה לפרסום דרך Instinct</button>
-        <label class="hint" style="text-align:start"><input type="checkbox" id="send-zip" checked> שליחה כ-ZIP (קובץ קטן יותר, עדיף לטלפון)</label>
-        <p id="send-publish-hint" style="margin:0;font-size:.85em;color:#555">ייפתח חלון השיתוף של המכשיר - בחרי וואטסאפ ושלחי ל-Instinct. היצירה לא תפורסם בלי אישור נוסף ממך.</p>
-        <button id="btn-publish" class="ghost">פרסום כקישור קבוע + QR</button>
-        <div id="publish-out" hidden>
-          <a id="publish-link" href="#" target="_blank" rel="noopener"></a>
-          <div id="publish-qr"></div>
-        </div>
-      </div>
-      <button id="btn-import" class="ghost">ייבוא מקובץ</button>
-      <input type="file" id="file-import" accept="application/json,.zip,application/zip" hidden>
-      <button id="btn-import-recovery" class="ghost">ייבוא שחזור (גיבוי גדול)</button>
-      <input type="file" id="file-import-recovery" accept="application/json,.zip,application/zip" hidden>
-    </div>
-    <p class="hint">הקבצים נשמרים רק בטלפון או במחשב שממנו עובדים - כלום לא עולה לשום שרת.</p>
-  </section>
-
-  <p id="msg" role="status"></p>
-</main>
+  <nav id="tabs" role="tablist" aria-label="מה עורכים"></nav>
+  <aside id="inspector" aria-label="הגדרות"></aside>
+</div>
 
 <script src="library.js?v=rc125"></script>
 <script src="vendor/gifanim.js"></script>
 <script src="actions.js?v=rc94"></script>
 <script crossorigin="anonymous" src="./external/scripts/8frame-1.5.0.min.js"></script>
-<script src="vendor/gifanim.js"></script>
 <script src="shared.js?v=rc94"></script>
-<script src="external/qrcode.js"></script>
 <script src="vendor/fflate.umd.js"></script>
 <script src="vendor/gltfzip.js"></script>
 <script src="vendor/fbx-import.js"></script>
-    <script src="vendor/obj2glb.js"></script>
-    <script src="action-editor.js?v=rc94"></script>
-    <script src="editor-3d.js?v=rc94"></script>
-<script src="editor.js?v=rc94"></script>
-<script src="shell.js?v=rc94"></script>
+<script src="vendor/obj2glb.js"></script>
+<script src="editor-3d.js?v=rc94"></script>
+<script src="app/ui.js?v=rc94"></script>
+<script src="app/store.js?v=rc94"></script>
+<script src="app/stage.js?v=rc94"></script>
+<script src="app/layers.js?v=rc94"></script>
+<script src="app/timeline.js?v=rc94"></script>
+<script src="app/inspector.js?v=rc94"></script>
+<script src="app/home.js?v=rc94"></script>
+<script src="app/share.js?v=rc94"></script>
+<script src="app/main.js?v=rc94"></script>
 </body>
 </html>
