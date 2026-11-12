@@ -57,7 +57,7 @@ const Studio = (() => {
 
   // ---------- helpers ----------
   const newId = () => (crypto.randomUUID ? crypto.randomUUID() : "id-" + Date.now() + "-" + Math.random().toString(36).slice(2, 10));
-  const loadImage = (src) => new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = rej; i.src = src; });
+  const loadImage = (src) => new Promise((res, rej) => { const i = new Image(); i.onload = () => res(i); i.onerror = () => rej(new Error("image load failed")); i.src = src; });
   // Copy a picked File into page-owned bytes. iOS hands picker files backed by temporary
   // assets that WebKit can evict after the picker closes or the page reloads; storing the raw
   // File leaves an unreadable "dead" blob behind (export then fails with a bare error event).
@@ -112,6 +112,46 @@ const Studio = (() => {
     r.onerror = () => rej(new Error("blob read failed (" + Math.round(((blob && blob.size) || 0) / 1024) + "KB " + ((blob && blob.type) || "?") + "): " + ((r.error && r.error.name) || "unknown")));
     r.readAsDataURL(blob);
   });
+  // A stored picture as an <img>. A blob that just came out of IndexedDB can fail its first read on iOS (seen right
+  // after editing, on the way to the camera), so every way of reading it is tried, a few times, before giving up.
+  async function loadImageBlob(blob) {
+    if (!blob) throw new Error("missing image");
+    let last;
+    for (let i = 0; i < 3; i++) {
+      const url = URL.createObjectURL(blob);
+      try { return await loadImage(url); } catch (e) { last = e; URL.revokeObjectURL(url); }
+      try { return await loadImage(await blobToDataURL(blob)); } catch (e) { last = e; }
+      try {
+        const copy = new Blob([await blob.arrayBuffer()], { type: blob.type || "image/jpeg" });
+        if (copy.size) return await loadImage(await blobToDataURL(copy));
+      } catch (e) { last = e; }
+      await new Promise((r) => setTimeout(r, 250 * (i + 1)));
+    }
+    throw last || new Error("image load failed");
+  }
+  // The camera / preview page could not start. The usual cause is a read that fails once and works on the next try,
+  // so the page first reloads itself (twice at most); only then it says so, with a button to try again.
+  function loadFailed(e, title) {
+    console.error(e);
+    const key = "ar-retry:" + location.pathname + location.search + location.hash;
+    let n = 2;
+    try {
+      const was = JSON.parse(sessionStorage.getItem(key) || "null");
+      n = was && Date.now() - was.t < 30000 ? was.n : 0;
+      sessionStorage.setItem(key, JSON.stringify({ n: n + 1, t: Date.now() }));
+    } catch (x) { n = 2; }
+    if (n < 2) { setTimeout(() => location.reload(), 350); return; }
+    const box = document.getElementById("err"); if (!box) return;
+    box.style.display = "grid"; box.textContent = "";
+    const wrap = document.createElement("div"), p = document.createElement("p"), b = document.createElement("button"), back = document.createElement("a");
+    wrap.style.cssText = "display:grid;gap:14px;justify-items:center;padding:24px;text-align:center;font:16px/1.5 sans-serif;color:#222";
+    p.textContent = title || "\u05D4\u05D9\u05E6\u05D9\u05E8\u05D4 \u05DC\u05D0 \u05E0\u05D8\u05E2\u05E0\u05D4."; p.style.margin = "0";
+    b.type = "button"; b.id = "err-retry"; b.textContent = "\u05DC\u05E0\u05E1\u05D5\u05EA \u05E9\u05D5\u05D1";
+    b.style.cssText = "min-height:48px;padding:12px 28px;border:0;border-radius:999px;background:#7c5cff;color:#fff;font:700 16px/1 sans-serif;cursor:pointer";
+    b.onclick = () => { try { sessionStorage.removeItem(key); } catch (x) {} location.reload(); };
+    back.href = "index.html" + (location.hash && !location.search ? location.hash : ""); back.textContent = "\u05D7\u05D6\u05E8\u05D4 \u05DC\u05E2\u05D5\u05E8\u05DA"; back.style.color = "#5b46c9";
+    wrap.append(p, b, back); box.appendChild(wrap);
+  }
   async function dataURLtoBlob(durl) { return (await fetch(durl)).blob(); }
 
   // ---------- image-target generation (runtime equivalent of the proven v4 offline pipeline) ----------
@@ -347,6 +387,23 @@ const Studio = (() => {
     });
   }
 
+  // The look of the two built-in particle kinds: a glowing four-point sparkle, and a slip of paper for confetti.
+  const builtinSprites = {};
+  function builtinSprite(preset) {
+    const kind = preset === "confetti" ? "confetti" : "sparkle";
+    if (builtinSprites[kind]) return builtinSprites[kind];
+    const c = document.createElement("canvas"); c.width = c.height = 64;
+    const x = c.getContext("2d"); x.translate(32, 32);
+    if (kind === "confetti") { x.rotate(-0.5); x.fillStyle = "#fff"; x.beginPath(); if (x.roundRect) x.roundRect(-24, -13, 48, 26, 6); else x.rect(-24, -13, 48, 26); x.fill(); }
+    else {
+      const g = x.createRadialGradient(0, 0, 0, 0, 0, 30); g.addColorStop(0, "rgba(255,255,255,1)"); g.addColorStop(0.22, "rgba(255,255,255,.85)"); g.addColorStop(0.5, "rgba(255,255,255,.22)"); g.addColorStop(1, "rgba(255,255,255,0)");
+      x.fillStyle = g; x.beginPath(); x.arc(0, 0, 30, 0, 7); x.fill();
+      x.fillStyle = "#fff"; x.beginPath();
+      for (let i = 0; i < 8; i++) { const a = i * Math.PI / 4, r = i % 2 ? 5 : 31; x.lineTo(Math.cos(a) * r, Math.sin(a) * r); }
+      x.closePath(); x.fill();
+    }
+    return (builtinSprites[kind] = new THREE.CanvasTexture(c));
+  }
   // Particles: lightweight THREE.Points emitter (sparkle rises, confetti falls).
   function ensureParticlesComponent() {
     if (!window.AFRAME || AFRAME.components["particles"]) return;
@@ -381,6 +438,7 @@ const Studio = (() => {
         geo.setAttribute('color',new THREE.BufferAttribute(colors,3));geo.setAttribute('particleSize',new THREE.BufferAttribute(this.sizes,1));geo.setAttribute('particleAlpha',new THREE.BufferAttribute(this.alphas,1));
         const matOpts = { color: new THREE.Color("#ffffff"),vertexColors:true, size: Math.min(0.06, Math.max(0.002, this.data.size / 1000)), transparent: true, opacity: 0.9, depthWrite: false };
         if (this.data.sprite) { matOpts.map = new THREE.TextureLoader().load(this.data.sprite); matOpts.alphaTest = 0.05; } // custom sprite texture (PNG with alpha)
+        else { matOpts.map = builtinSprite(this.data.preset); matOpts.alphaTest = 0.02; } // without a map every particle is a plain square
         const material=new THREE.PointsMaterial(matOpts);
         material.onBeforeCompile=shader=>{shader.vertexShader='attribute float particleSize; attribute float particleAlpha; varying float vParticleAlpha;\n'+shader.vertexShader;shader.vertexShader=shader.vertexShader.replace('gl_PointSize = size;', 'gl_PointSize = size * particleSize; vParticleAlpha = particleAlpha;');shader.fragmentShader='varying float vParticleAlpha;\n'+shader.fragmentShader;shader.fragmentShader=shader.fragmentShader.replace('#include <color_fragment>','#include <color_fragment>\ndiffuseColor.a *= vParticleAlpha;');};
         this.points = new THREE.Points(geo,material);
@@ -2144,7 +2202,29 @@ vec4 bpPattern(vec2 uv) {
       try { n.volume = 0; n.muted = false; await n.play(); if (wasPaused && n._studioBlocked) n.pause(); n.volume = vol; if (!unlocked) unlock(); }
       catch (e) { n.volume = vol; n.muted = wasMuted; if (!wasPaused) n.play().catch(() => {}); if (!unlocked) showButton(); }
     })();
+    // The browser may refuse at first and allow a moment later: iOS lets a page play sound by itself once the camera
+    // is running. So a silent test sound is tried again for a while (and when the artwork is found); when it plays,
+    // the sound starts with no touch at all.
+    let probeURL = null;
+    const probe = async () => {
+      if (unlocked) return;
+      try {
+        if (!probeURL) {
+          const n = 2205, buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf), w = (o, t) => { for (let i = 0; i < t.length; i++) v.setUint8(o + i, t.charCodeAt(i)); };
+          w(0, "RIFF"); v.setUint32(4, 36 + n * 2, true); w(8, "WAVEfmt "); v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+          v.setUint32(24, 22050, true); v.setUint32(28, 44100, true); v.setUint16(32, 2, true); v.setUint16(34, 16, true); w(36, "data"); v.setUint32(40, n * 2, true);
+          probeURL = URL.createObjectURL(new Blob([buf], { type: "audio/wav" }));
+        }
+        const a = new Audio(probeURL); a.volume = 0.001;
+        await a.play(); a.pause();
+        if (!unlocked) unlock();
+      } catch (e) {}
+    };
+    [900, 2000, 3500, 6000, 10000, 16000].forEach((ms) => setTimeout(probe, ms));
+    const sc = document.querySelector("a-scene");
+    if (sc) ["xrimagefound", "realityready", "camerastatuschange"].forEach((ev) => sc.addEventListener(ev, () => { probe(); setTimeout(probe, 600); }));
     function showButton() {
+      if (unlocked) return;
       btn = document.createElement("button");
       btn.id = "sound-overlay"; btn.type = "button";
       btn.textContent = "🔊 נגיעה במסך מפעילה את הצליל";
@@ -2318,7 +2398,7 @@ vec4 bpPattern(vec2 uv) {
     return importJSON(text, { save: false });
   }
 
-  return { TARGET_W, TARGET_H, newId, inspectVideo, validateModelBlob, prepareModelBlob, modelCompressionKinds, DECODER_DRACO_PATH, DECODER_MESHOPT_PATH, modelClipNames, modelClipInfo, loadImage, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
+  return { TARGET_W, TARGET_H, newId, inspectVideo, validateModelBlob, prepareModelBlob, modelCompressionKinds, DECODER_DRACO_PATH, DECODER_MESHOPT_PATH, modelClipNames, modelClipInfo, loadImage, loadImageBlob, loadFailed, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
            audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, blobURL, releaseBlobURL, blobURLs, historyState, restoreHistory, duplicateLayer, exportJSON, missingAssets, importJSON, exportZIP, importZIP, zipToJSON, fetchPublished, ownBlob, assetHealth, fileHealth, seedDemo, normEl, ANIMS, drawTextCanvas, loadTextFonts, FX: FX.map(([id, name]) => ({ id, name, moving: FX_MOVING.has(id) })), fxFrame,
            PATTERNS: PATTERNS.map(([id, name, colors, speed]) => ({ id, name, colors: colors.slice(), speed })), PATTERN_PALETTES: PATTERN_PALETTES.map(([name, colors]) => ({ name, colors: colors.slice() })),
            PATTERN_SHAPES: PATTERN_SHAPES.map(([id, name]) => ({ id, name })), patternDefaults, patternAspect, patternFrame, validPattern, validFx, FONTS: FONTS.map(([id, name]) => ({ id, name })), buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, ensureTimeCubeComponent, bakeTimeCube, validTimeCube, TIMECUBE_DIRS, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, artworkFingerprint, fingerprintDistance, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,

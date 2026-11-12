@@ -40,7 +40,7 @@ window.Stage = (() => {
   // Layers under a point, top first.
   function hits(p) {
     const out = [], els = App.rec.elements;
-    for (let i = els.length - 1; i >= 0; i--) { const b = boxes[els[i].id]; if (b && !b.hidden && inside(b, p)) out.push(els[i]); }
+    for (let i = els.length - 1; i >= 0; i--) { const b = boxes[els[i].id]; if (b && !b.hidden && !els[i].locked && inside(b, p)) out.push(els[i]); }
     return out;
   }
   function handleAt(el, p) {
@@ -408,7 +408,8 @@ window.Stage = (() => {
     const btn = (name, label, run, on) => h("button.icon-btn" + (on ? ".on" : ""), { title: label, "aria-label": label, onclick: run }, icon(name, 18));
     bar.append(h("span.sel-name", el.name || ""));
     if (CROP_TYPES.includes(el.type) && !App.mode3d) bar.append(btn("crop", "חיתוך", () => App.setCropping(!App.cropping), App.cropping));
-    bar.append(btn("copy", "שכפול", () => App.duplicateLayer(el.id)), btn("trash", "מחיקה", () => App.removeLayer(el.id)));
+    bar.append(btn("lock", "נעילה במקום", () => { App.setLocked(el.id, true); toast("השכבה ננעלה. משחררים אותה מרשימת השכבות."); }),
+      btn("copy", "שכפול", () => App.duplicateLayer(el.id)), btn("trash", "מחיקה", () => App.removeLayer(el.id)));
   }
   function renderTime() {
     const chip = $("time-chip"), t = App.frozen;
@@ -432,7 +433,8 @@ window.Stage = (() => {
       onChange: () => App.changed(true),
       sampleEl: (el) => (App.rec ? App.sample(el) : null), clockFor: () => App.clock(),
       freezeAt: (t) => App.freeze(t), getFrozen: () => App.frozen, restoreFrozen: (t) => App.freeze(t),
-      onGate: (text) => toast(text), getView2d: () => ({ view, zoom, pan })
+      onGate: (text) => toast(text), getView2d: () => ({ view, zoom, pan }),
+      getArt: () => ({ pic: App.art, blob: App.artBlob }), getCropId: () => (App.cropping ? App.selId : null)
     });
     canvas.addEventListener("pointerdown", onDown);
     canvas.addEventListener("pointermove", onMove);

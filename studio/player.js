@@ -32,8 +32,7 @@
   rec.elements.forEach(Studio.normEl);
 
   // Regenerate the engine target from the stored artwork (deterministic pipeline).
-  const artURL = URL.createObjectURL(rec.assets.__artwork);
-  const artImg = await Studio.loadImage(artURL);
+  const artImg = await Studio.loadImageBlob(rec.assets.__artwork);
   const t = await Studio.makeTarget(artImg);
   const targetData = Studio.targetDataJSON(t.luminance, t.padded, t.thumb);
 
@@ -191,9 +190,4 @@
     XR8.XrController.configure({ imageTargetData: [targetData] });
   };
   window.XR8 ? setup() : window.addEventListener("xrloaded", setup);
-})().catch((e) => {
-  console.error(e);
-  const errBox = document.getElementById("err");
-  errBox.style.display = "grid";
-  errBox.textContent = "שגיאה בטעינת היצירה: " + e.message;
-});
+})().catch((e) => { Studio.loadFailed(e, "היצירה לא נטענה הפעם."); });

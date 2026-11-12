@@ -89,8 +89,7 @@
   const g = Studio.geom(rec);
   const r = rec.target.artRect;
   const art = document.createElement("a-plane");
-  const artURL = URL.createObjectURL(rec.assets.__artwork);
-  const artImg = await Studio.loadImage(artURL);
+  const artImg = await Studio.loadImageBlob(rec.assets.__artwork);
   artImg.id = "preview-artwork"; assets.appendChild(artImg);
   art.setAttribute("material", { src: "#preview-artwork", shader: "flat" });
   art.setAttribute("width", g.artW); art.setAttribute("height", g.artH);
@@ -233,9 +232,4 @@
     p.z = Math.max(0.5, Math.min(2.2, p.z + e.deltaY * 0.001));
     cam.setAttribute("position", p);
   }, { passive: true });
-})().catch((e) => {
-  console.error(e);
-  const errBox = document.getElementById("err");
-  errBox.style.display = "grid";
-  errBox.textContent = "שגיאה בטעינת התצוגה: " + e.message;
-});
+})().catch((e) => { Studio.loadFailed(e, "התצוגה לא נטענה הפעם."); });

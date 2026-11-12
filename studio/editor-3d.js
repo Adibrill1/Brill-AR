@@ -21,16 +21,36 @@ window.Editor3D = (() => {
   // "3d": the full 3D workspace (gizmo, orbit). "2d": the same scene as a transparent layer over the flat 2D canvas,
   // framed by an orthographic camera to match it pixel for pixel, drawing in their final look only the layers the
   // canvas cannot (3D models, particles, green-screen video). The canvas keeps every touch and draws the rest.
-  let mode = "3d", ortho = null, getView2d = null, rigRot3d = null, frontBtn = null;
+  let mode = "3d", ortho = null, getView2d = null, getArt = null, getCropId = null, rigRot3d = null, frontBtn = null;
   // a layer tilted on the other axes (rotX/rotY) is one too: the flat canvas can only turn it in its own plane
   function overlayType(el) { return !!el && (el.type === "model" || el.type === "particles" || el.type === "timecube" || (el.type === "video" && !!(el.chroma && el.chroma.enabled)) || (el.type !== "sound" && el.type !== "group" && !!(el.rotX || el.rotY))); }
+
+  // The flat view: this layer sits above the canvas, so whatever it draws covers every canvas layer. To keep the order
+  // of the list (the same order the 3D view and the camera show), every layer ABOVE the lowest one that must be drawn
+  // here is drawn here too. Returns the ids this layer draws in the flat view.
+  let sheetMemo = { rec: null, t: 0, crop: null, ids: new Set() };
+  function sheetIds(rec) {
+    const now = performance.now(), crop = getCropId ? getCropId() : null;
+    if (sheetMemo.rec === rec && sheetMemo.crop === crop && now - sheetMemo.t < 40) return sheetMemo.ids;
+    const ids = new Set(), byId = new Map(rec.elements.map((e) => [e.id, e]));
+    const kids = (g) => (g.children || []).map((id) => byId.get(id)).filter((k) => k && k.type !== "sound" && k.type !== "group");
+    let on = false;
+    for (const el of Studio.topLevelElements(rec)) {
+      const group = el.type === "group";
+      if (on) { if (el.type !== "sound") { ids.add(el.id); if (group) kids(el).forEach((k) => ids.add(k.id)); } }
+      else if (group ? kids(el).some(overlayType) : overlayType(el)) { on = true; ids.add(el.id); if (group) kids(el).filter(overlayType).forEach((k) => ids.add(k.id)); }
+    }
+    if (crop) ids.delete(crop); // the crop frame is drawn by the canvas
+    sheetMemo = { rec, t: now, crop, ids };
+    return ids;
+  }
 
   function init(opts) {
     wrapEl = opts.wrap; getRec = opts.getRec; getSelected = opts.getSelected;
     onSelect = opts.onSelect; onChange = opts.onChange;
     sampleEl = opts.sampleEl || null; clockFor = opts.clockFor || null;
     freezeAt = opts.freezeAt || null; beginFrame = opts.beginFrame || null; getFrozen = opts.getFrozen || null; restoreFrozen = opts.restoreFrozen || null;
-    onGate = opts.onGate || null; getView2d = opts.getView2d || null;
+    onGate = opts.onGate || null; getView2d = opts.getView2d || null; getArt = opts.getArt || null; getCropId = opts.getCropId || null;
   }
 
   function geomOf(rec) { return Studio.geom(rec); }
@@ -170,16 +190,32 @@ window.Editor3D = (() => {
   // The artwork plane is rebuilt only when the artwork itself (blob or target rect) changes. It used to be removed on
   // every edit and re-added after the image reloaded, so the artwork vanished for a moment each time; now a replacement
   // is built next to the old plane, which goes only once the new texture is on screen.
-  let artNode = null, artSerial = 0;
+  let artNode = null, artSerial = 0, artBusy = false, artTried = 0;
+  const sameBlob = (a, b) => a === b || !!(a && b && a.size === b.size && a.type === b.type);
+  // The picture for the artwork plane. First choice is the light copy the flat view already shows: it is loaded, and
+  // a full phone photo as a texture is where the plane used to stay empty (grey) now and then. The stored file is the
+  // fallback, read with retries.
+  async function artSource(blob) {
+    const a = getArt ? getArt() : null, pic = a && a.pic;
+    if (pic && sameBlob(a.blob, blob)) {
+      try {
+        const c = document.createElement("canvas"); c.width = pic.naturalWidth || pic.width; c.height = pic.naturalHeight || pic.height;
+        if (c.width && c.height) { c.getContext("2d").drawImage(pic, 0, 0, c.width, c.height); return c; }
+      } catch (e) {}
+    }
+    return Studio.loadImageBlob(blob);
+  }
   async function rebuildArtwork() {
     const rec = getRec(); if (!rec || !rec.target || !rec.assets.__artwork) return;
     const blob = rec.assets.__artwork, key = JSON.stringify(rec.target.artRect);
     if (artNode && artNode.__blob === blob && artNode.__key === key) return;
+    if (artBusy) return;
+    artBusy = true; artTried = Date.now();
     const g = geomOf(rec), r = rec.target.artRect;
-    const url = URL.createObjectURL(blob);
-    let img; try { img = await Studio.loadImage(url); } catch (e) { URL.revokeObjectURL(url); return; }
+    let img; try { img = await artSource(blob); } catch (e) { console.warn("artwork 3d", e); return; } finally { artBusy = false; }
+    const free = () => { if (img.src && img.src.startsWith("blob:")) URL.revokeObjectURL(img.src); };
     const now = getRec(); // a creation switched while the image loaded: its own rebuild draws its artwork
-    if (!host || !rig || !now || now.assets.__artwork !== blob || (artNode && artNode.__blob === blob && artNode.__key === key)) { URL.revokeObjectURL(url); return; }
+    if (!host || !rig || !now || now.assets.__artwork !== blob || (artNode && artNode.__blob === blob && artNode.__key === key)) { free(); return; }
     img.id = "editor-3d-artwork-" + (++artSerial);
     host.querySelector("#editor-3d-media").appendChild(img);
     const node = document.createElement("a-plane");
@@ -193,10 +229,18 @@ window.Editor3D = (() => {
     rig.appendChild(node); Studio.pushBack(node);
     if (old) {
       let gone = false;
-      const drop = () => { if (gone) return; gone = true; const oi = old.__img; old.remove(); if (oi) { try { URL.revokeObjectURL(oi.src); } catch (e) {} oi.remove(); } };
+      const drop = () => { if (gone) return; gone = true; const oi = old.__img; old.remove(); if (oi) { try { if (oi.src && oi.src.startsWith("blob:")) URL.revokeObjectURL(oi.src); } catch (e) {} oi.remove(); } };
       node.addEventListener("materialtextureloaded", drop, { once: true }); setTimeout(drop, 1500);
     }
     node.__img = img;
+  }
+  // The plane is missing (its picture did not load, or it was dropped): try again, so the 3D view never stays grey.
+  function artWatch() {
+    if (artBusy || !mounted || !rig || Date.now() - artTried < 1200) return;
+    const rec = getRec(); if (!rec || !rec.target || !rec.assets.__artwork) return;
+    if (artNode && artNode.isConnected && artNode.__blob === rec.assets.__artwork) return;
+    if (artNode && !artNode.isConnected) artNode = null;
+    rebuildArtwork();
   }
 
   function rebuildElements() {
@@ -214,6 +258,7 @@ window.Editor3D = (() => {
       if (!e) return;
       e.querySelectorAll("[gltf-model]").forEach((m) => { m.addEventListener("model-error", () => modelFailed(el.id), { once: true }); m.addEventListener("model-loaded", () => { failed.delete(el.id); pruneCache(); }, { once: true }); });
       e.setAttribute("data-el-root", el.id);
+      e.__w = el.w; e.__h = el.h;
       stripAnim(e);
       rig.appendChild(e);
       if (e.dataset.opacity) Studio.applyOpacity(e, parseFloat(e.dataset.opacity));
@@ -295,12 +340,15 @@ window.Editor3D = (() => {
     const cur = (pinch3d && pinch3d.item) || wheelItem;
     const it = cur && cur.keyT == null && cur.el.id === el.id ? cur : null;
     const sc = (s ? s.scale : 1) * (it ? it.f : 1); // a pinch in progress on an unkeyed item: drawn bigger/smaller, saved on lift
-    node.object3D.scale.set(sc, sc, sc);
-    // 2D mode shows only what the flat canvas cannot draw in its final look; inside a group, each child is decided alone
-    const vis = (s ? !!s.visible : true) && (mode === "3d" || el.type === "group" || overlayType(el));
+    // a resize in progress: the built layer is stretched to the new size until the rebuild catches up
+    const kx = el.type !== "group" && node.__w > 0 && el.w > 0 ? el.w / node.__w : 1, ky = el.type !== "group" && node.__h > 0 && el.h > 0 ? el.h / node.__h : (el.h == null ? kx : 1);
+    node.object3D.scale.set(sc * kx, sc * ky, sc * (el.type === "model" ? kx : 1));
+    // 2D mode shows only what the flat canvas cannot draw in its final look, and whatever lies above it in the list
+    const flatIds = mode === "3d" ? null : sheetIds(rec);
+    const vis = (s ? !!s.visible : true) && (mode === "3d" || el.type === "group" || flatIds.has(el.id));
     if (node.object3D.visible !== vis) node.object3D.visible = vis;
     if (el.type === "group") node.querySelectorAll("[data-el-id]").forEach((n) => {
-      const on = mode === "3d" || overlayType(rec.elements.find((x) => x.id === n.dataset.elId));
+      const on = mode === "3d" || flatIds.has(n.dataset.elId);
       if (n.object3D && n.object3D.visible !== on) n.object3D.visible = on;
     });
     const op = s ? s.opacity : (el.opacity == null ? 1 : el.opacity);
@@ -507,6 +555,12 @@ window.Editor3D = (() => {
       return c.cx.getImageData(x, y, 1, 1).data[3];
     } catch (e) { return 255; }
   }
+  // what a touch can land on: every layer except the locked ones
+  function pickTargets(rec) {
+    const locked = new Set(rec.elements.filter((x) => x.locked).map((x) => x.id)), out = [];
+    rig.querySelectorAll("[data-el-root]").forEach((n) => { if (!locked.has(n.getAttribute("data-el-root"))) out.push(n.object3D); });
+    return out;
+  }
   function pickOrder(hits) {
     if (hits.length < 2) return hits;
     const solid = hits.filter((h) => alphaAt(h) >= 24);
@@ -625,7 +679,7 @@ window.Editor3D = (() => {
       if (hits.length) {
         tapAlt = null;
         { // a plain tap on a handle that sits over ANOTHER layer's visible pixels selects that layer (a drag still moves the handle)
-          const tg = []; rig.querySelectorAll("[data-el-root]").forEach((n) => tg.push(n.object3D));
+          const tg = pickTargets(rec);
           const eh = pickOrder(ray.intersectObjects(tg, true));
           if (eh.length) { let q = eh[0].object; while (q && !(q.el && q.el.getAttribute && q.el.getAttribute("data-el-root"))) q = q.parent; const id = q && q.el && q.el.getAttribute("data-el-root"); if (id && id !== getSelected() && alphaAt(eh[0]) >= 24) tapAlt = { pid: e.pointerId, id, x: e.clientX, y: e.clientY }; }
         }
@@ -686,8 +740,7 @@ window.Editor3D = (() => {
       }
     }
     // element picking
-    const targets = [];
-    rig.querySelectorAll("[data-el-root]").forEach((n) => targets.push(n.object3D));
+    const targets = pickTargets(rec);
     const hits = pickOrder(ray.intersectObjects(targets, true));
     if (hits.length) {
       let o = hits[0].object;
@@ -1019,7 +1072,7 @@ window.Editor3D = (() => {
   // leaves its body to the layer and draws only the selection marks.
   function drawsIn2d(id) {
     if (!active || mode !== "2d" || !rig || glLost) return false;
-    const rec = getRec(); if (!rec || !overlayType(rec.elements.find((x) => x.id === id))) return false;
+    const rec = getRec(); if (!rec || !sheetIds(rec).has(id)) return false;
     const n = rig.querySelector('[data-el-id="' + id + '"]');
     if (!n || !n.object3D) return false;
     const m = n.querySelector("[gltf-model]");
@@ -1065,6 +1118,7 @@ window.Editor3D = (() => {
     // makes every projection (and the gizmo fit) NaN. Keep the editor's own camera the active one.
     if (artNode && artNode.object3D && artNode.object3D.visible !== (mode === "3d")) artNode.object3D.visible = mode === "3d"; // the 2D canvas draws the artwork itself
     playClips(true); watchContext();
+    if (mode === "3d") artWatch();
     if (mode === "2d") frame2d();
     else if (cam && sceneEl && cam.components && cam.components.camera) {
       let own = cam.getObject3D("camera");

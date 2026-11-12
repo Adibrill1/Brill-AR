@@ -42,7 +42,7 @@ for(const phone of [true,false]){
   const num=p.locator('#inspector .num').first();await num.fill('20');await num.press('Enter');await p.waitForTimeout(700);
   assert.ok(Math.abs((await stored()).elements[0].x-0.2)<0.011,tag+': the position box moves the layer');
 
-  await showLayers();await add('חלקיקים');await showLayers();await add('רקע מונפש');
+  await showLayers();await add('חלקיקים');await p.locator('.part-tile[data-style="p-hearts"]').click();await p.waitForTimeout(1800);await showLayers();await add('רקע מונפש');
   assert.equal(await rows(),3,tag+': three layers');
   assert.deepEqual((await stored()).elements.map(e=>e.type).sort(),['particles','pattern','text'],tag+': the three kinds are saved');
   assert.equal((await p.locator('#layer-count').textContent()).trim(),'3',tag+': the count follows');

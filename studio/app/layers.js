@@ -178,6 +178,30 @@ window.Layers = (() => {
     return App.addLayer(el).then(() => App.setTab("style"));
   }
 
+  // The ready particle styles: every tile shows the particles as they will look on the artwork.
+  function openParticles() {
+    const styles = (window.StarterLibrary && window.StarterLibrary.particleStyles) || [];
+    if (!styles.length) return addParticles();
+    let busy = false;
+    const put = async (get, options) => {
+      if (busy) return; busy = true;
+      const end = UI.busy("מוסיפה חלקיקים…");
+      try { const f = await get(); d.close(); await importAsset("particles", f, options); App.setTab("style"); }
+      catch (e) { if (e.say == null) console.warn(e); toast(e.say || "החלקיקים לא נוספו. אפשר לנסות שוב.", { kind: "error" }); }
+      finally { end(); busy = false; }
+    };
+    const tiles = styles.map((st) => h("button.part-tile", { type: "button", data: { style: st.id }, onclick: () => put(async () => {
+      const r = await fetch("library/" + st.file); if (!r.ok) throw new Error("download");
+      return new File([await r.blob()], st.file.split("/").pop(), { type: "image/png" });
+    }, { name: st.name, particles: st.particles }) }, h("span.part-pic", h("img", { src: "library/" + st.thumb, alt: "", loading: "lazy", draggable: false })), h("span.part-name", st.name)));
+    const own = h("button.part-tile", { type: "button", onclick: async () => {
+      const f = await UI.pickFile("image/png,image/webp"); if (!f) return;
+      if (f.size > 2 * 1048576) return toast("תמונת החלקיק גדולה מדי (עד 2MB)", { kind: "error" });
+      put(async () => f, {});
+    } }, h("span.part-pic", icon("image", 28)), h("span.part-name", "תמונה משלי"));
+    const d = UI.dialog({ title: "אילו חלקיקים?", sheet: true, body: [h("div.part-grid", tiles, own), h("p.note", icon("sparkle", 18), h("span", "אחרי ההוספה אפשר לשנות צבע, כמות, גודל, מהירות וכיוון."))] });
+  }
+
   // A file the user chose (or dropped): add it, and say in words when it did not work.
   async function addFile(kind, f) {
     const end = kind === "timecube" ? null : UI.busy("מוסיפה " + TYPES[kind].name + "…");
@@ -211,8 +235,8 @@ window.Layers = (() => {
   // ---------- the "add" sheet ----------
   const ADD = [
     ["image", "תמונה", "PNG, JPG או GIF"], ["video", "סרטון", "MP4 או MOV"], ["text", "טקסט", "כותרת או ברכה"],
-    ["pattern", "רקע מונפש", "צבעים שזזים"], ["particles", "חלקיקים", "נצנוצים וקונפטי"], ["model", "מודל תלת־ממד", "GLB, ZIP, FBX, OBJ"],
-    ["sound", "צליל", "MP3, M4A, WAV"], ["timecube", "קוביית זמן", "סרטון שהופך לגוף"]
+    ["pattern", "רקע מונפש", "צבעים שזזים"], ["particles", "חלקיקים", "לבבות, שלג, קונפטי ועוד"], ["model", "מודל תלת־ממד", "GLB, ZIP, FBX, OBJ"],
+    ["sound", "צליל", "MP3, M4A, WAV"]
   ];
   function openAdd() {
     if (!App.rec) return;
@@ -221,7 +245,7 @@ window.Layers = (() => {
       d.close();
       if (kind === "text") return addText();
       if (kind === "pattern") return addPattern();
-      if (kind === "particles") return addParticles();
+      if (kind === "particles") return openParticles();
       const f = await UI.pickFile(ACCEPT[kind]);
       if (f) addFile(kind, f);
     };
@@ -257,15 +281,16 @@ window.Layers = (() => {
   function rowMenu(btn, e) {
     const els = App.rec.elements, i = els.indexOf(e), top = els.length - 1;
     UI.menu(btn, [
-      { label: "שינוי שם", icon: "edit", run: () => rename(e.id) },
-      { label: "שכפול", icon: "copy", run: () => App.duplicateLayer(e.id) },
+      e.locked ? { label: "שחרור הנעילה", icon: "unlock", run: () => App.setLocked(e.id, false) } : { label: "נעילה במקום", icon: "lock", run: () => App.setLocked(e.id, true) },
+      e.locked ? false : { label: "שינוי שם", icon: "edit", run: () => rename(e.id) },
+      e.locked ? false : { label: "שכפול", icon: "copy", run: () => App.duplicateLayer(e.id) },
       null,
       i < top ? { label: "לחזית", icon: "up", run: () => App.moveLayer(e.id, top) } : false,
       i < top ? { label: "שלב אחד קדימה", icon: "up", run: () => App.moveLayer(e.id, i + 1) } : false,
       i > 0 ? { label: "שלב אחד אחורה", icon: "down", run: () => App.moveLayer(e.id, i - 1) } : false,
       i > 0 ? { label: "לרקע", icon: "down", run: () => App.moveLayer(e.id, 0) } : false,
       els.length > 1 ? null : false,
-      { label: "מחיקה", icon: "trash", danger: true, run: () => App.removeLayer(e.id) }
+      e.locked ? false : { label: "מחיקה", icon: "trash", danger: true, run: () => App.removeLayer(e.id) }
     ].filter((x) => x !== false));
   }
   function render() {
@@ -280,10 +305,12 @@ window.Layers = (() => {
     for (const e of els) {
       const more = h("button.icon-btn.row-more", { "aria-label": "עוד פעולות: " + (e.name || ""), "aria-haspopup": "menu", onclick: (ev) => { ev.stopPropagation(); rowMenu(more, e); } }, icon("more", 18));
       const grip = h("span.row-grip", { title: "גרירה לשינוי הסדר" }, icon("grip", 18));
-      const row = h("div.layer-row" + (e.id === App.selId ? ".on" : ""), { role: "option", tabIndex: 0, "aria-selected": String(e.id === App.selId), data: { id: e.id } },
-        grip, thumb(e), h("span.layer-text", h("span.layer-name", e.name || ""), h("span.layer-sub", sub(e))), more);
-      row.onclick = () => { App.select(e.id); if (phone()) App.setTab(null, "inspector"); };
-      row.ondblclick = () => rename(e.id);
+      // a locked layer shows a padlock: touching it releases the layer
+      const lock = e.locked ? h("button.icon-btn.row-lock", { title: "שחרור הנעילה", "aria-label": "שחרור הנעילה: " + (e.name || ""), onclick: (ev) => { ev.stopPropagation(); App.setLocked(e.id, false); toast("השכבה שוחררה"); } }, icon("lock", 18)) : null;
+      const row = h("div.layer-row" + (e.id === App.selId ? ".on" : "") + (e.locked ? ".locked" : ""), { role: "option", tabIndex: 0, "aria-selected": String(e.id === App.selId), data: { id: e.id } },
+        grip, thumb(e), h("span.layer-text", h("span.layer-name", e.name || ""), h("span.layer-sub", sub(e))), lock, more);
+      row.onclick = () => { if (e.locked) return toast("השכבה נעולה. נגיעה במנעול משחררת אותה."); App.select(e.id); if (phone()) App.setTab(null, "inspector"); };
+      row.ondblclick = () => { if (!e.locked) rename(e.id); };
       row.onkeydown = (ev) => { if (ev.target === row && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); row.click(); } };
       grip.onpointerdown = (ev) => startDrag(ev, row, e.id);
       grip.onclick = (ev) => ev.stopPropagation();

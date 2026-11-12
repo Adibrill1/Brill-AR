@@ -60,13 +60,6 @@ window.StarterLibrary = (() => {
     ['synthwave','סינת׳ווייב',10],['bauhaus','באוהאוס',8],['stained-glass','ויטראז׳',9],['dark-tech','טכנולוגיה על שחור',9],
     ['lowpoly-island','אי לואו־פולי',10],['impasto-oil','צבע שמן עבה',9],['ukiyo-wave','אוקיו־אה',9],['sand-painting','ציור בחול',10]
   ].map(([id,name,sec]) => ({id:'loop-'+id,name,detail:'לולאת וידאו · '+sec+' שניות · עם מוזיקה',kind:'video',file:'loops/'+id+'.mp4',thumb:'thumbs/loop-'+id+'.jpg',group:'loop'}));
-  // Time cubes made from the same loops: the clip is baked into the cube on the device when added (first 8 s).
-  // Loops that open on a blank page are cut from the front, so the front face plays the clip.
-  // [loop id, Hebrew name, slice direction]
-  const cubes = [
-    ['synthwave','סינת׳ווייב','front'],['ukiyo-wave','אוקיו־אה','front'],['lowpoly-island','אי לואו־פולי','top'],['stained-glass','ויטראז׳','right'],
-    ['dark-tech','טכנולוגיה על שחור','front'],['sand-painting','ציור בחול','front'],['impasto-oil','צבע שמן עבה','front'],['bauhaus','באוהאוס','front']
-  ].map(([id,name,dir]) => ({id:'tc-'+id,name:'קוביית זמן: '+name,detail:'קוביית זמן · תלת־ממד · הזמן הוא העומק',kind:'timecube',file:'loops/'+id+'.mp4',thumb:'thumbs/tc-'+id+'.png',w:.5,timecube:{dir,edges:true,depth:.75},group:'timecube'}));
   // Animated CC0 models by Quaternius (packed to GLB): [file id, Hebrew name, the move they start on, start width]
   const animated = [
     ['q-alpaca','אלפקה','Idle',.5],['q-bull','שור','Idle',.55],['q-cow','פרה','Eating',.55],['q-deer','איילה','Idle',.5],
@@ -97,7 +90,7 @@ window.StarterLibrary = (() => {
     ['qu-pigeon','יונה','Flying_Idle',.35],['qu-alpaking','אלפקה מעופפת','Flying_Idle',.35]
   ].map(([id,name,clip,w]) => ({id,name,detail:'תלת־ממד בתנועה · חינמי (CC0)',kind:'model',file:'models/'+id+'.glb',thumb:'thumbs/'+id+'.png',clip,w,
     group:/^q[fc]-/.test(id)?'sea':/^qd-/.test(id)?'dino':/^q[mur]-/.test(id)?'creature':'animal'}));
-  // Ready particle styles: a sprite drawn here (white, tinted by the colours) and the particle settings it starts with
+  // Ready particle styles, offered by the editor's own "particles" chooser (not in this dialog): a sprite drawn here (white, tinted by the colours) and the particle settings it starts with
   const particleStyles = [
     ['hearts','לבבות עולים','heart',{count:60,size:22,speed:.8,color:'#ff4d7a',color2:'#ffa3c4',direction:0,lifetime:3,life2:5,fade:true}],
     ['petals','עלי כותרת נושרים','petal',{count:70,size:18,speed:.6,color:'#ffb7c9',color2:'#ffffff',direction:180,lifetime:4,life2:7,fade:true}],
@@ -171,8 +164,8 @@ window.StarterLibrary = (() => {
     ['k-galaxy','גלקסיה ספירלית',.7],['k-dna','סליל DNA',.3],['k-gyro','טבעות מסתובבות',.5],['k-sphere','כדור חלקיקים נושם',.45],
     ['k-terrain','נוף קווים',.9],['k-constellation','קבוצת כוכבים',.7],['k-orb','כדור קוסמי',.45],['k-fibres','מנורת סיבים אופטיים',.45]
   ].map(([id,name,w]) => ({id:'fx3d-'+id,name,detail:'חלל · תלת־ממד · לולאה',kind:'model',file:'models/fx3d-'+id+'.glb',thumb:'thumbs/fx3d-'+id+'.png',clip:'Loop',w,group:'cosmic'}));
-  const entries = [...originals, ...scenes, ...fx3d, ...w3d, ...k3d, ...made, ...cubes, ...models, ...scans, ...animated, ...particleStyles, ...stickers, ...loops];
-  const groups = [['all','הכול'],['scene','סצנות בתנועה'],['fx','אפקטים מרחפים'],['weather','מזג אוויר'],['cosmic','חלל וחלקיקים'],['made','מקוריים בתנועה'],['timecube','קוביות זמן'],['model','תלת־ממד'],['animal','חיות בתנועה'],['sea','ים'],['dino','דינוזאורים'],['creature','דמויות'],['particles','חלקיקים'],['sticker','מדבקות'],['loop','לולאות וידאו'],['original','מקוריים']];
+  const entries = [...originals, ...scenes, ...fx3d, ...w3d, ...k3d, ...made, ...models, ...scans, ...animated, ...stickers, ...loops];
+  const groups = [['all','הכול'],['scene','סצנות בתנועה'],['fx','אפקטים מרחפים'],['weather','מזג אוויר'],['cosmic','חלל וחלקיקים'],['made','מקוריים בתנועה'],['model','תלת־ממד'],['animal','חיות בתנועה'],['sea','ים'],['dino','דינוזאורים'],['creature','דמויות'],['sticker','מדבקות'],['loop','לולאות וידאו'],['original','מקוריים']];
   const MIME = {glb:'model/gltf-binary',mp4:'video/mp4',png:'image/png',gif:'image/gif',wav:'audio/wav'};
   async function open(importAsset) {
     const dialog = document.createElement('dialog'); dialog.id='starter-library'; dialog.dir='rtl';
@@ -180,7 +173,7 @@ window.StarterLibrary = (() => {
     const title=document.createElement('h2');title.textContent='ספריית התחלה';
     const close=document.createElement('button');close.textContent='סגירה';close.className='ghost';close.onclick=()=>dialog.close();
     head.append(title,close);dialog.append(head);
-    const note=document.createElement('p');note.className='hint';note.textContent=entries.length+' פריטים. נגיעה בפריט מוסיפה אותו ליצירה: מודלים חינמיים (CC0), גם בתנועה, אפקטים מרחפים, מזג אוויר, חלקיקים, מדבקות, לולאות מהסטודיו שלך ופריטים מקוריים. נשמרים עם היצירה במכשיר, בלי חשבון ובלי תשלום.';dialog.append(note);
+    const note=document.createElement('p');note.className='hint';note.textContent=entries.length+' פריטים. נגיעה בפריט מוסיפה אותו ליצירה: מודלים חינמיים (CC0), גם בתנועה, אפקטים מרחפים, מזג אוויר, מדבקות, לולאות מהסטודיו שלך ופריטים מקוריים. נשמרים עם היצירה במכשיר, בלי חשבון ובלי תשלום.';dialog.append(note);
     const filters=document.createElement('div');filters.className='library-filters';filters.setAttribute('role','group');filters.setAttribute('aria-label','סוג פריט');dialog.append(filters);
     const grid=document.createElement('div');grid.className='library-grid';dialog.append(grid);
     const status=document.createElement('p');status.setAttribute('role','status');dialog.append(status);
@@ -214,5 +207,5 @@ window.StarterLibrary = (() => {
     show('all');
     dialog.addEventListener('close',()=>dialog.remove(),{once:true});document.body.append(dialog);dialog.showModal();close.focus();
   }
-  return {open,entries};
+  return {open,entries,particleStyles};
 })();

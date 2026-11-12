@@ -146,6 +146,7 @@ window.App = (() => {
 
   function select(id) {
     id = id && el(id) ? id : null;
+    if (id && el(id).locked) return; // a locked layer stays put: it is released from its row in the list
     if (S.selId === id) return;
     S.selId = id; S.cropping = false;
     emit("select");
@@ -194,6 +195,14 @@ window.App = (() => {
     emit("structure"); save();
   }
 
+  // A locked layer cannot be picked, moved or changed until it is released.
+  function setLocked(id, on) {
+    const e = el(id); if (!e || !!e.locked === !!on) return;
+    if (on) e.locked = true; else delete e.locked;
+    if (on && S.selId === id) { S.selId = null; S.cropping = false; emit("select"); }
+    emit("structure"); save();
+  }
+
   // ---------- undo / redo ----------
   async function restore(dir) {
     if (!S.rec) return;
@@ -227,8 +236,8 @@ window.App = (() => {
 
   return {
     on, emit, el, sel, keyed, clock, sample, hydrate, loadArt, save, saveSoon, flush, changed, open, close, select, blocked,
-    addLayer, removeLayer, duplicateLayer, moveLayer, undo, redo, freeze, replay, keyAt, editKey, setTab, setPane, setMode3d, setCropping,
-    get rec() { return S.rec; }, get selId() { return S.selId; }, get art() { return S.art; }, get artState() { return S.artState; }, get media() { return S.media; },
+    addLayer, removeLayer, duplicateLayer, moveLayer, setLocked, undo, redo, freeze, replay, keyAt, editKey, setTab, setPane, setMode3d, setCropping,
+    get rec() { return S.rec; }, get selId() { return S.selId; }, get art() { return S.art; }, get artBlob() { return artBlob; }, get artState() { return S.artState; }, get media() { return S.media; },
     get frozen() { return S.frozen; }, get tab() { return S.tab; }, get pane() { return S.pane; }, get mode3d() { return S.mode3d; },
     get cropping() { return S.cropping; }, get snap() { return S.snap; }, set snap(v) { S.snap = !!v; },
     set rec(r) { S.rec = r; }

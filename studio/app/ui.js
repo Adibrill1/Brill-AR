@@ -40,12 +40,12 @@ window.UI = (() => {
     motion: "M3 17c4 0 4-10 9-10s5 10 9 10M3 17h.01M12 7h.01M21 17h.01", tap: "M9 11V5.5a1.5 1.5 0 0 1 3 0V11M12 10V8.5a1.5 1.5 0 0 1 3 0V11M15 10.5a1.5 1.5 0 0 1 3 0V15a6 6 0 0 1-6 6h-1a5 5 0 0 1-4.2-2.3L4 14.5a1.4 1.4 0 0 1 2.3-1.6L9 15",
     palette: "M12 3a9 9 0 1 0 0 18c1.5 0 2-1 2-2 0-1.5 1-2 2-2h2a3 3 0 0 0 3-3c0-5-4-9-9-9zM7.5 12h.01M9.5 8h.01M14.5 7.5h.01M17 11h.01",
     magnet: "M6 4v8a6 6 0 0 0 12 0V4h-4v8a2 2 0 0 1-4 0V4zM6 8h4M14 8h4", link: "M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1",
-    lock: "M6 11h12v9H6zM8 11V8a4 4 0 0 1 8 0v3", grip: "M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01", warn: "M12 4l9 16H3l9-16zM12 10v5M12 17.5h.01",
+    lock: "M6 11h12v9H6zM8 11V8a4 4 0 0 1 8 0v3", unlock: "M6 11h12v9H6zM8 11V8a4 4 0 0 1 7.5-2", grip: "M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01", warn: "M12 4l9 16H3l9-16zM12 10v5M12 17.5h.01",
     key: "M12 4l7 8-7 8-7-8 7-8z", flip: "M12 3v18M8 7 4 12l4 5V7zM16 7l4 5-4 5V7z", refresh: "M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"
   };
   function icon(name, size) {
     const s = size || 20, fill = name === "play" ? "currentColor" : "none";
-    const n = h("span.ic", { "aria-hidden": "true" });
+    const n = h("span.ic" + (name === "trash" ? ".ic-trash" : ""), { "aria-hidden": "true" });
     n.innerHTML = '<svg width="' + s + '" height="' + s + '" viewBox="0 0 24 24" fill="' + fill + '" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="' + (P[name] || "") + '"/></svg>';
     return n;
   }
