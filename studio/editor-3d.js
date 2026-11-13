@@ -89,6 +89,7 @@ window.Editor3D = (() => {
       }
       const made = assets.querySelector('[id="' + mid + '"]'); if (made) made.__blob = blob;
     }
+    for (const el of rec.elements) { const n = own(el) && assets.querySelector('[id="m3-' + el.id + '"]'); if (n) Studio.setStill(n, Studio.isStill(el), Studio.stillAt(el)); } // frozen videos and GIFs on their frame
   }
 
   async function mount() {
@@ -391,6 +392,23 @@ window.Editor3D = (() => {
     });
     const op = s ? s.opacity : (el.opacity == null ? 1 : el.opacity);
     if (node.__op3d !== op) { Studio.applyOpacity(node, op); node.__op3d = op; }
+    syncStill(rec, el, node);
+  }
+  // Freezing a layer (or setting it moving again) and the moment it shows change without a rebuild, which would reload
+  // every model: a model takes its pose, a video or a GIF its frame.
+  function syncStill(rec, el, node) {
+    if (el.type === "group") return;
+    const still = Studio.isStill(el), at = Studio.stillAt(el), key = still ? at : -1;
+    const media = host && host.querySelector('[id="m3-' + el.id + '"]');
+    if (media) {
+      const was = media.__held; Studio.setStill(media, still, at);
+      if (media.__gif && media.__held !== was) node.object3D.traverse((m) => { const map = m.material && m.material.map; if (map && map.image === media) map.needsUpdate = true; });
+    }
+    if (node.__still === undefined) { node.__still = key; return; } // just built with these values
+    if (node.__still === key) return;
+    node.__still = key;
+    const owned = window.ActionCore && ActionCore.list(rec).some((q) => q.actions.some((a) => a.type === "model" && a.layerId === el.id)); // a tap action drives this model
+    node.querySelectorAll("[model-clips]").forEach((m) => m.setAttribute("model-clips", { playing: !still && !owned, at }));
   }
 
   // Keyframed gizmo edits write keys at the frozen playhead, not base props.
@@ -1250,7 +1268,7 @@ window.Editor3D = (() => {
   // Placement, turn, opacity, timeline and preset motion of a top-level layer are applied every frame (applySampled),
   // so changing them needs no rebuild: a rebuild reloads every model, which blinked them out after each drag.
   // Grouped children keep every field, since their placement is built into the group.
-  const LIVE_KEYS = new Set(["x", "y", "z", "rot", "rotX", "rotY", "opacity", "timeline", "anim"]);
+  const LIVE_KEYS = new Set(["x", "y", "z", "rot", "rotX", "rotY", "opacity", "timeline", "anim", "modelPlaying", "still", "stillAt"]);
   function compositionSig(rec) {
     if (!rec) return "";
     const inGroup = new Set(); rec.elements.forEach((g) => { if (g.type === "group") (g.children || []).forEach((id) => inGroup.add(id)); });

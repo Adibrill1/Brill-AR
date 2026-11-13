@@ -343,8 +343,11 @@ const Studio = (() => {
   function ensureModelAnimationComponent() {
     if (!window.AFRAME || AFRAME.components["model-clips"]) return;
     AFRAME.registerComponent("model-clips", {
-      schema: { clip: {default:0}, speed: {default:1}, playing: {default:true}, loop: {default:true} },
+      schema: { clip: {default:0}, speed: {default:1}, playing: {default:true}, loop: {default:true}, at: {default:0} },
       update() { if(this.mixer)this.selectClip(); },
+      // A still model shows the moment `at` (0..1) of its clip. The mixer was never stepped before, so a model whose motion
+      // was off stood in its bare rest pose (often arms out), not in a pose of its own motion.
+      pose() { if(!this.mixer||!this.action)return; const d=this.action.getClip().duration||0; this.mixer.setTime(Math.max(0,Math.min(0.999,this.data.at))*d); },
       selectClip() {
         const mesh=this.el.getObject3D("mesh"),clips=mesh&&mesh.animations;
         if(!this.mixer||!clips||!clips.length)return;
@@ -353,6 +356,7 @@ const Studio = (() => {
         this.action=this.mixer.clipAction(clips[index]);this.action.reset();
         this.action.setLoop(this.data.loop?THREE.LoopRepeat:THREE.LoopOnce,this.data.loop?Infinity:1);this.action.clampWhenFinished=!this.data.loop;this.action.play();
         this.el.dataset.activeClip=String(index);
+        if(!this.data.playing)this.pose();
       },
       init() {
         this.tracked = !this.el.sceneEl.hasAttribute("xrweb");
@@ -952,7 +956,7 @@ vec4 bpPattern(vec2 uv) {
         const parent = this.anchor = this.el.closest("xrextras-named-image-target") || this.el.parentNode;
         this.onFound = () => { if (this.video) this.video.play().catch(() => {}); this.target = 1; };
         this.onLost = () => {
-          if (this.video) { this.video.pause(); this.video.currentTime = 0; }
+          if (this.video && !this.video.__play) { this.video.pause(); this.video.currentTime = 0; } // a still video keeps its chosen frame
           this.target = 0;
           const m = this.el.getObject3D("mesh");
           if (m && m.material) m.material.opacity = 0;
@@ -1457,7 +1461,7 @@ vec4 bpPattern(vec2 uv) {
     if (el.type !== "scatter") return el.scatter == null;
     const sc = el.scatter; if (!sc || typeof sc !== "object" || Array.isArray(sc)) return false;
     const it = sc.item; if (!it || typeof it !== "object" || Array.isArray(it) || !SCATTER_TYPES.includes(it.type) || it.scatter != null) return false;
-    for (const key of ["w", "h", "rot", "rotX", "rotY", "opacity", "aspect"]) if (it[key] != null && !Number.isFinite(it[key])) return false;
+    for (const key of ["w", "h", "rot", "rotX", "rotY", "opacity", "aspect", "stillAt"]) if (it[key] != null && !Number.isFinite(it[key])) return false;
     if (!validCrop(it) || !validFx(it) || !validChroma(it) || !validParticles(it)) return false;
     if (["image", "video", "model"].includes(it.type) && !el.assetId) return false;
     if (!Array.isArray(sc.points) || sc.points.length < 2 || sc.points.length > 64 || !sc.points.every((p) => p && ["x", "y", "z"].every((k) => p[k] == null || Number.isFinite(p[k]) && Math.abs(p[k]) <= 10))) return false;
@@ -1594,7 +1598,7 @@ vec4 bpPattern(vec2 uv) {
       if (blob) {
         const inner = document.createElement("a-entity");
         ensureModelAnimationComponent();
-        inner.setAttribute("model-clips", {clip:el.modelClip||0,speed:el.modelSpeed||1,playing:!ActionCore.list(rec).some(q=>q.actions.some(a=>a.type==='model'&&a.layerId===el.id))&&el.modelPlaying!==false,loop:el.modelLoop!==false});
+        inner.setAttribute("model-clips", {clip:el.modelClip||0,speed:el.modelSpeed||1,playing:!ActionCore.list(rec).some(q=>q.actions.some(a=>a.type==='model'&&a.layerId===el.id))&&el.modelPlaying!==false,loop:el.modelLoop!==false,at:stillAt(el)});
         inner.setAttribute("gltf-model", blobURL(blob));
         inner.addEventListener("model-loaded", () => {
           const mesh = inner.getObject3D("mesh");
@@ -1727,6 +1731,40 @@ vec4 bpPattern(vec2 uv) {
   }
 
   // ---------- sequences (multi-state artworks) ----------
+  // ---------- frozen motion ("הקפאה") ----------
+  // A layer that moves by itself (a 3D model's clip, an animated GIF, a video) can be frozen on one moment of its own
+  // motion: a model keeps its old field modelPlaying (false = frozen), a picture or a video has still: true; stillAt is
+  // the moment shown (0..1 of the clip, the GIF or the video). A scatter keeps them on its copies' look. Motion she made
+  // herself (timeline keys, the ready moves in the motion tab) is not touched.
+  const stillOwn = (el) => (el && el.type === "scatter" && el.scatter && el.scatter.item) || el;
+  function isStill(el) { const o = stillOwn(el); return !!o && (o.type === "model" ? o.modelPlaying === false : o.still === true); }
+  function stillAt(el) { const v = stillOwn(el) && stillOwn(el).stillAt; return Number.isFinite(v) ? Math.max(0, Math.min(1, v)) : 0; }
+  // A video held on one frame: whatever asks it to play (the artwork found, a touch for sound, a state) gets nothing.
+  // A phone shows no picture of a video that never played, so it plays once, silently, and stops on the frame.
+  function holdVideo(v, at) {
+    if (!v.__play) { v.__play = v.play; v.__loop = v.loop; v.play = () => Promise.resolve(); }
+    v.loop = false; v.__stillAt = at;
+    const seek = () => { const d = v.duration; if (!(d > 0) || !Number.isFinite(d)) return; try { v.currentTime = Math.max(0, Math.min(d - 0.05, at * d)); } catch (e) {} };
+    if (!v.__primed) { v.__primed = true; v.muted = true; const p = v.__play.call(v); if (p && p.then) p.then(() => { if (v.__play) { v.pause(); seek(); } }, seek); else v.pause(); }
+    else v.pause();
+    if (v.readyState >= 1) seek(); else v.addEventListener("loadedmetadata", seek, { once: true });
+  }
+  function releaseVideo(v) {
+    if (!v.__play) return;
+    v.play = v.__play; v.loop = v.__loop !== false; delete v.__play; delete v.__stillAt;
+    v.play().catch(() => {});
+  }
+  function setStill(node, still, at) {
+    if (!node) return;
+    if (node.tagName === "VIDEO") { if (still) { if (node.__stillAt !== at || !node.__play) holdVideo(node, at); } else releaseVideo(node); return; }
+    const g = node.__gif; if (!g || !window.GifAnim) return;
+    const key = still ? at : -1; if (node.__held === key) return;
+    if (node.__held == null && !still) return; // running already
+    node.__held = still ? at : null;
+    if (node.__pump) node.__pump.stop();
+    node.__pump = window.GifAnim.startPump(node, g.gif, g.getEntity, still ? Math.round(at * (g.gif.frames.length - 1)) : null);
+  }
+
   // ---------- layer groups ----------
   // A group is an element (type "group") whose children are ids of other elements.
   // Children stay normal elements in rec.elements; topLevelElements hides them from
@@ -1756,7 +1794,8 @@ vec4 bpPattern(vec2 uv) {
       if (gif.frames.length < 2) return { node: img(), animated: false };
       const canvas = document.createElement("canvas");
       canvas.id = id;
-      window.GifAnim.startPump(canvas, gif, getEntity || (() => null));
+      canvas.__gif = { gif, getEntity: getEntity || (() => null) };
+      canvas.__pump = window.GifAnim.startPump(canvas, gif, canvas.__gif.getEntity);
       return { node: canvas, animated: true, width: gif.width, height: gif.height };
     } catch (e) {
       // <img src=GIF> would still animate in the browser. Freeze the first decoded
@@ -2312,7 +2351,7 @@ vec4 bpPattern(vec2 uv) {
       if (!el || !["video","image","sound","text","model","particles","group","timecube","pattern","scatter"].includes(el.type)) throw new Error("bad element type");
       if (typeof el.id !== "string" || !/^[a-zA-Z0-9_-]{1,128}$/.test(el.id) || ids.has(el.id)) throw new Error("bad or duplicate element id");
       ids.add(el.id);
-      for (const key of ["x","y","z","w","h","rot","rotX","rotY","opacity","aspect","volume"]) if (el[key] != null && (typeof el[key] !== "number" || !Number.isFinite(el[key]))) throw new Error("bad numeric field");
+      for (const key of ["x","y","z","w","h","rot","rotX","rotY","opacity","aspect","volume","stillAt"]) if (el[key] != null && (typeof el[key] !== "number" || !Number.isFinite(el[key]))) throw new Error("bad numeric field");
       if(!validParticles(el))throw new Error('bad particles');
       if(!validTimeCube(el))throw new Error('bad time cube');
       // bindTap may navigate to el.tapUrl on tap - refuse script-executing schemes
@@ -2647,7 +2686,7 @@ vec4 bpPattern(vec2 uv) {
   return { TARGET_W, TARGET_H, newId, inspectVideo, validateModelBlob, prepareModelBlob, modelCompressionKinds, DECODER_DRACO_PATH, DECODER_MESHOPT_PATH, modelClipNames, modelClipInfo, loadImage, loadImageBlob, loadFailed, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
            audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, blobURL, releaseBlobURL, blobURLs, historyState, restoreHistory, duplicateLayer, exportJSON, missingAssets, importJSON, exportZIP, importZIP, zipToJSON, fetchPublished, ownBlob, assetHealth, fileHealth, seedDemo, normEl, ANIMS, drawTextCanvas, loadTextFonts, FX: FX.map(([id, name]) => ({ id, name, moving: FX_MOVING.has(id) })), fxFrame,
            PATTERNS: PATTERNS.map(([id, name, colors, speed]) => ({ id, name, colors: colors.slice(), speed })), PATTERN_PALETTES: PATTERN_PALETTES.map(([name, colors]) => ({ name, colors: colors.slice() })),
-           PATTERN_SHAPES: PATTERN_SHAPES.map(([id, name]) => ({ id, name })), patternDefaults, patternAspect, patternFrame, validPattern, validFx, validChroma, keyValues, pixelAt, CHROMA_DEFAULT, SCATTER_TYPES, SCATTER_MAX, mediaType, scatterItem, scatterLimit, scatterPath, scatterCopies, scatterCopyEl, scatterBounds, refreshScatter, makeScatter, scaleScatter, breakScatter, validScatter, FONTS: FONTS.map(([id, name]) => ({ id, name })), buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, ensureTimeCubeComponent, bakeTimeCube, validTimeCube, TIMECUBE_DIRS, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, artworkFingerprint, fingerprintDistance, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
+           PATTERN_SHAPES: PATTERN_SHAPES.map(([id, name]) => ({ id, name })), patternDefaults, patternAspect, patternFrame, validPattern, validFx, validChroma, keyValues, pixelAt, CHROMA_DEFAULT, SCATTER_TYPES, SCATTER_MAX, mediaType, isStill, stillAt, setStill, scatterItem, scatterLimit, scatterPath, scatterCopies, scatterCopyEl, scatterBounds, refreshScatter, makeScatter, scaleScatter, breakScatter, validScatter, FONTS: FONTS.map(([id, name]) => ({ id, name })), buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, ensureTimeCubeComponent, bakeTimeCube, validTimeCube, TIMECUBE_DIRS, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, artworkFingerprint, fingerprintDistance, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
            load: id=>settledRead(id), all: ()=>settledRead(), del: delExperience, LIMITS, mediaBytes, pushBack, addBlocker, publishBlocker, restoreBlocker, exportWarning, exportJSONSize,
            onSaveState, installSaveGuard, saveState, soundOnTouch, snapAngle, syncMedia,
            _testHoldSave:p=>{saveHold=p;}, _testFailSave:m=>{failSave=m;}, _testFailPut:o=>{failPut=o?{...o}:null;} };

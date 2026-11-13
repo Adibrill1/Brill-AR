@@ -4,8 +4,9 @@
    rejected (rare; honest error beats wrong pixels). Compositing follows disposal 0/1/2/3.
    Exposes window.GifAnim.parse(arrayBuffer) -> {width,height,frames:[{delayMs, disposal,
    transparent, left,top,w,h, pixels:Uint8ClampedArray RGBA}]} and
-   window.GifAnim.startPump(canvas, gif) -> {stop()}; the pump composites frames onto the
-   canvas on their own delays and marks an optional entity's texture dirty each frame. */
+   window.GifAnim.startPump(canvas, gif, getEntity, hold) -> {stop()}; the pump composites frames onto the
+   canvas on their own delays and marks an optional entity's texture dirty each frame. With hold (a frame index) it
+   draws up to that frame at once and stays there (a frozen GIF). */
 (function () {
   function parseGif(buf) {
     const d = new Uint8Array(buf);
@@ -107,7 +108,7 @@
     if (o !== expected) throw new Error("truncated lzw");
     return out;
   }
-  function startPump(canvas, gif, getEntity) {
+  function startPump(canvas, gif, getEntity, hold) {
     const ctx = canvas.getContext("2d");
     canvas.width = gif.width; canvas.height = gif.height;
     let full = ctx.createImageData(gif.width, gif.height);
@@ -149,8 +150,9 @@
       markDirty();
       prevDispose = f.disposal >= 2 ? { disposal: f.disposal, top: f.top, left: f.left, w: f.w, h: f.h, saved } : null;
       i = (i + 1) % gif.frames.length;
-      timer = setTimeout(draw, f.delayMs);
+      if (hold == null) timer = setTimeout(draw, f.delayMs);
     };
+    if (hold != null) { const k = Math.max(0, Math.min(gif.frames.length - 1, Math.floor(hold) || 0)); for (let j = 0; j <= k; j++) draw(); return { stop: () => { stopped = true; } }; }
     draw();
     return { stop: () => { stopped = true; if (timer) clearTimeout(timer); } };
   }

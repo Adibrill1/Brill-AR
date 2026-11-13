@@ -33,7 +33,7 @@ window.App = (() => {
   const mediaBlob = {};
   function dropMedia(id) {
     const m = S.media[id]; if (!m) return;
-    try { if (m.tagName === "VIDEO") { m.pause(); m.removeAttribute("src"); m.load(); } if (m.__url) URL.revokeObjectURL(m.__url); } catch (e) {}
+    try { if (m.tagName === "VIDEO") { m.pause(); m.removeAttribute("src"); m.load(); } if (m.__pump) m.__pump.stop(); if (m.__url) URL.revokeObjectURL(m.__url); } catch (e) {}
     delete S.media[id]; delete mediaBlob[id];
   }
   // A phone sometimes fails the first read of a stored file; another try, or a fresh copy of its bytes, usually works.
@@ -77,6 +77,9 @@ window.App = (() => {
     }
     emit("art");
   }
+  // Layers showing the same file share one playing node; a frozen layer has its own, held on its chosen frame.
+  const mediaKey = (e) => (Studio.isStill(e) ? e.assetId + "@" + e.id : e.assetId);
+  const mediaFor = (e) => (e && e.assetId && S.media[mediaKey(e)]) || null;
   async function hydrate() {
     const rec = S.rec; if (!rec) return;
     await loadArt();
@@ -85,20 +88,22 @@ window.App = (() => {
       const kind = Studio.mediaType(e); // a scatter layer shows the file of the layer it was made from
       if ((kind !== "video" && kind !== "image") || !e.assetId) continue;
       const blob = rec.assets[e.assetId]; if (!blob) continue;
-      keep.add(e.assetId);
-      if (S.media[e.assetId] && sameFile(mediaBlob[e.assetId], blob)) { mediaBlob[e.assetId] = blob; continue; }
-      dropMedia(e.assetId); mediaBlob[e.assetId] = blob;
+      const key = mediaKey(e), still = Studio.isStill(e);
+      keep.add(key);
+      if (S.media[key] && sameFile(mediaBlob[key], blob)) { mediaBlob[key] = blob; if (still) Studio.setStill(S.media[key], true, Studio.stillAt(e)); continue; }
+      dropMedia(key); mediaBlob[key] = blob;
       try {
         if (kind === "video") {
           await retry(() => blob.slice(0, 1).arrayBuffer());
           const v = document.createElement("video");
           v.muted = true; v.loop = true; v.playsInline = true; v.setAttribute("playsinline", ""); v.preload = "auto";
-          v.__url = URL.createObjectURL(blob); v.src = v.__url; v.play().catch(() => {});
-          S.media[e.assetId] = v;
+          v.__url = URL.createObjectURL(blob); v.src = v.__url; if (!still) v.play().catch(() => {});
+          S.media[key] = v;
         } else {
-          S.media[e.assetId] = (await retry(() => Studio.makeImageMedia(blob, "m-" + e.assetId, null))).node;
+          S.media[key] = (await retry(() => Studio.makeImageMedia(blob, "m-" + key, null))).node;
         }
-      } catch (err) { console.warn("media", err); delete mediaBlob[e.assetId]; }
+        if (still) Studio.setStill(S.media[key], true, Studio.stillAt(e));
+      } catch (err) { console.warn("media", err); delete mediaBlob[key]; }
     }
     Object.keys(S.media).forEach((id) => { if (!keep.has(id)) dropMedia(id); });
   }
@@ -236,6 +241,33 @@ window.App = (() => {
     toast("העותקים הם עכשיו " + n + " שכבות רגילות, בתוך קבוצה", { action: { label: "ביטול", run: undo } });
   }
 
+  // ---------- frozen motion ("הקפאה") ----------
+  // One switch for a model's clip, an animated GIF and a video (and the copies of a scatter): still on one moment.
+  const stillOwn = (e) => (e.type === "scatter" ? e.scatter.item : e);
+  async function setStill(id, on) {
+    const e = el(id); if (!e) return;
+    const o = stillOwn(e);
+    if (o.type === "model") { if (on) o.modelPlaying = false; else delete o.modelPlaying; }
+    else if (on) o.still = true; else delete o.still;
+    await hydrate();
+    emit("change"); emit("still"); save();
+  }
+  // Does this layer move by itself? A model with a clip, a video, an animated GIF (its media is a GIF canvas).
+  function movesItself(e) {
+    const o = e && stillOwn(e); if (!o) return false;
+    if (o.type === "model") return (o.clipDurations || []).length > 0;
+    if (o.type === "video") return true;
+    if (o.type === "image") { const m = mediaFor(e); return !!(m && m.__gif); }
+    return false;
+  }
+  // The moment a frozen layer shows (0..1 of its motion).
+  function setStillAt(id, at, final) {
+    const e = el(id); if (!e) return;
+    stillOwn(e).stillAt = Math.round(Math.max(0, Math.min(1, at)) * 1000) / 1000;
+    const m = mediaFor(e); if (m) Studio.setStill(m, true, Studio.stillAt(e));
+    changed(final);
+  }
+
   // Order in the list is top first; in the record the last element is on top.
   function moveLayer(id, to) {
     const list = S.rec.elements, from = list.findIndex((e) => e.id === id);
@@ -286,7 +318,7 @@ window.App = (() => {
 
   return {
     on, emit, el, sel, keyed, clock, sample, hydrate, loadArt, save, saveSoon, flush, changed, open, close, select, blocked,
-    addLayer, removeLayer, duplicateLayer, moveLayer, scatterFrom, addScatter, redrawScatter, scatterDepth, breakScatter, setLocked, undo, redo, freeze, replay, keyAt, editKey, setTab, setPane, setMode3d, setCropping,
+    addLayer, removeLayer, duplicateLayer, moveLayer, scatterFrom, addScatter, redrawScatter, scatterDepth, breakScatter, setLocked, setStill, setStillAt, mediaFor, movesItself, undo, redo, freeze, replay, keyAt, editKey, setTab, setPane, setMode3d, setCropping,
     get rec() { return S.rec; }, get selId() { return S.selId; }, get art() { return S.art; }, get artBlob() { return artBlob; }, get artState() { return S.artState; }, get media() { return S.media; },
     get frozen() { return S.frozen; }, get tab() { return S.tab; }, get pane() { return S.pane; }, get mode3d() { return S.mode3d; },
     get cropping() { return S.cropping; }, get snap() { return S.snap; }, set snap(v) { S.snap = !!v; },

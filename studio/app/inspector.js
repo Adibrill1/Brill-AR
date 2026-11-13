@@ -241,11 +241,10 @@ window.Inspector = (() => {
       const names = clipNames[e.assetId];
       if (!names) Studio.modelClipInfo(App.rec.assets[e.assetId]).then((c) => { clipNames[e.assetId] = c.map((x) => x.name); if (App.selId === id && App.tab === "style") build(); }).catch(() => { clipNames[e.assetId] = []; });
       const opts = Array.from({ length: n }, (_, i) => ({ id: String(i), name: (names && names[i]) || "תנועה " + (i + 1) }));
-      out.push(UI.group("תנועת המודל",
+      if (n > 1 || !Studio.isStill(e)) out.push(UI.group("תנועת המודל",
         n > 1 ? L({ label: "איזו תנועה", options: opts, get: () => String(App.sel().modelClip || 0), set: upd((x, v) => { x.modelClip = parseInt(v, 10) || 0; }) }) : null,
-        T({ label: "התנועה פועלת", get: () => App.sel().modelPlaying !== false, set: upd((x, v) => { x.modelPlaying = v; }) }),
-        T({ label: "חוזרת שוב ושוב", get: () => App.sel().modelLoop !== false, set: upd((x, v) => { x.modelLoop = v; }) }),
-        S({ label: "מהירות", min: 0.1, max: 4, step: 0.1, unit: "×", get: () => App.sel().modelSpeed || 1, set: upd((x, v) => { x.modelSpeed = v; }) })));
+        Studio.isStill(e) ? null : T({ label: "חוזרת שוב ושוב", get: () => App.sel().modelLoop !== false, set: upd((x, v) => { x.modelLoop = v; }) }),
+        Studio.isStill(e) ? null : S({ label: "מהירות", min: 0.1, max: 4, step: 0.1, unit: "×", get: () => App.sel().modelSpeed || 1, set: upd((x, v) => { x.modelSpeed = v; }) })));
     } else out.push(UI.group("תנועת המודל", note("במודל הזה אין תנועה מובנית. אפשר להזיז אותו בלשונית ״תנועה״.")));
     out.push(UI.group("", opacity(), note("כדי לסובב את המודל במרחב עוברים לתצוגת תלת־ממד, מעל הקנבס.", "cube")));
     return out;
@@ -261,7 +260,16 @@ window.Inspector = (() => {
       opacity()),
     h("section.group", note("את הקובייה עצמה רואים בתצוגת תלת־ממד, בתצוגה המקדימה ובמצלמה.", "cube"))];
   }
-  function styleTab(e) {
+  // ---------- frozen motion: on top of the style tab of any layer that moves by itself ----------
+  function stillGroup(e) {
+    if (!App.movesItself(e)) return null;
+    const still = Studio.isStill(e);
+    return UI.group("",
+      T({ label: "להקפיא תנועה", hint: "נעצר על רגע אחד, גם בתצוגה המקדימה ובמצלמה", get: () => Studio.isStill(App.sel()), set: (v) => { App.setStill(App.selId, v); } }),
+      still ? S(Object.assign({ label: "הרגע שמוצג", min: 0, max: 1, step: 0.01, get: () => Studio.stillAt(App.sel()), set: (v, f) => App.setStillAt(App.selId, v, f) }, pct)) : null);
+  }
+  function styleTab(e) { const g = stillGroup(e), out = styleOf(e); return g ? [g, ...out] : out; }
+  function styleOf(e) {
     if (e.type === "text") return styleText(e);
     if (e.type === "image" || e.type === "video") return styleMedia(e);
     if (e.type === "pattern") return stylePattern(e);
@@ -382,7 +390,7 @@ window.Inspector = (() => {
     TABS.forEach(([id, name, ic]) => tabBar.append(h("button.tab", { type: "button", role: "tab", data: { tab: id }, onclick: () => (id === "layers" ? App.setPane("layers") : App.setTab(id)) }, icon(ic, 20), h("span", name))));
     Studio.loadTextFonts({ font: "heebo", text: "א" }).catch(() => {});
     let lastSel = null;
-    App.on("open tab structure mode", build);
+    App.on("open tab structure mode still", build);
     App.on("select", () => {
       // a different layer starts at the top of its panel
       if (App.selId !== lastSel) { lastSel = App.selId; root.scrollTop = 0; }

@@ -46,7 +46,9 @@
       const v = document.createElement("video");
       v.id = "m-" + el.id; v.src = url; v.muted = true; v.loop = el.loop !== false;
       v.setAttribute("playsinline", ""); v.preload = "auto";
-      assets.appendChild(v); mediaEls.push({ kind: "video", node: v, el });
+      assets.appendChild(v);
+      // a frozen video stays on its chosen frame: it is left out of everything that starts media (found, touch, states)
+      if (Studio.isStill(el)) Studio.setStill(v, true, Studio.stillAt(el)); else mediaEls.push({ kind: "video", node: v, el });
       videoProbes.push(new Promise((resolve) => {
         const done = (ok) => resolve({ id: el.id, ok });
         const timer = setTimeout(() => done(false), 6000); // claimed codec but no data = treat as undecodable
@@ -56,6 +58,7 @@
     } else if (kind === "image") {
       const mm = await Studio.makeImageMedia(rec.assets[el.assetId], "m-" + el.id,
         () => document.querySelector('[data-el-id="' + el.id + '"]'));
+      if (Studio.isStill(el)) Studio.setStill(mm.node, true, Studio.stillAt(el)); // a frozen GIF: one frame
       assets.appendChild(mm.node);
     } else if (el.type === "sound") {
       const a = document.createElement("audio");

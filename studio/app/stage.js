@@ -113,7 +113,7 @@ window.Stage = (() => {
     ctx.fillText(el.type === "model" && Editor3D.modelError(el.id) ? "המודל לא נטען" : label, 0, 0);
   }
   function drawLayer(el, b) {
-    const w = b.w, hh = b.h, m = el.assetId && App.media[el.assetId];
+    const w = b.w, hh = b.h, m = App.mediaFor(el);
     if (!App.mode3d && Editor3D.drawsIn2d(el.id)) return; // the real scene above the canvas draws it
     if ((el.type === "video" || el.type === "image") && mediaReady(m)) {
       const fx = fxDrawable(el, m, w, hh);
@@ -144,7 +144,7 @@ window.Stage = (() => {
     const it = el.scatter.item, sc = scatterScale(el, b), copies = Studio.scatterCopies(App.rec, el).sort((p, q) => p.rank - q.rank);
     const look = Object.assign({}, it, { id: el.id + "~look", assetId: el.assetId, _ownerId: el.id });
     const iw = (it.w || 0.3) * view.W * sc, ih = (it.h != null ? it.h * view.H : (it.w || 0.3) * view.W / (it.aspect || 1)) * sc;
-    const m = el.assetId && App.media[el.assetId], kMax = Math.max(1, ...copies.map((c) => c.k));
+    const m = App.mediaFor(el), kMax = Math.max(1, ...copies.map((c) => c.k));
     let paint;
     if ((it.type === "image" || it.type === "video") && mediaReady(m)) {
       const fx = fxDrawable(look, m, iw * kMax, ih * kMax), c = it.crop || { x: 0, y: 0, w: 1, h: 1 }, ms = mediaSize(m);
@@ -233,7 +233,7 @@ window.Stage = (() => {
   function stopPick() { picker = null; renderHint(); }
   function pickAt(p) {
     const el = App.el(picker.id); if (!el) return stopPick();
-    const item = el.type === "scatter" ? Object.assign({}, el.scatter.item, { assetId: el.assetId }) : el, m = App.media[el.assetId];
+    const item = el.type === "scatter" ? Object.assign({}, el.scatter.item, { assetId: el.assetId }) : el, m = App.mediaFor(el);
     const under = (el.type === "scatter" ? (copyBoxes[el.id] || []).slice().reverse() : [boxes[el.id]]).find((b) => b && Math.abs(local(b, p).x) <= b.w / 2 && Math.abs(local(b, p).y) <= b.h / 2);
     if (!under || !mediaReady(m)) return toast("נוגעים בתוך השכבה עצמה, על הצבע שרוצים להעלים");
     const q = local(under, p), color = Studio.pixelAt(m, item, q.x / under.w + 0.5, q.y / under.h + 0.5);
@@ -313,7 +313,7 @@ window.Stage = (() => {
   }
   function drawCrop(el) {
     const g = cropGeom(el); if (!g) return;
-    const m = App.media[el.assetId], s = mediaSize(m), px = 1 / zoom;
+    const m = App.mediaFor(el), s = mediaSize(m), px = 1 / zoom;
     ctx.save(); ctx.translate(g.b.cx, g.b.cy); ctx.rotate(g.b.rot);
     ctx.fillStyle = "rgba(14,13,18,.55)"; ctx.fillRect(g.L, g.T, g.FW, g.FH);
     if (s.w && mediaReady(m)) {
@@ -566,6 +566,7 @@ window.Stage = (() => {
     bar.append(h("span.sel-name", el.name || ""));
     if (CROP_TYPES.includes(el.type) && !App.mode3d) bar.append(btn("crop", "חיתוך", () => App.setCropping(!App.cropping), App.cropping));
     if (Studio.SCATTER_TYPES.includes(el.type)) bar.append(btn("path", "פיזור על נתיב", () => App.scatterFrom(el.id)));
+    if (App.movesItself(el)) { const still = Studio.isStill(el); bar.append(btn(still ? "play" : "snow", still ? "להפעיל תנועה" : "להקפיא תנועה", () => App.setStill(el.id, !still).then(() => toast(still ? "התנועה חזרה" : "התנועה הוקפאה. את הרגע שמוצג בוחרים בלשונית ״עיצוב״.")), still)); }
     bar.append(btn("lock", "נעילה במקום", () => { App.setLocked(el.id, true); toast("השכבה ננעלה. משחררים אותה מרשימת השכבות."); }),
       btn("copy", "שכפול", () => App.duplicateLayer(el.id)), btn("trash", "מחיקה", () => App.removeLayer(el.id)));
   }
@@ -614,7 +615,7 @@ window.Stage = (() => {
     $("btn-time-live").onclick = () => App.freeze(null);
     App.on("open", () => { setZoom(1); for (const k in textCache) delete textCache[k]; layout(); renderEmpty(); applyMode(); renderTime(); });
     App.on("select", () => { if (App.mode3d) Editor3D.refreshGizmo(); stage.classList.toggle("is-crop", App.cropping); if (!App.sel() || App.sel().id !== (pointSel && pointSel.id)) pointSel = null; if (picker && App.selId !== picker.id) stopPick(); renderBar(); });
-    App.on("structure", () => { layout(); renderEmpty(); renderBar(); });
+    App.on("structure still", () => { layout(); renderEmpty(); renderBar(); });
     App.on("change", () => { const el = App.sel(); if (el && $("sel-bar").firstChild && $("sel-bar").firstChild.textContent !== (el.name || "")) renderBar(); });
     App.on("mode", applyMode);
     App.on("art", () => { layout(); renderEmpty(); applyMode(); });
