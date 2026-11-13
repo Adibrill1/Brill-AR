@@ -156,6 +156,36 @@ window.Inspector = (() => {
     out.push(UI.group("", opacity()));
     return out;
   }
+  // ---------- fan / rosette ----------
+  function styleFan(e) {
+    const sc = () => App.sel().scatter, fan = () => sc().fan;
+    const P = (fn, then) => upd((x, v) => { x.scatter = Object.assign({}, x.scatter, { fan: Object.assign({}, x.scatter.fan) }); fn(x.scatter, v, x.scatter.fan); Studio.refreshScatter(App.rec, x, true); }, then);
+    const it = e.scatter.item, max = Studio.scatterLimit(e), grows = e.scatter.size !== "constant";
+    const deg = { unit: "°" };
+    return [
+      UI.group("המניפה",
+        C({ label: "", bare: true, options: [{ id: "fan", name: "מניפה" }, { id: "round", name: "רוזטה" }], get: () => (fan().angle >= 359.5 ? "round" : "fan"), set: P((s, v, f) => { f.angle = v === "round" ? 360 : 120; }) }),
+        S({ label: "מספר עותקים", min: 1, max, step: 1, get: () => Math.min(max, sc().count), set: P((s, v) => { s.count = Math.round(v); }) }),
+        S(Object.assign({ label: "זווית פתיחה", min: 10, max: 360, step: 1, get: () => fan().angle, set: P((s, v, f) => { f.angle = Math.round(v); }) }, deg)),
+        S(Object.assign({ label: "רדיוס", min: 0, max: 1, step: 0.005, get: () => fan().radius || 0, set: P((s, v, f) => { f.radius = round(v, 3); }) }, pct)),
+        S(Object.assign({ label: "כיוון", min: -180, max: 180, step: 1, get: () => fan().dir || 0, set: P((s, v, f) => { f.dir = Math.round(v); }) }, deg)),
+        note("רדיוס 0: כל העותקים מסתובבים סביב נקודה אחת, כמו מניפת יד. 360° = רוזטה, עיגול שלם.", "fan")),
+      UI.group("העותקים",
+        C({ label: "סיבוב העותקים", wrap: true, options: [{ id: "follow", name: "כמו קרני שמש" }, { id: "keep", name: "כמו המקור" }], get: () => sc().facing, set: P((s, v) => { s.facing = v; }) }),
+        C({ label: "נקודת האחיזה", wrap: true, options: [{ id: "base", name: "בתחתית" }, { id: "center", name: "באמצע" }], get: () => fan().pivot, set: P((s, v, f) => { f.pivot = v; }) }),
+        C({ label: "גודל", wrap: true, options: [{ id: "constant", name: "קבוע" }, { id: "grow", name: "הולך וגדל" }, { id: "shrink", name: "הולך וקטן" }], get: () => sc().size, set: P((s, v) => { s.size = v; }, build) }),
+        grows ? S({ label: "כמה", min: 1, max: 6, step: 0.1, unit: "×", get: () => sc().amount, set: P((s, v) => { s.amount = round(v, 2); }) }) : null,
+        T({ label: "הראשון מעל", hint: "בדרך כלל האחרון מונח מעל כולם", get: () => !!fan().flip, set: P((s, v, f) => { f.flip = !!v; }) }),
+        it.type === "video" || it.type === "model" ? note("עד " + max + " עותקים, כדי שהטלפון יצייר אותם בנוחות.") : null),
+      UI.group("עומק",
+        S(Object.assign({ label: "עומק בהתחלה", min: -0.3, max: 1, step: 0.01, get: () => fan().z0 || 0, set: P((s, v, f) => { f.z0 = round(v, 3); }) }, pct)),
+        S(Object.assign({ label: "עומק בסוף", min: -0.3, max: 1, step: 0.01, get: () => fan().z1 || 0, set: P((s, v, f) => { f.z1 = round(v, 3); }) }, pct)),
+        note("עומק שונה להתחלה ולסוף מעמיד את המניפה כמו מדרגות אלייך. הטיה של כל המניפה: בלשונית ״מיקום״.", "cube")),
+      h("div.btn-row", UI.button("להפריד לשכבות", () => App.breakScatter(App.selId), { kind: "ghost", icon: "layers" })),
+      it.type === "image" || it.type === "video" ? chromaGroup(e) : null,
+      UI.group("", opacity())
+    ];
+  }
   const sound = () => [
     S(Object.assign({ label: "עוצמת קול", min: 0, max: 1, step: 0.01, get: () => (App.sel().volume == null ? 1 : App.sel().volume), set: upd((x, v) => { x.volume = v; }) }, pct)),
     T({ label: "חוזר שוב ושוב", get: () => App.sel().loop !== false, set: upd((x, v) => { x.loop = v; }) })
@@ -277,7 +307,7 @@ window.Inspector = (() => {
     if (e.type === "particles") return styleParticles(e);
     if (e.type === "model") return styleModel(e);
     if (e.type === "timecube") return styleCube(e);
-    if (e.type === "scatter") return styleScatter(e);
+    if (e.type === "scatter") return e.scatter.layout === "fan" ? styleFan(e) : styleScatter(e);
     if (e.type === "sound") return [UI.group("צליל", sound(), note("הצליל מתנגן כשהמצלמה מזהה את היצירה. בטלפון הוא מתחיל אחרי נגיעה ראשונה במסך."))];
     if (e.type === "group") return [UI.group("קבוצה",
       note((e.children || []).length + " שכבות שזזות, גדלות ומסתובבות יחד. נגיעה נוספת על הקנבס בוחרת שכבה אחת בתוכה, וגם ברשימת השכבות אפשר לבחור אחת.", "layers"),
@@ -356,7 +386,7 @@ window.Inspector = (() => {
 
   // ---------- frame ----------
   function head(e) {
-    const t = Layers.TYPES[e.type] || Layers.TYPES.group;
+    const t = Layers.typeOf(e);
     const name = h("input.field.name-field", { type: "text", maxLength: 60, value: e.name || "", "aria-label": "שם השכבה" });
     name.oninput = () => { const x = App.sel(); if (!x) return; x.name = name.value; App.emit("change"); App.saveSoon(); };
     name.onchange = () => { const x = App.sel(); if (x && !name.value.trim()) { x.name = t.name; name.value = t.name; App.changed(true); } };

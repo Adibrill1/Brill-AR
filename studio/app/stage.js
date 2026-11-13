@@ -204,7 +204,7 @@ window.Stage = (() => {
     ctx.restore();
   }
   function pointAt(el, p) {
-    const b = boxes[el.id]; if (!b || el.type !== "scatter") return -1;
+    const b = boxes[el.id]; if (!b || el.type !== "scatter" || !el.scatter.points) return -1;
     const q = local(b, p), pts = scatterPathPx(el, b).pts, r = (GRAB + 2) / zoom;
     let best = -1, d0 = r;
     pts.forEach((h, i) => { const d = Math.hypot(q.x - h.x, q.y - h.y); if (d <= d0) { d0 = d; best = i; } });
@@ -428,7 +428,7 @@ window.Stage = (() => {
       if (guide.h) { ctx.moveTo(view.mx - 20, view.my + view.H / 2); ctx.lineTo(view.mx + view.W + 20, view.my + view.H / 2); }
       ctx.stroke(); ctx.restore();
     }
-    if (selEl && boxes[selEl.id]) { if (App.cropping) drawCrop(selEl); else { drawMarks(selEl, boxes[selEl.id]); if (selEl.type === "scatter" && !drawing) drawScatterPath(selEl, boxes[selEl.id]); } }
+    if (selEl && boxes[selEl.id]) { if (App.cropping) drawCrop(selEl); else { drawMarks(selEl, boxes[selEl.id]); if (selEl.type === "scatter" && selEl.scatter.points && !drawing) drawScatterPath(selEl, boxes[selEl.id]); } }
     drawStroke();
   }
   function frame() { raf = requestAnimationFrame(frame); if (shown && !document.hidden) draw(); }
@@ -626,7 +626,7 @@ window.Stage = (() => {
     const btn = (name, label, run, on) => h("button.icon-btn" + (on ? ".on" : ""), { title: label, "aria-label": label, onclick: run }, icon(name, 18));
     bar.append(h("span.sel-name", el.name || ""));
     if (CROP_TYPES.includes(el.type) && !App.mode3d) bar.append(btn("crop", "חיתוך", () => App.setCropping(!App.cropping), App.cropping));
-    if (Studio.SCATTER_TYPES.includes(el.type)) bar.append(btn("path", "פיזור על נתיב", () => App.scatterFrom(el.id)));
+    if (Studio.SCATTER_TYPES.includes(el.type)) bar.append(btn("path", "פיזור על נתיב", () => App.scatterFrom(el.id)), btn("fan", "מניפה", () => App.fanFrom(el.id)));
     if (App.movesItself(el)) { const still = Studio.isStill(el); bar.append(btn(still ? "play" : "snow", still ? "להפעיל תנועה" : "להקפיא תנועה", () => App.setStill(el.id, !still).then(() => toast(still ? "התנועה חזרה" : "התנועה הוקפאה. את הרגע שמוצג בוחרים בלשונית ״עיצוב״.")), still)); }
     const inGroup = Studio.groupOf(App.rec, el.id);
     if (el.type === "group") bar.append(btn("ungroup", "לפרק קבוצה", () => App.ungroup(el.id)));

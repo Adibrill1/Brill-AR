@@ -490,14 +490,15 @@ window.Editor3D = (() => {
     if (!el || !node) return;
     const ts = sampledTs(rec, el).ts;
     if (pointFor !== id) { pointFor = id; pointSel = null; }
-    if (el.type !== "scatter" || pointSel >= el.scatter.points.length) pointSel = null;
+    const line = el.type === "scatter" && Array.isArray(el.scatter.points); // a fan has no line to draw
+    if (!line || pointSel >= el.scatter.points.length) pointSel = null;
     let center = placementCenter(rec, ts);
     // Selection box from the known element geometry (rig-local -> world): the DOM
     // node's object3D lags attribute writes, so setFromObject would misplace or
     // empty the box right after edits/rebuilds.
     sceneEl.object3D.updateMatrixWorld(true);
     if (el.type === "scatter") {
-      buildPath(rec, el, node);
+      if (line) buildPath(rec, el, node); else clearPath();
       if (pointSel != null) { center = node.object3D.localToWorld(pointLocal(rec, el, pointSel)); rig.object3D.worldToLocal(center); }
       const box = drawnBox(node.object3D);
       helper = new THREE.Box3Helper(box.isEmpty() ? new THREE.Box3(center.clone(), center.clone()) : box, 0xff8800);

@@ -1381,6 +1381,7 @@ vec4 bpPattern(vec2 uv) {
   // size against the item, rot its turn in the picture's plane, rank the drawing order (farthest from the viewer first).
   function scatterCopies(rec, el) {
     const sc = el.scatter, it = sc && sc.item;
+    if (it && sc.layout === "fan") return fanCopies(rec, el);
     if (!it || !Array.isArray(sc.points) || sc.points.length < 2) return [];
     const g = geom(rec), n = Math.max(1, Math.min(scatterLimit(el), Math.round(sc.count) || 1)), path = scatterPath(rec, sc);
     const cum = [0]; for (let i = 1; i < path.length; i++) cum.push(cum[i - 1] + Math.hypot(path[i][0] - path[i - 1][0], path[i][1] - path[i - 1][1], path[i][2] - path[i - 1][2]));
@@ -1397,6 +1398,47 @@ vec4 bpPattern(vec2 uv) {
     out.slice().sort((p, q) => p.z - q.z || p.i - q.i).forEach((c, r) => { c.rank = r; });
     return out;
   }
+  // ---------- fan / rosette ("מניפה") ----------
+  // The same layer kind with layout "fan": no line, the copies turn around one point. sc.fan = {angle, radius, dir, pivot,
+  // z0, z1, cx, cy, flip}: angle is the opening in degrees (360 = a rosette: evenly round, the first and last copy not on
+  // top of each other); radius how far the copies stand from the middle (a share of the artwork's width; 0 = they all
+  // turn on one point, like a hand fan); dir where the middle of the fan points (0 = up, more = turned to the left, like
+  // a layer's own turn); pivot "base" holds each copy by its bottom edge (a petal, a feather) or "center" by its middle;
+  // z0/z1 the depth of the first and last copy; cx/cy the middle relative to the layer; flip draws the last copy lowest.
+  // facing "follow" turns each copy along its ray (like the sun's rays), "keep" leaves it as the source.
+  const FAN_PIVOTS = ["center", "base"];
+  function fanCopies(rec, el) {
+    const sc = el.scatter, it = sc.item, f = sc.fan || {}, g = geom(rec), D = Math.PI / 180;
+    const n = Math.max(1, Math.min(scatterLimit(el), Math.round(sc.count) || 1)), A = Math.max(10, Math.min(360, f.angle || 120)), round = A >= 359.5;
+    const R = Math.max(0, f.radius || 0) * g.artW, ih = it.h != null ? it.h * g.artH : (it.w || 0.3) * g.artW / (it.aspect || 1), amount = Math.max(1, Math.min(6, sc.amount || 2));
+    const out = [];
+    for (let i = 0; i < n; i++) {
+      const u = n === 1 ? 0 : i / (n - 1), th = 90 + (f.dir || 0) + (n === 1 ? 0 : round ? 360 / n * (i - (n - 1) / 2) : -A / 2 + A * u);
+      const k = sc.size === "grow" ? 1 + (amount - 1) * u : sc.size === "shrink" ? 1 + (1 / amount - 1) * u : 1;
+      const rot = (it.rot || 0) + (sc.facing === "follow" ? th - 90 : 0);
+      let x = (f.cx || 0) * g.artW + R * Math.cos(th * D), y = (f.cy || 0) * g.artH + R * Math.sin(th * D);
+      if (f.pivot === "base") { const a = rot * D, d = ih * k / 2; x -= Math.sin(a) * d; y += Math.cos(a) * d; } // held by the bottom edge: the copy stands out from its point
+      out.push({ i, x: x / g.artW, y: y / g.artH, z: (f.z0 || 0) + ((f.z1 || 0) - (f.z0 || 0)) * u, k, rot });
+    }
+    const s = f.flip ? -1 : 1; // first under, last on top (or the other way round); nearer the viewer always on top
+    out.slice().sort((p, q) => p.z - q.z || s * (p.i - q.i)).forEach((c, r) => { c.rank = r; });
+    return out;
+  }
+  // A new fan from a layer, right where the layer is: 7 copies opening 120° upward, held by their bottom edge.
+  function makeFan(rec, src, opts) {
+    const o = opts || {}, it = scatterItem(src);
+    const el = { id: newId(), type: "scatter", name: "מניפה: " + (src.name || ""), x: src.x || 0, y: src.y || 0, z: src.z || 0, rot: 0, opacity: 1, flush: true, seq: null, assetId: src.assetId,
+      scatter: { layout: "fan", item: it, count: Math.min(o.count || 7, SCATTER_MAX[it.type] || 60), size: "constant", amount: 2, facing: "follow",
+        fan: { angle: o.angle || 120, radius: 0, dir: 0, pivot: "base", z0: 0, z1: 0, cx: 0, cy: 0, flip: false } } };
+    if (!el.assetId) delete el.assetId;
+    return refreshScatter(rec, el, true);
+  }
+  function validFan(sc) {
+    const f = sc.fan, num = (v, a, b) => v == null || (Number.isFinite(v) && v >= a && v <= b);
+    if (!f || typeof f !== "object" || Array.isArray(f) || sc.points != null) return false;
+    if (!Number.isFinite(f.angle) || f.angle < 10 || f.angle > 360 || !num(f.radius, 0, 10) || !num(f.dir, -360, 360) || !num(f.z0, -10, 10) || !num(f.z1, -10, 10) || !num(f.cx, -10, 10) || !num(f.cy, -10, 10)) return false;
+    return FAN_PIVOTS.includes(f.pivot) && (f.flip == null || typeof f.flip === "boolean");
+  }
   // One copy as an ordinary layer, placed in the scatter's own (unturned) frame: everything that draws a layer draws it.
   function scatterCopyEl(el, c) {
     const it = el.scatter.item;
@@ -1409,7 +1451,8 @@ vec4 bpPattern(vec2 uv) {
     let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
     const add = (x, y, hw, hh) => { x0 = Math.min(x0, x - hw); x1 = Math.max(x1, x + hw); y0 = Math.min(y0, y - hh); y1 = Math.max(y1, y + hh); };
     for (const c of scatterCopies(rec, el)) add(c.x, c.y, (it.w || 0.3) * c.k / 2, ih * c.k / 2);
-    for (const p of el.scatter.points) add(p.x || 0, p.y || 0, 0, 0);
+    if (el.scatter.layout === "fan") add(el.scatter.fan.cx || 0, el.scatter.fan.cy || 0, 0, 0); // the point it turns on
+    else for (const p of el.scatter.points) add(p.x || 0, p.y || 0, 0, 0);
     if (!(x1 >= x0)) return { cx: 0, cy: 0, w: 0.1, h: 0.1 };
     return { cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, w: Math.max(0.02, x1 - x0), h: Math.max(0.02, y1 - y0) };
   }
@@ -1421,7 +1464,8 @@ vec4 bpPattern(vec2 uv) {
     if (recenter && !keyed && (Math.abs(b.cx) > 1e-4 || Math.abs(b.cy) > 1e-4)) {
       const a = (el.rot || 0) * Math.PI / 180, dx = b.cx * r, dy = b.cy;
       el.x = (el.x || 0) + (dx * Math.cos(a) - dy * Math.sin(a)) / r; el.y = (el.y || 0) + dx * Math.sin(a) + dy * Math.cos(a);
-      for (const p of el.scatter.points) { p.x = (p.x || 0) - b.cx; p.y = (p.y || 0) - b.cy; }
+      if (el.scatter.layout === "fan") { const f = el.scatter.fan; f.cx = Math.round(((f.cx || 0) - b.cx) * 10000) / 10000; f.cy = Math.round(((f.cy || 0) - b.cy) * 10000) / 10000; }
+      else for (const p of el.scatter.points) { p.x = (p.x || 0) - b.cx; p.y = (p.y || 0) - b.cy; }
       b.cx = b.cy = 0;
     }
     el.w = Math.round(b.w * 10000) / 10000; el.h = Math.round(b.h * 10000) / 10000; el.aspect = (el.w * g.artW) / (el.h * g.artH);
@@ -1438,8 +1482,9 @@ vec4 bpPattern(vec2 uv) {
   }
   // Size the whole scatter by k around its own place: the line and the copies together.
   function scaleScatter(rec, el, k, from) {
-    const sc = from || el.scatter;
-    el.scatter = Object.assign({}, sc, { points: sc.points.map((p) => ({ x: p.x * k, y: p.y * k, z: (p.z || 0) * k })), item: Object.assign({}, sc.item, { w: (sc.item.w || 0.3) * k }, sc.item.h != null ? { h: sc.item.h * k } : {}) });
+    const sc = from || el.scatter, f = sc.fan;
+    el.scatter = Object.assign({}, sc, sc.layout === "fan" ? { fan: Object.assign({}, f, { radius: (f.radius || 0) * k, cx: (f.cx || 0) * k, cy: (f.cy || 0) * k, z0: (f.z0 || 0) * k, z1: (f.z1 || 0) * k }) }
+      : { points: sc.points.map((p) => ({ x: p.x * k, y: p.y * k, z: (p.z || 0) * k })) }, { item: Object.assign({}, sc.item, { w: (sc.item.w || 0.3) * k }, sc.item.h != null ? { h: sc.item.h * k } : {}) });
     return refreshScatter(rec, el, false);
   }
   // "להפריד לשכבות": the copies become ordinary layers in a group that takes over the scatter's place, motion and taps.
@@ -1449,7 +1494,7 @@ vec4 bpPattern(vec2 uv) {
     const kids = copies.map((c, n) => {
       const k = scatterCopyEl(el, c), dx = c.x * r, dy = c.y;
       delete k._ownerId;
-      return Object.assign(k, { id: newId(), name: (el.name || "פיזור").replace(/^פיזור: /, "") + " " + (n + 1), x: (el.x || 0) + (dx * Math.cos(a) - dy * Math.sin(a)) / r, y: (el.y || 0) + dx * Math.sin(a) + dy * Math.cos(a), rot: c.rot + (el.rot || 0), opacity: it.opacity == null ? 1 : it.opacity });
+      return Object.assign(k, { id: newId(), name: (el.name || "פיזור").replace(/^(פיזור|מניפה): /, "") + " " + (n + 1), x: (el.x || 0) + (dx * Math.cos(a) - dy * Math.sin(a)) / r, y: (el.y || 0) + dx * Math.sin(a) + dy * Math.cos(a), rot: c.rot + (el.rot || 0), opacity: it.opacity == null ? 1 : it.opacity });
     });
     const group = { id: newId(), type: "group", name: el.name || "פיזור", children: kids.map((k) => k.id), x: el.x || 0, y: el.y || 0, z: el.z || 0, w: el.w, h: el.h, rot: el.rot || 0, opacity: el.opacity == null ? 1 : el.opacity, flush: true };
     for (const f of ["timeline", "anim", "seq", "track", "onTap", "tapUrl", "rotX", "rotY"]) if (el[f] != null) group[f] = structuredClone(el[f]);
@@ -1465,9 +1510,11 @@ vec4 bpPattern(vec2 uv) {
     for (const key of ["w", "h", "rot", "rotX", "rotY", "opacity", "aspect", "stillAt"]) if (it[key] != null && !Number.isFinite(it[key])) return false;
     if (!validCrop(it) || !validFx(it) || !validChroma(it) || !validParticles(it)) return false;
     if (["image", "video", "model"].includes(it.type) && !el.assetId) return false;
-    if (!Array.isArray(sc.points) || sc.points.length < 2 || sc.points.length > 64 || !sc.points.every((p) => p && ["x", "y", "z"].every((k) => p[k] == null || Number.isFinite(p[k]) && Math.abs(p[k]) <= 10))) return false;
+    if (sc.layout === "fan") { if (!validFan(sc)) return false; }
+    else if (sc.layout != null && sc.layout !== "path") return false;
+    else if (!Array.isArray(sc.points) || sc.points.length < 2 || sc.points.length > 64 || !sc.points.every((p) => p && ["x", "y", "z"].every((k) => p[k] == null || Number.isFinite(p[k]) && Math.abs(p[k]) <= 10))) return false;
     if (!Number.isFinite(sc.count) || sc.count < 1 || sc.count > 60 || !Number.isFinite(sc.amount) || sc.amount < 1 || sc.amount > 6) return false;
-    return typeof sc.curved === "boolean" && SCATTER_SPACING.includes(sc.spacing) && SCATTER_SIZE.includes(sc.size) && SCATTER_FACING.includes(sc.facing);
+    return (sc.layout === "fan" || typeof sc.curved === "boolean" && SCATTER_SPACING.includes(sc.spacing)) && SCATTER_SIZE.includes(sc.size) && SCATTER_FACING.includes(sc.facing);
   }
   // The 3D side: models are built one entity per copy. Pictures, GIFs, videos and text are drawn from ONE hidden layer
   // (the "template", built by buildElementEntity like any layer, so crop, filters, colour removal and fades all apply):
@@ -2756,7 +2803,7 @@ vec4 bpPattern(vec2 uv) {
   return { TARGET_W, TARGET_H, newId, inspectVideo, validateModelBlob, prepareModelBlob, modelCompressionKinds, DECODER_DRACO_PATH, DECODER_MESHOPT_PATH, modelClipNames, modelClipInfo, loadImage, loadImageBlob, loadFailed, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
            audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, blobURL, releaseBlobURL, blobURLs, historyState, restoreHistory, duplicateLayer, exportJSON, missingAssets, importJSON, exportZIP, importZIP, zipToJSON, fetchPublished, ownBlob, assetHealth, fileHealth, seedDemo, normEl, ANIMS, drawTextCanvas, loadTextFonts, FX: FX.map(([id, name]) => ({ id, name, moving: FX_MOVING.has(id) })), fxFrame,
            PATTERNS: PATTERNS.map(([id, name, colors, speed]) => ({ id, name, colors: colors.slice(), speed })), PATTERN_PALETTES: PATTERN_PALETTES.map(([name, colors]) => ({ name, colors: colors.slice() })),
-           PATTERN_SHAPES: PATTERN_SHAPES.map(([id, name]) => ({ id, name })), patternDefaults, patternAspect, patternFrame, validPattern, validFx, validChroma, keyValues, pixelAt, CHROMA_DEFAULT, SCATTER_TYPES, SCATTER_MAX, mediaType, isStill, stillAt, setStill, scatterItem, scatterLimit, scatterPath, scatterCopies, scatterCopyEl, scatterBounds, refreshScatter, makeScatter, scaleScatter, breakScatter, validScatter, FONTS: FONTS.map(([id, name]) => ({ id, name })), buildElementEntity, groupOf, fitGroup, makeGroup, breakGroup, leaveGroup, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, ensureTimeCubeComponent, bakeTimeCube, validTimeCube, TIMECUBE_DIRS, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, artworkFingerprint, fingerprintDistance, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
+           PATTERN_SHAPES: PATTERN_SHAPES.map(([id, name]) => ({ id, name })), patternDefaults, patternAspect, patternFrame, validPattern, validFx, validChroma, keyValues, pixelAt, CHROMA_DEFAULT, SCATTER_TYPES, SCATTER_MAX, mediaType, isStill, stillAt, setStill, scatterItem, scatterLimit, scatterPath, scatterCopies, scatterCopyEl, scatterBounds, refreshScatter, makeScatter, makeFan, scaleScatter, breakScatter, validScatter, FONTS: FONTS.map(([id, name]) => ({ id, name })), buildElementEntity, groupOf, fitGroup, makeGroup, breakGroup, leaveGroup, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, ensureTimeCubeComponent, bakeTimeCube, validTimeCube, TIMECUBE_DIRS, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, artworkFingerprint, fingerprintDistance, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
            load: id=>settledRead(id), all: ()=>settledRead(), del: delExperience, LIMITS, mediaBytes, pushBack, addBlocker, publishBlocker, restoreBlocker, exportWarning, exportJSONSize,
            onSaveState, installSaveGuard, saveState, soundOnTouch, snapAngle, syncMedia,
            _testHoldSave:p=>{saveHold=p;}, _testFailSave:m=>{failSave=m;}, _testFailPut:o=>{failPut=o?{...o}:null;} };

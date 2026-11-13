@@ -9,8 +9,11 @@ window.Layers = (() => {
     text: { name: "טקסט", icon: "text", tint: "#ffd166" }, sound: { name: "צליל", icon: "sound", tint: "#4cd4a0" },
     model: { name: "מודל 3D", icon: "cube", tint: "#b497ff" }, particles: { name: "חלקיקים", icon: "sparkle", tint: "#ff9ecb" },
     pattern: { name: "רקע מונפש", icon: "pattern", tint: "#7fe0e0" }, timecube: { name: "קוביית זמן", icon: "hourglass", tint: "#c4d86a" },
-    group: { name: "קבוצה", icon: "layers", tint: "#9a97a6" }, scatter: { name: "פיזור על נתיב", icon: "path", tint: "#f2a65a" }
+    group: { name: "קבוצה", icon: "layers", tint: "#9a97a6" }, scatter: { name: "פיזור על נתיב", icon: "path", tint: "#f2a65a" },
+    fan: { name: "מניפה", icon: "fan", tint: "#f2a65a" }
   };
+  // A scatter laid out as a fan shows as a fan.
+  const typeOf = (e) => (e && e.type === "scatter" && e.scatter && e.scatter.layout === "fan" ? TYPES.fan : TYPES[e && e.type] || TYPES.group);
   const ACCEPT = {
     video: "video/mp4,video/webm,video/quicktime,.mov", image: "image/png,image/jpeg,image/gif",
     sound: "audio/mpeg,audio/mp4,audio/wav,audio/x-m4a,audio/ogg", model: ".glb,.gltf,.zip,.obj,.fbx",
@@ -259,7 +262,7 @@ window.Layers = (() => {
   // ---------- the list ----------
   let list, artCard, drag = null;
   function thumb(e) {
-    const t = TYPES[e.type] || TYPES.group, rec = App.rec;
+    const t = typeOf(e), rec = App.rec;
     const box = h("span.layer-thumb", { style: { "--tint": t.tint } });
     const blob = Studio.mediaType(e) === "image" && e.assetId && rec.assets[e.assetId];
     if (blob) { const im = h("img", { alt: "", draggable: false }); im.src = Studio.blobURL(blob); im.onerror = () => im.replaceWith(icon(t.icon, 18)); box.append(im); }
@@ -268,7 +271,7 @@ window.Layers = (() => {
     return box;
   }
   const sub = (e) => {
-    const t = (TYPES[e.type] || TYPES.group).name, bits = [t];
+    const t = typeOf(e).name, bits = [t];
     if (e.type === "scatter") bits.push(Studio.scatterCopies(App.rec, e).length + " עותקים");
     if (e.type === "group") bits.push((e.children || []).length + " שכבות");
     if (App.keyed(e)) bits.push("בתנועה"); else if (e.anim && e.anim !== "none") bits.push({ spin: "מסתובב", float: "מרחף", pulse: "פועם" }[e.anim] || "");
@@ -290,6 +293,7 @@ window.Layers = (() => {
       e.locked ? false : { label: "שינוי שם", icon: "edit", run: () => rename(e.id) },
       e.locked ? false : { label: "שכפול", icon: "copy", run: () => App.duplicateLayer(e.id) },
       !e.locked && Studio.SCATTER_TYPES.includes(e.type) ? { label: "פיזור על נתיב", icon: "path", run: () => { App.select(e.id); App.scatterFrom(e.id); } } : false,
+      !e.locked && Studio.SCATTER_TYPES.includes(e.type) ? { label: "מניפה", icon: "fan", run: () => App.fanFrom(e.id) } : false,
       !e.locked && e.type === "scatter" ? { label: "להפריד לשכבות", icon: "layers", run: () => App.breakScatter(e.id) } : false,
       null,
       i < top ? { label: "לחזית", icon: "up", run: () => App.moveLayer(e.id, top) } : false,
@@ -408,5 +412,5 @@ window.Layers = (() => {
     ed.addEventListener("drop", (e) => { ed.classList.remove("dropping"); if (!e.dataTransfer || !e.dataTransfer.files.length) return; e.preventDefault(); addFiles([...e.dataTransfer.files]); });
   }
 
-  return { init, render, openAdd, openLibrary, importAsset, pickArtwork, setArtwork, addFiles, rename, TYPES, phone };
+  return { init, render, openAdd, openLibrary, importAsset, pickArtwork, setArtwork, addFiles, rename, TYPES, typeOf, phone };
 })();

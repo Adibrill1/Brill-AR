@@ -215,6 +215,20 @@ window.App = (() => {
     toast("הפיזור מוכן. ״עומק בסוף״ מקרב את סוף הקו אלייך.", { ms: 6000 });
     return e;
   }
+  // ---------- fan / rosette ----------
+  // No drawing: the fan opens at once around the source's place, right above it, selected with its controls open.
+  async function fanFrom(id) {
+    const src = el(id); if (!src) return null;
+    if (!Studio.SCATTER_TYPES.includes(src.type)) { toast("אפשר לעשות מניפה מתמונה, GIF, סרטון, טקסט או מודל תלת־ממד", { kind: "warn" }); return null; }
+    if (src.type !== "text" && !(src.assetId && S.rec.assets[src.assetId])) { toast("הקובץ של השכבה הזו חסר, אז אי אפשר לעשות ממנה מניפה", { kind: "error" }); return null; }
+    if (blocked({ layers: 1 })) return null;
+    if (Stage.drawing) Stage.stopDrawing();
+    const e = Studio.makeFan(S.rec, src);
+    await addLayer(e, { after: id });
+    setTab("style");
+    toast("המניפה מוכנה. ״זווית פתיחה״ 360 עושה ממנה רוזטה.", { ms: 6000 });
+    return e;
+  }
   // A new line for an existing scatter: its copies and settings stay, and so does the depth of its two ends.
   function redrawScatter(id, pts, curved) {
     const e = el(id); if (!e || e.type !== "scatter") return;
@@ -384,7 +398,7 @@ window.App = (() => {
 
   return {
     on, emit, el, sel, keyed, clock, sample, hydrate, loadArt, save, saveSoon, flush, changed, open, close, select, blocked,
-    addLayer, removeLayer, duplicateLayer, moveLayer, scatterFrom, addScatter, redrawScatter, scatterDepth, breakScatter, setLocked, startMulti, endMulti, toggleMulti, groupLayers, ungroup, leaveGroup, setStill, setStillAt, mediaFor, movesItself, undo, redo, freeze, replay, keyAt, editKey, setTab, setPane, setMode3d, setCropping,
+    addLayer, removeLayer, duplicateLayer, moveLayer, scatterFrom, fanFrom, addScatter, redrawScatter, scatterDepth, breakScatter, setLocked, startMulti, endMulti, toggleMulti, groupLayers, ungroup, leaveGroup, setStill, setStillAt, mediaFor, movesItself, undo, redo, freeze, replay, keyAt, editKey, setTab, setPane, setMode3d, setCropping,
     get rec() { return S.rec; }, get selId() { return S.selId; }, get art() { return S.art; }, get artBlob() { return artBlob; }, get artState() { return S.artState; }, get media() { return S.media; },
     get frozen() { return S.frozen; }, get tab() { return S.tab; }, get pane() { return S.pane; }, get mode3d() { return S.mode3d; },
     get cropping() { return S.cropping; }, get multi() { return S.multi; }, get snap() { return S.snap; }, set snap(v) { S.snap = !!v; },
