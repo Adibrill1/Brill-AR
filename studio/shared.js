@@ -948,7 +948,8 @@ vec4 bpPattern(vec2 uv) {
       init() {
         this.video = document.querySelector(this.data.video);
         this.target = 0;
-        const parent = this.el.parentNode;
+        // the artwork target itself, not the direct parent: inside a group or a scatter the parent is a wrapper that never hears it
+        const parent = this.anchor = this.el.closest("xrextras-named-image-target") || this.el.parentNode;
         this.onFound = () => { if (this.video) this.video.play().catch(() => {}); this.target = 1; };
         this.onLost = () => {
           if (this.video) { this.video.pause(); this.video.currentTime = 0; }
@@ -971,7 +972,7 @@ vec4 bpPattern(vec2 uv) {
         m.material.opacity = Math.abs(goal - o) <= step ? goal : o + Math.sign(goal - o) * step;
       },
       remove() {
-        const parent = this.el.parentNode;
+        const parent = this.anchor;
         if (parent) {
           parent.removeEventListener("xrextrasfound", this.onFound);
           parent.removeEventListener("xrextraslost", this.onLost);
