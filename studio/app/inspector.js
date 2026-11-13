@@ -29,7 +29,8 @@ window.Inspector = (() => {
       if (App.keyed(e) && prop !== "rotX" && prop !== "rotY") {
         if ((prop === "x" || prop === "y") && e.timeline.xyMap) return;
         App.editKey(e)[prop] = round(v);
-      } else e[prop] = round(v);
+      } else if (e.type === "group" && ["x", "y", "z", "rot"].includes(prop)) Studio.transformGroup(App.rec, e, { [prop]: round(v) }); // its members move with it
+      else e[prop] = round(v);
       App.changed(final);
     };
   }
@@ -278,6 +279,9 @@ window.Inspector = (() => {
     if (e.type === "timecube") return styleCube(e);
     if (e.type === "scatter") return styleScatter(e);
     if (e.type === "sound") return [UI.group("צליל", sound(), note("הצליל מתנגן כשהמצלמה מזהה את היצירה. בטלפון הוא מתחיל אחרי נגיעה ראשונה במסך."))];
+    if (e.type === "group") return [UI.group("קבוצה",
+      note((e.children || []).length + " שכבות שזזות, גדלות ומסתובבות יחד. נגיעה נוספת על הקנבס בוחרת שכבה אחת בתוכה, וגם ברשימת השכבות אפשר לבחור אחת.", "layers"),
+      h("div.btn-row", UI.button("לפרק קבוצה", () => App.ungroup(App.selId), { kind: "ghost", icon: "ungroup" }))), UI.group("", opacity())];
     return [h("section.group", note("לשכבה הזו אין הגדרות עיצוב."))];
   }
 
@@ -288,7 +292,7 @@ window.Inspector = (() => {
     if (e.type === "sound") return [UI.group("מיקום הסימון", note("לצליל אין מראה. העיגול על הקנבס רק מסמן אותו."))];
     const size = keyed
       ? S({ label: "גודל", min: 0.05, max: 4, step: 0.01, unit: "×", get: () => App.sample(App.sel()).scale || 1, set: (v, f) => { const x = App.sel(); if (!x) return; App.editKey(x).scale = round(v); App.changed(f); } })
-      : S(Object.assign({ label: "גודל", min: 0.05, max: 2, step: 0.01, get: () => App.sel().w, set: upd((x, v) => { const k = v / x.w; if (x.type === "scatter") return void Studio.scaleScatter(App.rec, x, k); x.w = round(v); if (x.type === "text") Stage.fitText(x); else if (x.h != null) x.h = round(x.h * k); }) }, pct));
+      : S(Object.assign({ label: "גודל", min: 0.05, max: 2, step: 0.01, get: () => App.sel().w, set: upd((x, v) => { const k = v / x.w; if (x.type === "scatter") return void Studio.scaleScatter(App.rec, x, k); if (x.type === "group") return void Studio.transformGroup(App.rec, x, { w: round(v) }); x.w = round(v); if (x.type === "text") Stage.fitText(x); else if (x.h != null) x.h = round(x.h * k); }) }, pct));
     out.push(UI.group("מקום וגודל",
       S(Object.assign({ label: "ימינה / שמאלה", min: -0.7, max: 0.7, step: 0.005, get: () => place("x"), set: placeSet("x") }, pct)),
       S(Object.assign({ label: "למעלה / למטה", min: -0.7, max: 0.7, step: 0.005, get: () => place("y"), set: placeSet("y") }, pct)),
@@ -357,8 +361,13 @@ window.Inspector = (() => {
     name.oninput = () => { const x = App.sel(); if (!x) return; x.name = name.value; App.emit("change"); App.saveSoon(); };
     name.onchange = () => { const x = App.sel(); if (x && !name.value.trim()) { x.name = t.name; name.value = t.name; App.changed(true); } };
     ctls.push({ sync: () => { const x = App.sel(); if (x && document.activeElement !== name && name.value !== (x.name || "")) name.value = x.name || ""; } });
-    return h("div.insp-head", h("span.layer-thumb", { style: { "--tint": t.tint } }, icon(t.icon, 18)), name,
+    const top = h("div.insp-head", h("span.layer-thumb", { style: { "--tint": t.tint } }, icon(t.icon, 18)), name,
       h("button.icon-btn", { title: "ביטול הבחירה", "aria-label": "ביטול הבחירה", onclick: () => App.select(null) }, icon("close", 18)));
+    // a member of a group: which group, the way back to the whole group and the way out of it
+    const g = Studio.groupOf(App.rec, e.id);
+    if (!g) return top;
+    return h("div", top, h("div.in-group", icon("layers", 16), h("span", "בתוך ״" + (g.name || "קבוצה") + "״"),
+      UI.button("כל הקבוצה", () => App.select(g.id), { small: true, kind: "ghost" }), UI.button("להוציא", () => App.leaveGroup(e.id), { small: true, kind: "ghost", icon: "ungroup" })));
   }
   function build() {
     if (!root) return;

@@ -19,7 +19,8 @@ window.App = (() => {
     t0: performance.now(),
     tab: "style",         // inspector tab
     pane: "layers",       // phone: which pane is under the stage ("layers" | "inspector")
-    mode3d: false, cropping: false, snap: true
+    mode3d: false, cropping: false, snap: true,
+    multi: null           // while choosing several layers: the Set of their ids
   };
 
   const el = (id) => (S.rec && S.rec.elements.find((e) => e.id === id)) || null;
@@ -129,8 +130,9 @@ window.App = (() => {
   function saveSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(save, 600); }
   const flush = () => (saveTimer ? save() : Promise.resolve());
 
-  // A layer's values changed. final=false while a slider or a drag is still moving.
-  function changed(final) { emit("change"); if (final !== false) save(); }
+  // A layer's values changed. final=false while a slider or a drag is still moving. When it is final, every group's box
+  // follows its members again.
+  function changed(final) { if (final !== false && S.rec) S.rec.elements.forEach((g) => { if (g.type === "group") Studio.fitGroup(S.rec, g); }); emit("change"); if (final !== false) save(); }
 
   // ---------- open / close ----------
   async function open(id) {
@@ -138,14 +140,14 @@ window.App = (() => {
     const rec = await Studio.load(id);
     if (!rec) return false;
     rec.elements = (rec.elements || []).filter(Boolean); rec.elements.forEach(Studio.normEl); rec.assets = rec.assets || {};
-    S.rec = rec; S.selId = null; S.frozen = null; S.t0 = performance.now(); S.cropping = false; S.mode3d = false; S.pane = "layers";
+    S.rec = rec; tidyGroups(); S.selId = null; S.multi = null; S.frozen = null; S.t0 = performance.now(); S.cropping = false; S.mode3d = false; S.pane = "layers";
     await hydrate();
     emit("open"); emit("history");
     return true;
   }
   async function close() {
     await flush();
-    S.rec = null; S.selId = null; S.art = null; artBlob = null; S.artState = "none"; artJob++;
+    S.rec = null; S.selId = null; S.multi = null; S.art = null; artBlob = null; S.artState = "none"; artJob++;
     Object.keys(S.media).forEach(dropMedia);
     emit("close");
   }
@@ -177,6 +179,8 @@ window.App = (() => {
     const kids = e.type === "group" ? e.children || [] : [];
     S.rec.elements = S.rec.elements.filter((x) => x.id !== id && !kids.includes(x.id));
     S.rec.elements.forEach((g) => { if (g.type === "group") g.children = (g.children || []).filter((c) => c !== id); });
+    S.rec.elements = S.rec.elements.filter((g) => g.type !== "group" || g.children.length); // a group whose last member went goes too
+    S.rec.elements.forEach((g) => { if (g.type === "group") Studio.fitGroup(S.rec, g); });
     sweepAssets();
     if (S.selId === id) { S.selId = null; S.cropping = false; }
     await hydrate();
@@ -189,6 +193,7 @@ window.App = (() => {
     const nid = Studio.duplicateLayer(S.rec, id); if (!nid) return;
     const c = el(nid);
     if (!keyed(c) && c.type !== "group") { c.x = UI.clamp((c.x || 0) + 0.05, -0.7, 0.7); c.y = UI.clamp((c.y || 0) - 0.05, -0.7, 0.7); }
+    else if (!keyed(c)) Studio.transformGroup(S.rec, c, { x: (c.x || 0) + 0.05, y: (c.y || 0) - 0.05 });
     S.selId = nid; S.cropping = false;
     emit("structure"); emit("select");
     await save();
@@ -268,13 +273,74 @@ window.App = (() => {
     changed(final);
   }
 
-  // Order in the list is top first; in the record the last element is on top.
+  // Order in the list is top first; in the record the last element is on top. A group's members always sit right below
+  // it, in their own order: moving a group carries them, moving a member reorders it inside its group.
+  function tidyGroups() {
+    for (const g of S.rec.elements.filter((x) => x.type === "group")) {
+      const set = new Set(g.children), kids = S.rec.elements.filter((x) => set.has(x.id));
+      S.rec.elements = S.rec.elements.filter((x) => !set.has(x.id));
+      S.rec.elements.splice(S.rec.elements.indexOf(g), 0, ...kids);
+      g.children = kids.map((k) => k.id);
+    }
+  }
   function moveLayer(id, to) {
     const list = S.rec.elements, from = list.findIndex((e) => e.id === id);
     to = UI.clamp(to, 0, list.length - 1);
     if (from < 0 || from === to) return;
     list.splice(to, 0, list.splice(from, 1)[0]);
+    tidyGroups();
     emit("structure"); save();
+  }
+
+  // ---------- groups ("קיבוץ") ----------
+  // Choosing several layers: the list shows boxes to tick, and a touch on the stage adds or takes away a layer.
+  function startMulti() { S.multi = new Set(); S.selId = null; S.cropping = false; emit("select"); emit("multi"); }
+  function endMulti() { if (!S.multi) return; S.multi = null; emit("multi"); }
+  // Why a layer cannot go into a new group (null = it can).
+  function groupBlocker(e) {
+    if (!e) return "השכבה לא נמצאה";
+    if (e.type === "group") return "קבוצה אי אפשר להכניס לקבוצה אחרת. אפשר קודם לפרק אותה.";
+    if (Studio.groupOf(S.rec, e.id)) return "השכבה הזו כבר בתוך קבוצה";
+    if (e.locked) return "השכבה נעולה. משחררים אותה קודם.";
+    return null;
+  }
+  function toggleMulti(id) {
+    if (!S.multi) return;
+    if (S.multi.has(id)) S.multi.delete(id);
+    else { const why = groupBlocker(el(id)); if (why) return toast(why, { kind: "warn" }); S.multi.add(id); }
+    emit("multi");
+  }
+  async function groupLayers(ids) {
+    ids = (ids || [...(S.multi || [])]).filter((id) => !groupBlocker(el(id)));
+    if (ids.length < 2) return toast("בוחרים לפחות שתי שכבות", { kind: "warn" });
+    if (blocked({ layers: 1 })) return;
+    const g = Studio.makeGroup(S.rec, ids);
+    g.name = "קבוצה " + S.rec.elements.filter((x) => x.type === "group").length;
+    S.multi = null; S.selId = g.id; S.cropping = false;
+    emit("multi"); emit("structure"); emit("select");
+    await save();
+    toast(ids.length + " שכבות בקבוצה אחת. נגיעה נוספת על הקנבס בוחרת שכבה אחת בתוכה.", { ms: 6000, action: { label: "ביטול", run: undo } });
+    return g;
+  }
+  // The group's own motion, taps and actions do not pass on to its members: say so before they go.
+  async function ungroup(id) {
+    const g = el(id); if (!g || g.type !== "group") return;
+    const own = keyed(g) || (g.anim && g.anim !== "none") || (g.onTap && g.onTap !== "none") || ActionCore.list(S.rec).some((q) => q.actions.some((a) => a.layerId === g.id));
+    if (own && !(await UI.confirm({ title: "לפרק את הקבוצה?", text: "לקבוצה יש תנועה או פעולת מגע משלה. השכבות יישארו במקומן, בלי התנועה והפעולה של הקבוצה.", yes: "לפרק" }))) return;
+    const kids = Studio.breakGroup(S.rec, g);
+    S.selId = null; S.cropping = false;
+    await hydrate();
+    emit("structure"); emit("select");
+    await save();
+    toast("הקבוצה פורקה ל־" + kids.length + " שכבות", { action: { label: "ביטול", run: undo } });
+  }
+  async function leaveGroup(id) {
+    const g = Studio.groupOf(S.rec, id), k = el(id); if (!g || !k) return;
+    if (keyed(g) && !(await UI.confirm({ title: "להוציא מהקבוצה?", text: "לקבוצה יש מסלול תנועה. השכבה תישאר במקומה, בלי התנועה של הקבוצה.", yes: "להוציא" }))) return;
+    Studio.leaveGroup(S.rec, g, k);
+    emit("structure"); emit("select");
+    await save();
+    toast("השכבה יצאה מהקבוצה", { action: { label: "ביטול", run: undo } });
   }
 
   // A locked layer cannot be picked, moved or changed until it is released.
@@ -292,7 +358,7 @@ window.App = (() => {
     const r = await Studio.restoreHistory(S.rec.id, dir);
     if (!r) return;
     r.elements.forEach(Studio.normEl);
-    S.rec = r; if (!el(S.selId)) S.selId = null; S.cropping = false;
+    S.rec = r; tidyGroups(); if (!el(S.selId)) S.selId = null; S.cropping = false; if (S.multi) { S.multi = null; emit("multi"); }
     await hydrate();
     emit("open"); emit("history");
   }
@@ -318,10 +384,10 @@ window.App = (() => {
 
   return {
     on, emit, el, sel, keyed, clock, sample, hydrate, loadArt, save, saveSoon, flush, changed, open, close, select, blocked,
-    addLayer, removeLayer, duplicateLayer, moveLayer, scatterFrom, addScatter, redrawScatter, scatterDepth, breakScatter, setLocked, setStill, setStillAt, mediaFor, movesItself, undo, redo, freeze, replay, keyAt, editKey, setTab, setPane, setMode3d, setCropping,
+    addLayer, removeLayer, duplicateLayer, moveLayer, scatterFrom, addScatter, redrawScatter, scatterDepth, breakScatter, setLocked, startMulti, endMulti, toggleMulti, groupLayers, ungroup, leaveGroup, setStill, setStillAt, mediaFor, movesItself, undo, redo, freeze, replay, keyAt, editKey, setTab, setPane, setMode3d, setCropping,
     get rec() { return S.rec; }, get selId() { return S.selId; }, get art() { return S.art; }, get artBlob() { return artBlob; }, get artState() { return S.artState; }, get media() { return S.media; },
     get frozen() { return S.frozen; }, get tab() { return S.tab; }, get pane() { return S.pane; }, get mode3d() { return S.mode3d; },
-    get cropping() { return S.cropping; }, get snap() { return S.snap; }, set snap(v) { S.snap = !!v; },
+    get cropping() { return S.cropping; }, get multi() { return S.multi; }, get snap() { return S.snap; }, set snap(v) { S.snap = !!v; },
     set rec(r) { S.rec = r; }
   };
 })();

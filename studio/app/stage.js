@@ -38,11 +38,39 @@ window.Stage = (() => {
     return { cx, cy, w: el.w * view.W * s.scale, h: (el.h != null ? el.h * view.H : el.w * view.W / (el.aspect || 1)) * s.scale, rot: -s.rot * Math.PI / 180 };
   }
   const inside = (b, p, pad) => { const q = local(b, p), m = pad || 0; return Math.abs(q.x) <= Math.max(b.w / 2, 14 / zoom) + m && Math.abs(q.y) <= Math.max(b.h / 2, 14 / zoom) + m; };
-  // Layers under a point, top first.
+  // Layers under a point, top first. A member of a group answers for its group, unless the selected layer is another
+  // member of that group (then she is working inside it, and each member answers for itself).
+  function rootOf(el) {
+    const g = Studio.groupOf(App.rec, el.id); if (!g) return el;
+    const s = App.sel(); return s && s.id !== g.id && Studio.groupOf(App.rec, s.id) === g ? el : g;
+  }
   function hits(p) {
     const out = [], els = App.rec.elements;
-    for (let i = els.length - 1; i >= 0; i--) { const b = boxes[els[i].id]; if (b && !b.hidden && !els[i].locked && inside(b, p)) out.push(els[i]); }
+    for (let i = els.length - 1; i >= 0; i--) {
+      const e = els[i], b = boxes[e.id]; if (e.type === "group" || !b || b.hidden || e.locked || !inside(b, p)) continue;
+      const r = rootOf(e); if (!r.locked && !out.includes(r)) out.push(r);
+    }
     return out;
+  }
+  // The members of a group under a point, top first (a second touch on a selected group picks one of them).
+  function membersAt(g, p) {
+    const set = new Set(g.children || []);
+    return App.rec.elements.filter((e) => set.has(e.id) && !e.locked && boxes[e.id] && !boxes[e.id].hidden && inside(boxes[e.id], p)).reverse();
+  }
+  // A group's box on screen: around its members' boxes, turned with the group.
+  function groupBox(g) {
+    const s = App.sample(g), rot = -(s.rot || 0) * Math.PI / 180, co = Math.cos(rot), si = Math.sin(rot);
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity, vis = false;
+    for (const id of g.children || []) {
+      const b = boxes[id]; if (!b) continue; if (!b.hidden) vis = true;
+      for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+        const q = world(b, sx * b.w / 2, sy * b.h / 2), u = q.x * co + q.y * si, v = -q.x * si + q.y * co;
+        x0 = Math.min(x0, u); x1 = Math.max(x1, u); y0 = Math.min(y0, v); y1 = Math.max(y1, v);
+      }
+    }
+    if (!(x1 >= x0)) return null;
+    const u = (x0 + x1) / 2, v = (y0 + y1) / 2;
+    return { cx: u * co - v * si, cy: u * si + v * co, w: Math.max(x1 - x0, 10 / zoom), h: Math.max(y1 - y0, 10 / zoom), rot, hidden: !vis || !s.visible, group: true };
   }
   function handleAt(el, p) {
     const b = boxes[el.id]; if (!b) return null;
@@ -244,10 +272,15 @@ window.Stage = (() => {
   // A line of words over the stage while it waits for a touch (picking a colour, drawing a line), with its way out.
   function renderHint() {
     let bar = $("stage-hint");
-    if (!picker && !drawing) { if (bar) bar.remove(); draw(); return; }
+    if (!picker && !drawing && !App.multi) { if (bar) bar.remove(); draw(); return; }
     if (!bar) { bar = h("div.stage-hint", { id: "stage-hint", role: "status" }); stage.append(bar); }
     const cancel = h("button.btn.small", { type: "button", id: "stage-hint-cancel", onclick: () => { picker = null; drawing = null; renderHint(); } }, "ביטול");
-    if (picker) bar.replaceChildren(icon("pipette", 18), h("span", "נגעי בתמונה על הצבע שרוצים להעלים"), cancel);
+    bar.classList.toggle("multi", !!App.multi);
+    if (App.multi) {
+      const n = App.multi.size, go = h("button.btn.small.primary", { type: "button", id: "stage-hint-group", disabled: n < 2, onclick: () => App.groupLayers() }, "לקבץ (" + n + ")");
+      cancel.onclick = () => App.endMulti();
+      bar.replaceChildren(icon("checks", 18), h("span", n ? "נבחרו " + n : "נגעי בשכבות"), go, cancel);
+    } else if (picker) bar.replaceChildren(icon("pipette", 18), h("span", "נגעי בתמונה על הצבע שרוצים להעלים"), cancel);
     else {
       const straight = h("button.btn.small" + (drawing.straight ? ".primary" : ".ghost"), { type: "button", id: "stage-hint-straight", "aria-pressed": String(drawing.straight), onclick: () => { drawing.straight = !drawing.straight; drawing.taps = []; renderHint(); } }, "קו ישר");
       bar.replaceChildren(icon("path", 18), h("span", drawing.straight ? "נגעי בנקודת ההתחלה ואז בנקודת הסוף" : "ציירי באצבע את הקו שעליו יתפזרו העותקים"), straight, cancel);
@@ -329,8 +362,28 @@ window.Stage = (() => {
   }
 
   // ---------- drawing ----------
+  // Outlines of a group's members (the group selected), or of the group around the selected member.
+  function drawOutline(b, dash) {
+    const px = 1 / zoom;
+    ctx.save(); ctx.translate(b.cx, b.cy); ctx.rotate(b.rot); ctx.strokeStyle = dash ? "rgba(255,255,255,.75)" : ACCENT; ctx.lineWidth = 1.2 * px;
+    ctx.setLineDash([4 * px, 4 * px]); ctx.strokeRect(-b.w / 2, -b.h / 2, b.w, b.h); ctx.restore();
+  }
+  // While choosing several layers: each chosen one tinted, with a tick.
+  function drawChosen() {
+    const px = 1 / zoom;
+    for (const id of App.multi) {
+      const b = boxes[id]; if (!b) continue;
+      ctx.save(); ctx.translate(b.cx, b.cy); ctx.rotate(b.rot);
+      ctx.fillStyle = "rgba(139,108,255,.22)"; ctx.fillRect(-b.w / 2, -b.h / 2, b.w, b.h); ctx.strokeStyle = ACCENT; ctx.lineWidth = 2.5 * px; ctx.strokeRect(-b.w / 2, -b.h / 2, b.w, b.h);
+      ctx.translate(b.w / 2, -b.h / 2); ctx.beginPath(); ctx.arc(0, 0, 10 * px, 0, 7); ctx.fillStyle = ACCENT; ctx.fill();
+      ctx.strokeStyle = "#fff"; ctx.lineWidth = 2.2 * px; ctx.beginPath(); ctx.moveTo(-4.5 * px, 0); ctx.lineTo(-1.5 * px, 3 * px); ctx.lineTo(4.5 * px, -3.5 * px); ctx.stroke();
+      ctx.restore();
+    }
+  }
   function drawMarks(el, b) {
     const px = 1 / zoom;
+    if (el.type === "group") (el.children || []).forEach((id) => { if (boxes[id]) drawOutline(boxes[id], true); });
+    else { const g = Studio.groupOf(App.rec, el.id); if (g && boxes[g.id]) drawOutline(boxes[g.id], true); }
     ctx.save(); ctx.translate(b.cx, b.cy); ctx.rotate(b.rot);
     ctx.strokeStyle = ACCENT; ctx.lineWidth = 1.5 * px;
     if (b.hidden) ctx.setLineDash([5 * px, 5 * px]);
@@ -367,6 +420,8 @@ window.Stage = (() => {
       drawLayer(el, b);
       ctx.restore();
     }
+    for (const g of rec.elements) if (g.type === "group") { const b = groupBox(g); if (b) { boxes[g.id] = b; if (g.id === selId) selEl = g; } }
+    if (App.multi) drawChosen();
     if (guide) {
       ctx.save(); ctx.strokeStyle = "#ff8f6b"; ctx.lineWidth = 1 / zoom; ctx.setLineDash([5 / zoom, 4 / zoom]); ctx.beginPath();
       if (guide.v) { ctx.moveTo(view.mx + view.W / 2, view.my - 20); ctx.lineTo(view.mx + view.W / 2, view.my + view.H + 20); }
@@ -386,11 +441,12 @@ window.Stage = (() => {
   // Size at the start of a resize: the key's scale for a moving layer, the layer's own width otherwise.
   function sizeStart(el) {
     const k = App.editKey(el);
-    return k ? { k, s0: App.sample(el).scale || 1 } : { k: null, w0: el.w, h0: el.h, sc0: el.type === "scatter" ? structuredClone(el.scatter) : null };
+    return k ? { k, s0: App.sample(el).scale || 1 } : { k: null, w0: el.w, h0: el.h, sc0: el.type === "scatter" ? structuredClone(el.scatter) : null, group: el.type === "group" };
   }
   function sizeApply(el, st, ratio) {
     if (st.k) { App.keyAt(el, st.k.t).scale = round(clamp(st.s0 * ratio, 0.05, 4)); return; }
     if (st.sc0) { Studio.scaleScatter(App.rec, el, clamp(ratio, 0.05 / st.w0, 3 / st.w0), st.sc0); return; }
+    if (st.group) { Studio.transformGroup(App.rec, el, { w: round(clamp(st.w0 * ratio, 0.03, 3)) }); return; } // the members grow with it
     const w = clamp(st.w0 * ratio, 0.05, 2);
     el.w = round(w); if (st.h0 != null) el.h = round(st.h0 * w / st.w0);
   }
@@ -403,6 +459,7 @@ window.Stage = (() => {
     const p = pt(e), sel = App.sel();
     if (picker) { pickAt(p); drag = { mode: "none" }; return; }
     if (drawing) { drawing.stroke = [p]; drag = { mode: "stroke", sx: e.clientX, sy: e.clientY }; return; }
+    if (App.multi) { const r = hits(p)[0]; drag = { mode: "multi", id: r ? r.id : null, sx: e.clientX, sy: e.clientY, px: pan.x, py: pan.y }; return; }
     const pi = sel && !App.cropping ? pointAt(sel, p) : -1;
     if (pi >= 0) {
       pointSel = { id: sel.id, i: pi };
@@ -439,7 +496,7 @@ window.Stage = (() => {
     if (pinch) return movePinch();
     if (!drag || pointers.size !== 1) return;
     // a drag on empty space carries the zoomed-in view
-    if (drag.mode === "empty") { if (zoom > 1) setPan(drag.px + e.clientX - drag.sx, drag.py + e.clientY - drag.sy); return; }
+    if (drag.mode === "empty" || drag.mode === "multi") { if (zoom > 1) setPan(drag.px + e.clientX - drag.sx, drag.py + e.clientY - drag.sy); return; }
     if (drag.mode === "stroke") { const p = pt(e), st = drawing && drawing.stroke, last = st && st[st.length - 1]; if (last && Math.hypot(p.x - last.x, p.y - last.y) > 3 / zoom) st.push(p); return; }
     const el = App.el(drag.id), p = pt(e);
     if (drag.mode === "none" || !el) return;
@@ -462,13 +519,15 @@ window.Stage = (() => {
       guide = null;
       if (App.snap && !e.altKey) { const g = {}; if (Math.abs(nx) < 0.018) { nx = 0; g.v = true; } if (Math.abs(ny) < 0.014) { ny = 0; g.h = true; } if (g.v || g.h) guide = g; }
       const t = drag.k ? App.keyAt(el, drag.k.t) : el;
-      t.x = round(nx); t.y = round(ny);
+      if (el.type === "group" && !drag.k) Studio.transformGroup(App.rec, el, { x: round(nx), y: round(ny) }); // the members move with it
+      else { t.x = round(nx); t.y = round(ny); }
     } else if (drag.mode === "rotate") {
       const b = boxes[el.id]; if (!b) return;
       let v = drag.rot0 - (Math.atan2(p.y - b.cy, p.x - b.cx) - drag.a0) * 180 / Math.PI;
       v = ((v + 180) % 360 + 360) % 360 - 180;
       if (!e.altKey) v = Studio.snapAngle(v);
-      (drag.k ? App.keyAt(el, drag.k.t) : el).rot = round(v, 1);
+      if (el.type === "group" && !drag.k) Studio.transformGroup(App.rec, el, { rot: round(v, 1) });
+      else (drag.k ? App.keyAt(el, drag.k.t) : el).rot = round(v, 1);
       drag.moved = true;
     } else if (drag.mode === "scale") {
       const b = boxes[el.id]; if (!b) return;
@@ -500,11 +559,13 @@ window.Stage = (() => {
     if (!d || e.type === "pointercancel") { if (d && d.moved) App.changed(true); return; }
     if (d.moved) { App.changed(true); return; }
     if (d.mode === "empty") { if (Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 8) App.select(null); return; }
+    if (d.mode === "multi") { if (d.id && Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 8) App.toggleMulti(d.id); return; }
     if (d.mode !== "move") return;
     // a tap: twice on a text opens its words; on the selected layer it reaches the one beneath
     const now = performance.now(), el = App.el(d.id);
     if (el && lastTap.id === d.id && now - lastTap.at < 380) { lastTap = { id: null, at: 0 }; App.emit("edit", el); return; }
     lastTap = { id: d.id, at: now };
+    if (d.wasSel && el && el.type === "group") { const m = membersAt(el, d.start)[0]; if (m) { App.select(m.id); lastTap.id = null; return; } } // inside the group: one member
     if (d.wasSel && d.under.length > 1) { const i = d.under.findIndex((x) => x.id === d.id); App.select(d.under[(i + 1) % d.under.length].id); lastTap.id = null; }
   }
   function startPinch() {
@@ -536,8 +597,8 @@ window.Stage = (() => {
   function nudge(dx, dy) {
     const el = App.sel(); if (!el || App.mode3d || App.cropping) return;
     if (gated(el)) return toast(GATE);
-    const k = App.editKey(el), s = k ? App.sample(el) : el, t = k || el;
-    t.x = round(clamp((s.x || 0) + dx, -0.7, 0.7)); t.y = round(clamp((s.y || 0) + dy, -0.7, 0.7));
+    const k = App.editKey(el), s = k ? App.sample(el) : el, t = k || el, x = round(clamp((s.x || 0) + dx, -0.7, 0.7)), y = round(clamp((s.y || 0) + dy, -0.7, 0.7));
+    if (el.type === "group" && !k) Studio.transformGroup(App.rec, el, { x, y }); else { t.x = x; t.y = y; }
     App.changed(false); clearTimeout(nudgeTimer); nudgeTimer = setTimeout(() => App.changed(true), 500);
   }
 
@@ -567,6 +628,9 @@ window.Stage = (() => {
     if (CROP_TYPES.includes(el.type) && !App.mode3d) bar.append(btn("crop", "חיתוך", () => App.setCropping(!App.cropping), App.cropping));
     if (Studio.SCATTER_TYPES.includes(el.type)) bar.append(btn("path", "פיזור על נתיב", () => App.scatterFrom(el.id)));
     if (App.movesItself(el)) { const still = Studio.isStill(el); bar.append(btn(still ? "play" : "snow", still ? "להפעיל תנועה" : "להקפיא תנועה", () => App.setStill(el.id, !still).then(() => toast(still ? "התנועה חזרה" : "התנועה הוקפאה. את הרגע שמוצג בוחרים בלשונית ״עיצוב״.")), still)); }
+    const inGroup = Studio.groupOf(App.rec, el.id);
+    if (el.type === "group") bar.append(btn("ungroup", "לפרק קבוצה", () => App.ungroup(el.id)));
+    else if (inGroup) bar.append(btn("group", "לבחור את כל הקבוצה", () => App.select(inGroup.id)));
     bar.append(btn("lock", "נעילה במקום", () => { App.setLocked(el.id, true); toast("השכבה ננעלה. משחררים אותה מרשימת השכבות."); }),
       btn("copy", "שכפול", () => App.duplicateLayer(el.id)), btn("trash", "מחיקה", () => App.removeLayer(el.id)));
   }
@@ -623,6 +687,7 @@ window.Stage = (() => {
     $("btn-art-replace").onclick = () => Layers.pickArtwork();
     App.on("time", renderTime);
     App.on("close open", () => { picker = null; drawing = null; pointSel = null; renderHint(); });
+    App.on("multi", () => { if (App.multi) { picker = null; drawing = null; if (App.mode3d) App.setMode3d(false); } renderHint(); renderBar(); });
     App.on("mode", () => { if (App.mode3d && (picker || drawing)) { picker = null; drawing = null; renderHint(); } });
     App.on("close", () => { if (Editor3D.isActive()) Editor3D.hide(); Editor3D.overlay(false); });
     raf = requestAnimationFrame(frame);

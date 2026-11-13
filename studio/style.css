@@ -118,6 +118,7 @@ button:disabled { cursor: default; opacity: .4; }
 .stage-hint { position: absolute; z-index: 9; inset-inline: 8px; top: 8px; margin-inline: auto; max-width: 460px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 14px; background: rgba(23,22,29,.94); border: 1px solid rgba(139,108,255,.6); box-shadow: 0 6px 24px rgba(0,0,0,.45); font-size: 14px; font-weight: 600; backdrop-filter: blur(8px); }
 .stage-hint > span { flex: 1 1 160px; line-height: 1.35; }
 .stage-hint > svg { color: #b9a6ff; flex: none; }
+.stage-hint.multi > span { flex-basis: 50px; white-space: nowrap; }
 .stage-hint .btn { min-height: 36px;  pointer-events: auto; }
 .stage-hint { pointer-events: none; } /* the line can be drawn right through the hint; only its buttons take a touch */
 #time-chip { position: absolute; z-index: 7; top: 8px; inset-inline-end: 8px; display: flex; align-items: center; gap: 8px; padding: 3px; padding-inline-start: 12px; border-radius: 12px; background: rgba(255,200,87,.14); border: 1px solid rgba(255,200,87,.45); color: var(--warn); font-size: 13px; font-weight: 600; backdrop-filter: blur(8px); }
@@ -161,6 +162,15 @@ body[data-pane="layers"] #inspector, body[data-pane="inspector"] #layers-pane { 
 .row-more { width: 36px; height: 36px; color: var(--muted); }
 .row-lock { width: 36px; height: 36px; color: var(--warn); }
 .layer-row.locked .layer-thumb, .layer-row.locked .layer-text { opacity: .55; }
+.layer-row.member { margin-inline-start: 18px; min-height: 48px; }
+.member-mark { color: var(--muted); opacity: .6; cursor: default; transform: scaleX(-1); }
+.layer-row.choosing { padding-inline-start: 8px; }
+.layer-row.cannot { opacity: .45; }
+.row-check { display: grid; place-items: center; flex: none; width: 24px; height: 24px; margin-inline-end: 2px; border-radius: 7px; border: 2px solid var(--line-2); color: #fff; }
+.row-check.on { background: var(--accent); border-color: var(--accent); }
+.pane-head { gap: 8px; }
+.pane-head h2 { flex: 1; }
+.multi-head { display: flex; gap: 6px; }
 .layers-empty { display: grid; justify-items: center; gap: 12px; padding: 22px 16px; text-align: center; color: var(--muted); }
 .layers-empty p { max-width: 280px; font-size: 14px; }
 #art-card { display: flex; align-items: center; gap: 10px; margin: 0 10px calc(12px + var(--safe-b)); padding: 8px 10px; border-radius: 13px; border: 1px dashed var(--line-2); }
@@ -168,6 +178,9 @@ body[data-pane="layers"] #inspector, body[data-pane="inspector"] #layers-pane { 
 /* ---------- inspector ---------- */
 .insp-head { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
 .name-field { flex: 1; min-width: 0; font-weight: 700; }
+.in-group { display: flex; align-items: center; gap: 6px; margin: -4px 0 12px; padding: 4px 8px; border-radius: 10px; background: var(--surface-2); color: var(--muted); font-size: 13px; }
+.in-group > span:not(.ic) { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.in-group .btn.small { min-height: 30px; padding: 0 8px; }
 .group { padding: 14px; margin-bottom: 10px; border-radius: var(--r); background: var(--surface-2); border: 1px solid var(--line); display: grid; gap: 14px; }
 .group-title { font-size: 12.5px; font-weight: 700; color: var(--muted); letter-spacing: .02em; }
 .ctl { display: grid; gap: 7px; min-width: 0; }

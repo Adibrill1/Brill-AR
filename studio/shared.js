@@ -1335,7 +1335,8 @@ vec4 bpPattern(vec2 uv) {
       mapTimeline(child);
       Object.assign(child, point(child.x || 0, child.y || 0));
       child.z = (child.z || 0) + after.z - before.z;
-      if (child.w != null) child.w *= factor; if (child.h != null) child.h *= factor;
+      if (child.type === "scatter" && child.scatter) scaleScatter(rec, child, factor); // its line and copies grow with it
+      else { if (child.w != null) child.w *= factor; if (child.h != null) child.h *= factor; }
       child.rot = (child.rot || 0) + after.rot - before.rot;
     }
     mapTimeline(group);
@@ -1553,7 +1554,7 @@ vec4 bpPattern(vec2 uv) {
       e = document.createElement("a-entity");
       groupChildren(rec, el).forEach((ch, ci) => {
         if (ch.type === "group") return; // no nesting in v1
-        const ce = buildElementEntity(rec, ch, ci, mode, { origin: { x: ts.x, y: ts.y, z: ts.z || 0 }, baseRotation: el.rot || 0, videoFallback: opts.videoFallback, mediaId: opts.mediaId });
+        const ce = buildElementEntity(rec, ch, ch.flush ? idx + (ci + 1) / 1000 : ci, mode, { origin: { x: ts.x, y: ts.y, z: ts.z || 0 }, baseRotation: el.rot || 0, videoFallback: opts.videoFallback, mediaId: opts.mediaId });
         if (ce) { e.appendChild(ce); if (ce.dataset.opacity) applyOpacity(ce, parseFloat(ce.dataset.opacity)); }
       });
     } else if (el.type === "video") {
@@ -1666,8 +1667,8 @@ vec4 bpPattern(vec2 uv) {
     e.setAttribute("position", pos);
     e.setAttribute("rotation", rot);
     e.dataset.elId = el.id;
-    // a scatter's copies carry their own order (farthest first)
-    if (el.flush && el.type !== "scatter") { const ro = 1 + idx; const apply = () => { const o = e.object3D; if (!o) return; o.traverse((m) => { if (m.isMesh || m.isPoints) { m.renderOrder = ro; if (el.type !== 'model' && el.type !== 'timecube' && m.material) { const ms = Array.isArray(m.material) ? m.material : [m.material]; ms.forEach((mm) => { mm.depthWrite = false; }); } } }); }; e.addEventListener('object3dset', apply); e.addEventListener('model-loaded', apply); e.addEventListener('materialtextureloaded', apply); e.addEventListener('componentchanged', (ev) => { if (ev.detail && ev.detail.name === 'material') apply(); }); apply(); setTimeout(apply, 600); setTimeout(apply, 2500); }
+    // a scatter's copies carry their own order (farthest first), a group's members their own
+    if (el.flush && el.type !== "scatter" && el.type !== "group") { const ro = 1 + idx; const apply = () => { const o = e.object3D; if (!o) return; o.traverse((m) => { if (m.isMesh || m.isPoints) { m.renderOrder = ro; if (el.type !== 'model' && el.type !== 'timecube' && m.material) { const ms = Array.isArray(m.material) ? m.material : [m.material]; ms.forEach((mm) => { mm.depthWrite = false; }); } } }); }; e.addEventListener('object3dset', apply); e.addEventListener('model-loaded', apply); e.addEventListener('materialtextureloaded', apply); e.addEventListener('componentchanged', (ev) => { if (ev.detail && ev.detail.name === 'material') apply(); }); apply(); setTimeout(apply, 600); setTimeout(apply, 2500); }
     e._studioFrame = { ox, oy, oz, angle, baseRotation: opts.baseRotation || 0, zTie: tie };
     const hasTl = ActionCore.list(rec).some(q=>q.actions.some(a=>a.type!=="sequence"&&a.layerId===el.id)) || el.timeline && Array.isArray(el.timeline.keys) && el.timeline.keys.length;
     if (el.anim === "spin" && !hasTl) e.setAttribute("animation__spin", `property: rotation; to: 0 0 ${(el.rot || 0) - (opts.baseRotation || 0) + 360}; loop: true; dur: 14000; easing: linear`);
@@ -1778,6 +1779,75 @@ vec4 bpPattern(vec2 uv) {
     const ids = Array.isArray(groupEl.children) ? groupEl.children : [];
     const byId = new Map(rec.elements.map((el) => [el.id, el]));
     return ids.map((id) => byId.get(id)).filter(Boolean);
+  }
+  const groupOf = (rec, id) => rec.elements.find((g) => g.type === "group" && (g.children || []).includes(id)) || null;
+  const r4 = (v) => Math.round(v * 10000) / 10000;
+  const keyedEl = (el) => !!(el.timeline && Array.isArray(el.timeline.keys) && el.timeline.keys.length);
+  // The group's box: the members' own places, in the group's turned frame. Its w/h (and, when nothing keyed depends on it,
+  // its x/y, the point it turns and grows around) follow the members, so its handles sit on them.
+  function fitGroup(rec, g) {
+    const gs = geom(rec), a = (g.rot || 0) * Math.PI / 180, ca = Math.cos(a), sa = Math.sin(a);
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    for (const k of groupChildren(rec, g)) {
+      const cx = (k.x || 0) * gs.artW, cy = (k.y || 0) * gs.artH, hw = k.type === "sound" ? 0.02 : (k.w || 0.3) * gs.artW / 2;
+      const hh = k.type === "sound" ? 0.02 : (k.h != null ? k.h * gs.artH : (k.w || 0.3) * gs.artW / (k.aspect || 1)) / 2, b = (k.rot || 0) * Math.PI / 180;
+      for (const [sx, sy] of [[-1, -1], [1, -1], [-1, 1], [1, 1]]) {
+        const wx = cx + sx * hw * Math.cos(b) - sy * hh * Math.sin(b), wy = cy + sx * hw * Math.sin(b) + sy * hh * Math.cos(b);
+        const u = wx * ca + wy * sa, v = -wx * sa + wy * ca; // into the group's frame
+        x0 = Math.min(x0, u); x1 = Math.max(x1, u); y0 = Math.min(y0, v); y1 = Math.max(y1, v);
+      }
+    }
+    if (!(x1 >= x0)) return g;
+    const W = Math.max(0.01, x1 - x0), H = Math.max(0.01, y1 - y0), u = (x0 + x1) / 2, v = (y0 + y1) / 2;
+    if (!keyedEl(g)) { g.x = r4((u * ca - v * sa) / gs.artW); g.y = r4((u * sa + v * ca) / gs.artH); }
+    g.w = r4(W / gs.artW); g.h = r4(H / gs.artH); g.aspect = W / H;
+    return g;
+  }
+  // "לקבץ": chosen top-level layers become one group, in the record right where the topmost of them was, in their own
+  // order. Members keep their places (they are stored in artwork coordinates, a group only adds its own changes).
+  function makeGroup(rec, ids) {
+    const set = new Set(ids), kids = rec.elements.filter((e) => set.has(e.id));
+    const after = rec.elements.slice(Math.max(...kids.map((e) => rec.elements.indexOf(e))) + 1).find((e) => !set.has(e.id));
+    const g = normEl({ id: newId(), type: "group", name: "קבוצה", children: kids.map((k) => k.id), x: 0, y: 0, z: 0, w: 1, h: 1, rot: 0, opacity: 1, flush: true, seq: null });
+    rec.elements = rec.elements.filter((e) => !set.has(e.id));
+    const at = after ? rec.elements.indexOf(after) : rec.elements.length;
+    rec.elements.splice(at, 0, ...kids, g);
+    return fitGroup(rec, g);
+  }
+  // A group's tilt (rotX/rotY) baked into one member, so it stays where it was seen in 3D once it leaves the group.
+  function bakeTilt(rec, g, k) {
+    const T = window.THREE; if (!T || !(g.rotX || g.rotY) || keyedEl(k)) return;
+    const D = Math.PI / 180, gs = geom(rec), tg = toTargetSpace(rec, g, g.aspect || 1), tk = toTargetSpace(rec, k, k.aspect || 1), a = -(g.rot || 0) * D, one = new T.Vector3(1, 1, 1);
+    const G = new T.Matrix4().compose(new T.Vector3(tg.x, tg.y, g.z || 0), new T.Quaternion().setFromEuler(new T.Euler((g.rotX || 0) * D, (g.rotY || 0) * D, (g.rot || 0) * D, "YXZ")), one);
+    const dx = tk.x - tg.x, dy = tk.y - tg.y;
+    const L = new T.Matrix4().compose(new T.Vector3(dx * Math.cos(a) - dy * Math.sin(a), dx * Math.sin(a) + dy * Math.cos(a), (k.z || 0) - (g.z || 0)), new T.Quaternion().setFromEuler(new T.Euler((k.rotX || 0) * D, (k.rotY || 0) * D, ((k.rot || 0) - (g.rot || 0)) * D, "YXZ")), one);
+    const p = new T.Vector3(), q = new T.Quaternion(), sc = new T.Vector3(); G.multiply(L).decompose(p, q, sc);
+    const e = new T.Euler().setFromQuaternion(q, "YXZ");
+    Object.assign(k, { x: r4((g.x || 0) + (p.x - tg.x) / gs.artW), y: r4((g.y || 0) + (p.y - tg.y) / gs.artH), z: r4(p.z), rotX: Math.round(e.x / D * 10) / 10, rotY: Math.round(e.y / D * 10) / 10, rot: Math.round(e.z / D * 10) / 10 });
+  }
+  // One member leaves its group where it is seen: the group's tilt and see-through are baked in, its state and track kept.
+  function releaseMember(rec, g, k) {
+    bakeTilt(rec, g, k);
+    const op = g.opacity == null ? 1 : g.opacity;
+    if (op !== 1) k.opacity = r4((k.opacity == null ? 1 : k.opacity) * op);
+    if (g.seq && !k.seq) k.seq = g.seq;
+    if (g.track && !k.track) k.track = g.track;
+    g.children = (g.children || []).filter((id) => id !== k.id);
+  }
+  // "לפרק קבוצה": every member back to an ordinary layer at its place; the group's own motion, taps and actions go with it.
+  function breakGroup(rec, g) {
+    const kids = groupChildren(rec, g);
+    kids.forEach((k) => releaseMember(rec, g, k));
+    rec.elements.splice(rec.elements.indexOf(g), 1);
+    for (const q of ActionCore.list(rec)) q.actions = q.actions.filter((a) => a.layerId !== g.id);
+    return kids;
+  }
+  // "להוציא מהקבוצה": one member, placed right above the group. A group left empty goes; one member left stays a group.
+  function leaveGroup(rec, g, k) {
+    releaseMember(rec, g, k);
+    rec.elements.splice(rec.elements.indexOf(k), 1);
+    rec.elements.splice(rec.elements.indexOf(g) + 1, 0, k);
+    if (!g.children.length) breakGroup(rec, g); else fitGroup(rec, g);
   }
 
   function seqList(rec) { return Array.isArray(rec.sequences) ? rec.sequences : []; }
@@ -2686,7 +2756,7 @@ vec4 bpPattern(vec2 uv) {
   return { TARGET_W, TARGET_H, newId, inspectVideo, validateModelBlob, prepareModelBlob, modelCompressionKinds, DECODER_DRACO_PATH, DECODER_MESHOPT_PATH, modelClipNames, modelClipInfo, loadImage, loadImageBlob, loadFailed, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
            audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, blobURL, releaseBlobURL, blobURLs, historyState, restoreHistory, duplicateLayer, exportJSON, missingAssets, importJSON, exportZIP, importZIP, zipToJSON, fetchPublished, ownBlob, assetHealth, fileHealth, seedDemo, normEl, ANIMS, drawTextCanvas, loadTextFonts, FX: FX.map(([id, name]) => ({ id, name, moving: FX_MOVING.has(id) })), fxFrame,
            PATTERNS: PATTERNS.map(([id, name, colors, speed]) => ({ id, name, colors: colors.slice(), speed })), PATTERN_PALETTES: PATTERN_PALETTES.map(([name, colors]) => ({ name, colors: colors.slice() })),
-           PATTERN_SHAPES: PATTERN_SHAPES.map(([id, name]) => ({ id, name })), patternDefaults, patternAspect, patternFrame, validPattern, validFx, validChroma, keyValues, pixelAt, CHROMA_DEFAULT, SCATTER_TYPES, SCATTER_MAX, mediaType, isStill, stillAt, setStill, scatterItem, scatterLimit, scatterPath, scatterCopies, scatterCopyEl, scatterBounds, refreshScatter, makeScatter, scaleScatter, breakScatter, validScatter, FONTS: FONTS.map(([id, name]) => ({ id, name })), buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, ensureTimeCubeComponent, bakeTimeCube, validTimeCube, TIMECUBE_DIRS, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, artworkFingerprint, fingerprintDistance, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
+           PATTERN_SHAPES: PATTERN_SHAPES.map(([id, name]) => ({ id, name })), patternDefaults, patternAspect, patternFrame, validPattern, validFx, validChroma, keyValues, pixelAt, CHROMA_DEFAULT, SCATTER_TYPES, SCATTER_MAX, mediaType, isStill, stillAt, setStill, scatterItem, scatterLimit, scatterPath, scatterCopies, scatterCopyEl, scatterBounds, refreshScatter, makeScatter, scaleScatter, breakScatter, validScatter, FONTS: FONTS.map(([id, name]) => ({ id, name })), buildElementEntity, groupOf, fitGroup, makeGroup, breakGroup, leaveGroup, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, ensureTimeCubeComponent, bakeTimeCube, validTimeCube, TIMECUBE_DIRS, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, artworkFingerprint, fingerprintDistance, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
            load: id=>settledRead(id), all: ()=>settledRead(), del: delExperience, LIMITS, mediaBytes, pushBack, addBlocker, publishBlocker, restoreBlocker, exportWarning, exportJSONSize,
            onSaveState, installSaveGuard, saveState, soundOnTouch, snapAngle, syncMedia,
            _testHoldSave:p=>{saveHold=p;}, _testFailSave:m=>{failSave=m;}, _testFailPut:o=>{failPut=o?{...o}:null;} };

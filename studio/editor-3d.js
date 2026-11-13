@@ -37,10 +37,11 @@ window.Editor3D = (() => {
     const ids = new Set(), byId = new Map(rec.elements.map((e) => [e.id, e]));
     const kids = (g) => (g.children || []).map((id) => byId.get(id)).filter((k) => k && k.type !== "sound" && k.type !== "group");
     let on = false;
+    const tilted = (g) => !!(g.rotX || g.rotY);
     for (const el of Studio.topLevelElements(rec)) {
       const group = el.type === "group";
       if (on) { if (el.type !== "sound") { ids.add(el.id); if (group) kids(el).forEach((k) => ids.add(k.id)); } }
-      else if (group ? kids(el).some(overlayType) : overlayType(el)) { on = true; ids.add(el.id); if (group) kids(el).filter(overlayType).forEach((k) => ids.add(k.id)); }
+      else if (group ? (tilted(el) || kids(el).some(overlayType)) : overlayType(el)) { on = true; ids.add(el.id); if (group) kids(el).filter((k) => tilted(el) || overlayType(k)).forEach((k) => ids.add(k.id)); } // a tilted group is drawn here whole
     }
     if (crop) ids.delete(crop); // the crop frame is drawn by the canvas
     sheetMemo = { rec, t: now, crop, ids };
@@ -1292,5 +1293,5 @@ window.Editor3D = (() => {
     rebuildArtwork().then(() => ensureMedia(getRec())).then(rebuildElements);
   }
 
-  return { init, show, hide, overlay, drawsIn2d, overlayType, modelError, needsOverlay: (rec) => !!rec && rec.elements.some(overlayType), sync, isActive: () => active && mode === "3d", refreshGizmo, selectPoint: (i) => { pointSel = i; refreshGizmo(); }, get pointSel() { return pointSel; }, _test: { pathHelper: () => pathHelper, glLost: () => glLost, mode: () => mode, alphaAt, pickOrder, rebuilds: () => rebuildCount, gizmo: () => gizmo, node: (id) => elNode(id), scene: () => sceneEl, helper: () => helper, drag: () => gizmoDrag } };
+  return { init, show, hide, overlay, drawsIn2d, overlayType, modelError, needsOverlay: (rec) => !!rec && rec.elements.some((e) => overlayType(e) || (e.type === "group" && !!(e.rotX || e.rotY))), sync, isActive: () => active && mode === "3d", refreshGizmo, selectPoint: (i) => { pointSel = i; refreshGizmo(); }, get pointSel() { return pointSel; }, _test: { pathHelper: () => pathHelper, glLost: () => glLost, mode: () => mode, alphaAt, pickOrder, rebuilds: () => rebuildCount, gizmo: () => gizmo, node: (id) => elNode(id), scene: () => sceneEl, helper: () => helper, drag: () => gizmoDrag } };
 })();

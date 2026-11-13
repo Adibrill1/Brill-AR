@@ -270,6 +270,7 @@ window.Layers = (() => {
   const sub = (e) => {
     const t = (TYPES[e.type] || TYPES.group).name, bits = [t];
     if (e.type === "scatter") bits.push(Studio.scatterCopies(App.rec, e).length + " עותקים");
+    if (e.type === "group") bits.push((e.children || []).length + " שכבות");
     if (App.keyed(e)) bits.push("בתנועה"); else if (e.anim && e.anim !== "none") bits.push({ spin: "מסתובב", float: "מרחף", pulse: "פועם" }[e.anim] || "");
     if (e.onTap && e.onTap !== "none") bits.push("מגיב למגע");
     return bits.filter(Boolean).join(" · ");
@@ -280,8 +281,11 @@ window.Layers = (() => {
     if (v && App.el(id)) { App.el(id).name = v; App.emit("structure"); App.save(); }
   }
   function rowMenu(btn, e) {
-    const els = App.rec.elements, i = els.indexOf(e), top = els.length - 1;
+    const els = App.rec.elements, i = els.indexOf(e), top = els.length - 1, inGroup = Studio.groupOf(App.rec, e.id);
     UI.menu(btn, [
+      !e.locked && e.type === "group" ? { label: "לפרק קבוצה", icon: "ungroup", run: () => App.ungroup(e.id) } : false,
+      !e.locked && inGroup ? { label: "להוציא מהקבוצה", icon: "ungroup", run: () => App.leaveGroup(e.id) } : false,
+      !e.locked && !inGroup && e.type !== "group" ? { label: "לקבץ עם שכבות אחרות", icon: "group", run: () => { App.startMulti(); App.toggleMulti(e.id); } } : false,
       e.locked ? { label: "שחרור הנעילה", icon: "unlock", run: () => App.setLocked(e.id, false) } : { label: "נעילה במקום", icon: "lock", run: () => App.setLocked(e.id, true) },
       e.locked ? false : { label: "שינוי שם", icon: "edit", run: () => rename(e.id) },
       e.locked ? false : { label: "שכפול", icon: "copy", run: () => App.duplicateLayer(e.id) },
@@ -305,21 +309,45 @@ window.Layers = (() => {
       list.append(h("div.layers-empty", icon("layers", 28), h("p", rec.target ? "עדיין אין שכבות. מוסיפים תמונה, סרטון, טקסט או משהו מהספרייה, והם יופיעו מעל היצירה." : "מתחילים בתמונת היצירה: התמונה שהמצלמה תזהה."),
         rec.target ? UI.button("הוספת שכבה", openAdd, { kind: "primary", icon: "plus" }) : UI.button("העלאת תמונת היצירה", pickArtwork, { kind: "primary", icon: "upload" })));
     }
+    const multi = App.multi;
     for (const e of els) {
+      const member = !!Studio.groupOf(rec, e.id);
+      if (multi) { list.append(multiRow(e, member)); continue; }
       const more = h("button.icon-btn.row-more", { "aria-label": "עוד פעולות: " + (e.name || ""), "aria-haspopup": "menu", onclick: (ev) => { ev.stopPropagation(); rowMenu(more, e); } }, icon("more", 18));
       const grip = h("span.row-grip", { title: "גרירה לשינוי הסדר" }, icon("grip", 18));
       // a locked layer shows a padlock: touching it releases the layer
       const lock = e.locked ? h("button.icon-btn.row-lock", { title: "שחרור הנעילה", "aria-label": "שחרור הנעילה: " + (e.name || ""), onclick: (ev) => { ev.stopPropagation(); App.setLocked(e.id, false); toast("השכבה שוחררה"); } }, icon("lock", 18)) : null;
-      const row = h("div.layer-row" + (e.id === App.selId ? ".on" : "") + (e.locked ? ".locked" : ""), { role: "option", tabIndex: 0, "aria-selected": String(e.id === App.selId), data: { id: e.id } },
-        grip, thumb(e), h("span.layer-text", h("span.layer-name", e.name || ""), h("span.layer-sub", sub(e))), lock, more);
+      const row = h("div.layer-row" + (e.id === App.selId ? ".on" : "") + (e.locked ? ".locked" : "") + (member ? ".member" : ""), { role: "option", tabIndex: 0, "aria-selected": String(e.id === App.selId), data: { id: e.id } },
+        member ? h("span.row-grip.member-mark", icon("back", 14)) : grip, thumb(e), h("span.layer-text", h("span.layer-name", e.name || ""), h("span.layer-sub", sub(e))), lock, more);
       row.onclick = () => { if (e.locked) return toast("השכבה נעולה. נגיעה במנעול משחררת אותה."); App.select(e.id); if (phone()) App.setTab(null, "inspector"); };
       row.ondblclick = () => { if (!e.locked) rename(e.id); };
       row.onkeydown = (ev) => { if (ev.target === row && (ev.key === "Enter" || ev.key === " ")) { ev.preventDefault(); row.click(); } };
-      grip.onpointerdown = (ev) => startDrag(ev, row, e.id);
+      if (!member) grip.onpointerdown = (ev) => startDrag(ev, row, e.id); // a member keeps its place under its group
       grip.onclick = (ev) => ev.stopPropagation();
       list.append(row);
     }
-    renderArt();
+    renderArt(); renderHead();
+  }
+  // While choosing several layers: a box to tick on every top-level layer. Members of a group and groups cannot be chosen.
+  function multiRow(e, member) {
+    const on = App.multi.has(e.id), can = !member && e.type !== "group" && !e.locked;
+    const box = h("span.row-check" + (on ? ".on" : ""), { "aria-hidden": "true" }, on ? icon("check", 16) : null);
+    const row = h("div.layer-row.choosing" + (on ? ".on" : "") + (member ? ".member" : "") + (can ? "" : ".cannot"), { role: "checkbox", tabIndex: 0, "aria-checked": String(on), "aria-label": e.name || "", data: { id: e.id } },
+      box, thumb(e), h("span.layer-text", h("span.layer-name", e.name || ""), h("span.layer-sub", sub(e))));
+    row.onclick = () => App.toggleMulti(e.id);
+    row.onkeydown = (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); row.click(); } };
+    return row;
+  }
+  // The head of the list: "הוספה" and "בחירת כמה", or while choosing, the way to group them and the way out.
+  function renderHead() {
+    const head = $("layers-pane").querySelector(".pane-head"), multi = App.multi;
+    let box = $("multi-head");
+    $("btn-add").hidden = !!multi; $("btn-multi").hidden = !!multi || !(App.rec && App.rec.elements.length > 1);
+    if (!multi) { if (box) box.remove(); return; }
+    if (!box) { box = h("div.multi-head", { id: "multi-head" }); head.append(box); }
+    const n = multi.size, go = UI.button("לקבץ (" + n + ")", () => App.groupLayers(), { kind: "primary", small: true, icon: "group" });
+    go.id = "btn-group-go"; go.disabled = n < 2;
+    box.replaceChildren(go, UI.button("ביטול", () => App.endMulti(), { kind: "ghost", small: true }));
   }
   function markSelected() {
     if (!list) return;
@@ -362,6 +390,9 @@ window.Layers = (() => {
   function init() {
     list = $("layer-list"); artCard = $("art-card");
     $("btn-add").onclick = openAdd;
+    const head = $("layers-pane").querySelector(".pane-head"), pick = UI.button("בחירת כמה", () => { App.startMulti(); App.setPane("layers"); }, { kind: "ghost", small: true, icon: "checks" });
+    pick.id = "btn-multi"; pick.title = "לבחור כמה שכבות ולקבץ אותן"; head.insertBefore(pick, $("btn-add"));
+    App.on("multi", render);
     $("btn-empty-art").onclick = pickArtwork;
     App.on("open structure", render);
     App.on("select", markSelected);
