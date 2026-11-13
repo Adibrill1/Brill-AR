@@ -11,6 +11,7 @@ window.Stage = (() => {
   const view = { W: 0, H: 0, mx: 0, my: 0, cw: 0, ch: 0 };
   const boxes = {};
   let guide = null, cropRatio = null;
+  let picker = null; // the colour picker waiting for a touch: {id, done(color)}
   const pan = { x: 0, y: 0 }; // how far the zoomed-in flat view was dragged, in screen pixels
 
   // ---------- geometry ----------
@@ -72,13 +73,15 @@ window.Stage = (() => {
     const tb = textBitmap(el), g = Studio.geom(App.rec);
     el.aspect = tb.aspect; el.h = (el.w / el.aspect) * (g.artW / g.artH);
   }
+  // A filter and/or the colour removal, drawn through the same shader code as the 3D view and the camera. While she picks
+  // a colour from this layer it shows as it really is, so the colour she wants gone is there to touch.
   function fxDrawable(el, m, w, hh) {
-    const look = el.fx && Studio.FX.find((f) => f.id === el.fx);
-    if (!look) return null;
-    const still = !look.moving && el.type === "image" && m.tagName !== "CANVAS";
-    const key = still && JSON.stringify([el.fx, el.fxAmount, el.crop, Math.round(w), Math.round(hh)]), hit = fxCache[el.id];
+    const look = el.fx && Studio.FX.find((f) => f.id === el.fx), raw = !!picker && picker.id === (el._ownerId || el.id);
+    if (!look && !(Studio.keyValues(el) && !raw)) return null;
+    const still = !(look && look.moving) && el.type === "image" && m.tagName !== "CANVAS";
+    const key = still && JSON.stringify([el.fx, el.fxAmount, el.crop, raw ? null : el.chroma, Math.round(w), Math.round(hh)]), hit = fxCache[el.id];
     if (still && hit && hit.key === key && hit.media === m) return hit.canvas;
-    const out = Studio.fxFrame(m, el, w, hh, performance.now() / 1000);
+    const out = Studio.fxFrame(m, el, w, hh, performance.now() / 1000, raw);
     if (!out || !still) return out;
     const copy = document.createElement("canvas");
     copy.width = out.width; copy.height = out.height; copy.getContext("2d").drawImage(out, 0, 0);
@@ -121,6 +124,8 @@ window.Stage = (() => {
     } else if (el.type === "pattern") {
       const pic = patternDrawable(el, w, hh);
       if (pic) ctx.drawImage(pic, -w / 2, -hh / 2, w, hh); else { ctx.fillStyle = el.pattern.colors[0]; ctx.fillRect(-w / 2, -hh / 2, w, hh); }
+    } else if (el.type === "scatter") {
+      drawScatter(el, b);
     } else if (el.type === "sound") {
       ctx.beginPath(); ctx.arc(0, 0, w / 2, 0, 7); ctx.fillStyle = "rgba(23,22,29,.86)"; ctx.fill();
       ctx.strokeStyle = "rgba(255,255,255,.75)"; ctx.lineWidth = 1.5 / zoom; ctx.stroke();
@@ -128,6 +133,126 @@ window.Stage = (() => {
       ctx.strokeStyle = "#fff"; ctx.lineWidth = 1.8; ctx.lineJoin = ctx.lineCap = "round";
       ctx.stroke(new Path2D("M4 10v4h4l5 4V6l-5 4H4zM16.5 8.5a5 5 0 0 1 0 7M19 6a8.5 8.5 0 0 1 0 12")); ctx.restore();
     } else standIn(el, w, hh);
+  }
+
+  // ---------- scatter along a path ----------
+  // The copies come from Studio.scatterCopies, like everywhere else; the look is worked out once and drawn at every copy.
+  // copyBoxes keeps where each copy landed on screen, for the colour picker.
+  const copyBoxes = {};
+  const scatterScale = (el, b) => b.w / ((el.w || 1) * view.W) || 1;
+  function drawScatter(el, b) {
+    const it = el.scatter.item, sc = scatterScale(el, b), copies = Studio.scatterCopies(App.rec, el).sort((p, q) => p.rank - q.rank);
+    const look = Object.assign({}, it, { id: el.id + "~look", assetId: el.assetId, _ownerId: el.id });
+    const iw = (it.w || 0.3) * view.W * sc, ih = (it.h != null ? it.h * view.H : (it.w || 0.3) * view.W / (it.aspect || 1)) * sc;
+    const m = el.assetId && App.media[el.assetId], kMax = Math.max(1, ...copies.map((c) => c.k));
+    let paint;
+    if ((it.type === "image" || it.type === "video") && mediaReady(m)) {
+      const fx = fxDrawable(look, m, iw * kMax, ih * kMax), c = it.crop || { x: 0, y: 0, w: 1, h: 1 }, ms = mediaSize(m);
+      paint = fx ? (w, hh) => ctx.drawImage(fx, -w / 2, -hh / 2, w, hh) : (w, hh) => ctx.drawImage(m, c.x * ms.w, c.y * ms.h, c.w * ms.w, c.h * ms.h, -w / 2, -hh / 2, w, hh);
+    } else if (it.type === "text") { const pic = textBitmap(look).canvas; paint = (w, hh) => ctx.drawImage(pic, -w / 2, -hh / 2, w, hh); }
+    else paint = (w, hh) => standIn(it, w, hh);
+    const boxesNow = copyBoxes[el.id] = [], co = Math.cos(b.rot), si = Math.sin(b.rot), op = it.opacity == null ? 1 : it.opacity;
+    for (const c of copies) {
+      const x = c.x * view.W * sc, y = -c.y * view.H * sc, w = iw * c.k, hh = ih * c.k, r = -c.rot * Math.PI / 180;
+      ctx.save(); ctx.translate(x, y); ctx.rotate(r); ctx.globalAlpha *= op; paint(w, hh); ctx.restore();
+      boxesNow.push({ i: c.i, cx: b.cx + x * co - y * si, cy: b.cy + x * si + y * co, w, h: hh, rot: b.rot + r });
+    }
+  }
+  // The line on screen (box frame of the layer): its drawn curve and the points she can drag.
+  function scatterPathPx(el, b) {
+    const g = Studio.geom(App.rec), sc = scatterScale(el, b), k = (v) => ({ x: v[0] / g.artW * view.W * sc, y: -v[1] / g.artH * view.H * sc });
+    return { line: Studio.scatterPath(App.rec, el.scatter).map(k), pts: el.scatter.points.map((p) => ({ x: (p.x || 0) * view.W * sc, y: -(p.y || 0) * view.H * sc })) };
+  }
+  function drawScatterPath(el, b) {
+    const px = 1 / zoom, P = scatterPathPx(el, b);
+    ctx.save(); ctx.translate(b.cx, b.cy); ctx.rotate(b.rot);
+    ctx.strokeStyle = "rgba(255,255,255,.9)"; ctx.lineWidth = 2 * px; ctx.setLineDash([6 * px, 5 * px]); ctx.shadowColor = "rgba(0,0,0,.6)"; ctx.shadowBlur = 3;
+    ctx.beginPath(); P.line.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y))); ctx.stroke(); ctx.setLineDash([]); ctx.shadowBlur = 0;
+    P.pts.forEach((q, i) => {
+      const on = pointSel && pointSel.id === el.id && pointSel.i === i;
+      ctx.beginPath(); ctx.arc(q.x, q.y, (on ? 10 : 8) * px, 0, 7); ctx.fillStyle = on ? ACCENT : "#fff"; ctx.fill(); ctx.strokeStyle = on ? "#fff" : ACCENT; ctx.lineWidth = 2.5 * px; ctx.stroke();
+      if (i === 0 || i === P.pts.length - 1) { ctx.fillStyle = on ? "#fff" : ACCENT; ctx.font = "700 " + 10 * px + "px Heebo, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle"; ctx.fillText(i ? "ס" : "ה", q.x, q.y + 0.5 * px); } // התחלה / סוף
+    });
+    ctx.restore();
+  }
+  function pointAt(el, p) {
+    const b = boxes[el.id]; if (!b || el.type !== "scatter") return -1;
+    const q = local(b, p), pts = scatterPathPx(el, b).pts, r = (GRAB + 2) / zoom;
+    let best = -1, d0 = r;
+    pts.forEach((h, i) => { const d = Math.hypot(q.x - h.x, q.y - h.y); if (d <= d0) { d0 = d; best = i; } });
+    return best;
+  }
+  let pointSel = null; // {id, i}: the point of a scatter line last touched (the inspector deletes it)
+
+  // ---------- drawing the line of a new scatter ----------
+  let drawing = null; // {srcId, straight, stroke: [screen points], taps: []}
+  function startScatter(srcId) {
+    if (App.mode3d) App.setMode3d(false);
+    if (App.cropping) App.setCropping(false);
+    picker = null;
+    drawing = { srcId, straight: false, stroke: null, taps: [], redraw: App.el(srcId) && App.el(srcId).type === "scatter" };
+    renderHint();
+  }
+  function stopDrawing() { drawing = null; renderHint(); }
+  // Keep a few points of a stroke (Ramer-Douglas-Peucker, loosened until at most 8 are left), never fewer than 3.
+  function simplify(pts) {
+    const rdp = (a, eps) => {
+      if (a.length < 3) return a;
+      const [s0, s1] = [a[0], a[a.length - 1]], L = Math.hypot(s1.x - s0.x, s1.y - s0.y) || 1;
+      let far = 0, at = 0;
+      for (let i = 1; i < a.length - 1; i++) { const d = Math.abs((s1.x - s0.x) * (s0.y - a[i].y) - (s0.x - a[i].x) * (s1.y - s0.y)) / L; if (d > far) { far = d; at = i; } }
+      return far > eps ? rdp(a.slice(0, at + 1), eps).slice(0, -1).concat(rdp(a.slice(at), eps)) : [s0, s1];
+    };
+    let eps = 4, out = rdp(pts, eps);
+    while (out.length > 8) { eps *= 1.5; out = rdp(pts, eps); }
+    if (out.length === 2) out = [out[0], { x: (out[0].x + out[1].x) / 2, y: (out[0].y + out[1].y) / 2 }, out[1]];
+    return out;
+  }
+  function finishLine(px, curved) {
+    const d = drawing; drawing = null; renderHint();
+    const pts = px.map((q) => ({ x: round((q.x - view.mx) / view.W - 0.5), y: round(0.5 - (q.y - view.my) / view.H), z: 0 }));
+    if (d.redraw) App.redrawScatter(d.srcId, pts, curved); else App.addScatter(d.srcId, pts, curved);
+  }
+  function drawStroke() {
+    if (!drawing) return;
+    const px = 1 / zoom;
+    ctx.save(); ctx.strokeStyle = ACCENT; ctx.lineWidth = 4 * px; ctx.lineCap = ctx.lineJoin = "round"; ctx.shadowColor = "rgba(0,0,0,.5)"; ctx.shadowBlur = 4;
+    const st = drawing.stroke;
+    if (st && st.length > 1) { ctx.beginPath(); st.forEach((q, i) => (i ? ctx.lineTo(q.x, q.y) : ctx.moveTo(q.x, q.y))); ctx.stroke(); }
+    for (const t of drawing.taps) { ctx.beginPath(); ctx.arc(t.x, t.y, 9 * px, 0, 7); ctx.fillStyle = "#fff"; ctx.fill(); ctx.stroke(); }
+    ctx.restore();
+  }
+
+  // ---------- the colour picker ----------
+  // After "לבחור צבע מהתמונה" the next touch on that layer takes the colour of its own picture under the finger.
+  function pickColor(id, done) {
+    if (App.mode3d) App.setMode3d(false);
+    if (App.cropping) App.setCropping(false);
+    drawing = null; picker = { id, done }; renderHint();
+  }
+  function stopPick() { picker = null; renderHint(); }
+  function pickAt(p) {
+    const el = App.el(picker.id); if (!el) return stopPick();
+    const item = el.type === "scatter" ? Object.assign({}, el.scatter.item, { assetId: el.assetId }) : el, m = App.media[el.assetId];
+    const under = (el.type === "scatter" ? (copyBoxes[el.id] || []).slice().reverse() : [boxes[el.id]]).find((b) => b && Math.abs(local(b, p).x) <= b.w / 2 && Math.abs(local(b, p).y) <= b.h / 2);
+    if (!under || !mediaReady(m)) return toast("נוגעים בתוך השכבה עצמה, על הצבע שרוצים להעלים");
+    const q = local(under, p), color = Studio.pixelAt(m, item, q.x / under.w + 0.5, q.y / under.h + 0.5);
+    if (!color) return toast("כאן אין צבע לקחת (המקום שקוף). נסי נקודה אחרת.");
+    const done = picker.done; stopPick(); done(color);
+  }
+
+  // A line of words over the stage while it waits for a touch (picking a colour, drawing a line), with its way out.
+  function renderHint() {
+    let bar = $("stage-hint");
+    if (!picker && !drawing) { if (bar) bar.remove(); draw(); return; }
+    if (!bar) { bar = h("div.stage-hint", { id: "stage-hint", role: "status" }); stage.append(bar); }
+    const cancel = h("button.btn.small", { type: "button", id: "stage-hint-cancel", onclick: () => { picker = null; drawing = null; renderHint(); } }, "ביטול");
+    if (picker) bar.replaceChildren(icon("pipette", 18), h("span", "נגעי בתמונה על הצבע שרוצים להעלים"), cancel);
+    else {
+      const straight = h("button.btn.small" + (drawing.straight ? ".primary" : ".ghost"), { type: "button", id: "stage-hint-straight", "aria-pressed": String(drawing.straight), onclick: () => { drawing.straight = !drawing.straight; drawing.taps = []; renderHint(); } }, "קו ישר");
+      bar.replaceChildren(icon("path", 18), h("span", drawing.straight ? "נגעי בנקודת ההתחלה ואז בנקודת הסוף" : "ציירי באצבע את הקו שעליו יתפזרו העותקים"), straight, cancel);
+    }
+    draw();
   }
 
   // ---------- crop ----------
@@ -248,7 +373,8 @@ window.Stage = (() => {
       if (guide.h) { ctx.moveTo(view.mx - 20, view.my + view.H / 2); ctx.lineTo(view.mx + view.W + 20, view.my + view.H / 2); }
       ctx.stroke(); ctx.restore();
     }
-    if (selEl && boxes[selEl.id]) { if (App.cropping) drawCrop(selEl); else drawMarks(selEl, boxes[selEl.id]); }
+    if (selEl && boxes[selEl.id]) { if (App.cropping) drawCrop(selEl); else { drawMarks(selEl, boxes[selEl.id]); if (selEl.type === "scatter" && !drawing) drawScatterPath(selEl, boxes[selEl.id]); } }
+    drawStroke();
   }
   function frame() { raf = requestAnimationFrame(frame); if (shown && !document.hidden) draw(); }
 
@@ -260,10 +386,11 @@ window.Stage = (() => {
   // Size at the start of a resize: the key's scale for a moving layer, the layer's own width otherwise.
   function sizeStart(el) {
     const k = App.editKey(el);
-    return k ? { k, s0: App.sample(el).scale || 1 } : { k: null, w0: el.w, h0: el.h };
+    return k ? { k, s0: App.sample(el).scale || 1 } : { k: null, w0: el.w, h0: el.h, sc0: el.type === "scatter" ? structuredClone(el.scatter) : null };
   }
   function sizeApply(el, st, ratio) {
     if (st.k) { App.keyAt(el, st.k.t).scale = round(clamp(st.s0 * ratio, 0.05, 4)); return; }
+    if (st.sc0) { Studio.scaleScatter(App.rec, el, clamp(ratio, 0.05 / st.w0, 3 / st.w0), st.sc0); return; }
     const w = clamp(st.w0 * ratio, 0.05, 2);
     el.w = round(w); if (st.h0 != null) el.h = round(st.h0 * w / st.w0);
   }
@@ -274,6 +401,15 @@ window.Stage = (() => {
     if (pointers.size === 2) return startPinch();
     if (pointers.size > 2) return;
     const p = pt(e), sel = App.sel();
+    if (picker) { pickAt(p); drag = { mode: "none" }; return; }
+    if (drawing) { drawing.stroke = [p]; drag = { mode: "stroke", sx: e.clientX, sy: e.clientY }; return; }
+    const pi = sel && !App.cropping ? pointAt(sel, p) : -1;
+    if (pi >= 0) {
+      pointSel = { id: sel.id, i: pi };
+      const pp = sel.scatter.points[pi];
+      drag = { mode: "point", id: sel.id, i: pi, q0: local(boxes[sel.id], p), x0: pp.x || 0, y0: pp.y || 0, sc: scatterScale(sel, boxes[sel.id]), moved: false };
+      App.emit("point"); return;
+    }
     if (App.cropping && sel) {
       const handle = cropHandleAt(sel, p);
       if (handle) drag = { mode: "crop", id: sel.id, handle, g: cropGeom(sel), q0: local(boxes[sel.id], p), moved: false };
@@ -304,8 +440,15 @@ window.Stage = (() => {
     if (!drag || pointers.size !== 1) return;
     // a drag on empty space carries the zoomed-in view
     if (drag.mode === "empty") { if (zoom > 1) setPan(drag.px + e.clientX - drag.sx, drag.py + e.clientY - drag.sy); return; }
+    if (drag.mode === "stroke") { const p = pt(e), st = drawing && drawing.stroke, last = st && st[st.length - 1]; if (last && Math.hypot(p.x - last.x, p.y - last.y) > 3 / zoom) st.push(p); return; }
     const el = App.el(drag.id), p = pt(e);
     if (drag.mode === "none" || !el) return;
+    if (drag.mode === "point") {
+      const q = local(boxes[el.id], p), pp = el.scatter.points[drag.i]; if (!pp) return;
+      if (!drag.moved && Math.hypot(q.x - drag.q0.x, q.y - drag.q0.y) < 4 / zoom) return;
+      pp.x = round(drag.x0 + (q.x - drag.q0.x) / (view.W * drag.sc)); pp.y = round(drag.y0 - (q.y - drag.q0.y) / (view.H * drag.sc));
+      drag.moved = true; App.changed(false); return;
+    }
     if (drag.mode === "crop") { cropMove(el, drag, p); drag.moved = true; App.changed(false); return; }
     if (drag.mode === "move") {
       if (!drag.moved) {
@@ -340,6 +483,20 @@ window.Stage = (() => {
     if (pinch) { if (pointers.size < 2) { const item = pinch.item; pinch = null; drag = { mode: "none" }; if (item) App.changed(true); } return; }
     const d = drag; if (pointers.size === 0) drag = null;
     guide = null;
+    if (d && d.mode === "stroke") {
+      if (!drawing || e.type === "pointercancel") return;
+      const st = drawing.stroke || [], len = st.reduce((n, q, i) => n + (i ? Math.hypot(q.x - st[i - 1].x, q.y - st[i - 1].y) : 0), 0);
+      drawing.stroke = null;
+      if (len < 14 / zoom) { // a tap: the ends of a straight line
+        drawing.taps.push(st[0] || pt(e));
+        if (drawing.taps.length === 2) { const [a, c] = drawing.taps; return finishLine([a, { x: (a.x + c.x) / 2, y: (a.y + c.y) / 2 }, c], false); }
+        if (!drawing.straight) { drawing.straight = true; renderHint(); }
+        return draw();
+      }
+      if (drawing.straight) { const a = st[0], c = st[st.length - 1]; return finishLine([a, { x: (a.x + c.x) / 2, y: (a.y + c.y) / 2 }, c], false); }
+      return finishLine(simplify(st), true);
+    }
+    if (d && d.mode === "point") { const el = App.el(d.id); if (d.moved && el) { Studio.refreshScatter(App.rec, el, true); App.changed(true); } return; }
     if (!d || e.type === "pointercancel") { if (d && d.moved) App.changed(true); return; }
     if (d.moved) { App.changed(true); return; }
     if (d.mode === "empty") { if (Math.hypot(e.clientX - d.sx, e.clientY - d.sy) < 8) App.select(null); return; }
@@ -408,6 +565,7 @@ window.Stage = (() => {
     const btn = (name, label, run, on) => h("button.icon-btn" + (on ? ".on" : ""), { title: label, "aria-label": label, onclick: run }, icon(name, 18));
     bar.append(h("span.sel-name", el.name || ""));
     if (CROP_TYPES.includes(el.type) && !App.mode3d) bar.append(btn("crop", "חיתוך", () => App.setCropping(!App.cropping), App.cropping));
+    if (Studio.SCATTER_TYPES.includes(el.type)) bar.append(btn("path", "פיזור על נתיב", () => App.scatterFrom(el.id)));
     bar.append(btn("lock", "נעילה במקום", () => { App.setLocked(el.id, true); toast("השכבה ננעלה. משחררים אותה מרשימת השכבות."); }),
       btn("copy", "שכפול", () => App.duplicateLayer(el.id)), btn("trash", "מחיקה", () => App.removeLayer(el.id)));
   }
@@ -434,7 +592,8 @@ window.Stage = (() => {
       sampleEl: (el) => (App.rec ? App.sample(el) : null), clockFor: () => App.clock(),
       freezeAt: (t) => App.freeze(t), getFrozen: () => App.frozen, restoreFrozen: (t) => App.freeze(t),
       onGate: (text) => toast(text), getView2d: () => ({ view, zoom, pan }),
-      getArt: () => ({ pic: App.art, blob: App.artBlob }), getCropId: () => (App.cropping ? App.selId : null)
+      getArt: () => ({ pic: App.art, blob: App.artBlob }), getCropId: () => (App.cropping ? App.selId : null),
+      onPoint: (id, i) => { pointSel = i == null ? null : { id, i }; }
     });
     canvas.addEventListener("pointerdown", onDown);
     canvas.addEventListener("pointermove", onMove);
@@ -454,7 +613,7 @@ window.Stage = (() => {
     $("btn-snap").onclick = () => { App.snap = !App.snap; $("btn-snap").classList.toggle("on", App.snap); $("btn-snap").setAttribute("aria-pressed", String(App.snap)); toast(App.snap ? "הצמדה למרכז פועלת" : "הצמדה למרכז כבויה"); };
     $("btn-time-live").onclick = () => App.freeze(null);
     App.on("open", () => { setZoom(1); for (const k in textCache) delete textCache[k]; layout(); renderEmpty(); applyMode(); renderTime(); });
-    App.on("select", () => { if (App.mode3d) Editor3D.refreshGizmo(); stage.classList.toggle("is-crop", App.cropping); renderBar(); });
+    App.on("select", () => { if (App.mode3d) Editor3D.refreshGizmo(); stage.classList.toggle("is-crop", App.cropping); if (!App.sel() || App.sel().id !== (pointSel && pointSel.id)) pointSel = null; if (picker && App.selId !== picker.id) stopPick(); renderBar(); });
     App.on("structure", () => { layout(); renderEmpty(); renderBar(); });
     App.on("change", () => { const el = App.sel(); if (el && $("sel-bar").firstChild && $("sel-bar").firstChild.textContent !== (el.name || "")) renderBar(); });
     App.on("mode", applyMode);
@@ -462,6 +621,8 @@ window.Stage = (() => {
     $("btn-art-retry").onclick = () => App.loadArt();
     $("btn-art-replace").onclick = () => Layers.pickArtwork();
     App.on("time", renderTime);
+    App.on("close open", () => { picker = null; drawing = null; pointSel = null; renderHint(); });
+    App.on("mode", () => { if (App.mode3d && (picker || drawing)) { picker = null; drawing = null; renderHint(); } });
     App.on("close", () => { if (Editor3D.isActive()) Editor3D.hide(); Editor3D.overlay(false); });
     raf = requestAnimationFrame(frame);
   }
@@ -470,5 +631,7 @@ window.Stage = (() => {
     if (shown) { layout(); applyMode(); } else { if (Editor3D.isActive()) Editor3D.hide(); Editor3D.overlay(false); }
   }
 
-  return { init, show, layout, draw, nudge, fitText, setCropRatio, resetCrop, get cropRatio() { return cropRatio; }, get view() { return view; }, get zoom() { return zoom; }, get pan() { return pan; }, boxes, CROP_TYPES };
+  return { init, show, layout, draw, nudge, fitText, setCropRatio, resetCrop, pickColor, stopPick, startScatter, stopDrawing, copyBoxes,
+    get picking() { return picker ? picker.id : null; }, get drawing() { return drawing ? { srcId: drawing.srcId, straight: drawing.straight, taps: drawing.taps.length } : null; },
+    get pointSel() { return pointSel; }, set pointSel(v) { pointSel = v; }, get cropRatio() { return cropRatio; }, get view() { return view; }, get zoom() { return zoom; }, get pan() { return pan; }, boxes, CROP_TYPES };
 })();

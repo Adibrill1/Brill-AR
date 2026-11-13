@@ -42,13 +42,14 @@
   for (const el of rec.elements) {
     if (!el.assetId || !rec.assets[el.assetId]) continue;
     const url = URL.createObjectURL(rec.assets[el.assetId]);
-    if (el.type === "video") {
+    const kind = Studio.mediaType(el); // a scatter layer reads its file like the layer it was made from
+    if (kind === "video") {
       const v = document.createElement("video");
       v.id = "m-" + el.id; v.src = url; v.muted = true; v.loop = el.loop !== false;
       v.setAttribute("playsinline", ""); v.setAttribute("webkit-playsinline", "");
       v.setAttribute("crossorigin", "anonymous"); v.preload = "auto";
       assets.appendChild(v); mediaEls.push({ kind: "video", node: v, el });
-    } else if (el.type === "image") {
+    } else if (kind === "image") {
       const mm = await Studio.makeImageMedia(rec.assets[el.assetId], "m-" + el.id,
         () => document.querySelector('[data-el-id="' + el.id + '"]'));
       assets.appendChild(mm.node);

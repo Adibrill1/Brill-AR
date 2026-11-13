@@ -477,11 +477,24 @@ const Studio = (() => {
   const FX_GLSL = `
 #if defined(USE_MAP) || defined(BA_FX_SHADER)
 uniform float baMode; uniform float baAmount; uniform float baTime; uniform vec2 baScale; uniform vec2 baTexel; uniform sampler2D baGlyphs;
+uniform float baKey; uniform vec3 baKeyColor; uniform float baKeyThresh; uniform float baKeySoft; uniform float baLinear;
 float baLum(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
 float baHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 vec2 baUv(vec2 p) { return p / baScale; }
+vec3 baToSrgb(vec3 c) { return mix(c * 12.92, pow(max(c, 0.0), vec3(1.0 / 2.4)) * 1.055 - 0.055, step(0.0031308, c)); }
+vec3 baToLin(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c)); }
+// One texel with the colour removal applied (baKey 1: the picked colour, in the sRGB values she picked it from; 2: a black
+// "glow" key, alpha follows brightness). Every filter reads through it, so the removed colour stays gone under any look.
+vec4 baTex(vec2 uv) {
+  vec4 c = texture2D(map, uv);
+  if (baKey < 0.5) return c;
+  vec3 s = baLinear > 0.5 ? baToSrgb(c.rgb) : c.rgb;
+  if (baKey > 1.5) { float m = max(s.r, max(s.g, s.b)); if (m < baKeyThresh * 0.15) return vec4(0.0); vec3 o = s / m; return vec4(baLinear > 0.5 ? baToLin(o) : o, c.a * m); }
+  float d = distance(s, baKeyColor);
+  return vec4(c.rgb, c.a * (baKeySoft > 0.0001 ? smoothstep(baKeyThresh, baKeyThresh + baKeySoft, d) : step(baKeyThresh, d)));
+}
 vec4 baFilter(vec2 uv) {
-  vec4 src = texture2D(map, uv);
+  vec4 src = baTex(uv);
   vec2 p = uv * baScale;
   float a = clamp(baAmount, 0.0, 1.0);
   if (baMode < 0.5) return src;
@@ -489,14 +502,14 @@ vec4 baFilter(vec2 uv) {
     float cell = mix(0.012, 0.06, a);
     mat2 turn = mat2(0.7071, 0.7071, -0.7071, 0.7071), back = mat2(0.7071, -0.7071, 0.7071, 0.7071);
     vec2 q = turn * p / cell, mid = floor(q) + 0.5;
-    vec4 c = texture2D(map, baUv(back * mid * cell));
+    vec4 c = baTex(baUv(back * mid * cell));
     float r = sqrt(1.0 - baLum(c.rgb)) * 0.64, ink = 1.0 - smoothstep(r - 0.07, r + 0.07, length(q - mid));
     return vec4(mix(vec3(0.95, 0.92, 0.85), c.rgb * 0.85, ink), src.a);
   }
   if (baMode < 2.5) { // letters: the picture rebuilt from Hebrew letters and signs, fuller ones where it is brighter, on black
     float cell = mix(0.018, 0.07, a);
     vec2 q = p / cell, mid = floor(q) + 0.5, g = fract(q);
-    vec4 c = texture2D(map, baUv(mid * cell));
+    vec4 c = baTex(baUv(mid * cell));
     float idx = floor(clamp(baLum(c.rgb), 0.0, 0.999) * 12.0);
     float m = texture2D(baGlyphs, vec2((idx + g.x) / 12.0, g.y)).r;
     return vec4(min(c.rgb * 1.3 + 0.05, 1.0) * m, src.a);
@@ -506,7 +519,7 @@ vec4 baFilter(vec2 uv) {
     float jump = step(0.985 - a * 0.06, baHash(vec2(line * 0.07, tick))) * (baHash(vec2(line, tick)) - 0.5) * 0.08 * a;
     vec2 u = vec2(uv.x + jump + sin(uv.y * 30.0 + baTime * 3.0) * 0.002 * a + sin(uv.y * 3.0 - baTime * 1.3) * 0.004 * a, uv.y);
     float sh = 0.002 + 0.012 * a;
-    vec4 r = texture2D(map, u + vec2(sh, 0.0)), gr = texture2D(map, u), b = texture2D(map, u - vec2(sh, 0.0));
+    vec4 r = baTex(u + vec2(sh, 0.0)), gr = baTex(u), b = baTex(u - vec2(sh, 0.0));
     vec3 col = vec3(r.r, gr.g, b.b) * (0.88 + 0.12 * sin(p.y * 900.0)) + (baHash(uv * 500.0 + baTime) - 0.5) * 0.14 * a;
     return vec4(col * vec3(1.04, 0.96, 1.08), max(src.a, max(r.a, b.a)));
   }
@@ -515,21 +528,21 @@ vec4 baFilter(vec2 uv) {
     vec2 mid = 0.5 * baScale, d = p - mid;
     float ang = mod(atan(d.y, d.x) + baTime * 0.15, w);
     vec2 u = baUv(mid + length(d) * vec2(cos(abs(ang - w * 0.5)), sin(abs(ang - w * 0.5))));
-    return texture2D(map, 1.0 - abs(1.0 - mod(u, 2.0)));
+    return baTex(1.0 - abs(1.0 - mod(u, 2.0)));
   }
   if (baMode < 5.5) { // paper cut: a few flat layers of coloured paper, each casting a soft shadow on the one below
     float n = floor(mix(3.0, 8.0, a) + 0.5);
     vec2 o = baTexel * 2.0;
-    vec4 c = (texture2D(map, uv) * 2.0 + texture2D(map, uv + vec2(o.x, 0.0)) + texture2D(map, uv - vec2(o.x, 0.0)) + texture2D(map, uv + vec2(0.0, o.y)) + texture2D(map, uv - vec2(0.0, o.y))) / 6.0;
+    vec4 c = (baTex(uv) * 2.0 + baTex(uv + vec2(o.x, 0.0)) + baTex(uv - vec2(o.x, 0.0)) + baTex(uv + vec2(0.0, o.y)) + baTex(uv - vec2(0.0, o.y))) / 6.0;
     float l = floor(baLum(c.rgb) * n) / n;
-    float above = floor(baLum(texture2D(map, uv + vec2(-0.008, 0.01) / baScale).rgb) * n) / n;
+    float above = floor(baLum(baTex(uv + vec2(-0.008, 0.01) / baScale).rgb) * n) / n;
     vec3 col = min(c.rgb * (l + 0.5 / n) / max(baLum(c.rgb), 0.04), 1.0) * (0.94 + 0.06 * baHash(floor(p * 400.0)));
     return vec4(col * (above > l + 0.001 ? 0.72 : 1.0), src.a);
   }
   // fluted glass: each rib flips and magnifies what is behind it, softly, with a sheen at its edges
   float w = 1.0 / floor(mix(8.0, 40.0, a) + 0.5), k = p.x / w, local = fract(k) - 0.5;
   vec2 u = baUv(vec2((floor(k) + 0.5 - local * 0.8) * w, p.y + sin(p.y * 6.0 + baTime * 0.4) * 0.004));
-  vec4 c = (texture2D(map, u) + texture2D(map, u + vec2(baTexel.x * 1.5, 0.0)) + texture2D(map, u - vec2(baTexel.x * 1.5, 0.0))) / 3.0;
+  vec4 c = (baTex(u) + baTex(u + vec2(baTexel.x * 1.5, 0.0)) + baTex(u - vec2(baTexel.x * 1.5, 0.0))) / 3.0;
   return vec4(c.rgb * (0.92 + 0.08 * cos(local * 6.28318)) + smoothstep(0.4, 0.5, abs(local)) * 0.18, src.a);
 }
 #endif
@@ -538,6 +551,42 @@ vec4 baFilter(vec2 uv) {
   function fxAmount(el) { return Number.isFinite(el.fxAmount) ? Math.max(0, Math.min(1, el.fxAmount)) : 0.5; }
   function fxScale(el, w, h) { const c = el.crop || { w: 1, h: 1 }; return [(w / h) / c.w, 1 / c.h]; }
   function validFx(el) { return (el.fx == null || ["image", "video"].includes(el.type) && FX_IDS.includes(el.fx)) && (el.fxAmount == null || Number.isFinite(el.fxAmount) && el.fxAmount >= 0 && el.fxAmount <= 1); }
+  // ---------- colour removal ("הסרת צבע") ----------
+  // el.chroma = {enabled, color, threshold, soft} on a picture (also an animated GIF) or a video: texels within threshold
+  // of the colour vanish, and soft (0 = the hard cut every older creation had) feathers the edge. A near-black colour is
+  // the soft glow key for light effects drawn on black. It runs inside baTex, so the 3D/AR material, the filters and
+  // the 2D editor (fxFrame) all remove the same pixels.
+  const CHROMA_DEFAULT = { enabled: false, color: "#00ff00", threshold: 0.35, soft: 0 };
+  const srgbToLin = (v) => (v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4));
+  function keyValues(el) {
+    const k = el && ["image", "video"].includes(el.type) && el.chroma;
+    if (!k || !k.enabled) return null;
+    const rgb = /^#[0-9a-f]{6}$/i.test(k.color || "") ? hexRgb(k.color) : [0, 1, 0];
+    return { mode: rgb.reduce((n, v) => n + srgbToLin(v), 0) < 0.15 ? 2 : 1, rgb, thresh: Number.isFinite(k.threshold) ? k.threshold : 0.35, soft: Number.isFinite(k.soft) ? Math.max(0, k.soft) : 0 };
+  }
+  function validChroma(el) {
+    const k = el.chroma; if (k == null) return true;
+    if (typeof k !== "object" || Array.isArray(k) || !["image", "video"].includes(el.type)) return false;
+    if (k.enabled != null && typeof k.enabled !== "boolean") return false;
+    if (k.color != null && (typeof k.color !== "string" || k.color.length > 32)) return false;
+    return [["threshold", 0, 2], ["soft", 0, 1]].every(([f, lo, hi]) => k[f] == null || Number.isFinite(k[f]) && k[f] >= lo && k[f] <= hi);
+  }
+  // The colour of one pixel of a layer's own picture (not of the screen): u, v from its top left, inside its crop.
+  let pickCanvas = null;
+  function pixelAt(media, el, u, v) {
+    const iw = media.videoWidth || media.naturalWidth || media.width, ih = media.videoHeight || media.naturalHeight || media.height;
+    if (!iw || !ih) return null;
+    const c = el.crop || { x: 0, y: 0, w: 1, h: 1 }, sx = Math.min(iw - 1, Math.max(0, Math.floor((c.x + u * c.w) * iw))), sy = Math.min(ih - 1, Math.max(0, Math.floor((c.y + v * c.h) * ih)));
+    try {
+      if (!pickCanvas) pickCanvas = document.createElement("canvas").getContext("2d", { willReadFrequently: true });
+      pickCanvas.canvas.width = pickCanvas.canvas.height = 3;
+      pickCanvas.clearRect(0, 0, 3, 3); pickCanvas.drawImage(media, sx - 1, sy - 1, 3, 3, 0, 0, 3, 3); // the pixel and its neighbours, averaged
+      const d = pickCanvas.getImageData(0, 0, 3, 3).data; let r = 0, g = 0, b = 0, n = 0;
+      for (let i = 0; i < d.length; i += 4) if (d[i + 3] > 8) { r += d[i]; g += d[i + 1]; b += d[i + 2]; n++; }
+      if (!n) return null;
+      return "#" + [r, g, b].map((x) => Math.round(x / n).toString(16).padStart(2, "0")).join("");
+    } catch (e) { return null; }
+  }
   let fxGlyphCanvas = null, fxGlyphTexture = null;
   function fxGlyphs() { // 12 letters and signs from emptiest to fullest, white on black, one 64px cell each in a row
     if (fxGlyphCanvas) return fxGlyphCanvas;
@@ -552,7 +601,8 @@ vec4 baFilter(vec2 uv) {
     return (fxGlyphCanvas = c);
   }
   // Swap the texture lookup in a layer's own material for baFilter: three's built-in materials through their map
-  // chunk, our ShaderMaterials (the chroma key) through their texture2D(map, vUv).
+  // chunk (a texel the colour removal emptied is discarded there, so it cannot punch a hole in the depth buffer), our
+  // ShaderMaterials through their texture2D(map, vUv).
   function patchFxMaterial(mat, uniforms) {
     if (!mat || mat._studioFx === uniforms || !(mat.isShaderMaterial ? mat.uniforms && mat.uniforms.map : "map" in mat)) return;
     mat._studioFx = uniforms;
@@ -561,7 +611,7 @@ vec4 baFilter(vec2 uv) {
       Object.assign(shader.uniforms, uniforms);
       const fs = shader.fragmentShader.replace(/void main\(\)\s*\{/, FX_GLSL + "\nvoid main() {");
       shader.fragmentShader = mat.isShaderMaterial ? fs.replace("texture2D(map, vUv)", "baFilter(vUv)")
-        : fs.replace("#include <map_fragment>", THREE.ShaderChunk.map_fragment.replace(/texture2D\(\s*map,\s*(vMapUv|vUv)\s*\)/, "baFilter( $1 )"));
+        : fs.replace("#include <map_fragment>", THREE.ShaderChunk.map_fragment.replace(/texture2D\(\s*map,\s*(vMapUv|vUv)\s*\)/, "baFilter( $1 )") + "\nif (baKey > 0.5 && diffuseColor.a < 0.002) discard;");
     };
     mat.customProgramCacheKey = () => "studio-fx";
     mat.needsUpdate = true;
@@ -569,18 +619,25 @@ vec4 baFilter(vec2 uv) {
   function ensureFxComponent() {
     if (!window.AFRAME || AFRAME.components["studio-fx"]) return;
     AFRAME.registerComponent("studio-fx", {
-      schema: { mode: { default: 0 }, amount: { default: 0.5 }, sx: { default: 1 }, sy: { default: 1 } },
+      schema: { mode: { default: 0 }, amount: { default: 0.5 }, sx: { default: 1 }, sy: { default: 1 }, key: { default: 0 }, kc: { default: "#00ff00" }, thresh: { default: 0.35 }, soft: { default: 0 } },
       init() {
         if (!fxGlyphTexture) { fxGlyphTexture = new THREE.CanvasTexture(fxGlyphs()); fxGlyphTexture.generateMipmaps = false; fxGlyphTexture.minFilter = THREE.LinearFilter; }
-        this.uniforms = { baMode: { value: 0 }, baAmount: { value: 0.5 }, baTime: { value: 0 }, baScale: { value: new THREE.Vector2(1, 1) }, baTexel: { value: new THREE.Vector2(1 / 512, 1 / 512) }, baGlyphs: { value: fxGlyphTexture } };
+        this.uniforms = { baMode: { value: 0 }, baAmount: { value: 0.5 }, baTime: { value: 0 }, baScale: { value: new THREE.Vector2(1, 1) }, baTexel: { value: new THREE.Vector2(1 / 512, 1 / 512) }, baGlyphs: { value: fxGlyphTexture },
+          baKey: { value: 0 }, baKeyColor: { value: new THREE.Vector3(0, 1, 0) }, baKeyThresh: { value: 0.35 }, baKeySoft: { value: 0 }, baLinear: { value: 0 } };
       },
-      update() { const u = this.uniforms; u.baMode.value = this.data.mode; u.baAmount.value = this.data.amount; u.baScale.value.set(this.data.sx, this.data.sy); },
+      update() {
+        const u = this.uniforms, d = this.data; u.baMode.value = d.mode; u.baAmount.value = d.amount; u.baScale.value.set(d.sx, d.sy);
+        u.baKey.value = d.key; u.baKeyColor.value.fromArray(/^#[0-9a-f]{6}$/i.test(d.kc) ? hexRgb(d.kc) : [0, 1, 0]); u.baKeyThresh.value = d.thresh; u.baKeySoft.value = d.soft;
+      },
       tick(time) { // the material can arrive late or be rebuilt (texture load, chroma mount), so it is checked every frame
         this.uniforms.baTime.value = time / 1000;
         this.el.object3D.traverse((n) => {
           if (!n.isMesh) return;
           patchFxMaterial(n.material, this.uniforms);
+          if (this.data.key && n.material && !n.material.transparent) { n.material.transparent = true; n.material.needsUpdate = true; } // a soft edge needs blending
           const tex = n.material && (n.material.map || n.material.uniforms && n.material.uniforms.map && n.material.uniforms.map.value), img = tex && tex.image;
+          // the removal compares sRGB values: an sRGB picture is decoded to linear before the shader sees it, a video is decoded after
+          if (tex) this.uniforms.baLinear.value = tex.colorSpace === "srgb" && !tex.isVideoTexture && !n.material.isShaderMaterial ? 1 : 0;
           const w = img && (img.videoWidth || img.naturalWidth || img.width), h = img && (img.videoHeight || img.naturalHeight || img.height);
           if (w && h) this.uniforms.baTexel.value.set(1 / w, 1 / h);
         });
@@ -588,11 +645,11 @@ vec4 baFilter(vec2 uv) {
     });
   }
   // The 2D editor's copy: draws media (cropped to el.crop) through baFilter into a canvas of the given size, or
-  // returns null when the layer has no filter or WebGL is missing (the caller then draws the media plainly).
+  // returns null when the layer has no filter, no colour removal, or WebGL is missing (the caller then draws it plainly).
   let fxGL;
-  function fxFrame(media, el, wpx, hpx, timeSec) {
-    const mode = fxMode(el);
-    if (!mode) return null;
+  function fxFrame(media, el, wpx, hpx, timeSec, noKey) {
+    const mode = fxMode(el), key = noKey ? null : keyValues(el);
+    if (!mode && !key) return null;
     if (fxGL === undefined) {
       fxGL = null;
       try {
@@ -611,7 +668,7 @@ vec4 baFilter(vec2 uv) {
         texture(1, fxGlyphs()); texture(0, null);
         const u = (n) => gl.getUniformLocation(prog, n);
         gl.uniform1i(u("map"), 0); gl.uniform1i(u("baGlyphs"), 1);
-        fxGL = { c, gl, u: { crop: u("crop"), mode: u("baMode"), amount: u("baAmount"), time: u("baTime"), scale: u("baScale"), texel: u("baTexel") } };
+        fxGL = { c, gl, u: { crop: u("crop"), mode: u("baMode"), amount: u("baAmount"), time: u("baTime"), scale: u("baScale"), texel: u("baTexel"), key: u("baKey"), kc: u("baKeyColor"), thresh: u("baKeyThresh"), soft: u("baKeySoft"), lin: u("baLinear") } };
       } catch (e) { console.warn("filter preview unavailable", e); }
     }
     if (!fxGL) return null;
@@ -626,6 +683,7 @@ vec4 baFilter(vec2 uv) {
     const s = fxScale(el, wpx, hpx);
     gl.uniform4f(u.crop, cr.x, 1 - cr.y - cr.h, cr.w, cr.h); gl.uniform1f(u.mode, mode); gl.uniform1f(u.amount, fxAmount(el)); gl.uniform1f(u.time, timeSec || 0);
     gl.uniform2f(u.scale, s[0], s[1]); gl.uniform2f(u.texel, 1 / iw, 1 / ih);
+    gl.uniform1f(u.key, key ? key.mode : 0); gl.uniform3fv(u.kc, key ? key.rgb : [0, 1, 0]); gl.uniform1f(u.thresh, key ? key.thresh : 0.35); gl.uniform1f(u.soft, key ? key.soft : 0); gl.uniform1f(u.lin, 0);
     gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     return c;
   }
@@ -1280,6 +1338,189 @@ vec4 bpPattern(vec2 uv) {
     Object.assign(group, changes);
   }
 
+  // ---------- scatter along a path ("פיזור על נתיב") ----------
+  // A scatter layer spreads copies of one look along a line in 3D. el.scatter = {item, points, curved, count, spacing,
+  // size, amount, facing}: item is a snapshot of the source layer's look (its file is the scatter's own el.assetId,
+  // the same stored file, not a copy); points are 2 or more {x, y, z} relative to the layer's own x, y, z (x, y in
+  // artwork units, z in depth units, like any layer), so moving, turning, sizing and animating the layer act on the whole
+  // line the way they do on a group. The copies are computed here, at draw time, by scatterCopies - the one answer the
+  // flat editor, the 3D editor, the preview and the camera all use.
+  const SCATTER_TYPES = ["image", "video", "text", "model"];
+  const SCATTER_MAX = { image: 60, text: 60, video: 16, model: 12 }; // fewer for videos and models: a phone draws each one
+  const SCATTER_SPACING = ["even", "grow", "shrink"], SCATTER_SIZE = ["constant", "grow", "shrink"], SCATTER_FACING = ["keep", "follow"];
+  const SCATTER_DROP = ["id", "name", "x", "y", "z", "timeline", "seq", "track", "onTap", "tapUrl", "anim", "spin", "locked", "assetId", "children", "flush", "scatter", "spatial", "spatialMode", "spatialInner", "spatialOuter", "_ownerId"];
+  const mediaType = (el) => (el && el.type === "scatter" ? (el.scatter && el.scatter.item && el.scatter.item.type) || "" : el && el.type);
+  function scatterItem(src) { const it = structuredClone(src); for (const k of SCATTER_DROP) delete it[k]; return it; }
+  function scatterLimit(el) { return SCATTER_MAX[mediaType(el)] || 60; }
+  // The line in world units relative to the layer: the points themselves (straight), or a smooth curve through them
+  // (centripetal Catmull-Rom, which never loops or overshoots at sharp turns).
+  function scatterPath(rec, sc) {
+    const g = geom(rec), P = (sc.points || []).map((p) => [(p.x || 0) * g.artW, (p.y || 0) * g.artH, p.z || 0]);
+    if (!sc.curved || P.length < 3) return P;
+    const out = [], d = (a, b) => Math.pow(Math.hypot(a[0] - b[0], a[1] - b[1], a[2] - b[2]) || 1e-6, 0.5);
+    const ext = [P[0].map((v, i) => 2 * v - P[1][i]), ...P, P[P.length - 1].map((v, i) => 2 * v - P[P.length - 2][i])];
+    for (let s = 1; s < ext.length - 2; s++) {
+      const [p0, p1, p2, p3] = [ext[s - 1], ext[s], ext[s + 1], ext[s + 2]];
+      const t1 = d(p0, p1), t2 = t1 + d(p1, p2), t3 = t2 + d(p2, p3);
+      for (let j = 0; j < 16; j++) {
+        const t = t1 + (t2 - t1) * j / 16, L = (a, b, ta, tb) => a.map((v, i) => (tb - t) / (tb - ta) * v + (t - ta) / (tb - ta) * b[i]);
+        const a1 = L(p0, p1, 0, t1), a2 = L(p1, p2, t1, t2), a3 = L(p2, p3, t2, t3);
+        out.push(L(L(a1, a2, 0, t2), L(a2, a3, t1, t3), t1, t2));
+      }
+    }
+    out.push(P[P.length - 1]);
+    return out;
+  }
+  // The copies: [{i, x, y, z, k, rot, rank}] - x, y in artwork units and z in depth units relative to the layer, k the
+  // size against the item, rot its turn in the picture's plane, rank the drawing order (farthest from the viewer first).
+  function scatterCopies(rec, el) {
+    const sc = el.scatter, it = sc && sc.item;
+    if (!it || !Array.isArray(sc.points) || sc.points.length < 2) return [];
+    const g = geom(rec), n = Math.max(1, Math.min(scatterLimit(el), Math.round(sc.count) || 1)), path = scatterPath(rec, sc);
+    const cum = [0]; for (let i = 1; i < path.length; i++) cum.push(cum[i - 1] + Math.hypot(path[i][0] - path[i - 1][0], path[i][1] - path[i - 1][1], path[i][2] - path[i - 1][2]));
+    const total = cum[cum.length - 1], amount = Math.max(1, Math.min(6, sc.amount || 2)), out = [];
+    for (let i = 0; i < n; i++) {
+      const u = n === 1 ? 0 : i / (n - 1), t = sc.spacing === "grow" ? Math.pow(u, 1.8) : sc.spacing === "shrink" ? 1 - Math.pow(1 - u, 1.8) : u;
+      const want = t * total; let j = 1; while (j < path.length - 1 && cum[j] < want) j++;
+      const a = path[j - 1] || path[0], b = path[j] || a, f = cum[j] - cum[j - 1] > 1e-9 ? (want - cum[j - 1]) / (cum[j] - cum[j - 1]) : 0;
+      const pos = a.map((v, q) => v + (b[q] - v) * Math.max(0, Math.min(1, f)));
+      const k = sc.size === "grow" ? 1 + (amount - 1) * u : sc.size === "shrink" ? 1 + (1 / amount - 1) * u : 1;
+      const turn = sc.facing === "follow" && Math.hypot(b[0] - a[0], b[1] - a[1]) > 1e-9 ? Math.atan2(b[1] - a[1], b[0] - a[0]) * 180 / Math.PI : 0;
+      out.push({ i, x: pos[0] / g.artW, y: pos[1] / g.artH, z: pos[2], k, rot: (it.rot || 0) + turn });
+    }
+    out.slice().sort((p, q) => p.z - q.z || p.i - q.i).forEach((c, r) => { c.rank = r; });
+    return out;
+  }
+  // One copy as an ordinary layer, placed in the scatter's own (unturned) frame: everything that draws a layer draws it.
+  function scatterCopyEl(el, c) {
+    const it = el.scatter.item;
+    return Object.assign({}, it, { id: el.id + "~" + c.i, assetId: el.assetId, x: (el.x || 0) + c.x, y: (el.y || 0) + c.y, z: (el.z || 0) + c.z,
+      w: (it.w || 0.3) * c.k, h: it.h != null ? it.h * c.k : null, rot: c.rot, flush: el.flush !== false, seq: null, _ownerId: el.id });
+  }
+  // The box around the copies (artwork units, in the layer's frame) - what the flat editor selects and shows.
+  function scatterBounds(rec, el) {
+    const it = el.scatter.item, r = geom(rec).artW / geom(rec).artH, ih = it.h != null ? it.h : (it.w || 0.3) / (it.aspect || 1) * r;
+    let x0 = Infinity, x1 = -Infinity, y0 = Infinity, y1 = -Infinity;
+    const add = (x, y, hw, hh) => { x0 = Math.min(x0, x - hw); x1 = Math.max(x1, x + hw); y0 = Math.min(y0, y - hh); y1 = Math.max(y1, y + hh); };
+    for (const c of scatterCopies(rec, el)) add(c.x, c.y, (it.w || 0.3) * c.k / 2, ih * c.k / 2);
+    for (const p of el.scatter.points) add(p.x || 0, p.y || 0, 0, 0);
+    if (!(x1 >= x0)) return { cx: 0, cy: 0, w: 0.1, h: 0.1 };
+    return { cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, w: Math.max(0.02, x1 - x0), h: Math.max(0.02, y1 - y0) };
+  }
+  // After any change to the line or the copies: the layer's w/h follow the copies, and (when nothing keyed depends on
+  // the layer's place) its own x, y move to the middle of them, so its box, handles and turning point sit on the copies.
+  function refreshScatter(rec, el, recenter) {
+    const b = scatterBounds(rec, el), g = geom(rec), r = g.artW / g.artH;
+    const keyed = el.timeline && Array.isArray(el.timeline.keys) && el.timeline.keys.length;
+    if (recenter && !keyed && (Math.abs(b.cx) > 1e-4 || Math.abs(b.cy) > 1e-4)) {
+      const a = (el.rot || 0) * Math.PI / 180, dx = b.cx * r, dy = b.cy;
+      el.x = (el.x || 0) + (dx * Math.cos(a) - dy * Math.sin(a)) / r; el.y = (el.y || 0) + dx * Math.sin(a) + dy * Math.cos(a);
+      for (const p of el.scatter.points) { p.x = (p.x || 0) - b.cx; p.y = (p.y || 0) - b.cy; }
+      b.cx = b.cy = 0;
+    }
+    el.w = Math.round(b.w * 10000) / 10000; el.h = Math.round(b.h * 10000) / 10000; el.aspect = (el.w * g.artW) / (el.h * g.artH);
+    return el;
+  }
+  // A new scatter from a layer and a drawn line (absolute artwork points; z 0 = on the picture).
+  function makeScatter(rec, src, pts, opts) {
+    const o = opts || {};
+    const it = scatterItem(src), x = pts.reduce((n, p) => n + p.x, 0) / pts.length, y = pts.reduce((n, p) => n + p.y, 0) / pts.length;
+    const el = { id: newId(), type: "scatter", name: "פיזור: " + (src.name || ""), x, y, z: 0, rot: 0, opacity: 1, flush: true, seq: null, assetId: src.assetId,
+      scatter: { item: it, points: pts.map((p) => ({ x: p.x - x, y: p.y - y, z: p.z || 0 })), curved: o.curved !== false, count: Math.min(o.count || 12, SCATTER_MAX[it.type] || 60), spacing: "even", size: "constant", amount: 2, facing: "keep" } };
+    if (!el.assetId) delete el.assetId;
+    return refreshScatter(rec, el, true);
+  }
+  // Size the whole scatter by k around its own place: the line and the copies together.
+  function scaleScatter(rec, el, k, from) {
+    const sc = from || el.scatter;
+    el.scatter = Object.assign({}, sc, { points: sc.points.map((p) => ({ x: p.x * k, y: p.y * k, z: (p.z || 0) * k })), item: Object.assign({}, sc.item, { w: (sc.item.w || 0.3) * k }, sc.item.h != null ? { h: sc.item.h * k } : {}) });
+    return refreshScatter(rec, el, false);
+  }
+  // "להפריד לשכבות": the copies become ordinary layers in a group that takes over the scatter's place, motion and taps.
+  function breakScatter(rec, el) {
+    const g = geom(rec), r = g.artW / g.artH, a = (el.rot || 0) * Math.PI / 180, it = el.scatter.item;
+    const copies = scatterCopies(rec, el).sort((p, q) => p.rank - q.rank);
+    const kids = copies.map((c, n) => {
+      const k = scatterCopyEl(el, c), dx = c.x * r, dy = c.y;
+      delete k._ownerId;
+      return Object.assign(k, { id: newId(), name: (el.name || "פיזור").replace(/^פיזור: /, "") + " " + (n + 1), x: (el.x || 0) + (dx * Math.cos(a) - dy * Math.sin(a)) / r, y: (el.y || 0) + dx * Math.sin(a) + dy * Math.cos(a), rot: c.rot + (el.rot || 0), opacity: it.opacity == null ? 1 : it.opacity });
+    });
+    const group = { id: newId(), type: "group", name: el.name || "פיזור", children: kids.map((k) => k.id), x: el.x || 0, y: el.y || 0, z: el.z || 0, w: el.w, h: el.h, rot: el.rot || 0, opacity: el.opacity == null ? 1 : el.opacity, flush: true };
+    for (const f of ["timeline", "anim", "seq", "track", "onTap", "tapUrl", "rotX", "rotY"]) if (el[f] != null) group[f] = structuredClone(el[f]);
+    const at = rec.elements.indexOf(el);
+    rec.elements.splice(at, 1, ...kids, group);
+    for (const q of ActionCore.list(rec)) for (const act of q.actions) if (act.layerId === el.id) act.layerId = group.id;
+    return group;
+  }
+  function validScatter(el) {
+    if (el.type !== "scatter") return el.scatter == null;
+    const sc = el.scatter; if (!sc || typeof sc !== "object" || Array.isArray(sc)) return false;
+    const it = sc.item; if (!it || typeof it !== "object" || Array.isArray(it) || !SCATTER_TYPES.includes(it.type) || it.scatter != null) return false;
+    for (const key of ["w", "h", "rot", "rotX", "rotY", "opacity", "aspect"]) if (it[key] != null && !Number.isFinite(it[key])) return false;
+    if (!validCrop(it) || !validFx(it) || !validChroma(it) || !validParticles(it)) return false;
+    if (["image", "video", "model"].includes(it.type) && !el.assetId) return false;
+    if (!Array.isArray(sc.points) || sc.points.length < 2 || sc.points.length > 64 || !sc.points.every((p) => p && ["x", "y", "z"].every((k) => p[k] == null || Number.isFinite(p[k]) && Math.abs(p[k]) <= 10))) return false;
+    if (!Number.isFinite(sc.count) || sc.count < 1 || sc.count > 60 || !Number.isFinite(sc.amount) || sc.amount < 1 || sc.amount > 6) return false;
+    return typeof sc.curved === "boolean" && SCATTER_SPACING.includes(sc.spacing) && SCATTER_SIZE.includes(sc.size) && SCATTER_FACING.includes(sc.facing);
+  }
+  // The 3D side: models are built one entity per copy. Pictures, GIFs, videos and text are drawn from ONE hidden layer
+  // (the "template", built by buildElementEntity like any layer, so crop, filters, colour removal and fades all apply):
+  // every copy is a mesh that shares its geometry and material, so a video or GIF is decoded and uploaded once however
+  // many copies show it. studio-scatter keeps the copies on the template's current geometry/material every frame.
+  function ensureScatterComponent() {
+    if (!window.AFRAME || AFRAME.components["studio-scatter"]) return;
+    AFRAME.registerComponent("studio-scatter", {
+      init() { this.copies = []; this.made = false; this.gifAt = 0; },
+      tick(time) {
+        const t = this.el._scatterTemplate; if (!t || !t.object3D) return;
+        if (t.object3D.parent) t.object3D.parent.remove(t.object3D); // drawn only through its copies
+        const m = t.getObject3D("mesh"); if (!m || !m.material) return;
+        if (!this.made) {
+          this.made = true;
+          for (const c of this.el._scatterCopies || []) {
+            const holder = new THREE.Group(), mesh = new THREE.Mesh(m.geometry, m.material);
+            holder.position.set(c.px, c.py, c.pz); holder.rotation.order = "YXZ"; holder.rotation.set(c.rx, c.ry, c.rz); holder.scale.setScalar(c.k);
+            holder.el = { _studioOpacity: c.op }; // the item's own opacity, picked up by applyOpacity on the way up
+            mesh.renderOrder = c.ro; mesh.userData.scatterCopy = c.i;
+            holder.add(mesh); this.el.object3D.add(holder); this.copies.push(mesh);
+          }
+          if (this.el._studioOpacity != null) applyOpacity(this.el, this.el._studioOpacity);
+          this.el.emit("scatter-ready", { count: this.copies.length }, false);
+        }
+        for (const c of this.copies) { if (c.geometry !== m.geometry) c.geometry = m.geometry; if (c.material !== m.material) c.material = m.material; }
+        const map = m.material.map; // an animated GIF is a canvas the pump repaints: send it again a few times a second
+        if (map && map.image && map.image.tagName === "CANVAS" && time - this.gifAt > 40) { map.needsUpdate = true; this.gifAt = time; }
+      },
+      remove() { for (const c of this.copies) if (c.parent) c.parent.parent && c.parent.parent.remove(c.parent); this.copies = []; }
+    });
+  }
+  function buildScatter(rec, el, wrap, idx, mode, opts) {
+    const sc = el.scatter, it = sc && sc.item;
+    if (!it || !SCATTER_TYPES.includes(it.type) || (it.type !== "text" && !(rec.assets && rec.assets[el.assetId]))) return;
+    const g = geom(rec), ts = toTargetSpace(rec, el, el.aspect || 1), copies = scatterCopies(rec, el), D = Math.PI / 180;
+    const sub = { origin: { x: ts.x, y: ts.y, z: ts.z || 0 }, baseRotation: 0, videoFallback: opts.videoFallback, mediaId: opts.mediaId };
+    if (it.type === "model") {
+      for (const c of copies) {
+        const ce = buildElementEntity(rec, scatterCopyEl(el, c), idx + c.rank / 1000, mode, sub);
+        if (!ce) continue;
+        delete ce.dataset.elId; ce.dataset.scatterCopy = String(c.i);
+        wrap.appendChild(ce); if (ce.dataset.opacity) applyOpacity(ce, parseFloat(ce.dataset.opacity));
+      }
+      return;
+    }
+    if (opts.videoFallback && it.type === "video" && opts.videoFallback(Object.assign({}, it, { assetId: el.assetId }))) return;
+    ensureScatterComponent();
+    // the template keeps the scatter's id, so it reads the scatter's own media node (#m-<id>), in the camera too
+    const tpl = buildElementEntity(rec, Object.assign({}, it, { id: el.id, assetId: el.assetId, x: el.x || 0, y: el.y || 0, z: el.z || 0, rot: 0, rotX: 0, rotY: 0, flush: el.flush !== false, opacity: 1, seq: null }), idx, mode, sub);
+    if (!tpl) return;
+    delete tpl.dataset.elId; delete tpl.dataset.opacity; tpl.classList.remove("cantap"); tpl.dataset.scatterTemplate = "";
+    wrap._scatterTemplate = tpl;
+    wrap._scatterCopies = copies.map((c) => ({ i: c.i, px: c.x * g.artW, py: c.y * g.artH, pz: c.z, rx: (it.rotX || 0) * D, ry: (it.rotY || 0) * D, rz: c.rot * D, k: c.k,
+      op: it.opacity == null ? 1 : it.opacity, ro: el.flush !== false ? 1 + idx + c.rank / 1000 : 0 }));
+    wrap.appendChild(tpl);
+    wrap.setAttribute("studio-scatter", "");
+  }
+
   // ---------- round A: shared entity factory for player + preview ----------
   // mode 'ar': video uses the device-proven xrextras-target-video-fade; 'preview': plain a-video.
   // One object URL per blob: model files load through three.js's file cache, which keeps a copy per URL, so a fresh
@@ -1315,10 +1556,6 @@ vec4 bpPattern(vec2 uv) {
         e = document.createElement("a-plane");
         e.setAttribute("material", { color: "#333333", opacity: 0.85, transparent: true, shader: "flat" });
         e.setAttribute("width", ts.w); e.setAttribute("height", ts.h);
-      } else if (el.chroma && el.chroma.enabled) {
-        ensureChromaComponent();
-        e = document.createElement("a-entity");
-        e.setAttribute("chroma-video", `src: ${mediaRef(el)}; color: ${el.chroma.color || "#00ff00"}; threshold: ${el.chroma.threshold == null ? 0.35 : el.chroma.threshold}; width: ${ts.w}; height: ${ts.h}`);
       } else if (mode === "ar") {
         // Same exact world-size plane as preview. xrextras-target-video-fade built its
         // plane from the image-target geometry multiplied by our w/h, which stretched
@@ -1399,15 +1636,19 @@ vec4 bpPattern(vec2 uv) {
       e.setAttribute("material", { shader: "flat", color: "#ffffff", transparent: true });
       e.setAttribute("width", ts.w); e.setAttribute("height", ts.h);
       e.setAttribute("studio-pattern", { values: JSON.stringify(patternValues(el, ts.w / ts.h, 1 / 600)), speed: (el.pattern && el.pattern.speed) || 0 });
+    } else if (el.type === "scatter") {
+      e = document.createElement("a-entity"); // like a group: motion, opacity and turns act on the whole line of copies
+      buildScatter(rec, el, e, idx, mode, opts);
     } else if (el.type === "sound" && el.spatial) {
       e = document.createElement("a-entity"); // invisible carrier for PositionalAudio
     } else {
       return null; // sound: no visual node
     }
-    if (fxMode(el) && e.tagName !== "A-PLANE") { // a filter on the layer's own material (not on the grey stand-in for a video that cannot play)
+    const key = keyValues(el);
+    if ((fxMode(el) || key) && e.tagName !== "A-PLANE") { // a filter or colour removal on the layer's own material (not on the grey stand-in for a video that cannot play)
       ensureFxComponent();
       const s = fxScale(el, ts.w, ts.h);
-      e.setAttribute("studio-fx", { mode: fxMode(el), amount: fxAmount(el), sx: s[0], sy: s[1] });
+      e.setAttribute("studio-fx", { mode: fxMode(el), amount: fxAmount(el), sx: s[0], sy: s[1], key: key ? key.mode : 0, kc: key ? el.chroma.color : "#00ff00", thresh: key ? key.thresh : 0.35, soft: key ? key.soft : 0 });
     }
     if(['image','video'].includes(el.type)&&el.crop){
       const applyCrop=()=>{let ready=false;e.object3D.traverse(mesh=>{if(!mesh.geometry?.attributes.uv)return;if(!mesh.geometry._studioCropOwned){mesh.geometry=mesh.geometry.clone();mesh.geometry._studioCropOwned=true;}const uv=mesh.geometry.attributes.uv,c=el.crop;
@@ -1420,7 +1661,8 @@ vec4 bpPattern(vec2 uv) {
     e.setAttribute("position", pos);
     e.setAttribute("rotation", rot);
     e.dataset.elId = el.id;
-    if (el.flush) { const ro = 1 + idx; const apply = () => { const o = e.object3D; if (!o) return; o.traverse((m) => { if (m.isMesh || m.isPoints) { m.renderOrder = ro; if (el.type !== 'model' && el.type !== 'timecube' && m.material) { const ms = Array.isArray(m.material) ? m.material : [m.material]; ms.forEach((mm) => { mm.depthWrite = false; }); } } }); }; e.addEventListener('object3dset', apply); e.addEventListener('model-loaded', apply); e.addEventListener('materialtextureloaded', apply); e.addEventListener('componentchanged', (ev) => { if (ev.detail && ev.detail.name === 'material') apply(); }); apply(); setTimeout(apply, 600); setTimeout(apply, 2500); }
+    // a scatter's copies carry their own order (farthest first)
+    if (el.flush && el.type !== "scatter") { const ro = 1 + idx; const apply = () => { const o = e.object3D; if (!o) return; o.traverse((m) => { if (m.isMesh || m.isPoints) { m.renderOrder = ro; if (el.type !== 'model' && el.type !== 'timecube' && m.material) { const ms = Array.isArray(m.material) ? m.material : [m.material]; ms.forEach((mm) => { mm.depthWrite = false; }); } } }); }; e.addEventListener('object3dset', apply); e.addEventListener('model-loaded', apply); e.addEventListener('materialtextureloaded', apply); e.addEventListener('componentchanged', (ev) => { if (ev.detail && ev.detail.name === 'material') apply(); }); apply(); setTimeout(apply, 600); setTimeout(apply, 2500); }
     e._studioFrame = { ox, oy, oz, angle, baseRotation: opts.baseRotation || 0, zTie: tie };
     const hasTl = ActionCore.list(rec).some(q=>q.actions.some(a=>a.type!=="sequence"&&a.layerId===el.id)) || el.timeline && Array.isArray(el.timeline.keys) && el.timeline.keys.length;
     if (el.anim === "spin" && !hasTl) e.setAttribute("animation__spin", `property: rotation; to: 0 0 ${(el.rot || 0) - (opts.baseRotation || 0) + 360}; loop: true; dur: 14000; easing: linear`);
@@ -2065,7 +2307,7 @@ vec4 bpPattern(vec2 uv) {
     if (!Array.isArray(o.elements) || o.elements.length > LIM.layers) throw new Error("bad elements (maximum" + LIM.layers + ")");
     const ids = new Set();
     for (const el of o.elements) {
-      if (!el || !["video","image","sound","text","model","particles","group","timecube","pattern"].includes(el.type)) throw new Error("bad element type");
+      if (!el || !["video","image","sound","text","model","particles","group","timecube","pattern","scatter"].includes(el.type)) throw new Error("bad element type");
       if (typeof el.id !== "string" || !/^[a-zA-Z0-9_-]{1,128}$/.test(el.id) || ids.has(el.id)) throw new Error("bad or duplicate element id");
       ids.add(el.id);
       for (const key of ["x","y","z","w","h","rot","rotX","rotY","opacity","aspect","volume"]) if (el[key] != null && (typeof el[key] !== "number" || !Number.isFinite(el[key]))) throw new Error("bad numeric field");
@@ -2079,6 +2321,8 @@ vec4 bpPattern(vec2 uv) {
       }
       if(!validCrop(el))throw new Error('bad image crop');
       if(!validFx(el))throw new Error('bad filter');
+      if(!validChroma(el))throw new Error('bad colour removal');
+      if(!validScatter(el))throw new Error('bad scatter');
       if(!validPattern(el))throw new Error('bad pattern');
       if (el.timeline != null) {
         const tl = el.timeline;
@@ -2109,7 +2353,7 @@ vec4 bpPattern(vec2 uv) {
     rec.assets = assets || {};
     // Whole-experience imports use the same model boundary as direct uploads.
     // Validate before save, so rejected input never leaves a broken local record.
-    for(const el of rec.elements.filter(e=>e.type==='model')) {
+    for(const el of rec.elements.filter(e=>e.type==='model'||e.type==='scatter'&&e.scatter&&e.scatter.item&&e.scatter.item.type==='model')) {
       if(!el.assetId||!rec.assets[el.assetId])throw new Error('model asset missing');
       rec.assets[el.assetId]=await prepareModelBlob(rec.assets[el.assetId]);
     }
@@ -2401,7 +2645,7 @@ vec4 bpPattern(vec2 uv) {
   return { TARGET_W, TARGET_H, newId, inspectVideo, validateModelBlob, prepareModelBlob, modelCompressionKinds, DECODER_DRACO_PATH, DECODER_MESHOPT_PATH, modelClipNames, modelClipInfo, loadImage, loadImageBlob, loadFailed, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
            audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, blobURL, releaseBlobURL, blobURLs, historyState, restoreHistory, duplicateLayer, exportJSON, missingAssets, importJSON, exportZIP, importZIP, zipToJSON, fetchPublished, ownBlob, assetHealth, fileHealth, seedDemo, normEl, ANIMS, drawTextCanvas, loadTextFonts, FX: FX.map(([id, name]) => ({ id, name, moving: FX_MOVING.has(id) })), fxFrame,
            PATTERNS: PATTERNS.map(([id, name, colors, speed]) => ({ id, name, colors: colors.slice(), speed })), PATTERN_PALETTES: PATTERN_PALETTES.map(([name, colors]) => ({ name, colors: colors.slice() })),
-           PATTERN_SHAPES: PATTERN_SHAPES.map(([id, name]) => ({ id, name })), patternDefaults, patternAspect, patternFrame, validPattern, validFx, FONTS: FONTS.map(([id, name]) => ({ id, name })), buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, ensureTimeCubeComponent, bakeTimeCube, validTimeCube, TIMECUBE_DIRS, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, artworkFingerprint, fingerprintDistance, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
+           PATTERN_SHAPES: PATTERN_SHAPES.map(([id, name]) => ({ id, name })), patternDefaults, patternAspect, patternFrame, validPattern, validFx, validChroma, keyValues, pixelAt, CHROMA_DEFAULT, SCATTER_TYPES, SCATTER_MAX, mediaType, scatterItem, scatterLimit, scatterPath, scatterCopies, scatterCopyEl, scatterBounds, refreshScatter, makeScatter, scaleScatter, breakScatter, validScatter, FONTS: FONTS.map(([id, name]) => ({ id, name })), buildElementEntity, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, ensureTimeCubeComponent, bakeTimeCube, validTimeCube, TIMECUBE_DIRS, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, artworkFingerprint, fingerprintDistance, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
            load: id=>settledRead(id), all: ()=>settledRead(), del: delExperience, LIMITS, mediaBytes, pushBack, addBlocker, publishBlocker, restoreBlocker, exportWarning, exportJSONSize,
            onSaveState, installSaveGuard, saveState, soundOnTouch, snapAngle, syncMedia,
            _testHoldSave:p=>{saveHold=p;}, _testFailSave:m=>{failSave=m;}, _testFailPut:o=>{failPut=o?{...o}:null;} };

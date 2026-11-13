@@ -115,6 +115,11 @@ button:disabled { cursor: default; opacity: .4; }
 #sel-bar { position: absolute; z-index: 7; top: 8px; inset-inline-start: 8px; max-width: calc(100% - 16px); display: flex; align-items: center; gap: 2px; padding: 3px 3px 3px 3px; padding-inline-start: 12px; border-radius: 12px; background: rgba(23,22,29,.9); border: 1px solid var(--line-2); backdrop-filter: blur(8px); }
 #sel-bar .sel-name { font-size: 13px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; margin-inline-end: 6px; }
 #sel-bar .icon-btn { width: 32px; height: 32px; border-radius: 9px; }
+.stage-hint { position: absolute; z-index: 9; inset-inline: 8px; top: 8px; margin-inline: auto; max-width: 460px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 8px 10px; border-radius: 14px; background: rgba(23,22,29,.94); border: 1px solid rgba(139,108,255,.6); box-shadow: 0 6px 24px rgba(0,0,0,.45); font-size: 14px; font-weight: 600; backdrop-filter: blur(8px); }
+.stage-hint > span { flex: 1 1 160px; line-height: 1.35; }
+.stage-hint > svg { color: #b9a6ff; flex: none; }
+.stage-hint .btn { min-height: 36px;  pointer-events: auto; }
+.stage-hint { pointer-events: none; } /* the line can be drawn right through the hint; only its buttons take a touch */
 #time-chip { position: absolute; z-index: 7; top: 8px; inset-inline-end: 8px; display: flex; align-items: center; gap: 8px; padding: 3px; padding-inline-start: 12px; border-radius: 12px; background: rgba(255,200,87,.14); border: 1px solid rgba(255,200,87,.45); color: var(--warn); font-size: 13px; font-weight: 600; backdrop-filter: blur(8px); }
 #time-chip button { display: inline-flex; align-items: center; gap: 5px; height: 28px; padding: 0 10px; border: 0; border-radius: 9px; background: var(--warn); color: #201a05; font-weight: 700; font-size: 13px; }
 /* the 3D tools sit on the left edge, so the name of the picked layer and the time chip keep to the right */

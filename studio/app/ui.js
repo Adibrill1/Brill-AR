@@ -41,7 +41,8 @@ window.UI = (() => {
     palette: "M12 3a9 9 0 1 0 0 18c1.5 0 2-1 2-2 0-1.5 1-2 2-2h2a3 3 0 0 0 3-3c0-5-4-9-9-9zM7.5 12h.01M9.5 8h.01M14.5 7.5h.01M17 11h.01",
     magnet: "M6 4v8a6 6 0 0 0 12 0V4h-4v8a2 2 0 0 1-4 0V4zM6 8h4M14 8h4", link: "M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1",
     lock: "M6 11h12v9H6zM8 11V8a4 4 0 0 1 8 0v3", unlock: "M6 11h12v9H6zM8 11V8a4 4 0 0 1 7.5-2", grip: "M9 6h.01M15 6h.01M9 12h.01M15 12h.01M9 18h.01M15 18h.01", warn: "M12 4l9 16H3l9-16zM12 10v5M12 17.5h.01",
-    key: "M12 4l7 8-7 8-7-8 7-8z", flip: "M12 3v18M8 7 4 12l4 5V7zM16 7l4 5-4 5V7z", refresh: "M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"
+    key: "M12 4l7 8-7 8-7-8 7-8z", flip: "M12 3v18M8 7 4 12l4 5V7zM16 7l4 5-4 5V7z", refresh: "M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7",
+    pipette: "M14.5 4.5l5 5M17 7l-9 9-3.5 1 1-3.5 9-9M15.5 3a2.1 2.1 0 0 1 3 0l2.5 2.5a2.1 2.1 0 0 1 0 3l-1.5 1.5-5.5-5.5z", path: "M4 19c3-1 4-5 7-7s6 0 9-6M4 19h.01M11 12h.01M20 6h.01"
   };
   function icon(name, size) {
     const s = size || 20, fill = name === "play" ? "currentColor" : "none";

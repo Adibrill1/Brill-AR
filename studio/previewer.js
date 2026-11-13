@@ -41,7 +41,8 @@
   for (const el of rec.elements) {
     if (!el.assetId || !rec.assets[el.assetId]) continue;
     const url = URL.createObjectURL(rec.assets[el.assetId]);
-    if (el.type === "video") {
+    const kind = Studio.mediaType(el); // a scatter layer reads its file like the layer it was made from
+    if (kind === "video") {
       const v = document.createElement("video");
       v.id = "m-" + el.id; v.src = url; v.muted = true; v.loop = el.loop !== false;
       v.setAttribute("playsinline", ""); v.preload = "auto";
@@ -52,7 +53,7 @@
         v.addEventListener("loadedmetadata", () => { clearTimeout(timer); done(true); }, { once: true });
         v.addEventListener("error", () => { clearTimeout(timer); done(false); }, { once: true });
       }));
-    } else if (el.type === "image") {
+    } else if (kind === "image") {
       const mm = await Studio.makeImageMedia(rec.assets[el.assetId], "m-" + el.id,
         () => document.querySelector('[data-el-id="' + el.id + '"]'));
       assets.appendChild(mm.node);
@@ -134,7 +135,7 @@
   const canPlay = (file) => { const t = file && file.type ? file.type : "video/mp4"; return probe.canPlayType(t) !== ""; };
   const probeResults = await Promise.all(videoProbes);
   const undecodable = new Set(probeResults.filter((r) => !r.ok).map((r) => r.id));
-  const videoFallback = (el) => el.type === "video" && (!canPlay(rec.assets[el.assetId]) || undecodable.has(el.id));
+  const videoFallback = (el) => Studio.mediaType(el) === "video" && (!canPlay(rec.assets[el.assetId]) || undecodable.has(el.id));
   const videoFallbacks = rec.elements.filter(videoFallback).length;
   Studio.topLevelElements(rec).forEach((el, idx) => {
     const e = Studio.buildElementEntity(rec, el, idx, "preview", { videoFallback });

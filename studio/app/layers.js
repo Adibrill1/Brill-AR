@@ -9,7 +9,7 @@ window.Layers = (() => {
     text: { name: "טקסט", icon: "text", tint: "#ffd166" }, sound: { name: "צליל", icon: "sound", tint: "#4cd4a0" },
     model: { name: "מודל 3D", icon: "cube", tint: "#b497ff" }, particles: { name: "חלקיקים", icon: "sparkle", tint: "#ff9ecb" },
     pattern: { name: "רקע מונפש", icon: "pattern", tint: "#7fe0e0" }, timecube: { name: "קוביית זמן", icon: "hourglass", tint: "#c4d86a" },
-    group: { name: "קבוצה", icon: "layers", tint: "#9a97a6" }
+    group: { name: "קבוצה", icon: "layers", tint: "#9a97a6" }, scatter: { name: "פיזור על נתיב", icon: "path", tint: "#f2a65a" }
   };
   const ACCEPT = {
     video: "video/mp4,video/webm,video/quicktime,.mov", image: "image/png,image/jpeg,image/gif",
@@ -261,7 +261,7 @@ window.Layers = (() => {
   function thumb(e) {
     const t = TYPES[e.type] || TYPES.group, rec = App.rec;
     const box = h("span.layer-thumb", { style: { "--tint": t.tint } });
-    const blob = e.type === "image" && e.assetId && rec.assets[e.assetId];
+    const blob = Studio.mediaType(e) === "image" && e.assetId && rec.assets[e.assetId];
     if (blob) { const im = h("img", { alt: "", draggable: false }); im.src = Studio.blobURL(blob); im.onerror = () => im.replaceWith(icon(t.icon, 18)); box.append(im); }
     else if (e.type === "text") box.append(h("span.layer-thumb-text", { style: { color: e.textStyle === "cut" ? null : e.color } }, (e.text || "א").trim().slice(0, 1) || "א"));
     else box.append(icon(t.icon, 18));
@@ -269,6 +269,7 @@ window.Layers = (() => {
   }
   const sub = (e) => {
     const t = (TYPES[e.type] || TYPES.group).name, bits = [t];
+    if (e.type === "scatter") bits.push(Studio.scatterCopies(App.rec, e).length + " עותקים");
     if (App.keyed(e)) bits.push("בתנועה"); else if (e.anim && e.anim !== "none") bits.push({ spin: "מסתובב", float: "מרחף", pulse: "פועם" }[e.anim] || "");
     if (e.onTap && e.onTap !== "none") bits.push("מגיב למגע");
     return bits.filter(Boolean).join(" · ");
@@ -284,6 +285,8 @@ window.Layers = (() => {
       e.locked ? { label: "שחרור הנעילה", icon: "unlock", run: () => App.setLocked(e.id, false) } : { label: "נעילה במקום", icon: "lock", run: () => App.setLocked(e.id, true) },
       e.locked ? false : { label: "שינוי שם", icon: "edit", run: () => rename(e.id) },
       e.locked ? false : { label: "שכפול", icon: "copy", run: () => App.duplicateLayer(e.id) },
+      !e.locked && Studio.SCATTER_TYPES.includes(e.type) ? { label: "פיזור על נתיב", icon: "path", run: () => { App.select(e.id); App.scatterFrom(e.id); } } : false,
+      !e.locked && e.type === "scatter" ? { label: "להפריד לשכבות", icon: "layers", run: () => App.breakScatter(e.id) } : false,
       null,
       i < top ? { label: "לחזית", icon: "up", run: () => App.moveLayer(e.id, top) } : false,
       i < top ? { label: "שלב אחד קדימה", icon: "up", run: () => App.moveLayer(e.id, i + 1) } : false,

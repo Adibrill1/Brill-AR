@@ -92,16 +92,66 @@ window.Inspector = (() => {
     cropKids.push(h("div.btn-row", UI.button("מילוי כל היצירה", () => fillArt(0), { icon: "fit" }), UI.button("מילוי בסיבוב", () => fillArt(next == null ? 90 : next), { icon: "refresh" })));
     out.push(UI.group("חיתוך ומילוי", cropKids));
 
-    if (e.type === "video") {
-      const on = !!(e.chroma && e.chroma.enabled);
-      const chroma = (fn) => upd((x, v) => { x.chroma = Object.assign({ enabled: false, color: "#00ff00", threshold: 0.35 }, x.chroma); fn(x.chroma, v); });
-      out.push(UI.group("הסרת רקע (מסך ירוק)",
-        T({ label: "להעלים צבע רקע", hint: "לסרטונים שצולמו על רקע אחיד", get: () => !!(App.sel().chroma && App.sel().chroma.enabled), set: (v, f) => { chroma((c, val) => { c.enabled = val; })(v, f); build(); } }),
-        on ? K({ label: "הצבע שנעלם", get: () => (App.sel().chroma || {}).color || "#00ff00", set: chroma((c, v) => { c.color = v; }) }) : null,
-        on ? S(Object.assign({ label: "רגישות", min: 0.1, max: 0.8, step: 0.01, get: () => { const c = App.sel().chroma || {}; return c.threshold == null ? 0.35 : c.threshold; }, set: chroma((c, v) => { c.threshold = v; }) }, pct)) : null,
-        on ? note("את התוצאה רואים בתצוגה המקדימה ובמצלמה.") : null));
-      out.push(UI.group("קול", sound()));
-    }
+    out.push(chromaGroup(e));
+    if (e.type === "video") out.push(UI.group("קול", sound()));
+    out.push(UI.group("", opacity()));
+    return out;
+  }
+  // ---------- colour removal: a picture, a GIF, a video, or the copies of a scatter ----------
+  // The colour is best taken from the picture itself (the eyedropper): on a phone a colour wheel rarely hits the exact
+  // shade of a background.
+  function chromaGroup(e) {
+    const own = (x) => (x.type === "scatter" ? x.scatter.item : x), cur = () => own(App.sel()).chroma || {};
+    const ch = (fn, then) => upd((x, v) => { const t = own(x); t.chroma = Object.assign({}, Studio.CHROMA_DEFAULT, t.chroma); fn(t.chroma, v); }, then);
+    const on = !!(own(e).chroma && own(e).chroma.enabled), id = e.id;
+    const pick = UI.button("לבחור צבע מהתמונה", () => Stage.pickColor(id, (c) => { if (App.selId !== id) return; ch((k) => { k.enabled = true; k.color = c; })(null, true); build(); toast("הצבע " + c + " נעלם. אפשר לכוונן ב״רגישות״."); }), { icon: "pipette", kind: on ? "ghost" : "" });
+    pick.id = "btn-pick-color";
+    return UI.group("הסרת צבע",
+      T({ label: "להעלים צבע", hint: "צבע אחד נעשה שקוף, למשל רקע ירוק", get: () => !!cur().enabled, set: (v, f) => { ch((c, val) => { c.enabled = val; })(v, f); build(); } }),
+      h("div.btn-row", pick),
+      on ? K({ label: "הצבע שנעלם", get: () => cur().color || "#00ff00", set: ch((c, v) => { c.color = v; }) }) : null,
+      on ? S(Object.assign({ label: "רגישות", min: 0.02, max: 0.8, step: 0.01, get: () => (cur().threshold == null ? 0.35 : cur().threshold), set: ch((c, v) => { c.threshold = v; }) }, pct)) : null,
+      on ? S(Object.assign({ label: "ריכוך קצוות", min: 0, max: 0.3, step: 0.01, get: () => cur().soft || 0, set: ch((c, v) => { c.soft = v; }) }, pct)) : null);
+  }
+
+  // ---------- scatter along a path ----------
+  function styleScatter(e) {
+    const sc = () => App.sel().scatter;
+    const P = (fn, then) => upd((x, v) => { fn(x.scatter, v, x); Studio.refreshScatter(App.rec, x, true); }, then);
+    const ends = (end) => S(Object.assign({ label: end ? "עומק בסוף" : "עומק בהתחלה", min: -0.3, max: 1, step: 0.01, get: () => { const p = sc().points; return (end ? p[p.length - 1] : p[0]).z || 0; },
+      set: P((s, v, x) => App.scatterDepth(x, end, round(v, 3))) }, pct));
+    const it = e.scatter.item, max = Studio.scatterLimit(e), grows = e.scatter.size !== "constant";
+    const pointBtn = (label, ic, run) => UI.button(label, run, { small: true, kind: "ghost", icon: ic });
+    const addPoint = () => upd((x) => {
+      const p = x.scatter.points, sel = Stage.pointSel && Stage.pointSel.id === x.id ? Stage.pointSel.i : -1;
+      let i = sel >= 0 ? Math.min(sel, p.length - 2) : 0;
+      if (sel < 0) { let far = -1; for (let j = 0; j < p.length - 1; j++) { const d = Math.hypot(p[j + 1].x - p[j].x, p[j + 1].y - p[j].y, (p[j + 1].z || 0) - (p[j].z || 0)); if (d > far) { far = d; i = j; } } }
+      if (p.length >= 64) return;
+      p.splice(i + 1, 0, { x: round((p[i].x + p[i + 1].x) / 2), y: round((p[i].y + p[i + 1].y) / 2), z: round(((p[i].z || 0) + (p[i + 1].z || 0)) / 2) });
+      Stage.pointSel = { id: x.id, i: i + 1 };
+      Studio.refreshScatter(App.rec, x, true);
+    })(null, true);
+    const delPoint = () => {
+      const x = App.sel(); if (!x) return;
+      if (x.scatter.points.length <= 2) return toast("לקו צריך לפחות שתי נקודות", { kind: "warn" });
+      upd((y) => { const p = y.scatter.points, sel = Stage.pointSel && Stage.pointSel.id === y.id ? Stage.pointSel.i : Math.floor(p.length / 2); p.splice(Math.max(0, Math.min(p.length - 1, sel)), 1); Stage.pointSel = null; Studio.refreshScatter(App.rec, y, true); })(null, true);
+    };
+    const out = [
+      UI.group("עומק", ends(false), ends(true), note("הקו מתחיל על היצירה. ״עומק בסוף״ מקרב את סוף הקו אלייך, כמו עין שיוצאת מהתמונה.", "cube")),
+      UI.group("העותקים",
+        S({ label: "מספר עותקים", min: 1, max, step: 1, get: () => Math.min(max, sc().count), set: P((s, v) => { s.count = Math.round(v); }) }),
+        C({ label: "מרווחים", wrap: true, options: [{ id: "even", name: "שווים" }, { id: "grow", name: "הולכים וגדלים" }, { id: "shrink", name: "הולכים וקטנים" }], get: () => sc().spacing, set: P((s, v) => { s.spacing = v; }) }),
+        C({ label: "גודל", wrap: true, options: [{ id: "constant", name: "קבוע" }, { id: "grow", name: "הולך וגדל" }, { id: "shrink", name: "הולך וקטן" }], get: () => sc().size, set: P((s, v) => { s.size = v; }, build) }),
+        grows ? S({ label: "כמה", min: 1, max: 6, step: 0.1, unit: "×", get: () => sc().amount, set: P((s, v) => { s.amount = round(v, 2); }) }) : null,
+        C({ label: "כיוון", wrap: true, options: [{ id: "keep", name: "כמו המקור" }, { id: "follow", name: "לאורך הקו" }], get: () => sc().facing, set: P((s, v) => { s.facing = v; }) }),
+        it.type === "video" || it.type === "model" ? note("עד " + max + " עותקים, כדי שהטלפון יצייר אותם בנוחות.") : null),
+      UI.group("הקו",
+        C({ label: "", bare: true, options: [{ id: "straight", name: "ישר" }, { id: "curved", name: "מעוקל" }], get: () => (sc().curved ? "curved" : "straight"), set: P((s, v) => { s.curved = v === "curved"; }) }),
+        h("div.btn-grid", pointBtn("הוספת נקודה", "plus", addPoint), pointBtn("מחיקת נקודה", "trash", delPoint),
+          pointBtn("לצייר את הקו מחדש", "edit", () => App.scatterFrom(App.selId)), pointBtn("להפריד לשכבות", "layers", () => App.breakScatter(App.selId))),
+        note("גוררים את הנקודות הלבנות על הקו. בתצוגת תלת־ממד נוגעים בנקודה ומזיזים אותה בחיצים, גם לעומק.", "move"))
+    ];
+    if (it.type === "image" || it.type === "video") out.push(chromaGroup(e));
     out.push(UI.group("", opacity()));
     return out;
   }
@@ -218,6 +268,7 @@ window.Inspector = (() => {
     if (e.type === "particles") return styleParticles(e);
     if (e.type === "model") return styleModel(e);
     if (e.type === "timecube") return styleCube(e);
+    if (e.type === "scatter") return styleScatter(e);
     if (e.type === "sound") return [UI.group("צליל", sound(), note("הצליל מתנגן כשהמצלמה מזהה את היצירה. בטלפון הוא מתחיל אחרי נגיעה ראשונה במסך."))];
     return [h("section.group", note("לשכבה הזו אין הגדרות עיצוב."))];
   }
@@ -229,7 +280,7 @@ window.Inspector = (() => {
     if (e.type === "sound") return [UI.group("מיקום הסימון", note("לצליל אין מראה. העיגול על הקנבס רק מסמן אותו."))];
     const size = keyed
       ? S({ label: "גודל", min: 0.05, max: 4, step: 0.01, unit: "×", get: () => App.sample(App.sel()).scale || 1, set: (v, f) => { const x = App.sel(); if (!x) return; App.editKey(x).scale = round(v); App.changed(f); } })
-      : S(Object.assign({ label: "גודל", min: 0.05, max: 2, step: 0.01, get: () => App.sel().w, set: upd((x, v) => { const k = v / x.w; x.w = round(v); if (x.type === "text") Stage.fitText(x); else if (x.h != null) x.h = round(x.h * k); }) }, pct));
+      : S(Object.assign({ label: "גודל", min: 0.05, max: 2, step: 0.01, get: () => App.sel().w, set: upd((x, v) => { const k = v / x.w; if (x.type === "scatter") return void Studio.scaleScatter(App.rec, x, k); x.w = round(v); if (x.type === "text") Stage.fitText(x); else if (x.h != null) x.h = round(x.h * k); }) }, pct));
     out.push(UI.group("מקום וגודל",
       S(Object.assign({ label: "ימינה / שמאלה", min: -0.7, max: 0.7, step: 0.005, get: () => place("x"), set: placeSet("x") }, pct)),
       S(Object.assign({ label: "למעלה / למטה", min: -0.7, max: 0.7, step: 0.005, get: () => place("y"), set: placeSet("y") }, pct)),

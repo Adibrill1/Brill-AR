@@ -82,13 +82,14 @@ window.App = (() => {
     await loadArt();
     const keep = new Set();
     for (const e of rec.elements) {
-      if ((e.type !== "video" && e.type !== "image") || !e.assetId) continue;
+      const kind = Studio.mediaType(e); // a scatter layer shows the file of the layer it was made from
+      if ((kind !== "video" && kind !== "image") || !e.assetId) continue;
       const blob = rec.assets[e.assetId]; if (!blob) continue;
       keep.add(e.assetId);
       if (S.media[e.assetId] && sameFile(mediaBlob[e.assetId], blob)) { mediaBlob[e.assetId] = blob; continue; }
       dropMedia(e.assetId); mediaBlob[e.assetId] = blob;
       try {
-        if (e.type === "video") {
+        if (kind === "video") {
           await retry(() => blob.slice(0, 1).arrayBuffer());
           const v = document.createElement("video");
           v.muted = true; v.loop = true; v.playsInline = true; v.setAttribute("playsinline", ""); v.preload = "auto";
@@ -156,7 +157,8 @@ window.App = (() => {
   function blocked(extra) { const b = Studio.addBlocker(S.rec, extra); if (b) toast(b, { kind: "error" }); return !!b; }
   async function addLayer(e, opts) {
     Studio.normEl(e);
-    if (opts && opts.behind) S.rec.elements.unshift(e); else S.rec.elements.push(e);
+    const after = opts && opts.after ? S.rec.elements.findIndex((x) => x.id === opts.after) : -1;
+    if (opts && opts.behind) S.rec.elements.unshift(e); else if (after >= 0) S.rec.elements.splice(after + 1, 0, e); else S.rec.elements.push(e);
     await hydrate();
     S.selId = e.id; S.cropping = false;
     emit("structure"); emit("select");
@@ -186,6 +188,54 @@ window.App = (() => {
     emit("structure"); emit("select");
     await save();
   }
+  // ---------- scatter along a path ----------
+  // From a selected layer: the stage asks for the line, then addScatter makes the layer right above the source.
+  function scatterFrom(id) {
+    const src = el(id); if (!src) return;
+    if (!Studio.SCATTER_TYPES.includes(src.type)) return toast("אפשר לפזר תמונה, GIF, סרטון, טקסט או מודל תלת־ממד", { kind: "warn" });
+    if (src.type !== "text" && !(src.assetId && S.rec.assets[src.assetId])) return toast("הקובץ של השכבה הזו חסר, אז אי אפשר לפזר אותה", { kind: "error" });
+    if (blocked({ layers: 1 })) return;
+    Stage.startScatter(id);
+  }
+  async function addScatter(srcId, pts, curved) {
+    const src = el(srcId); if (!src || blocked({ layers: 1 })) return null;
+    const e = Studio.makeScatter(S.rec, src, pts, { curved });
+    await addLayer(e, { after: srcId });
+    setTab("style");
+    toast("הפיזור מוכן. ״עומק בסוף״ מקרב את סוף הקו אלייך.", { ms: 6000 });
+    return e;
+  }
+  // A new line for an existing scatter: its copies and settings stay, and so does the depth of its two ends.
+  function redrawScatter(id, pts, curved) {
+    const e = el(id); if (!e || e.type !== "scatter") return;
+    const old = e.scatter.points, z0 = old[0].z || 0, z1 = old[old.length - 1].z || 0, x = pts.reduce((n, p) => n + p.x, 0) / pts.length, y = pts.reduce((n, p) => n + p.y, 0) / pts.length;
+    if (keyed(e)) { const s0 = sample(e); e.timeline.keys.forEach((k) => { if (k.x != null) k.x += x - s0.x; if (k.y != null) k.y += y - s0.y; }); }
+    e.x = x; e.y = y; e.rot = 0;
+    e.scatter = Object.assign({}, e.scatter, { curved, points: pts.map((p, i) => ({ x: p.x - x, y: p.y - y, z: z0 + (z1 - z0) * i / Math.max(1, pts.length - 1) })) });
+    Studio.refreshScatter(S.rec, e, true);
+    changed(true);
+  }
+  // How far each end stands out of the picture. The points between follow the change in proportion to where they lie
+  // along the line, so a height she gave a middle point in the 3D view is kept.
+  function scatterDepth(e, end, z) {
+    const P = e.scatter.points, n = P.length, dz = z - ((end ? P[n - 1].z : P[0].z) || 0);
+    const len = [0]; for (let i = 1; i < n; i++) len.push(len[i - 1] + Math.hypot(P[i].x - P[i - 1].x, P[i].y - P[i - 1].y));
+    const L = len[n - 1] || 1;
+    P.forEach((p, i) => { const f = len[i] / L; p.z = Math.round(((p.z || 0) + dz * (end ? f : 1 - f)) * 10000) / 10000; });
+    if (end) P[n - 1].z = z; else P[0].z = z;
+  }
+  async function breakScatter(id) {
+    const e = el(id); if (!e || e.type !== "scatter") return;
+    const n = Studio.scatterCopies(S.rec, e).length;
+    if (blocked({ layers: n })) return;
+    const g = Studio.breakScatter(S.rec, e);
+    S.selId = g.id; S.cropping = false;
+    await hydrate();
+    emit("structure"); emit("select");
+    await save();
+    toast("העותקים הם עכשיו " + n + " שכבות רגילות, בתוך קבוצה", { action: { label: "ביטול", run: undo } });
+  }
+
   // Order in the list is top first; in the record the last element is on top.
   function moveLayer(id, to) {
     const list = S.rec.elements, from = list.findIndex((e) => e.id === id);
@@ -236,7 +286,7 @@ window.App = (() => {
 
   return {
     on, emit, el, sel, keyed, clock, sample, hydrate, loadArt, save, saveSoon, flush, changed, open, close, select, blocked,
-    addLayer, removeLayer, duplicateLayer, moveLayer, setLocked, undo, redo, freeze, replay, keyAt, editKey, setTab, setPane, setMode3d, setCropping,
+    addLayer, removeLayer, duplicateLayer, moveLayer, scatterFrom, addScatter, redrawScatter, scatterDepth, breakScatter, setLocked, undo, redo, freeze, replay, keyAt, editKey, setTab, setPane, setMode3d, setCropping,
     get rec() { return S.rec; }, get selId() { return S.selId; }, get art() { return S.art; }, get artBlob() { return artBlob; }, get artState() { return S.artState; }, get media() { return S.media; },
     get frozen() { return S.frozen; }, get tab() { return S.tab; }, get pane() { return S.pane; }, get mode3d() { return S.mode3d; },
     get cropping() { return S.cropping; }, get snap() { return S.snap; }, set snap(v) { S.snap = !!v; },

@@ -9,6 +9,7 @@
 window.Editor3D = (() => {
   let wrapEl, sceneEl, rig, cam, host;
   let getRec, getSelected, onSelect, onChange;
+  let onPoint = null;
   let sampleEl = null, clockFor = null, freezeAt = null, beginFrame = null, onGate = null, getFrozen = null, restoreFrozen = null;
   let active = false, mounted = false, orb = null, gizmo = null, helper = null;
   let gizmoDrag = null, busy = false, gizmoMode = "move";
@@ -20,10 +21,11 @@ window.Editor3D = (() => {
   let toolRow = null;
   // "3d": the full 3D workspace (gizmo, orbit). "2d": the same scene as a transparent layer over the flat 2D canvas,
   // framed by an orthographic camera to match it pixel for pixel, drawing in their final look only the layers the
-  // canvas cannot (3D models, particles, green-screen video). The canvas keeps every touch and draws the rest.
+  // canvas cannot (3D models, particles, time cubes, tilted layers). The canvas keeps every touch and draws the rest.
   let mode = "3d", ortho = null, getView2d = null, getArt = null, getCropId = null, rigRot3d = null, frontBtn = null;
   // a layer tilted on the other axes (rotX/rotY) is one too: the flat canvas can only turn it in its own plane
-  function overlayType(el) { return !!el && (el.type === "model" || el.type === "particles" || el.type === "timecube" || (el.type === "video" && !!(el.chroma && el.chroma.enabled)) || (el.type !== "sound" && el.type !== "group" && !!(el.rotX || el.rotY))); }
+  function overlayType(el) { return !!el && (el.type === "model" || el.type === "particles" || el.type === "timecube" || (el.type !== "sound" && el.type !== "group" && !!(el.rotX || el.rotY))
+    || (el.type === "scatter" && !!el.scatter && (Studio.mediaType(el) === "model" || !!(el.scatter.item.rotX || el.scatter.item.rotY)))); } // a scatter of models or tilted copies too
 
   // The flat view: this layer sits above the canvas, so whatever it draws covers every canvas layer. To keep the order
   // of the list (the same order the 3D view and the camera show), every layer ABOVE the lowest one that must be drawn
@@ -50,7 +52,7 @@ window.Editor3D = (() => {
     onSelect = opts.onSelect; onChange = opts.onChange;
     sampleEl = opts.sampleEl || null; clockFor = opts.clockFor || null;
     freezeAt = opts.freezeAt || null; beginFrame = opts.beginFrame || null; getFrozen = opts.getFrozen || null; restoreFrozen = opts.restoreFrozen || null;
-    onGate = opts.onGate || null; getView2d = opts.getView2d || null; getArt = opts.getArt || null; getCropId = opts.getCropId || null;
+    onGate = opts.onGate || null; onPoint = opts.onPoint || null; getView2d = opts.getView2d || null; getArt = opts.getArt || null; getCropId = opts.getCropId || null;
   }
 
   function geomOf(rec) { return Studio.geom(rec); }
@@ -59,21 +61,22 @@ window.Editor3D = (() => {
   // after the first mount used to get no node (the entity then rendered as a blank white plane).
   async function ensureMedia(rec) {
     const assets = host && host.querySelector("#editor-3d-media"); if (!assets) return;
-    const keep = new Set(rec.elements.filter((el) => el.type !== "model" && el.type !== "timecube").map((el) => "m3-" + el.id)); // models and time cubes load from their own URL
+    const own = (el) => !["model", "timecube"].includes(Studio.mediaType(el)) && el.type !== "timecube"; // models and time cubes load from their own URL
+    const keep = new Set(rec.elements.filter(own).map((el) => "m3-" + el.id));
     assets.querySelectorAll('[id^="m3-"]').forEach((n) => { if (keep.has(n.id)) return; try { if (n.src && n.src.startsWith("blob:")) { THREE.Cache.remove(n.src); URL.revokeObjectURL(n.src); } } catch (e) {} n.remove(); }); // layers of another creation, or deleted
     for (const el of rec.elements) {
-      if (!el.assetId || !rec.assets[el.assetId] || el.type === "model" || el.type === "timecube") continue; // these load from their own URL
-      const blob = rec.assets[el.assetId], mid = "m3-" + el.id;
+      if (!el.assetId || !rec.assets[el.assetId] || !own(el)) continue; // these load from their own URL
+      const blob = rec.assets[el.assetId], mid = "m3-" + el.id, kind = Studio.mediaType(el);
       const old = assets.querySelector('[id="' + mid + '"]');
       if (old && old.__blob === blob) continue; // already registered for this exact asset
       if (old) { try { if (old.src && old.src.startsWith("blob:")) URL.revokeObjectURL(old.src); } catch (e) {} old.remove(); }
       const url = URL.createObjectURL(blob), before = assets.lastElementChild;
-      if (el.type === "video") {
+      if (kind === "video") {
         const v = document.createElement("video");
         v.id = "m3-" + el.id; v.src = url; v.muted = true; v.loop = el.loop !== false;
         v.setAttribute("playsinline", ""); v.preload = "auto"; v.load();
         assets.appendChild(v);
-      } else if (el.type === "image") {
+      } else if (kind === "image") {
         const mm = await Studio.makeImageMedia(rec.assets[el.assetId], "m3-" + el.id, () => null);
         mm.node.id = "m3-" + el.id; assets.appendChild(mm.node);
       } else if (el.type === "sound") {
@@ -98,7 +101,6 @@ window.Editor3D = (() => {
     assets.hidden = true; assets.id = "editor-3d-media";
     host.appendChild(assets);
     await ensureMedia(rec);
-    if (rec.elements.some((el) => el.type === "video" && el.chroma && el.chroma.enabled)) Studio.ensureChromaComponent();
     sceneEl = document.createElement("a-scene");
     // gltf-model is BOTH a system and a component name; A-Frame's setAttribute override
     // parses against the component schema and mangles the system value. Write the raw
@@ -243,28 +245,37 @@ window.Editor3D = (() => {
     rebuildArtwork();
   }
 
+  function buildNode(rec, el, idx, before) {
+    const e = Studio.buildElementEntity(rec, el, idx, "preview", { videoFallback: (x) => {
+      // undecodable clips would stall the scene; grey plane instead (same policy as the preview page)
+      const f = rec.assets[x.assetId];
+      const probe = document.createElement("video");
+      return f ? probe.canPlayType(f.type || "video/mp4") === "" : true;
+    }, mediaId: (x) => "m3-" + x.id });
+    if (!e) return null;
+    e.querySelectorAll("[gltf-model]").forEach((m) => { m.addEventListener("model-error", () => modelFailed(el.id), { once: true }); m.addEventListener("model-loaded", () => { failed.delete(el.id); pruneCache(); }, { once: true }); });
+    e.setAttribute("data-el-root", el.id);
+    e.__w = el.w; e.__h = el.h;
+    stripAnim(e);
+    if (before) rig.insertBefore(e, before); else rig.appendChild(e);
+    if (e.dataset.opacity) Studio.applyOpacity(e, parseFloat(e.dataset.opacity));
+    applySampled(rec, el, e, idx);
+    return e;
+  }
   function rebuildElements() {
     const rec = getRec(); if (!rec) return;
     rig.querySelectorAll("[data-el-root]").forEach((n) => { freeModels(n); n.remove(); });
     const inUse = new Set(Object.values(rec.assets || {}));
     for (const b of Studio.blobURLs().keys()) if (!inUse.has(b)) Studio.releaseBlobURL(b);
-    Studio.topLevelElements(rec).forEach((el, idx) => {
-      const e = Studio.buildElementEntity(rec, el, idx, "preview", { videoFallback: (x) => {
-        // undecodable clips would stall the scene; grey plane instead (same policy as the preview page)
-        const f = rec.assets[x.assetId];
-        const probe = document.createElement("video");
-        return f ? probe.canPlayType(f.type || "video/mp4") === "" : true;
-      }, mediaId: (x) => "m3-" + x.id });
-      if (!e) return;
-      e.querySelectorAll("[gltf-model]").forEach((m) => { m.addEventListener("model-error", () => modelFailed(el.id), { once: true }); m.addEventListener("model-loaded", () => { failed.delete(el.id); pruneCache(); }, { once: true }); });
-      e.setAttribute("data-el-root", el.id);
-      e.__w = el.w; e.__h = el.h;
-      stripAnim(e);
-      rig.appendChild(e);
-      if (e.dataset.opacity) Studio.applyOpacity(e, parseFloat(e.dataset.opacity));
-      applySampled(rec, el, e, idx);
-    });
+    Studio.topLevelElements(rec).forEach((el, idx) => buildNode(rec, el, idx));
     refreshGizmo();
+  }
+  // One layer again (a scatter whose point is being dragged), the others untouched.
+  function rebuildOne(el) {
+    const rec = getRec(), old = elNode(el.id); if (!rec || !old) return;
+    const e = buildNode(rec, el, Studio.topLevelElements(rec).indexOf(el), old);
+    freeModels(old); old.remove();
+    if (!e) return;
   }
 
   // A model's geometry, materials, textures and skeleton are its own (parsed per entity), so they are freed when the
@@ -308,7 +319,34 @@ window.Editor3D = (() => {
   });
 
   // ---------- selection highlight + move gizmo (rig-space axes) ----------
+  // ---------- the line of a selected scatter: drawn, with a ball on each point (tap one, then move it with the arrows) ----------
+  let pathHelper = null, pointSel = null, pointFor = null;
+  function clearPath() { if (pathHelper) { if (pathHelper.parent) pathHelper.parent.remove(pathHelper); pathHelper.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); pathHelper = null; } }
+  function pointLocal(rec, el, i) { const g = geomOf(rec), p = el.scatter.points[i]; return new THREE.Vector3((p.x || 0) * g.artW, (p.y || 0) * g.artH, p.z || 0); }
+  function buildPath(rec, el, node) {
+    clearPath();
+    const grp = new THREE.Group(); grp.name = "editor-3d-scatter-path"; grp.userData.pathHandle = true;
+    const line = new THREE.Line(new THREE.BufferGeometry().setFromPoints(Studio.scatterPath(rec, el.scatter).map((v) => new THREE.Vector3(v[0], v[1], v[2]))),
+      new THREE.LineBasicMaterial({ color: 0xff8800, depthTest: false, transparent: true }));
+    line.renderOrder = 9998; line.userData.pathHandle = true; line.raycast = () => {}; grp.add(line);
+    const s = Math.max(0.12, Math.min(1, cam ? cam.object3D.position.z / 1.15 : 1)) / Math.max(0.05, node.object3D.scale.x || 1);
+    el.scatter.points.forEach((_, i) => {
+      const on = i === pointSel, ball = new THREE.Mesh(new THREE.SphereGeometry(0.016 * s, 14, 10), new THREE.MeshBasicMaterial({ color: on ? 0x8b6cff : 0xffffff, depthTest: false, transparent: true }));
+      const ring = new THREE.Mesh(new THREE.SphereGeometry(0.021 * s, 14, 10), new THREE.MeshBasicMaterial({ color: on ? 0xffffff : 0xff8800, depthTest: false, transparent: true, side: THREE.BackSide }));
+      const grab = new THREE.Mesh(new THREE.SphereGeometry(0.05 * s, 8, 6), new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false })); // a finger-size zone
+      for (const [m, ro] of [[ring, 9999], [ball, 10000], [grab, 9997]]) { m.position.copy(pointLocal(rec, el, i)); m.renderOrder = ro; m.userData = { pathHandle: true, scatterPoint: i }; grp.add(m); }
+    });
+    node.object3D.add(grp); pathHelper = grp;
+  }
+  // The box around what a layer draws, without the line's own handles.
+  function drawnBox(obj) {
+    const box = new THREE.Box3(), part = new THREE.Box3();
+    obj.updateMatrixWorld(true);
+    obj.traverse((o) => { if (o.userData && o.userData.pathHandle) return; if ((o.isMesh || o.isPoints) && o.visible !== false) { let hidden = false; for (let q = o; q; q = q.parent) if (q.userData && q.userData.pathHandle) hidden = true; if (hidden) return; if (!o.geometry.boundingBox) o.geometry.computeBoundingBox(); box.union(part.copy(o.geometry.boundingBox).applyMatrix4(o.matrixWorld)); } });
+    return box;
+  }
   function clearGizmo() {
+    clearPath();
     if (gizmo) { rig.object3D.remove(gizmo); gizmo.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) o.material.dispose(); }); gizmo = null; }
     if (helper) { sceneEl.object3D.remove(helper); helper.geometry.dispose(); helper.material.dispose(); helper = null; }
   }
@@ -341,7 +379,7 @@ window.Editor3D = (() => {
     const it = cur && cur.keyT == null && cur.el.id === el.id ? cur : null;
     const sc = (s ? s.scale : 1) * (it ? it.f : 1); // a pinch in progress on an unkeyed item: drawn bigger/smaller, saved on lift
     // a resize in progress: the built layer is stretched to the new size until the rebuild catches up
-    const kx = el.type !== "group" && node.__w > 0 && el.w > 0 ? el.w / node.__w : 1, ky = el.type !== "group" && node.__h > 0 && el.h > 0 ? el.h / node.__h : (el.h == null ? kx : 1);
+    const kx = el.type !== "group" && el.type !== "scatter" && node.__w > 0 && el.w > 0 ? el.w / node.__w : 1, ky = el.type !== "group" && el.type !== "scatter" && node.__h > 0 && el.h > 0 ? el.h / node.__h : (el.h == null ? kx : 1);
     node.object3D.scale.set(sc * kx, sc * ky, sc * (el.type === "model" ? kx : 1));
     // 2D mode shows only what the flat canvas cannot draw in its final look, and whatever lies above it in the list
     const flatIds = mode === "3d" ? null : sheetIds(rec);
@@ -432,11 +470,21 @@ window.Editor3D = (() => {
     const node = elNode(id);
     if (!el || !node) return;
     const ts = sampledTs(rec, el).ts;
-    const center = placementCenter(rec, ts);
+    if (pointFor !== id) { pointFor = id; pointSel = null; }
+    if (el.type !== "scatter" || pointSel >= el.scatter.points.length) pointSel = null;
+    let center = placementCenter(rec, ts);
     // Selection box from the known element geometry (rig-local -> world): the DOM
     // node's object3D lags attribute writes, so setFromObject would misplace or
     // empty the box right after edits/rebuilds.
     sceneEl.object3D.updateMatrixWorld(true);
+    if (el.type === "scatter") {
+      buildPath(rec, el, node);
+      if (pointSel != null) { center = node.object3D.localToWorld(pointLocal(rec, el, pointSel)); rig.object3D.worldToLocal(center); }
+      const box = drawnBox(node.object3D);
+      helper = new THREE.Box3Helper(box.isEmpty() ? new THREE.Box3(center.clone(), center.clone()) : box, 0xff8800);
+      helper.userData.drawn = true; helper.material.depthTest = false; helper.renderOrder = 10000; helper.visible = pointSel == null;
+      sceneEl.object3D.add(helper);
+    } else {
     const centerWorld = center.clone().applyMatrix4(rig.object3D.matrixWorld);
     const q = new THREE.Quaternion(); rig.object3D.getWorldQuaternion(q);
     const geo = node.getAttribute("geometry") || {};
@@ -448,11 +496,13 @@ window.Editor3D = (() => {
     helper = new THREE.Box3Helper(box, 0xff8800);
     helper.material.depthTest = false; helper.renderOrder = 10000;
     sceneEl.object3D.add(helper);
+    }
 
-    const L = Math.max(ts.w, ts.h, 0.12) * 0.9;
+    const L = pointSel != null ? 0.14 : Math.max(ts.w, ts.h, 0.12) * 0.9;
     gizmo = new THREE.Group();
     gizmo.name = "editor-3d-gizmo";
     if (gizmoMode === "rotate") {
+      if (pointSel != null) center = placementCenter(rec, ts); // turning acts on the whole scatter
       const ringProxies = [];
       const mkRing = (axis, color, name, rotEuler) => {
         const mat = new THREE.MeshBasicMaterial({ color, depthTest: false, transparent: true, opacity: 0.9, side: THREE.DoubleSide });
@@ -719,6 +769,14 @@ window.Editor3D = (() => {
           const el = rec.elements.find((x) => x.id === getSelected());
           const lr = localRay(ray);
           const axis = o.userData.axis.clone();
+          if (el && el.type === "scatter" && pointSel != null && el.scatter.points[pointSel]) { // a point of the line, in full 3D; the line has no keys
+            const camDir = new THREE.Vector3(); (cam.getObject3D("camera") || sceneEl.camera).getWorldDirection(camDir); camDir.transformDirection(new THREE.Matrix4().copy(rig.object3D.matrixWorld).invert());
+            const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(new THREE.Vector3().crossVectors(axis, new THREE.Vector3().crossVectors(camDir, axis)).normalize(), gizmo.position.clone());
+            const hit = new THREE.Vector3(); if (!lr.intersectPlane(plane, hit)) return;
+            gizmoDrag = { id: e.pointerId, el, axis, plane, start: hit.clone(), point: { i: pointSel, p0: Object.assign({ z: 0 }, el.scatter.points[pointSel]) }, keyT: null, snap: JSON.stringify(rec.elements), snapT: getFrozen ? getFrozen() : null, at: 0 };
+            if (sceneEl.canvas.setPointerCapture) sceneEl.canvas.setPointerCapture(e.pointerId);
+            e.preventDefault(); e.stopPropagation(); return;
+          }
           const center = gizmo.position.clone();
           const camDir = new THREE.Vector3(); cam.getObject3D("camera") ? cam.getObject3D("camera").getWorldDirection(camDir) : camDir.set(0, 0, -1);
           const inv = new THREE.Matrix4().copy(rig.object3D.matrixWorld).invert();
@@ -738,6 +796,11 @@ window.Editor3D = (() => {
           return;
         }
       }
+    }
+    // a ball on the selected scatter's line: that point takes the arrows
+    if (pathHelper) {
+      const ph = ray.intersectObjects(pathHelper.children, true).find((x) => x.object.userData.scatterPoint != null);
+      if (ph) { pointSel = ph.object.userData.scatterPoint; refreshGizmo(); if (onPoint) onPoint(getSelected(), pointSel); e.preventDefault(); return; }
     }
     // element picking
     const targets = pickTargets(rec);
@@ -818,6 +881,18 @@ window.Editor3D = (() => {
       refreshGizmo();
       e.preventDefault();
       return;
+    }
+    if (gizmoDrag && e.pointerId === gizmoDrag.id && gizmoDrag.point) {
+      const rec = getRec(), node = elNode(gizmoDrag.el.id); if (!rec || !node) return;
+      const hit = new THREE.Vector3(); if (!localRay(rayFromEvent(e)).intersectPlane(gizmoDrag.plane, hit)) return;
+      const g = geomOf(rec), o = node.object3D, dl = gizmoDrag.axis.clone().multiplyScalar(hit.sub(gizmoDrag.start).dot(gizmoDrag.axis));
+      dl.applyQuaternion(o.quaternion.clone().invert()).divide(o.scale); // rig axes -> the layer's own turned and sized frame
+      const p = gizmoDrag.el.scatter.points[gizmoDrag.point.i], p0 = gizmoDrag.point.p0, r4 = (v) => Math.round(v * 10000) / 10000;
+      p.x = r4(Math.max(-3, Math.min(3, p0.x + dl.x / g.artW))); p.y = r4(Math.max(-3, Math.min(3, p0.y + dl.y / g.artH))); p.z = r4(Math.max(-1, Math.min(3, (p0.z || 0) + dl.z)));
+      // the copies follow while the finger moves (models only once it lifts: each one reloads)
+      const now = performance.now();
+      if (Studio.mediaType(gizmoDrag.el) !== "model" && now - gizmoDrag.at > 90) { gizmoDrag.at = now; rebuildOne(gizmoDrag.el); }
+      refreshGizmo(); e.preventDefault(); return;
     }
     if (gizmoDrag && e.pointerId === gizmoDrag.id) {
       const rec = getRec(); if (!rec) return;
@@ -960,7 +1035,8 @@ window.Editor3D = (() => {
       } else onChange();
     }
     const still = orb && e && e.type === "pointerup" && Math.hypot(e.clientX - orb.x0, e.clientY - orb.y0) < 8;
-    if (still && orb.pick) onSelect(orb.pick);
+    if (still && orb.pick && orb.pick === getSelected() && pointSel != null) { pointSel = null; refreshGizmo(); if (onPoint) onPoint(getSelected(), null); } // a tap on the copies: the arrows go back to the whole layer
+    else if (still && orb.pick) onSelect(orb.pick);
     else if (still && orb.tap && getSelected()) onSelect(null);
     orb = null;
   }
@@ -1142,13 +1218,15 @@ window.Editor3D = (() => {
         const node = el && elNode(selId);
         if (el && node) {
           const { ts } = sampledTs(rec, el);
-          gizmo.position.copy(placementCenter(rec, ts));
+          if (el.type === "scatter" && pointSel != null && gizmoMode === "move" && el.scatter.points[pointSel]) { const c = node.object3D.localToWorld(pointLocal(rec, el, pointSel)); rig.object3D.worldToLocal(c); gizmo.position.copy(c); }
+          else gizmo.position.copy(placementCenter(rec, ts));
           // The element moves under timeline playback/scrub and the view changes on resize/rotation:
           // refit the handles (edge-aware) whenever position, camera or canvas size changed.
           const cr = sceneEl && sceneEl.canvas ? sceneEl.canvas : null, cp = cam && cam.object3D ? cam.object3D.position : null;
           const fitKey = [gizmo.position.x, gizmo.position.y, gizmo.position.z, cp ? cp.x : 0, cp ? cp.y : 0, cp ? cp.z : 0, cr ? cr.clientWidth : 0, cr ? cr.clientHeight : 0, rig && rig.object3D ? rig.object3D.rotation.y : 0].map((v) => Math.round(v * 1000)).join(",");
           if (fitKey !== lastFitKey) { lastFitKey = fitKey; fitGizmoToView(); }
-          if (helper) {
+          if (helper && helper.userData.drawn) { const box = drawnBox(node.object3D); if (!box.isEmpty()) helper.box.copy(box); }
+          else if (helper) {
             const centerWorld = gizmo.position.clone().applyMatrix4(rig.object3D.matrixWorld);
             const q = new THREE.Quaternion(); rig.object3D.getWorldQuaternion(q);
             const geo = node.getAttribute("geometry") || {};
@@ -1196,5 +1274,5 @@ window.Editor3D = (() => {
     rebuildArtwork().then(() => ensureMedia(getRec())).then(rebuildElements);
   }
 
-  return { init, show, hide, overlay, drawsIn2d, overlayType, modelError, needsOverlay: (rec) => !!rec && rec.elements.some(overlayType), sync, isActive: () => active && mode === "3d", refreshGizmo, _test: { glLost: () => glLost, mode: () => mode, alphaAt, pickOrder, rebuilds: () => rebuildCount, gizmo: () => gizmo, node: (id) => elNode(id), scene: () => sceneEl, helper: () => helper, drag: () => gizmoDrag } };
+  return { init, show, hide, overlay, drawsIn2d, overlayType, modelError, needsOverlay: (rec) => !!rec && rec.elements.some(overlayType), sync, isActive: () => active && mode === "3d", refreshGizmo, selectPoint: (i) => { pointSel = i; refreshGizmo(); }, get pointSel() { return pointSel; }, _test: { pathHelper: () => pathHelper, glLost: () => glLost, mode: () => mode, alphaAt, pickOrder, rebuilds: () => rebuildCount, gizmo: () => gizmo, node: (id) => elNode(id), scene: () => sceneEl, helper: () => helper, drag: () => gizmoDrag } };
 })();
