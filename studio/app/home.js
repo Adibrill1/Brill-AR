@@ -53,6 +53,32 @@ window.Home = (() => {
     try { UI.download(await Studio.exportZIP(cur), fileName(cur) + ".zip"); end(); toast("קובץ הגיבוי ירד למכשיר"); }
     catch (e) { console.warn(e); end(); toast("הגיבוי לא הצליח", { kind: "error" }); }
   }
+  // The gallery picture ("תמונת שער"): her own picture instead of the artwork, on this card only. Stored in the creation
+  // as __cover, made small (800px on the long side) so the gallery stays light; the camera, the editor and the preview
+  // never read it.
+  async function smallPicture(f) {
+    const img = await Studio.loadImage(await Studio.blobToDataURL(f)), k = Math.min(1, 800 / Math.max(img.naturalWidth, img.naturalHeight));
+    const c = document.createElement("canvas"); c.width = Math.max(1, Math.round(img.naturalWidth * k)); c.height = Math.max(1, Math.round(img.naturalHeight * k));
+    const g = c.getContext("2d"); g.fillStyle = "#ffffff"; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height); // a see-through picture gets a white back
+    const out = await new Promise((r) => c.toBlob(r, "image/jpeg", 0.85));
+    if (!out) throw new Error("encode");
+    return out;
+  }
+  async function chooseCover(rec) {
+    const f = await UI.pickFile("image/*"); if (!f) return;
+    const end = UI.busy("מכינה את תמונת השער…");
+    try {
+      const pic = await smallPicture(f), cur = await Studio.load(rec.id); if (!cur) { end(); return render(); }
+      cur.assets.__cover = pic; await Studio.save(cur, { noHistory: true });
+      end(); toast("תמונת השער הוחלפה. במצלמה עדיין מזהים את תמונת היצירה.");
+    } catch (e) { console.warn(e); end(); toast("התמונה הזו לא נפתחה. אפשר לנסות תמונה אחרת.", { kind: "error" }); }
+    render();
+  }
+  async function resetCover(rec) {
+    const cur = await Studio.load(rec.id); if (!cur) return render();
+    delete cur.assets.__cover; await Studio.save(cur, { noHistory: true });
+    toast("הכרטיס מראה שוב את תמונת היצירה"); render();
+  }
   async function remove(rec) {
     const ok = await UI.confirm({ title: "למחוק את ״" + rec.name + "״?", text: "היצירה תימחק מהמכשיר הזה ואי אפשר יהיה להחזיר אותה. כדאי לשמור גיבוי קודם.", yes: "למחוק", danger: true });
     if (!ok) return;
@@ -61,18 +87,20 @@ window.Home = (() => {
   }
 
   function card(rec) {
-    const n = (rec.elements || []).length, art = rec.assets && rec.assets.__artwork;
+    const n = (rec.elements || []).length, cover = rec.assets && rec.assets.__cover, art = cover || (rec.assets && rec.assets.__artwork);
     let pic;
-    if (art) { const u = URL.createObjectURL(art); urls.push(u); pic = h("img", { src: u, alt: "", loading: "lazy", draggable: false }); }
+    if (art) { const u = URL.createObjectURL(art); urls.push(u); pic = h("img", { src: u, alt: "", loading: "lazy", draggable: false, data: { cover: cover ? "1" : "" } }); }
     else pic = h("span.card-noart", icon("image", 30), h("span", "עוד בלי תמונה"));
     const more = h("button.icon-btn.card-more", { type: "button", "aria-label": "עוד פעולות: " + rec.name, "aria-haspopup": "menu" }, icon("more", 20));
     more.onclick = () => UI.menu(more, [
       { label: "שינוי שם", icon: "edit", run: () => rename(rec) },
       { label: "שכפול", icon: "copy", run: () => duplicate(rec) },
+      { label: "לבחור תמונת שער", icon: "image", run: () => chooseCover(rec) },
+      cover ? { label: "לחזור לתמונת היצירה", icon: "refresh", run: () => resetCover(rec) } : false,
       { label: "שמירת גיבוי", icon: "download", run: () => exportRec(rec) },
       null,
       { label: "מחיקה", icon: "trash", danger: true, run: () => remove(rec) }
-    ]);
+    ].filter((x) => x !== false));
     return h("article.card",
       h("button.card-open", { type: "button", onclick: () => go(rec.id), "aria-label": "פתיחת " + rec.name }, h("span.card-pic", pic)),
       h("div.card-foot", h("div.card-text", h("b.card-name", rec.name || "יצירה"), h("span.card-meta", (n ? n + (n === 1 ? " שכבה" : " שכבות") : "ריקה") + " · " + UI.fmtDate(rec.updatedAt || rec.createdAt))), more));

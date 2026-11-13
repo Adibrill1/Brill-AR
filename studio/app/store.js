@@ -166,7 +166,7 @@ window.App = (() => {
     return e;
   }
   const assetUsed = (id) => S.rec.elements.some((e) => e.assetId === id || (e.particles && e.particles.spriteAssetId === id));
-  function sweepAssets() { Object.keys(S.rec.assets).forEach((id) => { if (id !== "__artwork" && !assetUsed(id)) delete S.rec.assets[id]; }); }
+  function sweepAssets() { Object.keys(S.rec.assets).forEach((id) => { if (id !== "__artwork" && id !== "__cover" && !assetUsed(id)) delete S.rec.assets[id]; }); }
   async function removeLayer(id) {
     const e = el(id); if (!e) return;
     const kids = e.type === "group" ? e.children || [] : [];

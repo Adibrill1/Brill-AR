@@ -79,7 +79,7 @@ const Studio = (() => {
   // Read-only diagnostic: for every stored asset, which step works? Nothing is written, uploaded or replaced.
   // stages: head (first byte), full (arrayBuffer, up to 3 tries), reader (FileReader data URL, up to 3 tries), decode (browser can open it).
   async function fileHealth(rec) {
-    const names = { __artwork: "תמונת היצירה" };
+    const names = { __artwork: "תמונת היצירה", __cover: "תמונת השער" };
     for (const el of (rec && rec.elements) || []) { if (el.assetId && !names[el.assetId]) names[el.assetId] = el.name || el.type; if (el.particles && el.particles.spriteAssetId && !names[el.particles.spriteAssetId]) names[el.particles.spriteAssetId] = (el.name || "חלקיקים") + " (ספרייט)"; }
     const tryN = async (fn) => { let tries = 0, err = ""; for (let i = 0; i < 3; i++) { tries++; try { await fn(); return { ok: true, tries }; } catch (e) { err = (e && e.name) || String(e).slice(0, 40); await new Promise((r) => setTimeout(r, 100)); } } return { ok: false, tries, err }; };
     const out = [];
@@ -2225,6 +2225,7 @@ vec4 bpPattern(vec2 uv) {
     const wanted = new Set();
     for (const el of rec.elements) for (const id of [el.assetId, el.particles && el.particles.spriteAssetId]) if (id && rec.assets[id]) wanted.add(id);
     if (rec.assets.__artwork) wanted.add("__artwork");
+    if (rec.assets.__cover && typeof rec.assets.__cover.arrayBuffer === "function") wanted.add("__cover"); // the gallery picture rides the backup (not the published JSON)
     const chunks = [];
     let zipErr = null;
     const zip = new fflate.Zip((err, chunk, final) => { if (err) { zipErr = err; return; } chunks.push(chunk); });
