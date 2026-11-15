@@ -112,7 +112,8 @@ window.Inspector = (() => {
       h("div.btn-row", pick),
       on ? K({ label: "הצבע שנעלם", get: () => cur().color || "#00ff00", set: ch((c, v) => { c.color = v; }) }) : null,
       on ? S(Object.assign({ label: "רגישות", min: 0.02, max: 0.8, step: 0.01, get: () => (cur().threshold == null ? 0.35 : cur().threshold), set: ch((c, v) => { c.threshold = v; }) }, pct)) : null,
-      on ? S(Object.assign({ label: "ריכוך קצוות", min: 0, max: 0.3, step: 0.01, get: () => cur().soft || 0, set: ch((c, v) => { c.soft = v; }) }, pct)) : null);
+      on ? S(Object.assign({ label: "ריכוך קצוות", min: 0, max: 0.3, step: 0.01, get: () => cur().soft || 0, set: ch((c, v) => { c.soft = v; }) }, pct)) : null,
+      on ? S(Object.assign({ label: "ניקוי שוליים", min: 0, max: 1, step: 0.05, get: () => (cur().edge == null ? 0.5 : cur().edge), set: ch((c, v) => { c.edge = v; }) }, pct)) : null);
   }
 
   // ---------- scatter along a path ----------

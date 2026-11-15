@@ -190,6 +190,43 @@ const Studio = (() => {
     };
   }
 
+  // ---------- a steady hold on the artwork ----------
+  // The engine re-measures the artwork every camera frame, and on a small or plain artwork each measurement tilts a
+  // little differently; the stock target copies every one as it comes, so tall content visibly sways while the artwork
+  // rests in the hand. This listens after the stock target (it is attached once the target has loaded, so it runs
+  // second and has the last word) and lays a filtered pose over the raw one: slow to follow a tilt that only trembles,
+  // quick to follow one that keeps going the same way (a "one euro" filter: the cutoff rises with the measured speed,
+  // and the speed is averaged as a signed vector, so a tremble cancels itself out and a real turn does not).
+  // The first sighting after a loss is taken as it is. opts.now (seconds) is for tests.
+  function steadyTarget(scene, target, opts) {
+    const T = AFRAME.THREE, o = opts || {}, now = o.now || (() => performance.now() / 1000);
+    const q = new T.Quaternion(), p = new T.Vector3(), rq = new T.Quaternion(), rp = new T.Vector3(), pq = new T.Quaternion(), pp = new T.Vector3(), dq = new T.Quaternion();
+    const wv = new T.Vector3(), vv = new T.Vector3(), tmp = new T.Vector3();
+    let has = false, t0 = 0, sc = 1;
+    const a = (hz, dt) => { const r = 2 * Math.PI * hz * dt; return r / (r + 1); };
+    const lost = () => { has = false; };
+    const seen = (ev) => {
+      const d = ev.detail || {}, o3 = target.object3D;
+      if (!d.position || !d.rotation || d.name !== target.getAttribute("name")) return;
+      const t = now(), dt = t - t0, rs = Number.isFinite(d.scale) ? d.scale : 1;
+      rq.set(d.rotation.x, d.rotation.y, d.rotation.z, d.rotation.w).normalize(); rp.set(d.position.x, d.position.y, d.position.z);
+      if (!has || ev.type === "xrimagefound" || !(dt > 0) || dt > 0.4) { q.copy(rq); p.copy(rp); sc = rs; wv.set(0, 0, 0); vv.set(0, 0, 0); has = true; }
+      else {
+        const k = a(1, dt);
+        dq.copy(pq).invert().multiply(rq); if (dq.w < 0) dq.set(-dq.x, -dq.y, -dq.z, -dq.w);
+        wv.lerp(tmp.set(dq.x, dq.y, dq.z).multiplyScalar(2 / dt), k); // turn speed, rad/s
+        vv.lerp(tmp.copy(rp).sub(pp).multiplyScalar(1 / (dt * Math.max(0.05, rp.length()))), k); // travel speed, in distances to the camera per second
+        q.slerp(rq, a(1.2 + 6 * Math.max(0, wv.length() - 0.25), dt)); // a tremble averages to under 0.25 rad/s; a turn does not
+        const kp = a(3 + 25 * vv.length(), dt);
+        p.lerp(rp, kp); sc += (rs - sc) * kp;
+      }
+      pq.copy(rq); pp.copy(rp); t0 = t;
+      o3.position.copy(p); o3.quaternion.copy(q); o3.scale.set(sc, sc, sc);
+    };
+    const attach = () => { scene.addEventListener("xrimagefound", seen); scene.addEventListener("xrimageupdated", seen); scene.addEventListener("xrimagelost", lost); };
+    if (target.hasLoaded) attach(); else target.addEventListener("loaded", function on(e) { if (e.target !== target) return; target.removeEventListener("loaded", on); attach(); });
+  }
+
   // ---------- coordinate mapping ----------
   // Element placement is stored artwork-normalized:
   //   x, y  = center offset as fraction of artwork width/height (0=center, +right/+up)
@@ -481,7 +518,7 @@ const Studio = (() => {
   const FX_GLSL = `
 #if defined(USE_MAP) || defined(BA_FX_SHADER)
 uniform float baMode; uniform float baAmount; uniform float baTime; uniform vec2 baScale; uniform vec2 baTexel; uniform sampler2D baGlyphs;
-uniform float baKey; uniform vec3 baKeyColor; uniform float baKeyThresh; uniform float baKeySoft; uniform float baLinear;
+uniform float baKey; uniform vec3 baKeyColor; uniform float baKeyThresh; uniform float baKeySoft; uniform float baKeyEdge; uniform float baLinear;
 float baLum(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
 float baHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
 vec2 baUv(vec2 p) { return p / baScale; }
@@ -489,13 +526,34 @@ vec3 baToSrgb(vec3 c) { return mix(c * 12.92, pow(max(c, 0.0), vec3(1.0 / 2.4)) 
 vec3 baToLin(vec3 c) { return mix(c / 12.92, pow((c + 0.055) / 1.055, vec3(2.4)), step(0.04045, c)); }
 // One texel with the colour removal applied (baKey 1: the picked colour, in the sRGB values she picked it from; 2: a black
 // "glow" key, alpha follows brightness). Every filter reads through it, so the removed colour stays gone under any look.
+float baKeyAlpha(vec3 s) { float d = distance(s, baKeyColor); return baKeySoft > 0.0001 ? smoothstep(baKeyThresh, baKeyThresh + baKeySoft, d) : step(baKeyThresh, d); }
+vec3 baSrc(vec2 uv) { vec3 c = texture2D(map, uv).rgb; return baLinear > 0.5 ? baToSrgb(c) : c; }
 vec4 baTex(vec2 uv) {
   vec4 c = texture2D(map, uv);
   if (baKey < 0.5) return c;
   vec3 s = baLinear > 0.5 ? baToSrgb(c.rgb) : c.rgb;
   if (baKey > 1.5) { float m = max(s.r, max(s.g, s.b)); if (m < baKeyThresh * 0.15) return vec4(0.0); vec3 o = s / m; return vec4(baLinear > 0.5 ? baToLin(o) : o, c.a * m); }
-  float d = distance(s, baKeyColor);
-  return vec4(c.rgb, c.a * (baKeySoft > 0.0001 ? smoothstep(baKeyThresh, baKeyThresh + baKeySoft, d) : step(baKeyThresh, d)));
+  float a = baKeyAlpha(s);
+  if (baKeyEdge < 0.001) return vec4(c.rgb, c.a * a);
+  // Edge cleaning. A video stores its colour coarser than its picture, so a rim of the removed colour clings to
+  // whatever stays. Up to the middle of the control, what is left of the removed colour's own channel is pulled down
+  // to the other two - a green rim on a lash turns into its shadow, and a thin lash stays whole. Past the middle the
+  // cut also shrinks by a texel or two (the weakest of the four neighbours wins), which eats thin details with the rim.
+  float er = clamp(baKeyEdge * 2.0 - 1.0, 0.0, 1.0);
+  if (er > 0.0) {
+    vec2 o = baTexel * (1.0 + 1.5 * er);
+    a = mix(a, min(a, min(min(baKeyAlpha(baSrc(uv + vec2(o.x, 0.0))), baKeyAlpha(baSrc(uv - vec2(o.x, 0.0)))), min(baKeyAlpha(baSrc(uv + vec2(0.0, o.y))), baKeyAlpha(baSrc(uv - vec2(0.0, o.y)))))), min(1.0, er * 3.0));
+  }
+  float top = max(baKeyColor.r, max(baKeyColor.g, baKeyColor.b));
+  vec3 w = step(vec3(top - 0.0005), baKeyColor); // the removed colour's strongest channel
+  float rest = max(max(baKeyColor.r * (1.0 - w.r), baKeyColor.g * (1.0 - w.g)), baKeyColor.b * (1.0 - w.b));
+  if (top - rest > 0.2 && w.r + w.g + w.b < 1.5) { // only a colour with one clear channel (green, blue, red) spills
+    vec3 q = s * (1.0 - w); float spill = max(0.0, dot(s, w) - max(q.r, max(q.g, q.b)));
+    s -= w * spill * min(1.0, 2.0 * baKeyEdge);
+    a *= 1.0 - baKeyEdge * smoothstep(0.15, 0.6, spill);
+    return vec4(baLinear > 0.5 ? baToLin(s) : s, c.a * a);
+  }
+  return vec4(c.rgb, c.a * a);
 }
 vec4 baFilter(vec2 uv) {
   vec4 src = baTex(uv);
@@ -557,23 +615,24 @@ vec4 baFilter(vec2 uv) {
   function validFx(el) { return (el.fx == null || ["image", "video"].includes(el.type) && FX_IDS.includes(el.fx)) && (el.fxAmount == null || Number.isFinite(el.fxAmount) && el.fxAmount >= 0 && el.fxAmount <= 1); }
   // ---------- colour removal ("הסרת צבע") ----------
   // el.chroma = {enabled, color, threshold, soft} on a picture (also an animated GIF) or a video: texels within threshold
-  // of the colour vanish, and soft (0 = the hard cut every older creation had) feathers the edge. A near-black colour is
+  // of the colour vanish, soft (0 = the hard cut every older creation had) feathers the edge, and edge (0-1, 0.5 when
+  // absent) cleans the rim the colour leaves on what stays. A near-black colour is
   // the soft glow key for light effects drawn on black. It runs inside baTex, so the 3D/AR material, the filters and
   // the 2D editor (fxFrame) all remove the same pixels.
-  const CHROMA_DEFAULT = { enabled: false, color: "#00ff00", threshold: 0.35, soft: 0 };
+  const CHROMA_DEFAULT = { enabled: false, color: "#00ff00", threshold: 0.35, soft: 0, edge: 0.5 };
   const srgbToLin = (v) => (v <= 0.04045 ? v / 12.92 : Math.pow((v + 0.055) / 1.055, 2.4));
   function keyValues(el) {
     const k = el && ["image", "video"].includes(el.type) && el.chroma;
     if (!k || !k.enabled) return null;
     const rgb = /^#[0-9a-f]{6}$/i.test(k.color || "") ? hexRgb(k.color) : [0, 1, 0];
-    return { mode: rgb.reduce((n, v) => n + srgbToLin(v), 0) < 0.15 ? 2 : 1, rgb, thresh: Number.isFinite(k.threshold) ? k.threshold : 0.35, soft: Number.isFinite(k.soft) ? Math.max(0, k.soft) : 0 };
+    return { mode: rgb.reduce((n, v) => n + srgbToLin(v), 0) < 0.15 ? 2 : 1, rgb, thresh: Number.isFinite(k.threshold) ? k.threshold : 0.35, soft: Number.isFinite(k.soft) ? Math.max(0, k.soft) : 0, edge: Number.isFinite(k.edge) ? Math.max(0, Math.min(1, k.edge)) : 0.5 };
   }
   function validChroma(el) {
     const k = el.chroma; if (k == null) return true;
     if (typeof k !== "object" || Array.isArray(k) || !["image", "video"].includes(el.type)) return false;
     if (k.enabled != null && typeof k.enabled !== "boolean") return false;
     if (k.color != null && (typeof k.color !== "string" || k.color.length > 32)) return false;
-    return [["threshold", 0, 2], ["soft", 0, 1]].every(([f, lo, hi]) => k[f] == null || Number.isFinite(k[f]) && k[f] >= lo && k[f] <= hi);
+    return [["threshold", 0, 2], ["soft", 0, 1], ["edge", 0, 1]].every(([f, lo, hi]) => k[f] == null || Number.isFinite(k[f]) && k[f] >= lo && k[f] <= hi);
   }
   // The colour of one pixel of a layer's own picture (not of the screen): u, v from its top left, inside its crop.
   let pickCanvas = null;
@@ -623,15 +682,15 @@ vec4 baFilter(vec2 uv) {
   function ensureFxComponent() {
     if (!window.AFRAME || AFRAME.components["studio-fx"]) return;
     AFRAME.registerComponent("studio-fx", {
-      schema: { mode: { default: 0 }, amount: { default: 0.5 }, sx: { default: 1 }, sy: { default: 1 }, key: { default: 0 }, kc: { default: "#00ff00" }, thresh: { default: 0.35 }, soft: { default: 0 } },
+      schema: { mode: { default: 0 }, amount: { default: 0.5 }, sx: { default: 1 }, sy: { default: 1 }, key: { default: 0 }, kc: { default: "#00ff00" }, thresh: { default: 0.35 }, soft: { default: 0 }, edge: { default: 0.5 } },
       init() {
         if (!fxGlyphTexture) { fxGlyphTexture = new THREE.CanvasTexture(fxGlyphs()); fxGlyphTexture.generateMipmaps = false; fxGlyphTexture.minFilter = THREE.LinearFilter; }
         this.uniforms = { baMode: { value: 0 }, baAmount: { value: 0.5 }, baTime: { value: 0 }, baScale: { value: new THREE.Vector2(1, 1) }, baTexel: { value: new THREE.Vector2(1 / 512, 1 / 512) }, baGlyphs: { value: fxGlyphTexture },
-          baKey: { value: 0 }, baKeyColor: { value: new THREE.Vector3(0, 1, 0) }, baKeyThresh: { value: 0.35 }, baKeySoft: { value: 0 }, baLinear: { value: 0 } };
+          baKey: { value: 0 }, baKeyColor: { value: new THREE.Vector3(0, 1, 0) }, baKeyThresh: { value: 0.35 }, baKeySoft: { value: 0 }, baKeyEdge: { value: 0.5 }, baLinear: { value: 0 } };
       },
       update() {
         const u = this.uniforms, d = this.data; u.baMode.value = d.mode; u.baAmount.value = d.amount; u.baScale.value.set(d.sx, d.sy);
-        u.baKey.value = d.key; u.baKeyColor.value.fromArray(/^#[0-9a-f]{6}$/i.test(d.kc) ? hexRgb(d.kc) : [0, 1, 0]); u.baKeyThresh.value = d.thresh; u.baKeySoft.value = d.soft;
+        u.baKey.value = d.key; u.baKeyColor.value.fromArray(/^#[0-9a-f]{6}$/i.test(d.kc) ? hexRgb(d.kc) : [0, 1, 0]); u.baKeyThresh.value = d.thresh; u.baKeySoft.value = d.soft; u.baKeyEdge.value = d.edge;
       },
       tick(time) { // the material can arrive late or be rebuilt (texture load, chroma mount), so it is checked every frame
         this.uniforms.baTime.value = time / 1000;
@@ -672,7 +731,7 @@ vec4 baFilter(vec2 uv) {
         texture(1, fxGlyphs()); texture(0, null);
         const u = (n) => gl.getUniformLocation(prog, n);
         gl.uniform1i(u("map"), 0); gl.uniform1i(u("baGlyphs"), 1);
-        fxGL = { c, gl, u: { crop: u("crop"), mode: u("baMode"), amount: u("baAmount"), time: u("baTime"), scale: u("baScale"), texel: u("baTexel"), key: u("baKey"), kc: u("baKeyColor"), thresh: u("baKeyThresh"), soft: u("baKeySoft"), lin: u("baLinear") } };
+        fxGL = { c, gl, u: { crop: u("crop"), mode: u("baMode"), amount: u("baAmount"), time: u("baTime"), scale: u("baScale"), texel: u("baTexel"), key: u("baKey"), kc: u("baKeyColor"), thresh: u("baKeyThresh"), soft: u("baKeySoft"), edge: u("baKeyEdge"), lin: u("baLinear") } };
       } catch (e) { console.warn("filter preview unavailable", e); }
     }
     if (!fxGL) return null;
@@ -687,7 +746,7 @@ vec4 baFilter(vec2 uv) {
     const s = fxScale(el, wpx, hpx);
     gl.uniform4f(u.crop, cr.x, 1 - cr.y - cr.h, cr.w, cr.h); gl.uniform1f(u.mode, mode); gl.uniform1f(u.amount, fxAmount(el)); gl.uniform1f(u.time, timeSec || 0);
     gl.uniform2f(u.scale, s[0], s[1]); gl.uniform2f(u.texel, 1 / iw, 1 / ih);
-    gl.uniform1f(u.key, key ? key.mode : 0); gl.uniform3fv(u.kc, key ? key.rgb : [0, 1, 0]); gl.uniform1f(u.thresh, key ? key.thresh : 0.35); gl.uniform1f(u.soft, key ? key.soft : 0); gl.uniform1f(u.lin, 0);
+    gl.uniform1f(u.key, key ? key.mode : 0); gl.uniform3fv(u.kc, key ? key.rgb : [0, 1, 0]); gl.uniform1f(u.thresh, key ? key.thresh : 0.35); gl.uniform1f(u.soft, key ? key.soft : 0); gl.uniform1f(u.edge, key ? key.edge : 0); gl.uniform1f(u.lin, 0);
     gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
     return c;
   }
@@ -1701,7 +1760,7 @@ vec4 bpPattern(vec2 uv) {
     if ((fxMode(el) || key) && e.tagName !== "A-PLANE") { // a filter or colour removal on the layer's own material (not on the grey stand-in for a video that cannot play)
       ensureFxComponent();
       const s = fxScale(el, ts.w, ts.h);
-      e.setAttribute("studio-fx", { mode: fxMode(el), amount: fxAmount(el), sx: s[0], sy: s[1], key: key ? key.mode : 0, kc: key ? el.chroma.color : "#00ff00", thresh: key ? key.thresh : 0.35, soft: key ? key.soft : 0 });
+      e.setAttribute("studio-fx", { mode: fxMode(el), amount: fxAmount(el), sx: s[0], sy: s[1], key: key ? key.mode : 0, kc: key ? el.chroma.color : "#00ff00", thresh: key ? key.thresh : 0.35, soft: key ? key.soft : 0, edge: key ? key.edge : 0.5 });
     }
     if(['image','video'].includes(el.type)&&el.crop){
       const applyCrop=()=>{let ready=false;e.object3D.traverse(mesh=>{if(!mesh.geometry?.attributes.uv)return;if(!mesh.geometry._studioCropOwned){mesh.geometry=mesh.geometry.clone();mesh.geometry._studioCropOwned=true;}const uv=mesh.geometry.attributes.uv,c=el.crop;
@@ -2800,7 +2859,7 @@ vec4 bpPattern(vec2 uv) {
     return importJSON(text, { save: false });
   }
 
-  return { TARGET_W, TARGET_H, newId, inspectVideo, validateModelBlob, prepareModelBlob, modelCompressionKinds, DECODER_DRACO_PATH, DECODER_MESHOPT_PATH, modelClipNames, modelClipInfo, loadImage, loadImageBlob, loadFailed, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON,
+  return { TARGET_W, TARGET_H, newId, inspectVideo, validateModelBlob, prepareModelBlob, modelCompressionKinds, DECODER_DRACO_PATH, DECODER_MESHOPT_PATH, modelClipNames, modelClipInfo, loadImage, loadImageBlob, loadFailed, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON, steadyTarget,
            audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, blobURL, releaseBlobURL, blobURLs, historyState, restoreHistory, duplicateLayer, exportJSON, missingAssets, importJSON, exportZIP, importZIP, zipToJSON, fetchPublished, ownBlob, assetHealth, fileHealth, seedDemo, normEl, ANIMS, drawTextCanvas, loadTextFonts, FX: FX.map(([id, name]) => ({ id, name, moving: FX_MOVING.has(id) })), fxFrame,
            PATTERNS: PATTERNS.map(([id, name, colors, speed]) => ({ id, name, colors: colors.slice(), speed })), PATTERN_PALETTES: PATTERN_PALETTES.map(([name, colors]) => ({ name, colors: colors.slice() })),
            PATTERN_SHAPES: PATTERN_SHAPES.map(([id, name]) => ({ id, name })), patternDefaults, patternAspect, patternFrame, validPattern, validFx, validChroma, keyValues, pixelAt, CHROMA_DEFAULT, SCATTER_TYPES, SCATTER_MAX, mediaType, isStill, stillAt, setStill, scatterItem, scatterLimit, scatterPath, scatterCopies, scatterCopyEl, scatterBounds, refreshScatter, makeScatter, makeFan, scaleScatter, breakScatter, validScatter, FONTS: FONTS.map(([id, name]) => ({ id, name })), buildElementEntity, groupOf, fitGroup, makeGroup, breakGroup, leaveGroup, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, ensureTimeCubeComponent, bakeTimeCube, validTimeCube, TIMECUBE_DIRS, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, artworkFingerprint, fingerprintDistance, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,

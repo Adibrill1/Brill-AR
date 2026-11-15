@@ -151,6 +151,7 @@
   refreshVisibility();
   if (curSeq) { refreshVisibility(); Studio.renderSeqDots(rec, curSeq); }
   scene.appendChild(target);
+  Studio.steadyTarget(scene, target); // the content rests on the artwork instead of trembling with every camera frame
   // Timeline motion starts when the artwork is found (not during permission/scan screens)
   // and freezes while tracking is lost, resuming where it stopped.
   // the state driver drives only state-model elements; tracked elements run on their track's own driver

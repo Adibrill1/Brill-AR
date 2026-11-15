@@ -76,7 +76,7 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
 
   // backup round trip keeps the setting (softness too)
   const back=await p.evaluate(async()=>{await App.flush();const r=await Studio.load(App.rec.id);const j=await Studio.exportJSON(r);const n=await Studio.importJSON(j,{save:false});return n.elements.map(e=>e.chroma||null);});
-  assert.deepEqual(back[0],{enabled:true,color:'#00ff00',threshold:0.35,soft:0.1},'backup carries the picture\'s colour removal');
+  assert.deepEqual(back[0],{enabled:true,color:'#00ff00',threshold:0.35,soft:0.1,edge:0.5},'backup carries the picture\'s colour removal');
   assert.equal(back[2].enabled,true,'and the video\'s');
   // a bad value is refused on import
   const bad=await p.evaluate(async()=>{const r=await Studio.load(App.rec.id);const o=JSON.parse(await Studio.exportJSON(r));o.elements[0].chroma.threshold='x';try{await Studio.importJSON(JSON.stringify(o),{save:false});return 'accepted';}catch(e){return e.message;}});
