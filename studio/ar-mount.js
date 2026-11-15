@@ -7,6 +7,7 @@ window.ARMount = (() => {
   // The scene and what it holds once per page: camera, lights, and the 10-second capture (sound mixed in, no mic).
   function makeScene(opts) {
     const o = opts || {}, scene = document.createElement("a-scene");
+    if (o.holdMs > 0) holdLost(scene, o.holdMs);
     // gltf-model is BOTH a system and a component name; A-Frame's setAttribute override
     // parses against the component schema and mangles the system value. Write the raw
     // attribute so the system schema (decoder paths) sees it at scene init.
@@ -41,6 +42,30 @@ window.ARMount = (() => {
     return scene;
   }
 
+  // A moment of grace when the engine loses the artwork: a reflection crossing a glossy print, or a hand, often takes
+  // the artwork away for a fraction of a second. The engine's "lost" is held back for holdMs, and dropped if the artwork
+  // is found again meanwhile, so the content stays where it was instead of blinking out and starting over. Registered
+  // before anything else listens on the scene, so it has the first word. Events without a name (tests) pass at once.
+  function holdLost(scene, ms) {
+    const held = new Map(); // name -> timer
+    const pass = (name, detail) => { held.delete(name); scene.__passLost = true; try { scene.emit("xrimagelost", detail, false); } finally { scene.__passLost = false; } };
+    scene.addEventListener("xrimagelost", (e) => {
+      const d = e.detail, name = d && d.name;
+      if (scene.__passLost || !name) return;
+      e.stopImmediatePropagation();
+      clearTimeout(held.get(name)); held.set(name, setTimeout(() => pass(name, d), ms));
+    }, true);
+    scene.addEventListener("xrimagefound", (e) => { const name = e.detail && e.detail.name; if (name && held.has(name)) { clearTimeout(held.get(name)); held.delete(name); } }, true);
+    scene.__releaseLost = (name) => { if (held.has(name)) { clearTimeout(held.get(name)); pass(name, { name }); return true; } return false; };
+  }
+  // The creation under the image target `name` steps aside at once: its artwork counts as lost (content hidden, motion
+  // and media paused), whether or not the engine has said so yet. The portal does this when it switches to another artwork.
+  function release(scene, name) {
+    if (scene.__releaseLost && scene.__releaseLost(name)) return;
+    const t = [...scene.querySelectorAll("xrextras-named-image-target")].find((n) => n.getAttribute("name") === name);
+    if (t && t.object3D && t.object3D.visible) { scene.__passLost = true; try { scene.emit("xrimagelost", { name }, false); } finally { scene.__passLost = false; } }
+  }
+
   // One creation under an image target called opts.name. The scene may already be running (the portal mounts
   // creations later). Returns {target, mediaEls, tlDrv, actionRunner, destroy}.
   async function mount(scene, rec, opts) {
@@ -58,6 +83,7 @@ window.ARMount = (() => {
         v.id = "m-" + el.id; v.src = url; v.muted = true; v.loop = el.loop !== false;
         v.setAttribute("playsinline", ""); v.setAttribute("webkit-playsinline", "");
         v.setAttribute("crossorigin", "anonymous"); v.preload = "auto";
+        Studio.videoHasPicture(v); // starts watching for its first picture: its layer stays invisible until then
         assets.appendChild(v); nodes.push(v);
         // a frozen video stays on its chosen frame: it is left out of everything that starts media (found, touch, states)
         if (Studio.isStill(el)) Studio.setStill(v, true, Studio.stillAt(el)); else mediaEls.push({ kind: "video", node: v, el });
@@ -126,6 +152,11 @@ window.ARMount = (() => {
     refreshVisibility();
     if (curSeq) { refreshVisibility(); Studio.renderSeqDots(rec, curSeq); }
     scene.appendChild(target);
+    // hidden until its artwork is found. The stock target hides itself only when the engine starts ("realityready"); a
+    // creation the portal adds later would otherwise stand at the camera's own position, in front of the picture (a
+    // dark model or a big layer covered the whole screen until the artwork was found)
+    const hide = () => { if (target.object3D) target.object3D.visible = false; };
+    if (target.hasLoaded) hide(); else target.addEventListener("loaded", function on(e) { if (e.target !== target) return; target.removeEventListener("loaded", on); hide(); });
     Studio.steadyTarget(scene, target); // the content rests on the artwork instead of trembling with every camera frame
     // Timeline motion starts when the artwork is found (not during permission/scan screens)
     // and freezes while tracking is lost, resuming where it stopped.
@@ -148,7 +179,7 @@ window.ARMount = (() => {
     const start = () => {
       Studio.ensurePlayback(mediaEls.filter((m) => m.kind === "video"));
       // Touch: unmute videos (also paused ones), start sound elements, resume audio context; a button says so until then.
-      if (!editMode) Studio.soundOnTouch(mediaEls, { isMuted: () => muted, getContext: () => scene.audioListener && scene.audioListener.context });
+      if (!editMode) Studio.soundOnTouch(mediaEls, { isMuted: () => muted, getContext: () => scene.audioListener && scene.audioListener.context, iconOnly: !!o.quietSound });
       // Route every sound source through one Web Audio context so the 10s capture records the mix.
       Studio.connectSpatialAudio(scene, target, mediaEls);
     };
@@ -165,5 +196,5 @@ window.ARMount = (() => {
     }
     return { name, target, mediaEls, tlDrv, actionRunner, start, destroy };
   }
-  return { makeScene, mount };
+  return { makeScene, mount, release };
 })();

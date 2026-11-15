@@ -23,7 +23,7 @@ window.Share = (() => {
     });
     const save = tile("download", "שמירת גיבוי", "קובץ אחד עם כל היצירה", () => { if (zip) { UI.download(zip, fileName(rec) + ".zip"); toast("קובץ הגיבוי ירד למכשיר"); } });
     send.disabled = save.disabled = true;
-    const portal = h("section.portal-box", { id: "portal-box" }); // publishing for viewers (app/publish.js)
+    const portal = h("section.portal-box", { id: "portal-box" }), status = h("p.portal-status", { role: "status" }); // publishing for viewers (app/publish.js)
     UI.dialog({
       title: "לראות ולשתף", sheet: true,
       body: [
@@ -32,11 +32,13 @@ window.Share = (() => {
           tile("eye", "לנסות בלי מצלמה", "איך זה ייראה, כאן על המסך", preview),
           send, save),
         portal,
+        h("p.note", icon("camera", 18), h("span", "המצלמה שואלת כל פעם? ", h("a", { id: "camera-help", href: "camera-help.html", target: "_blank", rel: "noopener" }, "איך מאשרים אותה פעם אחת"))),
         h("p.note", icon("lock", 18), h("span", "היצירות שמורות רק במכשיר הזה. כדי לעבור למכשיר אחר שומרים גיבוי ופותחים אותו שם דרך ״פתיחת גיבוי״ במסך הראשי.")),
-        h("p.share-state", state)
+        h("p.share-state", state),
+        status
       ]
     });
-    App.flush().then(() => Publish.section(portal, rec)).catch((e) => console.warn(e));
+    App.flush().then(() => Publish.section(portal, rec, status)).catch((e) => console.warn(e));
     App.flush().then(() => Studio.exportZIP(rec)).then((b) => {
       zip = b; send.disabled = save.disabled = false;
       state.textContent = "גודל הקובץ: " + UI.fmtBytes(b.size);

@@ -80,68 +80,100 @@ window.Publish = (() => {
   }
 
   // ---------- the portal part of the share sheet ----------
-  // Fills `box` (an element in the share sheet) with what fits this creation's state on the portal.
-  async function section(box, rec) {
+  // Fills `box` (an element in the share sheet) with what fits this creation's state on the portal. The layout is drawn
+  // at once from what the portal said last time (Portal.remembered), so nothing moves while it checks: every tile has the
+  // same fixed height, the check and the upload progress are one quiet line at the very bottom of the sheet (`status`),
+  // and when the answer comes the same tiles are only switched on and relabelled. The layout changes only when the
+  // portal changed meanwhile (from another phone), and then once.
+  async function section(box, rec, status) {
+    if (!status) status = box.parentNode ? box.parentNode.appendChild(h("p.portal-status")) : h("p");
+    status.id = "portal-state";
     const tile = (id, ic, title, text, run, danger) => h("button.share-tile" + (danger ? ".danger" : ""), { id, type: "button", onclick: run }, h("span.share-ic", icon(ic, 24)), h("span.share-text", h("b", title), h("span", text)));
-    const state = h("p.portal-msg", { id: "portal-state" }), head = h("h3.portal-head", icon("eye", 18), h("span", "פורטל הצפייה"));
-    const show = (...kids) => box.replaceChildren(head, ...kids, state);
+    const head = h("h3.portal-head", icon("eye", 18), h("span", "פורטל הצפייה"));
+    const say = (t) => { status.textContent = t || ""; };
     const token = Portal.getToken();
     if (!token) {
-      show(h("div.share-list", tile("portal-publish", "upload", "פרסום בפורטל", "כל מי שמכוון מצלמה אל היצירה יראה אותה, בלי להתקין כלום", async () => { if (await setup()) section(box, rec); })));
+      box.replaceChildren(head, h("div.share-list", tile("portal-publish", "upload", "פרסום בפורטל", "כל מי שמכוון מצלמה אל היצירה יראה אותה, בלי להתקין כלום", async () => { if (await setup()) section(box, rec, status); })));
+      say(""); delete box.dataset.portal;
       return;
     }
-    show(); state.textContent = "בודקת מה מפורסם…";
-    let cat, trig;
-    try { [cat, trig] = await Promise.all([Portal.myCatalogue(token), Portal.trigger(rec)]); Portal.remember(cat); }
-    catch (e) {
-      console.warn(e);
-      show(h("div.share-list", tile("portal-retry", "refresh", "לנסות שוב", "", () => section(box, rec)), tile("portal-settings", "key", "הגדרות הפרסום", "החלפה או מחיקה של הטוקן", async () => { await setup(); section(box, rec); })));
-      state.textContent = e.portal ? e.message : "לא הצלחתי לקרוא את הפורטל כרגע.";
-      return;
-    }
-    const mine = cat.items.find((i) => i.src === rec.id), other = !mine && cat.items.find((i) => Portal.sameTrigger(i.trigger, trig));
+    const why = Portal.blocker(rec), local = rec.target ? { fp: rec.target.fp && rec.target.fp.hex, fpe: rec.target.fp && rec.target.fp.entropy, ph: rec.target.ph } : null;
+    // state: {kind: "none"|"mine"|"other", item, stale (mine, but the artwork changed since it was published)}
+    const read = (items, trig) => {
+      const mine = items.find((i) => i.src === rec.id), same = (i) => (trig ? Portal.sameTrigger(i.trigger, trig) : Portal.sameArtwork(i.trigger, local));
+      if (mine) return { kind: "mine", item: mine, stale: !same(mine) };
+      const other = items.find(same);
+      return other ? { kind: "other", item: other } : { kind: "none" };
+    };
+    let st = null, live = false, busy = false;
     const run = async (work, doneText) => {
-      box.querySelectorAll("button").forEach((b) => { b.disabled = true; });
+      busy = true; draw(st);
       try {
-        await work((s) => { state.textContent = s.step === "upload" ? "מעלה קובץ " + s.i + " מתוך " + s.n + "…" : s.step === "commit" ? "שומרת את הפרסום…" : s.step === "retry" ? "הפורטל השתנה באמצע, מנסה שוב…" : "מכינה את היצירה…"; });
+        await work((s) => say(s.step === "upload" ? "מעלה קובץ " + s.i + " מתוך " + s.n + (s.size ? " (" + UI.fmtBytes(s.size) + ")" : "") + "…" : s.step === "commit" ? "שומרת את הפרסום…" : s.step === "retry" ? "הפורטל השתנה באמצע, מנסה שוב…" : "מכינה את היצירה…"));
         toast(doneText); App.emit && App.emit("portal");
       } catch (e) {
         console.warn(e);
-        if (e.clash) { state.textContent = ""; return section(box, rec); }
-        toast(e.portal ? e.message : "הפרסום לא הצליח. שום דבר לא השתנה בפורטל. אפשר לנסות שוב.", { kind: "error" });
+        if (!e.clash) toast(e.portal ? e.message : "הפרסום לא הצליח. שום דבר לא השתנה בפורטל. אפשר לנסות שוב.", { kind: "error" });
       }
-      section(box, rec);
+      busy = false; check();
     };
-    const why = Portal.blocker(rec);
-    const settings = tile("portal-settings", "key", "הגדרות הפרסום", "החלפה או מחיקה של הטוקן", async () => { await setup(); section(box, rec); });
-    if (mine) {
-      show(h("div.share-list",
-        tile("portal-update", "refresh", "עדכון הפרסום", "פורסמה ב־" + UI.fmtDate(mine.at) + ". העדכון מחליף את מה שהצופים רואים", () => why ? toast(why, { kind: "error" }) : run((s) => Portal.publish(rec, {}, s), "הפרסום עודכן. צופים יראו את השינוי בתוך כמה דקות.")),
-        tile("portal-link", "link", "הקישור והקוד (QR)", "לשיתוף ולהדפסה ליד היצירה", () => linkDialog(mine)),
+    // big: an honest word before a heavy publish (slow to send, and viewers on mobile data wait for it)
+    const blocked = (go) => async () => {
+      if (why) return toast(why, { kind: "error" });
+      const n = Portal.weight(rec);
+      if (n > Portal.LIM.big && !await UI.confirm({ title: "יצירה גדולה (" + UI.fmtBytes(n) + ")", text: "ההעלאה תיקח כמה דקות, וצופים בגלישה סלולרית יחכו לה בערך " + Math.max(10, Math.round(n / 1048576 / 2.5 / 5) * 5) + " שניות לפני שהיא מופיעה. אפשר לפרסם כך, או קודם לקצר סרטון.", yes: "לפרסם בכל זאת" })) return;
+      go();
+    };
+    const settings = () => tile("portal-settings", "key", "הגדרות הפרסום", "החלפה או מחיקה של הטוקן", async () => { await setup(); section(box, rec, status); });
+    const publishNew = blocked(() => run(async (s) => {
+      try { await Portal.publish(rec, {}, s); }
+      catch (e) { if (!e.clash) throw e; if (await UI.confirm({ title: "התמונה הזו כבר מפורסמת", text: "״" + e.clash.name + "״ מפורסמת עם אותה תמונה. להחליף אותה בזו? הקישור והקוד יישארו אותו דבר.", yes: "להחליף את המפורסמת" })) await Portal.publish(rec, { replace: true }, s); else throw Object.assign(new Error("לא פורסם."), { portal: true }); }
+    }, "היצירה פורסמה. צופים יראו אותה בתוך כמה דקות."));
+    const tiles = (s) => {
+      const it = s.item;
+      if (s.kind === "mine") return [h("div.share-list",
+        tile("portal-update", "refresh", "עדכון הפרסום", s.stale ? "התמונה השתנתה מאז הפרסום. בלי עדכון הצופים לא יזהו אותה" : "פורסמה ב־" + UI.fmtDate(it.at) + ". העדכון מחליף את מה שהצופים רואים", blocked(() => run((x) => Portal.publish(rec, {}, x), "הפרסום עודכן. צופים יראו את השינוי בתוך כמה דקות."))),
+        tile("portal-link", "link", "הקישור והקוד (QR)", "לשיתוף ולהדפסה ליד היצירה", () => linkDialog(it)),
         tile("portal-remove", "trash", "הסרה מהפורטל", "היצירה נשארת אצלך, רק הצופים לא יראו אותה", async () => {
           if (!await UI.confirm({ title: "להסיר את ״" + rec.name + "״ מהפורטל?", text: "היצירה נשארת שמורה אצלך. צופים יפסיקו לראות אותה בתוך כמה דקות, והקישור שלה יגיד שהיא כבר לא מוצגת.", yes: "להסיר", danger: true })) return;
-          run((s) => Portal.unpublish(rec.id, s), "היצירה הוסרה מהפורטל.");
+          run((x) => Portal.unpublish(rec.id, x), "היצירה הוסרה מהפורטל.");
         }, true),
-        settings));
-      state.textContent = "✓ מפורסמת בפורטל";
-      box.dataset.portal = "published";
-    } else if (other) {
-      show(h("p.note", icon("layers", 18), h("span", "יצירה אחרת עם אותה תמונה כבר מפורסמת: ״" + other.name + "״. בפורטל יכולה להיות רק אחת לכל תמונה.")),
+        settings())];
+      if (s.kind === "other") return [h("p.note.portal-other", icon("layers", 18), h("span", "יצירה אחרת עם אותה תמונה כבר מפורסמת: ״" + it.name + "״. בפורטל יכולה להיות רק אחת לכל תמונה.")),
         h("div.share-list",
-          tile("portal-replace", "refresh", "להחליף את המפורסמת", "הצופים יראו את זו במקומה. הקישור והקוד יישארו אותו דבר", () => why ? toast(why, { kind: "error" }) : run((s) => Portal.publish(rec, { replace: true }, s), "היצירה הזו מוצגת עכשיו בפורטל במקום ״" + other.name + "״.")),
-          tile("portal-link", "link", "הקישור והקוד (QR)", "של התמונה הזו בפורטל", () => linkDialog(other)),
-          settings));
-      box.dataset.portal = "other";
-    } else {
-      show(h("div.share-list",
-        tile("portal-publish", "upload", "פרסום בפורטל", "כל מי שמכוון מצלמה אל היצירה יראה אותה, בלי להתקין כלום", () => why ? toast(why, { kind: "error" }) : run(async (s) => {
-          try { await Portal.publish(rec, {}, s); }
-          catch (e) { if (!e.clash) throw e; if (await UI.confirm({ title: "התמונה הזו כבר מפורסמת", text: "״" + e.clash.name + "״ מפורסמת עם אותה תמונה. להחליף אותה בזו? הקישור והקוד יישארו אותו דבר.", yes: "להחליף את המפורסמת" })) await Portal.publish(rec, { replace: true }, s); else throw Object.assign(new Error("לא פורסם."), { portal: true }); }
-        }, "היצירה פורסמה. צופים יראו אותה בתוך כמה דקות.")),
-        settings));
-      if (why) state.textContent = why;
-      box.dataset.portal = "none";
-    }
+          tile("portal-replace", "refresh", "להחליף את המפורסמת", "הצופים יראו את זו במקומה. הקישור והקוד יישארו אותו דבר", blocked(() => run((x) => Portal.publish(rec, { replace: true }, x), "היצירה הזו מוצגת עכשיו בפורטל במקום ״" + it.name + "״."))),
+          tile("portal-link", "link", "הקישור והקוד (QR)", "של התמונה הזו בפורטל", () => linkDialog(it)),
+          settings())];
+      return [h("div.share-list", tile("portal-publish", "upload", "פרסום בפורטל", "כל מי שמכוון מצלמה אל היצירה יראה אותה, בלי להתקין כלום", publishNew), settings())];
+    };
+    // draw the tiles for s; the same kind and item again only switches buttons and relabels, in place
+    const draw = (s) => {
+      const key = s.kind + ":" + (s.item ? s.item.id + ":" + s.item.at + ":" + !!s.stale : "");
+      if (box.dataset.key !== key) { box.replaceChildren(head, ...tiles(s)); box.dataset.key = key; }
+      box.querySelectorAll("button").forEach((b) => { b.disabled = busy || (!live && b.id !== "portal-link" && b.id !== "portal-settings"); });
+    };
+    const seen = Portal.remembered();
+    st = read(seen ? seen.items : [], null);
+    draw(st);
+    const check = async () => {
+      live = false; draw(st); say("בודקת מול הפורטל…"); delete box.dataset.portal;
+      let cat, trig;
+      const space = Portal.room(token).catch(() => null);
+      try { [cat, trig] = await Promise.all([Portal.myCatalogue(token), Portal.trigger(rec)]); Portal.remember(cat); }
+      catch (e) {
+        console.warn(e);
+        live = true; draw(st); // what it showed stays; she can try again
+        status.replaceChildren(h("span", (e.portal ? e.message : "לא הצלחתי לבדוק את הפורטל כרגע.") + " "), h("button.linkish", { id: "portal-retry", type: "button", onclick: check }, "לבדוק שוב"));
+        box.dataset.portal = "error";
+        return;
+      }
+      st = read(cat.items, trig); live = true; draw(st);
+      box.dataset.portal = st.kind === "mine" ? "published" : st.kind;
+      const r = await space, mb = r ? Math.round(r.left / 1048576 / 10) * 10 : 0;
+      const left = !r ? "" : mb >= 50 ? " · במאגר נשאר מקום לעוד כ־" + mb + "MB" : " · המאגר כמעט מלא (מומלץ פחות מ־1GB)";
+      say(st.kind === "mine" ? (st.stale ? "צריך לעדכן את הפרסום: התמונה השתנתה" : "✓ מפורסמת בפורטל") + left : st.kind === "none" && why ? why : left.slice(3));
+    };
+    check();
   }
   return { setup, section, linkDialog, qrCanvas };
 })();

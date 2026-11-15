@@ -37,6 +37,7 @@ window.Layers = (() => {
       const fp = Studio.artworkFingerprint(img), t = await Studio.makeTarget(img), first = !rec.target;
       rec.target = { artRect: t.artRect, natural: { w: img.naturalWidth, h: img.naturalHeight }, fp, ph: Portal.phash(img) }; // ph: the portal's "same artwork" check (portal.js)
       rec.assets.__artwork = await Studio.ownBlob(f);
+      delete rec.assets.__artworkOrig; // a new picture starts upright
       // layers keep their place and width; their height follows the new proportions
       const r = artRatio();
       rec.elements.forEach((e) => { if (e.aspect && e.h != null && e.type !== "particles") e.h = (e.w / e.aspect) * r; });
@@ -50,6 +51,34 @@ window.Layers = (() => {
     finally { end(); }
   }
   async function pickArtwork() { const f = await UI.pickFile(ACCEPT.artwork); if (f) await setArtwork(f); }
+  // A quarter turn clockwise, as many times as she likes. The picture is drawn again from the file she uploaded (kept
+  // aside as __artworkOrig while it is turned), never from the last turned copy, so turning four times gives back the
+  // very same file and no turn loses anything. The layers turn with it: the creation looks on the artwork as before.
+  // One undo step per turn. upright: the layers keep their own direction on the screen and only move with the picture.
+  let turning = false;
+  async function rotateArtwork(upright) {
+    const rec = App.rec; if (!rec || !rec.target || !rec.assets.__artwork || turning) return;
+    turning = true; const end = UI.busy("מסובבת את התמונה…");
+    try {
+      await App.flush();
+      // a copy without the original (a published or JSON-exported one) starts counting from what it has
+      const orig = rec.assets.__artworkOrig || rec.assets.__artwork, turn = ((rec.assets.__artworkOrig ? rec.target.turn || 0 : 0) + 1) % 4;
+      const blob = turn ? await Studio.turnImageBlob(orig, turn) : orig;
+      const img = await Studio.loadImageBlob(blob), t = await Studio.makeTarget(img), before = Studio.geom(rec);
+      rec.target = Object.assign({}, rec.target, { artRect: t.artRect, natural: { w: img.naturalWidth, h: img.naturalHeight }, fp: Studio.artworkFingerprint(img), ph: Portal.phash(img), turn });
+      if (!turn) delete rec.target.turn;
+      rec.assets.__artwork = blob;
+      if (turn) rec.assets.__artworkOrig = orig; else delete rec.assets.__artworkOrig;
+      Studio.turnLayers(rec, before, Studio.geom(rec), !!upright);
+      App.changed(false);
+      await App.hydrate();
+      App.emit("open");
+      await App.save();
+      if (rec.elements.length && !upright) toast("התמונה הסתובבה, והשכבות איתה", { ms: 7000, action: { label: "שכבות ישרות", run: async () => { await App.undo(); rotateArtwork(true); } } });
+      else toast("התמונה הסתובבה");
+    } catch (e) { console.error(e); toast("לא הצלחתי לסובב את התמונה. אפשר לנסות שוב.", { kind: "error" }); }
+    finally { end(); turning = false; }
+  }
 
   // ---------- files into layers ----------
   // A 3D model in any of the formats we take becomes one GLB file.
@@ -364,6 +393,7 @@ window.Layers = (() => {
     artCard.hidden = false;
     const im = h("img", { alt: "", draggable: false }); im.src = Studio.blobURL(rec.assets.__artwork);
     artCard.append(h("span.layer-thumb.art", im), h("span.layer-text", h("span.layer-name", "תמונת היצירה"), h("span.layer-sub", "מה שהמצלמה מזהה")),
+      h("button.icon-btn.art-turn", { type: "button", id: "art-rotate", title: "סיבוב התמונה", "aria-label": "סיבוב התמונה ברבע סיבוב", onclick: () => rotateArtwork() }, icon("rotate", 20)),
       h("button.btn.ghost.small", { type: "button", onclick: pickArtwork }, "החלפה"));
   }
 
@@ -412,5 +442,5 @@ window.Layers = (() => {
     ed.addEventListener("drop", (e) => { ed.classList.remove("dropping"); if (!e.dataTransfer || !e.dataTransfer.files.length) return; e.preventDefault(); addFiles([...e.dataTransfer.files]); });
   }
 
-  return { init, render, openAdd, openLibrary, importAsset, pickArtwork, setArtwork, addFiles, rename, TYPES, typeOf, phone };
+  return { init, render, openAdd, openLibrary, importAsset, pickArtwork, setArtwork, rotateArtwork, addFiles, rename, TYPES, typeOf, phone };
 })();

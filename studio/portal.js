@@ -20,8 +20,12 @@ window.Portal = (() => {
   const cdn = () => "https://cdn.jsdelivr.net/gh/" + CFG.owner + "/" + CFG.repo + "@" + CFG.branch + "/";
   const api = () => "https://api.github.com/repos/" + CFG.owner + "/" + CFG.repo;
   const MB = 1048576;
-  // One media file at most 25MB (it travels as base64 in one request) and a creation at most 40MB, as the old publish link.
-  const LIM = { file: 25 * MB, total: 40 * MB, scene: 4 * MB, catalogue: 12 * MB, items: 2000 };
+  // One media file at most 50MB and a creation at most 100MB: the editor's own limits (Studio.LIMITS), so whatever she can
+  // make she can publish. GitHub takes a blob of up to 100MB (sent as base64, ~67MB for a 50MB file, streamed from a
+  // Blob so the phone never holds it as one string); raw.githubusercontent serves it whole. jsDelivr, the second door,
+  // serves files of up to 20MB only, so a bigger file has the one door. BIG: above this a publish says it will be slow
+  // for viewers on mobile data. ROOM: GitHub asks repositories to stay under 1GB; the sheet says how much is left.
+  const LIM = { file: 50 * MB, total: 100 * MB, big: 40 * MB, scene: 4 * MB, catalogue: 12 * MB, items: 2000, room: 1024 * MB };
   const ID = /^[A-Za-z0-9_-]{4,64}$/, MEDIA = /^m\/[0-9a-f]{40}\.[a-z0-9]{1,5}$/, SCENE = /^c\/[A-Za-z0-9_-]{4,64}\/[a-z0-9]{1,16}\.json$/;
   const EXT = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif", "video/mp4": "mp4", "video/quicktime": "mov", "video/webm": "webm", "audio/mpeg": "mp3", "audio/mp4": "m4a", "audio/aac": "aac", "audio/wav": "wav", "audio/x-wav": "wav", "audio/ogg": "ogg", "model/gltf-binary": "glb" };
   const TYPE = { png: "image/png", jpg: "image/jpeg", webp: "image/webp", gif: "image/gif", mp4: "video/mp4", mov: "video/quicktime", webm: "video/webm", mp3: "audio/mpeg", m4a: "audio/mp4", aac: "audio/aac", wav: "audio/wav", ogg: "audio/ogg", glb: "model/gltf-binary", bin: "application/octet-stream" };
@@ -146,7 +150,7 @@ window.Portal = (() => {
   async function gh(token, method, path, body) {
     let r;
     try {
-      r = await fetch(api() + path, { method, cache: "no-store", headers: Object.assign({ Authorization: "Bearer " + token, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" }, body ? { "Content-Type": "application/json" } : {}), body: body ? JSON.stringify(body) : undefined });
+      r = await fetch(api() + path, { method, cache: "no-store", headers: Object.assign({ Authorization: "Bearer " + token, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" }, body ? { "Content-Type": "application/json" } : {}), body: body ? (body instanceof Blob ? body : JSON.stringify(body)) : undefined });
     } catch (e) { throw fail("אין חיבור לרשת כרגע. אפשר לנסות שוב כשיש קליטה.", 0); }
     if (r.ok) return r.status === 204 ? null : r.json();
     let msg = ""; try { msg = (await r.json()).message || ""; } catch (e) {}
@@ -165,6 +169,20 @@ window.Portal = (() => {
   const b64text = (s) => { const u = new TextEncoder().encode(s); let b = ""; for (let i = 0; i < u.length; i += 0x8000) b += String.fromCharCode.apply(null, u.subarray(i, i + 0x8000)); return btoa(b); };
   const textB64 = (b) => new TextDecoder().decode(Uint8Array.from(atob(b.replace(/\s+/g, "")), (c) => c.charCodeAt(0)));
   const blobB64 = (blob) => Studio.blobToDataURL(blob).then((d) => d.slice(d.indexOf(",") + 1));
+  // The request body for POST /git/blobs as a Blob: the file is turned into base64 3MB at a time (a whole number of
+  // 3-byte groups, so the pieces join into one valid base64 text), and only one piece is a string at any moment.
+  async function blobBody(blob) {
+    const parts = ['{"encoding":"base64","content":"'], step = 3 * MB;
+    for (let i = 0; i < blob.size; i += step) parts.push(await blobB64(blob.slice(i, i + step)));
+    parts.push('"}');
+    return new Blob(parts, { type: "application/json" });
+  }
+  // How full the repository is (GitHub's own count, in KB, refreshed by GitHub now and then)
+  async function room(token) {
+    const repo = await gh(token || getToken(), "GET", "");
+    const used = (Number(repo && repo.size) || 0) * 1024;
+    return { used, left: Math.max(0, LIM.room - used) };
+  }
   // git's own name for a file: sha1("blob <size>\0" + bytes); media are stored under it, so the same file is never sent twice
   async function gitSha(blob) {
     const head = new TextEncoder().encode("blob " + blob.size + "\0");
@@ -194,8 +212,8 @@ window.Portal = (() => {
       const entries = [], put = p.put.filter((f) => !st.paths.has(f.path) || f.path === "index.json");
       let i = 0;
       for (const f of put) {
-        i++; if (onStep) onStep({ step: "upload", i, n: put.length, path: f.path });
-        if (!sent.has(f.path)) sent.set(f.path, (await gh(token, "POST", "/git/blobs", { content: await blobB64(f.blob), encoding: "base64" })).sha);
+        i++; if (onStep) onStep({ step: "upload", i, n: put.length, path: f.path, size: f.blob.size });
+        if (!sent.has(f.path)) sent.set(f.path, (await gh(token, "POST", "/git/blobs", await blobBody(f.blob))).sha);
         entries.push({ path: f.path, mode: "100644", type: "blob", sha: sent.get(f.path) });
       }
       const catText = JSON.stringify(Object.assign(p.cat, { updated: Date.now() }));
@@ -243,11 +261,14 @@ window.Portal = (() => {
     let total = 0;
     for (const id of Studio.exportedAssetIds(rec)) {
       const b = rec.assets[id]; total += b.size;
-      if (b.size > LIM.file) return "קובץ אחד ביצירה גדול מ־25MB (" + UI.fmtBytes(b.size) + "). בפורטל אפשר עד 25MB לקובץ: כדאי לקצר או להקטין את הסרטון.";
+      if (b.size > LIM.file) return "קובץ אחד ביצירה גדול מ־" + mbs(LIM.file) + " (" + UI.fmtBytes(b.size) + "). בפורטל אפשר עד " + mbs(LIM.file) + " לקובץ: כדאי לקצר או להקטין את הסרטון.";
     }
-    if (total > LIM.total) return "היצירה שוקלת " + UI.fmtBytes(total) + ", ובפורטל אפשר עד 40MB ליצירה (כדי שתיטען מהר גם בטלפון של מי שצופה). כדאי להקטין סרטון או להסיר קובץ.";
+    if (total > LIM.total) return "היצירה שוקלת " + UI.fmtBytes(total) + ", ובפורטל אפשר עד " + mbs(LIM.total) + " ליצירה. כדאי להקטין סרטון או להסיר קובץ.";
     return null;
   }
+  const mbs = (n) => Math.round(n / MB) + "MB";
+  // What publishing rec sends and leaves for viewers to download (its media, as the catalogue's `bytes` counts them)
+  function weight(rec) { let n = 0; for (const id of Studio.exportedAssetIds(rec)) n += rec.assets[id].size || 0; return n; }
   // Publishes (or updates) rec. opts.replace: allowed to take the place of another published creation with the same
   // artwork. Throws {clash: entry} when there is one and replace was not allowed.
   async function publish(rec, opts, onStep) {
@@ -290,5 +311,5 @@ window.Portal = (() => {
   function remembered() { try { const o = JSON.parse(localStorage.getItem(SEEN_KEY) || "null"); return o && Array.isArray(o.items) ? o : null; } catch (e) { return null; } }
 
   return { CFG, LIM, ID, viewURL, readCatalogue, cleanCatalogue, loadCreation, getFile, trigger, phash, sameTrigger, sameArtwork, getToken, setToken, looksLikeToken, checkToken,
-    myCatalogue, publish, unpublish, blocker, gitSha, remember, remembered, emptyCatalogue, raw, api };
+    myCatalogue, publish, unpublish, blocker, weight, room, gitSha, remember, remembered, emptyCatalogue, raw, api };
 })();

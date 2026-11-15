@@ -29,23 +29,34 @@ const ANDROID='Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTM
   }finally{await b.close();}
   fs.writeFileSync(path.join(tmp,'art.png'),Buffer.from(shown.split(',')[1],'base64'));
   const cam=path.join(tmp,'cam.y4m');
+  // GLARE=1: a lamp's reflection drifts over the print (a soft white patch about a fifth of its size, blown out in the
+  // middle), to see whether the engine itself keeps hold of an artwork under glare
+  // (GLARE=soft: the same patch at most 55% white, so nothing is blown out). With GLARE the run measures and reports.
+  const GLARE=process.env.GLARE||'',PEAK=GLARE==='soft'?'0.55':'1';
+  const glare=GLARE?";color=c=white:s=260x200:d=5,format=rgba,geq=r=255:g=255:b=255:a='255*min("+PEAK+",1.6*exp(-((X-130)*(X-130)/4500+(Y-100)*(Y-100)/2400)))'[g];[v0][g]overlay=x='300+90*sin(t*1.25)':y='175+120*cos(t*1.25)'[v1]":'';
   execFileSync(FF,['-loglevel','error','-y','-f','lavfi','-i','color=c=0x606060:s=960x720:d=5','-loop','1','-i',path.join(tmp,'art.png'),'-filter_complex',
-    '[1:v]scale=405:540,perspective=x0=15:y0=0:x1=390:y1=18:x2=0:y2=540:x3=405:y3=525:sense=destination,gblur=sigma=0.8[a];[0:v][a]overlay=278:90,noise=alls=6:allf=t,eq=brightness=0.03:contrast=0.92,format=yuv420p','-t','5','-r','15',cam]);
+    '[1:v]scale=405:540,perspective=x0=15:y0=0:x1=390:y1=18:x2=0:y2=540:x3=405:y3=525:sense=destination,gblur=sigma=0.8[a];[0:v][a]overlay=278:90'+(GLARE?'[v0]'+glare+';[v1]':',')+'noise=alls=6:allf=t,eq=brightness=0.03:contrast=0.92,format=yuv420p','-t','5','-r','15',cam]);
   b=await chromium.launch({executablePath:'/usr/bin/google-chrome',headless:true,args:['--no-sandbox','--use-fake-ui-for-media-stream','--use-fake-device-for-media-stream','--use-file-for-fake-video-capture='+cam,'--enable-unsafe-swiftshader','--ignore-gpu-blocklist','--autoplay-policy=no-user-gesture-required']});
   try{
     const ctx=await b.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,userAgent:ANDROID,permissions:['camera']});await mock.attach(ctx);
     // the fake camera has no "back camera" label; a phone does. Test-only: drop that one wish so the engine gets the fake camera.
     await ctx.addInitScript(()=>{const md=navigator.mediaDevices;if(!md)return;const o=md.getUserMedia.bind(md);md.getUserMedia=(c)=>{if(c&&c.video&&c.video.facingMode)delete c.video.facingMode;return o(c);};});
     const p=await ctx.newPage(),errs=[],raws=[];p.on('pageerror',e=>errs.push('view: '+String(e)));p.on('request',r=>{if(r.url().startsWith('https://raw.githubusercontent.com/'))raws.push(r.url().split('/published/')[1]);});
-    await p.goto(base+'/view.html');await p.waitForSelector('#start');const t0=Date.now();await p.click('#start');
+    const t0=Date.now();await p.goto(base+'/view.html'); // straight into the camera: no start button on Android
     await p.waitForFunction(()=>window.__portal&&__portal.state()!=='start'&&__portal.mounted().length>0,null,{timeout:120000});
     const tRec=Date.now()-t0,named=await p.evaluate(()=>__portal.current());
     assert.equal(named,ids[7],'the portal recognised the artwork the camera shows (of 12)');
     const scenes=raws.filter(u=>u.startsWith('c/'));assert.equal(scenes.length,1,'only that creation was downloaded: '+scenes.join(' '));
+    if(GLARE){const ok=await p.waitForFunction(()=>__portal.state()==='tracking',null,{timeout:90000}).then(()=>true,()=>false);
+      if(!ok){await p.screenshot({path:SHOTS+'polish/viewer-engine-glare-'+GLARE+'.png'});console.log(JSON.stringify({glare:GLARE,recognisedAfterMs:tRec,named:ids.indexOf(named),engineTracked:false,state:await p.evaluate(()=>__portal.state())}));return;}}
     await p.waitForFunction(()=>__portal.state()==='tracking',null,{timeout:120000});
     const tTrack=Date.now()-t0;
-    await p.waitForTimeout(800);await p.screenshot({path:SHOTS+'viewer-engine-tracking.png'});
-    console.log(JSON.stringify({recognisedAfterMs:tRec,trackingAfterMs:tTrack,named:ids.indexOf(named)}));
+    await p.waitForTimeout(800);await p.screenshot({path:SHOTS+(GLARE?'polish/viewer-engine-glare-'+GLARE+'.png':'viewer-engine-tracking.png')});
+    // 12 s of holding: how often the engine itself lets go (window capture: before the viewer's grace period) and how
+    // much of the time the viewer shows the creation (after it)
+    const hold=await p.evaluate(async()=>{let raw=0;window.addEventListener('xrimagelost',()=>raw++,true);let on=0,n=0;const t=Date.now();while(Date.now()-t<12000){await new Promise(r=>setTimeout(r,250));n++;if(__portal.state()==='tracking')on++;}return {engineLost:raw,shownFraction:Math.round(on/n*100)/100};});
+    console.log(JSON.stringify({glare:GLARE,recognisedAfterMs:tRec,trackingAfterMs:tTrack,named:ids.indexOf(named),...hold}));
+    if(GLARE)return; // the glare runs only measure
     // the record button: a short clip, then the engine's preview with "Share", and on Android our "שמירה בטלפון" beside it
     assert.deepEqual(errs,[],'no page errors while recognising and tracking');
     await p.evaluate(()=>{window.__prev=0;addEventListener('mediarecorder-previewopened',()=>window.__prev++);});

@@ -372,7 +372,8 @@ window.Inspector = (() => {
     if (Layers.phone()) out.push(h("section.group", note("בוחרים שכבה (על הקנבס או ברשימה) כדי לערוך אותה.", "tap")));
     if (rec.target && rec.assets.__artwork) {
       const im = h("img.art-big", { alt: "תמונת היצירה", draggable: false }); im.src = Studio.blobURL(rec.assets.__artwork);
-      out.push(UI.group("תמונת היצירה", im, note("זו התמונה שהמצלמה מזהה. כל השכבות מופיעות מעליה."), UI.button("החלפת התמונה", Layers.pickArtwork, { kind: "ghost", icon: "upload" })));
+      out.push(UI.group("תמונת היצירה", im, note("זו התמונה שהמצלמה מזהה. כל השכבות מופיעות מעליה."),
+        h("div.btn-row", Object.assign(UI.button("סיבוב", () => Layers.rotateArtwork(), { kind: "ghost", icon: "rotate", title: "סיבוב התמונה ברבע סיבוב" }), { id: "art-rotate-big" }), UI.button("החלפת התמונה", Layers.pickArtwork, { kind: "ghost", icon: "upload" }))));
     } else out.push(UI.group("מתחילים כאן", note("מעלים את תמונת היצירה: הציור, הכרטיס או התמונה שהמצלמה תזהה."), UI.button("העלאת תמונת היצירה", Layers.pickArtwork, { kind: "primary", icon: "upload" })));
     const used = Studio.mediaBytes(rec), max = Studio.LIMITS.maxMediaBytes, n = rec.elements.length;
     out.push(UI.group("מה יש ביצירה",

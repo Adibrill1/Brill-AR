@@ -8,6 +8,7 @@
 <link rel="icon" type="image/png" sizes="192x192" href="favicon-192.png">
 <link rel="apple-touch-icon" href="apple-touch-icon.png">
 <title>תצוגת AR</title>
+<!-- This product includes the XR Engine software developed by Niantic Spatial, Inc. Copyright © 2026 Niantic Spatial, Inc. All rights reserved. License: https://github.com/8thwall/engine/blob/main/LICENSE -->
 <script crossorigin="anonymous" src="./external/scripts/8frame-1.5.0.min.js"></script>
 <script src="./external/xr/xr.js" async crossorigin="anonymous" data-preload-chunks="slam"></script>
 <script src="./external/landing-page/landing-page.js" crossorigin="anonymous"></script>
@@ -17,6 +18,8 @@
     color:#123;border-radius:20px;padding:6px 14px;font:14px/1.4 sans-serif;text-decoration:none}
   #err{position:fixed;inset:0;display:none;place-items:center;background:#fff;z-index:99999;
     font:16px/1.7 sans-serif;text-align:center;padding:24px}
+  /* the engine's badge is not required by its licence (the notice above is): its spinner stays, the badge does not */
+  .poweredby-img,.poweredby-img-8w{display:none!important}
 </style>
 </head>
 <body>

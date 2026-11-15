@@ -7,12 +7,14 @@ const OWNER = 'Adibrill1', REPO = 'Brill-AR', BRANCH = 'published';
 function create() {
   const blobs = new Map(), trees = new Map(), commits = new Map();
   let head = null, n = 0;
-  const m = { blobs, trees, commits, calls: [], failures: [], beforeRef: null, token: null, rawLag: null,
+  const m = { blobs, trees, commits, calls: [], failures: [], beforeRef: null, token: null, rawLag: null, slow: 0, repoKB: 415754,
     head: () => head,
     files: (sha) => { const c = commits.get(sha || head); return c ? new Map(trees.get(c.tree)) : new Map(); },
     read: (path, sha) => { const t = m.files(sha), s = t.get(path); return s ? blobs.get(s) : null; },
     catalogue: (sha) => { const b = m.read('index.json', sha); return b ? JSON.parse(b.toString('utf8')) : null; },
     commitCount: () => commits.size,
+    // a whole published branch from a folder (index.json, c/, m/): a copy of the real one, read-only, for tests
+    seedDir(dir) { const fs = require('fs'), path = require('path'), files = new Map(); const walk = (d, pre) => { for (const n of fs.readdirSync(d)) { const f = path.join(d, n); if (fs.statSync(f).isDirectory()) walk(f, pre + n + '/'); else files.set(pre + n, putBlob(fs.readFileSync(f))); } }; walk(dir, ''); const t = newTree(files), c = newCommit(t, head ? [head] : [], 'seed'); head = c; return c; },
     // writes a commit directly (as another phone would), returns its sha
     sneak(mutate) { const files = m.files(); mutate(files, (text) => putBlob(Buffer.from(text))); const t = newTree(files), c = newCommit(t, head ? [head] : [], 'sneak'); head = c; return c; },
   };
@@ -26,10 +28,11 @@ function create() {
     if (method === 'OPTIONS') return route.fulfill({ status: 204, headers: { 'access-control-allow-origin': '*', 'access-control-allow-headers': '*', 'access-control-allow-methods': 'GET,POST,PATCH,PUT,DELETE' } });
     const body = req.postData() ? JSON.parse(req.postData()) : null, auth = req.headers()['authorization'] || '';
     m.calls.push({ method, path, size: (req.postData() || '').length });
+    if (m.slow && method === 'GET') await new Promise((r) => setTimeout(r, m.slow)); // a slow line: the editor's reads take this long
     for (const f of m.failures) if (!f.used && f.when({ method, path, body })) { f.used = true; return json(route, f.status || 500, { message: 'injected failure' }); }
     if (path === '/contents/index.json' && method === 'GET') { const b = m.read('index.json'); return b ? route.fulfill({ status: 200, contentType: 'text/plain', headers: { 'access-control-allow-origin': '*' }, body: b }) : json(route, 404, { message: 'Not Found' }); }
     if (!m.token || auth !== 'Bearer ' + m.token) return json(route, 401, { message: 'Bad credentials' });
-    if (path === '' && method === 'GET') return json(route, 200, { full_name: OWNER + '/' + REPO, private: false });
+    if (path === '' && method === 'GET') return json(route, 200, { full_name: OWNER + '/' + REPO, private: false, size: m.repoKB });
     if (path === '/git/ref/heads/' + BRANCH && method === 'GET') return head ? json(route, 200, { ref: 'refs/heads/' + BRANCH, object: { sha: head, type: 'commit' } }) : json(route, 404, { message: 'Not Found' });
     let x;
     if ((x = path.match(/^\/git\/commits\/([0-9a-f]{40})$/)) && method === 'GET') { const c = commits.get(x[1]); return c ? json(route, 200, { sha: x[1], tree: { sha: c.tree }, parents: c.parents.map((sha) => ({ sha })) }) : json(route, 404, {}); }

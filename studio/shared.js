@@ -1001,6 +1001,21 @@ vec4 bpPattern(vec2 uv) {
         " float d = distance(c.rgb, keyColor); if (d < thresh) discard; gl_FragColor = c; }"
     });
   }
+  // A video element has a decoded picture to show: data for the current frame, and it has played or been moved to a
+  // frame since its file was set (an iPhone reports data before it has a picture it can hand to WebGL). Not a video: true.
+  // The first call starts watching the element, so it is called once as the element is made (ar-mount.js).
+  function videoHasPicture(v) {
+    if (!v || v.tagName !== "VIDEO") return true;
+    if (!v._studioPic) {
+      v._studioPic = { ok: false };
+      const yes = () => { if (v.readyState >= 2) v._studioPic.ok = true; }, no = () => { v._studioPic.ok = false; };
+      v.addEventListener("playing", () => setTimeout(yes, 60)); v.addEventListener("seeked", yes);
+      v.addEventListener("timeupdate", () => { if (v.currentTime > 0) yes(); });
+      v.addEventListener("emptied", no); v.addEventListener("loadstart", no);
+      if (!v.paused || v.currentTime > 0 || v.__primed) yes(); // watched late: it has played or been moved already
+    }
+    return v._studioPic.ok && v.readyState >= 2;
+  }
   // AR video lifecycle, mirroring xrextras-target-video-fade but on our own exact
   // geometry: hidden until the target is found, then fade in and play; on lost,
   // pause, rewind and hide. Honors creator opacity via _studioOpacity.
@@ -1029,7 +1044,10 @@ vec4 bpPattern(vec2 uv) {
         const m = this.el.getObject3D("mesh");
         if (!m || !m.material) return;
         const base = this.el._studioOpacity == null ? 1 : this.el._studioOpacity;
-        const goal = this.target * base, o = m.material.opacity;
+        // nothing is drawn before the video has a picture: until then WebGL samples an empty texture, which is opaque
+        // black (an iPhone does not load a video before it plays, so a found artwork showed a black sheet for a moment)
+        const tex = m.material.map || (m.material.uniforms && m.material.uniforms.map && m.material.uniforms.map.value);
+        const goal = (videoHasPicture((tex && tex.image) || this.video) ? this.target : 0) * base, o = m.material.opacity;
         if (o === goal) return;
         const step = Math.max(1, dt || 16) / this.data.fadeMs;
         m.material.opacity = Math.abs(goal - o) <= step ? goal : o + Math.sign(goal - o) * step;
@@ -1401,6 +1419,67 @@ vec4 bpPattern(vec2 uv) {
     mapTimeline(group);
     if (group.h != null && changes.w != null) group.h *= factor;
     Object.assign(group, changes);
+  }
+
+  // ---------- turning the artwork a quarter ("סיבוב") ----------
+  // The picture drawn again q quarter turns clockwise, at full size (up to 16 megapixels), from the file given - the
+  // caller passes the original, never an earlier turned copy. PNG stays PNG; a photo is saved as JPEG at 0.95.
+  async function turnImageBlob(blob, q) {
+    const img = await loadImageBlob(blob), w = img.naturalWidth, h = img.naturalHeight, side = q % 2 === 1;
+    const k = Math.min(1, Math.sqrt(16e6 / (w * h))), W = Math.round(w * k), H = Math.round(h * k);
+    const c = document.createElement("canvas");
+    c.width = side ? H : W; c.height = side ? W : H;
+    const ctx = c.getContext("2d");
+    ctx.imageSmoothingQuality = "high";
+    ctx.translate(c.width / 2, c.height / 2); ctx.rotate(q * Math.PI / 2);
+    ctx.drawImage(img, -W / 2, -H / 2, W, H);
+    const png = blob.type === "image/png";
+    const out = await new Promise((ok) => c.toBlob(ok, png ? "image/png" : "image/jpeg", 0.95));
+    c.width = c.height = 1;
+    if (!out) throw new Error("turn failed");
+    return out;
+  }
+  // The layers after one clockwise quarter turn of the artwork, so the creation sits on the picture as it did: a point
+  // at (x, y) moves to (y, -x), sizes keep their real size (g0/g1: geom before and after), and every layer, key and
+  // "rotate" action turns by -90. upright: the layers keep their own direction and only move with the picture. A path
+  // or fan scatter always turns with the picture (its copies are laid out in its own frame).
+  function turnLayers(rec, g0, g1, upright) {
+    const s = g1.artW / g0.artH, kw = g0.artW / g0.artH, kh = g0.artH / g0.artW, D = Math.PI / 180, T = window.THREE;
+    const turn = (el) => {
+      if (!(el.rotX || el.rotY) || !T) { el.rot = (el.rot || 0) - 90; return; }
+      const q = new T.Quaternion().setFromAxisAngle(new T.Vector3(0, 0, 1), -90 * D).multiply(new T.Quaternion().setFromEuler(new T.Euler((el.rotX || 0) * D, (el.rotY || 0) * D, (el.rot || 0) * D, "YXZ")));
+      const e = new T.Euler().setFromQuaternion(q, "YXZ");
+      el.rotX = Math.round(e.x / D * 10) / 10; el.rotY = Math.round(e.y / D * 10) / 10; el.rot = Math.round(e.z / D * 10) / 10;
+    };
+    for (const el of rec.elements) {
+      const x = el.x || 0, y = el.y || 0, keep = upright && el.type !== "scatter";
+      el.x = y; el.y = -x; el.z = (el.z || 0) * s;
+      if (el.w != null) el.w *= kw;
+      if (el.h != null) el.h *= kh;
+      if (el.type === "scatter" && el.scatter) {
+        const sc = el.scatter, f = sc.fan;
+        if (sc.layout === "fan" && f) sc.fan = Object.assign({}, f, { radius: (f.radius || 0) * kw, cx: (f.cx || 0) * kw, cy: (f.cy || 0) * kh, z0: (f.z0 || 0) * s, z1: (f.z1 || 0) * s });
+        else if (sc.points) sc.points = sc.points.map((p) => ({ x: (p.x || 0) * kw, y: (p.y || 0) * kh, z: (p.z || 0) * s }));
+        sc.item = Object.assign({}, sc.item, { w: (sc.item.w || 0.3) * kw }, sc.item.h != null ? { h: sc.item.h * kh } : {});
+        refreshScatter(rec, el, false);
+      }
+      if (!keep) turn(el);
+      const tl = el.timeline;
+      if (tl && tl.keys && tl.keys.length) {
+        const half = tl.keys.some((k) => (k.x == null) !== (k.y == null));
+        if (tl.xyMap || half) { // compose onto the curve's output map, as transformGroup does, so nothing is resampled
+          const old = tl.xyMap || { baseX: x, baseY: y, matrix: [1, 0, 0, 1, 0, 0] }, [A, B, C, Dm, X, Y] = old.matrix;
+          tl.xyMap = { baseX: old.baseX, baseY: old.baseY, matrix: [C, Dm, -A, -B, Y, -X] };
+        } else tl.keys.forEach((k) => { if (k.x != null) { const kx = k.x; k.x = k.y; k.y = -kx; } });
+        tl.keys.forEach((k) => { if (k.z != null) k.z *= s; if (k.rot != null && !keep) k.rot -= 90; });
+      }
+    }
+    const byId = new Map(rec.elements.map((e) => [e.id, e]));
+    for (const q of rec.actionSequences || []) for (const a of q.actions || []) {
+      const el = byId.get(a.layerId); if (!a.to || !el) continue;
+      if (a.type === "move") { const ax = a.to.x || 0; a.to.x = a.to.y || 0; a.to.y = -ax; a.to.z = (a.to.z || 0) * s; }
+      if (a.type === "rotate" && a.to.rot != null && !(upright && el.type !== "scatter")) a.to.rot -= 90;
+    }
   }
 
   // ---------- scatter along a path ("פיזור על נתיב") ----------
@@ -2440,6 +2519,7 @@ vec4 bpPattern(vec2 uv) {
     const wanted = new Set();
     for (const el of rec.elements) for (const id of [el.assetId, el.particles && el.particles.spriteAssetId]) if (id && rec.assets[id]) wanted.add(id);
     if (rec.assets.__artwork) wanted.add("__artwork");
+    if (rec.assets.__artworkOrig) wanted.add("__artworkOrig"); // the picture as uploaded, while the artwork is turned (layers.js rotateArtwork)
     if (rec.assets.__cover && typeof rec.assets.__cover.arrayBuffer === "function") wanted.add("__cover"); // the gallery picture rides the backup (not the published JSON)
     const chunks = [];
     let zipErr = null;
@@ -2643,7 +2723,7 @@ vec4 bpPattern(vec2 uv) {
   // the artwork is out of view) is unlocked with a silent play()/pause() inside the touch, so it can start later with
   // sound. While audible media waits for that first touch, a button at the top says so (the old flow had no hint, so
   // sound only appeared when the record button happened to be touched).
-  function soundOnTouch(mediaEls, { isMuted = () => false, getContext = () => null } = {}) {
+  function soundOnTouch(mediaEls, { isMuted = () => false, getContext = () => null, iconOnly = false } = {}) {
     let btn = null, unlocked = false;
     const unlock = () => {
       const ctx = getContext(); if (ctx && ctx.state === "suspended") ctx.resume().catch(() => {});
@@ -2693,9 +2773,15 @@ vec4 bpPattern(vec2 uv) {
     const sc = document.querySelector("a-scene");
     if (sc) ["xrimagefound", "realityready", "camerastatuschange"].forEach((ev) => sc.addEventListener(ev, () => { probe(); setTimeout(probe, 600); }));
     function showButton() {
-      if (unlocked) return;
+      if (unlocked || document.getElementById("sound-overlay")) return;
       btn = document.createElement("button");
       btn.id = "sound-overlay"; btn.type = "button";
+      if (iconOnly) { // the viewer portal: no words on the camera, one small round mark (any touch starts the sound)
+        btn.setAttribute("aria-label", "נגיעה במסך מפעילה את הצליל");
+        btn.innerHTML = '<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/><path d="M17 9l4 6m0-6l-4 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
+        btn.style.cssText = "position:fixed;top:calc(max(14px, env(safe-area-inset-top)));inset-inline-end:14px;z-index:10000;width:44px;height:44px;display:grid;place-items:center;padding:0;border:0;border-radius:50%;background:rgba(14,13,18,.55);color:#fff;cursor:pointer";
+        document.body.appendChild(btn); return;
+      }
       btn.textContent = "🔊 נגיעה במסך מפעילה את הצליל";
       // below the page's own fixed top bar (preview #topbar, player #backlink), never under it
       const bar = document.getElementById("topbar") || document.getElementById("backlink"), below = bar ? Math.ceil(bar.getBoundingClientRect().bottom) + 8 : 0;
@@ -2870,7 +2956,7 @@ vec4 bpPattern(vec2 uv) {
   return { TARGET_W, TARGET_H, newId, inspectVideo, validateModelBlob, prepareModelBlob, modelCompressionKinds, DECODER_DRACO_PATH, DECODER_MESHOPT_PATH, modelClipNames, modelClipInfo, loadImage, loadImageBlob, loadFailed, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON, steadyTarget,
            audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, blobURL, releaseBlobURL, blobURLs, historyState, restoreHistory, duplicateLayer, exportJSON, exportObject, exportedAssetIds, importPublished, missingAssets, importJSON, exportZIP, importZIP, zipToJSON, fetchPublished, ownBlob, assetHealth, fileHealth, seedDemo, normEl, ANIMS, drawTextCanvas, loadTextFonts, FX: FX.map(([id, name]) => ({ id, name, moving: FX_MOVING.has(id) })), fxFrame,
            PATTERNS: PATTERNS.map(([id, name, colors, speed]) => ({ id, name, colors: colors.slice(), speed })), PATTERN_PALETTES: PATTERN_PALETTES.map(([name, colors]) => ({ name, colors: colors.slice() })),
-           PATTERN_SHAPES: PATTERN_SHAPES.map(([id, name]) => ({ id, name })), patternDefaults, patternAspect, patternFrame, validPattern, validFx, validChroma, keyValues, pixelAt, CHROMA_DEFAULT, SCATTER_TYPES, SCATTER_MAX, mediaType, isStill, stillAt, setStill, scatterItem, scatterLimit, scatterPath, scatterCopies, scatterCopyEl, scatterBounds, refreshScatter, makeScatter, makeFan, scaleScatter, breakScatter, validScatter, FONTS: FONTS.map(([id, name]) => ({ id, name })), buildElementEntity, groupOf, fitGroup, makeGroup, breakGroup, leaveGroup, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, ensureTimeCubeComponent, bakeTimeCube, validTimeCube, TIMECUBE_DIRS, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, artworkFingerprint, fingerprintDistance, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, trackList, makeTrackRunner,
+           PATTERN_SHAPES: PATTERN_SHAPES.map(([id, name]) => ({ id, name })), patternDefaults, patternAspect, patternFrame, validPattern, validFx, validChroma, keyValues, pixelAt, CHROMA_DEFAULT, SCATTER_TYPES, SCATTER_MAX, mediaType, isStill, stillAt, setStill, scatterItem, scatterLimit, scatterPath, scatterCopies, scatterCopyEl, scatterBounds, refreshScatter, makeScatter, makeFan, scaleScatter, breakScatter, validScatter, FONTS: FONTS.map(([id, name]) => ({ id, name })), buildElementEntity, groupOf, fitGroup, makeGroup, breakGroup, leaveGroup, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, videoHasPicture, ensureTimeCubeComponent, bakeTimeCube, validTimeCube, TIMECUBE_DIRS, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, artworkFingerprint, fingerprintDistance, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, turnImageBlob, turnLayers, trackList, makeTrackRunner,
            load: id=>settledRead(id), all: ()=>settledRead(), del: delExperience, LIMITS, mediaBytes, pushBack, addBlocker, publishBlocker, restoreBlocker, exportWarning, exportJSONSize,
            onSaveState, installSaveGuard, saveState, soundOnTouch, snapAngle, syncMedia,
            _testHoldSave:p=>{saveHold=p;}, _testFailSave:m=>{failSave=m;}, _testFailPut:o=>{failPut=o?{...o}:null;} };

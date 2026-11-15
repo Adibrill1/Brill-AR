@@ -29,23 +29,40 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
       const ah=H*o.size,aw=ah*0.75,sl=document.createElement('canvas');sl.width=Math.round(aw);sl.height=Math.round(ah);sl.getContext('2d').drawImage(c,0,0,sl.width,sl.height);
       g.save();g.translate(W/2+o.dx*W,H/2+o.dy*H);g.rotate(o.rot*Math.PI/180);g.filter=`blur(${o.blur}px) brightness(${o.light}) contrast(.85)`;
       const S=40;for(let s=0;s<S;s++){const k=1-o.slant*(s/S);const y0=s*sl.height/S;g.drawImage(sl,0,y0,sl.width,sl.height/S+1,-aw*k/2,-ah/2+y0,aw*k,ah/S+1);} // a slant: far rows narrower
+      if(o.glare){const k=o.glare,gr=rnd(o.seed*31+7),A=aw*ah;g.filter='none'; // reflections on a glossy print, or a finger: drawn on the artwork, in its own frame
+        if(k.kind==='blob'){let left=A*k.cover;const n=1+Math.floor(gr()*2);for(let b=0;b<n;b++){const a=left/(n-b),rad=Math.sqrt(a/Math.PI)*1.25,cx=(gr()-.5)*aw*.6,cy=(gr()-.5)*ah*.6,rg=g.createRadialGradient(cx,cy,0,cx,cy,rad);rg.addColorStop(0,'rgba(255,255,255,1)');rg.addColorStop(.62,'rgba(255,255,255,.97)');rg.addColorStop(1,'rgba(255,255,255,0)');g.fillStyle=rg;g.beginPath();g.arc(cx,cy,rad,0,7);g.fill();left-=a;}}
+        else if(k.kind==='streak'){const wS=A*k.cover/Math.hypot(aw,ah),ang=(gr()-.5)*1.2+.8;g.save();g.rotate(ang);const lg=g.createLinearGradient(0,-wS/2,0,wS/2);lg.addColorStop(0,'rgba(255,255,255,0)');lg.addColorStop(.18,'rgba(255,255,250,.96)');lg.addColorStop(.82,'rgba(255,255,250,.96)');lg.addColorStop(1,'rgba(255,255,255,0)');g.fillStyle=lg;g.fillRect(-Math.hypot(aw,ah)/2,-wS/2+(gr()-.5)*ah*.3,Math.hypot(aw,ah),wS);g.restore();}
+        else{const wO=aw*.42,hO=A*k.cover/wO,side=gr()<.5?-1:1;g.fillStyle=`hsl(${20+gr()*15},${35+gr()*20}%,${45+gr()*25}%)`;g.beginPath();g.ellipse(side*(aw/2-wO*.35),ah/2-hO*.45,wO/2,hO/2,side*.3,0,7);g.fill();}}
       g.restore();const id=g.getImageData(0,0,W,H);for(let i=0;i<id.data.length;i+=4){const n=(r()-.5)*22;id.data[i]+=n;id.data[i+1]+=n;id.data[i+2]+=n;}g.putImageData(id,0,0);return f;}
+    const DUMP=[];{const M0=Recognize.match;Recognize.match=(ix,f,o)=>{const r=M0(ix,f,o);DUMP.push(r.slice(0,3).map(x=>({id:x.id,a:x.first,g:x.inliers,m:x.m&&x.m.map(v=>+v.toFixed(3))})));return r;};}
     const runs=[];let frameMs=0,nf=0;
     const shown=[...Array(140).keys()].filter(i=>i%3===0||i>=120); // 40 of the artworks and all 20 look-alikes, from the camera
     for(const i of shown)for(let v=0;v<3;v++){const o={seed:i*7+v,size:[.5,.68,.88][v],dx:[-.08,.05,0][v],dy:[.06,-.05,0][v],rot:[-9,6,2][v],slant:[.18,.1,.25][v],blur:[1.1,.7,1.4][v],light:[.8,1.15,.95][v]};
       const f=view(arts[i].c,o);t=performance.now();const ff=Recognize.frameFeatures(grayOf(f),240,320);const res=Recognize.match(ix,ff);frameMs+=performance.now()-t;nf++;
       runs.push({want:arts[i].id,got:Recognize.decide(res),top3:res.slice(0,3).map(x=>x.id+':'+x.inliers)});}
-    // frames with no published artwork at all: only the wall, or an unknown picture
-    const strangers=[];for(let k=0;k<20;k++){const c=k%2?art(9000+k):document.createElement('canvas');if(!(k%2)){c.width=600;c.height=800;}const f=view(c,{seed:300+k,size:.7,dx:0,dy:0,rot:3,slant:.1,blur:.8,light:1});const res=Recognize.match(ix,Recognize.frameFeatures(grayOf(f),240,320));strangers.push({got:Recognize.decide(res),top:res[0]&&res[0].inliers});}
+    // glossy prints: the same views with a reflection (a bright patch or a streak) or a finger over 10-30% of the artwork
+    const glare=[];for(const i of shown.slice(0,20))for(let v=0;v<9;v++){const kind=['blob','streak','occlude'][v%3],cover=[.1,.2,.3][Math.floor(v/3)],w3=(i+v)%3;
+      const o={seed:i*11+v+500,size:[.55,.72,.85][w3],dx:[.04,-.05,0][w3],dy:[-.04,.05,0][w3],rot:[7,-5,1][w3],slant:[.12,.2,.08][w3],blur:[.9,1.2,.7][w3],light:[1,.9,1.1][w3],glare:{kind,cover}};
+      const f=view(arts[i].c,o);const res=Recognize.match(ix,Recognize.frameFeatures(grayOf(f),240,320));glare.push({want:arts[i].id,got:Recognize.decide(res),kind,cover,top:res[0]&&res[0].id+':'+res[0].inliers});
+      if(i===shown[3]&&v===4)window.__glare=f.toDataURL();}
+    // frames with no published artwork at all: only the wall, or an unknown picture (also with a reflection or a finger)
+    const strangers=[];for(let k=0;k<60;k++){const c=k%2?art(9000+k):document.createElement('canvas');if(!(k%2)){c.width=600;c.height=800;}const f=view(c,{seed:300+k,size:[.7,.5,.9][k%3],dx:0,dy:0,rot:3+k%7,slant:.1,blur:.8,light:1,glare:k>=20?{kind:['blob','streak','occlude'][k%3],cover:[.1,.2,.3][(k>>1)%3]}:null});const res=Recognize.match(ix,Recognize.frameFeatures(grayOf(f),240,320));strangers.push({got:Recognize.decide(res),top:res[0]&&res[0].inliers});}
     window.__sample=view(arts[30].c,{seed:1,size:.6,dx:.05,dy:0,rot:-8,slant:.2,blur:1.2,light:.85}).toDataURL();
-    return {runs,strangers,describeMs,indexMs,frameMs:frameMs/nf,featBytes,n:items.length};
+    return {DUMP,runs,glare,strangers,describeMs,indexMs,frameMs:frameMs/nf,featBytes,n:items.length};
   });
   const right=r.runs.filter(x=>x.got===x.want).length,wrong=r.runs.filter(x=>x.got&&x.got!==x.want),none=r.runs.filter(x=>!x.got);
   const lookRight=r.runs.filter(x=>x.want.startsWith('look')&&x.got===x.want).length,lookN=r.runs.filter(x=>x.want.startsWith('look')).length;
   const hist=r.runs.map(x=>{const t=x.top3.find(s=>s.startsWith(x.want+':'));return t?+t.split(':')[1]:0;}).sort((a,b)=>a-b);console.log('right-inliers',hist.join(','));console.log('stranger-top',r.strangers.map(s=>s.top||0).join(','));console.log('wrong-top2',r.runs.map(x=>{const o=x.top3.find(s=>!s.startsWith(x.want+':'));return o?+o.split(':')[1]:0;}).sort((a,b)=>b-a).slice(0,15).join(','));console.log(JSON.stringify({artworks:r.n,views:r.runs.length,right,wrong:wrong.length,none:none.length,lookAlikes:lookRight+'/'+lookN,strangersNamed:r.strangers.filter(s=>s.got).length,describeMsPerArt:Math.round(r.describeMs),indexMs:Math.round(r.indexMs),frameMs:Math.round(r.frameMs),catalogueBytesPerArt:r.featBytes}));
+  const gRight=r.glare.filter(x=>x.got===x.want).length,gWrong=r.glare.filter(x=>x.got&&x.got!==x.want);
+  const byKind={};for(const x of r.glare){const k=x.kind+'@'+x.cover;byKind[k]=byKind[k]||[0,0];byKind[k][1]++;if(x.got===x.want)byKind[k][0]++;}
+  if(process.env.GDBG)require('fs').writeFileSync(process.env.GDBG,JSON.stringify({dump:r.DUMP,runs:r.runs.map(x=>x.want),glare:r.glare.map(x=>x.want)}));
+  if(0)console.log(JSON.stringify(r.glare.filter(x=>x.got!==x.want).map(x=>x.kind+x.cover+" "+x.want+" "+x.top)));
+  console.log(JSON.stringify({glareViews:r.glare.length,glareRight:gRight,glareWrong:gWrong.length,byKind:Object.fromEntries(Object.entries(byKind).map(([k,v])=>[k,v[0]+'/'+v[1]]))}));
   if(wrong.length)console.log('wrong:',JSON.stringify(wrong.slice(0,8)));if(none.length)console.log('none:',JSON.stringify(none.slice(0,8)));
   const shot=await p.evaluate(()=>__sample);require('fs').mkdirSync('/downloads',{recursive:true});require('fs').writeFileSync('/downloads/portal-recognize-view.png',Buffer.from(shot.split(',')[1],'base64'));
+  const gshot=await p.evaluate(()=>window.__glare);if(gshot)require('fs').writeFileSync('/downloads/portal-recognize-glare.png',Buffer.from(gshot.split(',')[1],'base64'));
   assert.equal(wrong.length,0,'a camera view never names another artwork');
+  assert.equal(gWrong.length,0,'a view with a reflection or a finger never names another artwork: '+JSON.stringify(gWrong.slice(0,4)));
   assert.ok(right>=r.runs.length*0.75,'at least 3 of 4 single views are named right (the viewer keeps trying, about 3 frames a second, and needs 2 of 3 to agree): '+right+'/'+r.runs.length);
   assert.equal(r.strangers.filter(s=>s.got).length,0,'a wall or an unknown picture names nothing');
   assert.ok(r.frameMs<200,'a frame is matched quickly (in a worker; a phone is slower than this Mac): '+r.frameMs+'ms');

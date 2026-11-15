@@ -379,3 +379,10 @@ dialog::backdrop { background: rgba(6,5,10,.66); backdrop-filter: blur(3px); }
 .badge.pub { background: rgba(76,212,160,.9); color: #062a1d; }
 .card-pic { position: relative; }
 .portal-msg { margin: 0; color: var(--muted); font-size: 13px; }
+/* the portal tiles keep one height whatever their text says (title + two lines), so the sheet never jumps while it checks */
+.portal-box .share-text span { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 2; overflow: hidden; min-height: calc(2 * 1.45em); line-height: 1.45; }
+.portal-other { min-height: calc(3 * 1.5em); }
+.portal-other span { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; }
+.portal-status { min-height: calc(2 * 1.45em); margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.45; }
+.portal-status:empty { visibility: hidden; }
+.linkish { padding: 0; border: 0; background: none; color: var(--accent-2); font: inherit; text-decoration: underline; cursor: pointer; }

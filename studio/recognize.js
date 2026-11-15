@@ -67,6 +67,29 @@
     return keep.slice(0, max);
   }
 
+  // A camera frame of a glossy print: a reflection washes part of the artwork out (white, flat) and draws a hard rim of its
+  // own. Corners on or beside blown-out pixels belong to the reflection, not to the artwork: they are dropped. Where the
+  // reflection's halo only fades the picture, the shapes are still there with less contrast, so cells of the frame that
+  // found few corners look again with a lower threshold scaled to their own contrast; cells that are white and flat are
+  // left out, so the corner budget goes to the part of the artwork that can be seen.
+  function glareSafe(img, w, h, pts, max) {
+    const G = 6, n = G * G, sum = new Float64Array(n), sq = new Float64Array(n), cnt = new Int32Array(n), hot = new Int32Array(n);
+    const cell = (x, y) => Math.min(G - 1, (y * G / h) | 0) * G + Math.min(G - 1, (x * G / w) | 0);
+    const sat = new Uint8Array(w * h);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { const v = img[y * w + x], c = cell(x, y); sum[c] += v; sq[c] += v * v; cnt[c]++; if (v >= 246) { sat[y * w + x] = 1; hot[c]++; } }
+    // blown-out pixels grown by 4 so a corner on the rim of a reflection is caught too
+    const near = new Uint8Array(w * h), R4 = 4;
+    for (let y = 0; y < h; y++) { let run = -99; for (let x = 0; x < w; x++) { if (sat[y * w + x]) run = x; if (x - run <= R4) near[y * w + x] = 1; } run = 1e9; for (let x = w - 1; x >= 0; x--) { if (sat[y * w + x]) run = x; if (run - x <= R4) near[y * w + x] = 1; } }
+    const nv = near.slice(); for (let x = 0; x < w; x++) { let run = -99; for (let y = 0; y < h; y++) { if (near[y * w + x]) run = y; if (y - run <= R4) nv[y * w + x] = 1; } run = 1e9; for (let y = h - 1; y >= 0; y--) { if (near[y * w + x]) run = y; if (run - y <= R4) nv[y * w + x] = 1; } }
+    const keep = pts.filter((p) => !nv[p.y * w + p.x]), per = new Int32Array(n);
+    for (const p of keep) per[cell(p.x, p.y)]++;
+    const want = Math.ceil(max * 1.6 / n), low = [];
+    for (let c = 0; c < n; c++) { const m = sum[c] / cnt[c], sd = Math.sqrt(Math.max(0, sq[c] / cnt[c] - m * m)); low[c] = (hot[c] > cnt[c] * 0.6 || (m > 225 && sd < 8)) ? 0 : per[c] < want ? Math.max(7, Math.min(16, sd * 0.45)) : 0; }
+    const thr = Math.min(...low.filter((t) => t > 0), 99);
+    if (thr < 99) for (const p of fast(img, w, h, thr, BORDER)) { const c = cell(p.x, p.y); if (low[c] && p.s > 0 && !nv[p.y * w + p.x] && !keep.some((q) => q.x === p.x && q.y === p.y)) { const t = low[c]; if (p.s >= (t - thr) * 4) keep.push(Object.assign(p, { s: p.s * 0.5 })); } }
+    return keep;
+  }
+
   // ---------- description (rotated BRIEF) ----------
   const R = 12, BORDER = 19, BINS = 30;
   const PAIRS = (() => { // 256 point pairs, gaussian around the corner, the same everywhere (fixed seed)
@@ -102,7 +125,8 @@
       if (lw < BORDER * 2 + 8 || lh < BORDER * 2 + 8) continue;
       const img = resize(g, w, h, lw, lh), sm = smooth(img, lw, lh), max = maxs[li] || maxs[maxs.length - 1];
       let pts = fast(img, lw, lh, 20, BORDER);
-      if (pts.length < max * 1.5) pts = fast(img, lw, lh, 11, BORDER);
+      if (opts.glare) pts = glareSafe(img, lw, lh, pts, max);
+      else if (pts.length < max * 1.5) pts = fast(img, lw, lh, 11, BORDER);
       for (const p of spread(pts, lw, lh, max)) {
         const d = new Int32Array(8); describe(sm, lw, p.x, p.y, angle(sm, lw, p.x, p.y), d, 0);
         xs.push(p.x / (lw - 1) * (w / L)); ys.push(p.y / (lh - 1) * (h / L)); ds.push(d);
@@ -115,7 +139,7 @@
   // An artwork (publish time): six sizes, from close up to across the street.
   const ART = { side: 420, levels: [1, 0.74, 0.55, 0.41, 0.3, 0.22], max: [50, 40, 35, 30, 25, 20] };
   // A camera frame: as it comes (about 320 on the long side) and a little smaller.
-  const CAM = { side: 320, levels: [1, 0.72], max: [380, 160] };
+  const CAM = { side: 320, levels: [1, 0.72], max: [380, 160], glare: true };
   const artFeatures = (g, w, h) => extract(g, w, h, ART);
   const frameFeatures = (g, w, h) => extract(g, w, h, CAM);
 
@@ -194,12 +218,41 @@
       const F = ix.items[it].f; P.mx.push(f.x[i]); P.my.push(f.y[i]); P.tx.push(F.x[l]); P.ty.push(F.y[l]);
     }
     const order = per.map((P, i) => [i, P.mx.length]).filter((v) => v[1] >= 4).sort((a, b) => b[1] - a[1]).slice(0, top);
-    return order.map(([i, votes]) => { const P = per[i], v = verify(P.mx, P.my, P.tx, P.ty, 0x9E3779B9 ^ i); return { id: ix.items[i].id, votes, inliers: v.inliers, m: v.m }; })
+    return order.map(([i, votes]) => { const P = per[i], v = verify(P.mx, P.my, P.tx, P.ty, 0x9E3779B9 ^ i);
+      const g = o.guided === false || !plausible(v) ? v.inliers : Math.max(v.inliers, guided(ix.items[i].f, f, v.m));
+      return { id: ix.items[i].id, votes, inliers: g, first: v.inliers, m: v.m }; })
       .sort((a, b) => b.inliers - a.inliers || b.votes - a.votes);
   }
-  // The answer for one frame: the leading artwork when it is clearly ahead, else null
+  // A placement worth a guided look: at least 4 corners already agree, and the artwork's size in the frame is believable
+  // (from a close-up showing half of it to a far view where it fills a fifth of the frame). Three corners always fit some
+  // placement, often a squashed one that would gather chance agreement.
+  function plausible(v) { if (!v.m || v.inliers < 4) return false; const s = Math.sqrt(Math.abs(v.m[0] * v.m[4] - v.m[1] * v.m[3])); return s >= 0.45 && s <= 5; }
+  // Guided matching: with a placement in hand, every corner of the frame is compared with the artwork's corners at the
+  // spot the placement puts it (no index, a looser description distance). A partly hidden or reflecting artwork is then
+  // counted by all of its visible part instead of by the few corners the first look happened to pair up; a wrong
+  // placement finds next to nothing, because a corner must agree in place AND in description.
+  function guided(F, f, m) {
+    if (!m) return 0;
+    const C = 0.03, grid = new Map(), key = (x, y) => Math.floor(x / C) * 4096 + Math.floor(y / C);
+    for (let l = 0; l < F.n; l++) { const k = key(F.x[l], F.y[l]); let a = grid.get(k); if (!a) grid.set(k, a = []); a.push(l); }
+    const used = new Set(); let count = 0;
+    for (let i = 0; i < f.n; i++) {
+      const ax = m[0] * f.x[i] + m[1] * f.y[i] + m[2], ay = m[3] * f.x[i] + m[4] * f.y[i] + m[5];
+      if (ax < -C || ay < -C || ax > 1 + C || ay > 1 + C) continue;
+      const cx = Math.floor(ax / C), cy = Math.floor(ay / C); let best = 56, bl = -1;
+      for (let u = cx - 1; u <= cx + 1; u++) for (let w = cy - 1; w <= cy + 1; w++) { const a = grid.get(u * 4096 + w); if (!a) continue;
+        for (const l of a) { const ex = F.x[l] - ax, ey = F.y[l] - ay; if (ex * ex + ey * ey > C * C) continue;
+          let d = 0; for (let k = 0; k < 8 && d < best; k++) d += pc(f.d[i * 8 + k] ^ F.d[l * 8 + k]); if (d < best) { best = d; bl = l; } } }
+      if (bl >= 0 && !used.has(bl)) { used.add(bl); count++; }
+    }
+    return count;
+  }
+  // The answer for one frame: the leading artwork when it is clearly ahead, else null. 8 agreeing corners (counted by the
+  // guided look) were never reached by a wrong artwork or an unknown picture in the tests (portal-recognize: 140 artworks,
+  // glare and hands, 60 strangers); a right one usually has 15-60, a text-heavy real print 8-11. The viewer also wants 2
+  // frames of 3 to agree.
   function decide(res, opts) {
-    const o = opts || {}, min = o.min || 6, a = res[0], b = res[1];
+    const o = opts || {}, min = o.min || 8, a = res[0], b = res[1];
     if (!a || a.inliers < min) return null;
     if (b && b.inliers * 1.5 > a.inliers) return null;
     return a.id;
