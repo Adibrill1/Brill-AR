@@ -86,7 +86,40 @@ window.Home = (() => {
     toast("היצירה נמחקה"); render();
   }
 
-  function card(rec) {
+  // ---------- marks: published on the portal, and versions of one artwork ----------
+  // "מפורסמת" is what the portal's catalogue says (read fresh with her token, else the public copy; the last one this
+  // phone saw shows meanwhile), never a flag kept on the creation, so a restore or another phone cannot get it wrong.
+  // Creations with the same artwork picture are versions of each other: "גרסה 2 מתוך 3", oldest first.
+  let portalItems = (Portal.remembered() || {}).items || [], portalAt = 0;
+  const portalKey = (items) => items.map((i) => i.id + ":" + i.src).sort().join(",");
+  function readPortal() {
+    if (!Portal.getToken() && !Portal.remembered()) return; // never published from this phone: nothing to mark
+    if (Date.now() - portalAt < 30000) return; portalAt = Date.now();
+    (Portal.getToken() ? Portal.myCatalogue() : Portal.readCatalogue()).then((cat) => {
+      Portal.remember(cat); const changed = portalKey(cat.items) !== portalKey(portalItems); portalItems = cat.items; if (changed) render();
+    }, (e) => console.warn("portal", e));
+  }
+  const keys = new Map(); // creation id + artwork size -> {fp, fpe, ph}, worked out once for creations made before the editor kept them
+  function artKey(rec) {
+    const t = rec.target || {}, art = rec.assets && rec.assets.__artwork;
+    if (t.fp && t.fp.hex && t.ph) return { fp: t.fp.hex, fpe: t.fp.entropy, ph: t.ph };
+    if (!art) return null;
+    const key = rec.id + ":" + art.size;
+    if (!keys.has(key)) { keys.set(key, null); Studio.loadImageBlob(art).then((img) => { const f = Studio.artworkFingerprint(img); keys.set(key, { fp: f.hex, fpe: f.entropy, ph: Portal.phash(img) }); render(); }, () => {}); }
+    return keys.get(key);
+  }
+  function versions(all) {
+    const out = new Map(), groups = [];
+    for (const rec of all) {
+      const fp = artKey(rec); if (!fp) continue;
+      const g = groups.find((x) => Portal.sameArtwork(x.fp, fp));
+      if (g) g.recs.push(rec); else groups.push({ fp, recs: [rec] });
+    }
+    for (const g of groups) if (g.recs.length > 1) g.recs.sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0)).forEach((r, i) => out.set(r.id, [i + 1, g.recs.length]));
+    return out;
+  }
+
+  function card(rec, ver) {
     const n = (rec.elements || []).length, cover = rec.assets && rec.assets.__cover, art = cover || (rec.assets && rec.assets.__artwork);
     let pic;
     if (art) { const u = URL.createObjectURL(art); urls.push(u); pic = h("img", { src: u, alt: "", loading: "lazy", draggable: false, data: { cover: cover ? "1" : "" } }); }
@@ -102,8 +135,16 @@ window.Home = (() => {
       { label: "מחיקה", icon: "trash", danger: true, run: () => remove(rec) }
     ].filter((x) => x !== false));
     return h("article.card",
-      h("button.card-open", { type: "button", onclick: () => go(rec.id), "aria-label": "פתיחת " + rec.name }, h("span.card-pic", pic)),
+      h("button.card-open", { type: "button", onclick: () => go(rec.id), "aria-label": "פתיחת " + rec.name }, h("span.card-pic", pic, badges(rec, ver))),
       h("div.card-foot", h("div.card-text", h("b.card-name", rec.name || "יצירה"), h("span.card-meta", (n ? n + (n === 1 ? " שכבה" : " שכבות") : "ריקה") + " · " + UI.fmtDate(rec.updatedAt || rec.createdAt))), more));
+  }
+
+  function badges(rec, ver) {
+    const pub = portalItems.some((i) => i.src === rec.id), v = ver && ver.get(rec.id);
+    if (!pub && !v) return null;
+    return h("span.card-badges",
+      pub ? h("span.badge.pub", { data: { mark: "published" } }, icon("eye", 14), "מפורסמת") : null,
+      v ? h("span.badge.ver", { data: { mark: "version" }, title: "יש " + v[1] + " יצירות עם אותה תמונה" }, icon("layers", 14), "גרסה " + v[0] + " מתוך " + v[1]) : null);
   }
 
   async function render() {
@@ -112,7 +153,10 @@ window.Home = (() => {
     try { all = await Studio.all(); } catch (e) { toast("היצירות לא נטענו", { kind: "error" }); }
     all.sort((a, b) => (b.updatedAt || 0) - (a.updatedAt || 0));
     urls.forEach((u) => URL.revokeObjectURL(u)); urls = [];
-    grid.replaceChildren(...all.map(card));
+    portalItems = ((Portal.remembered() || {}).items) || portalItems; // the share sheet may have just changed it
+    const ver = versions(all);
+    grid.replaceChildren(...all.map((r) => card(r, ver)));
+    readPortal();
     if (all.length) grid.prepend(h("button.card.card-new", { type: "button", onclick: create }, h("span.card-plus", icon("plus", 30)), h("b", "יצירה חדשה")));
     grid.hidden = !all.length; empty.hidden = !!all.length;
     count.textContent = all.length ? all.length + (all.length === 1 ? " יצירה" : " יצירות") : "";

@@ -361,3 +361,20 @@ dialog::backdrop { background: rgba(6,5,10,.66); backdrop-filter: blur(3px); }
 }
 @media (max-height: 520px) and (max-width: 899px) { #editor { grid-template-rows: auto minmax(140px, 38dvh) auto minmax(0, 1fr); } }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; transition-duration: .01ms !important; } }
+
+/* viewer portal: the publish part of the share sheet, token steps, QR, and the gallery marks */
+.portal-box { display: grid; gap: 10px; margin: 6px 0; padding: 14px 0 4px; border-top: 1px solid var(--line); }
+.portal-box:empty { display: none; }
+.portal-head { display: flex; align-items: center; gap: 8px; margin: 0; font-size: 15px; }
+.portal-head .ic { color: var(--accent-2); }
+.share-tile.danger .share-ic { --tint: var(--danger); }
+.portal-steps { margin: 0; padding-inline-start: 22px; display: grid; gap: 7px; font-size: 14px; line-height: 1.5; }
+.portal-steps b, .portal-steps a { font-weight: 700; overflow-wrap: anywhere; color: #d9cfff; }
+.portal-steps a { color: #b9a6ff; }
+.portal-link { display: grid; justify-items: center; gap: 10px; }
+.portal-qr { width: min(240px, 70vw); aspect-ratio: 1; border-radius: 14px; image-rendering: pixelated; }
+.portal-link code { max-width: 100%; padding: 8px 12px; border-radius: 10px; background: var(--surface-2); color: var(--muted); font-size: 12.5px; word-break: break-all; }
+.card-badges { position: absolute; top: 8px; inset-inline-start: 8px; display: flex; flex-wrap: wrap; gap: 5px; pointer-events: none; }
+.badge { display: inline-flex; align-items: center; gap: 4px; min-height: 24px; padding: 0 9px; border-radius: 999px; background: rgba(14,13,18,.78); color: #fff; font-size: 12px; font-weight: 600; backdrop-filter: blur(4px); }
+.badge.pub { background: rgba(76,212,160,.9); color: #062a1d; }
+.card-pic { position: relative; }

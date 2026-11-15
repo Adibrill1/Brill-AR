@@ -35,7 +35,7 @@ window.Layers = (() => {
     try {
       const img = await Studio.loadImage(await Studio.blobToDataURL(f));
       const fp = Studio.artworkFingerprint(img), t = await Studio.makeTarget(img), first = !rec.target;
-      rec.target = { artRect: t.artRect, natural: { w: img.naturalWidth, h: img.naturalHeight }, fp };
+      rec.target = { artRect: t.artRect, natural: { w: img.naturalWidth, h: img.naturalHeight }, fp, ph: Portal.phash(img) }; // ph: the portal's "same artwork" check (portal.js)
       rec.assets.__artwork = await Studio.ownBlob(f);
       // layers keep their place and width; their height follows the new proportions
       const r = artRatio();

@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0e0d12">
+<link rel="icon" type="image/png" sizes="32x32" href="favicon-32.png">
+<link rel="icon" type="image/png" sizes="192x192" href="favicon-192.png">
+<link rel="apple-touch-icon" href="apple-touch-icon.png">
+<title>יצירות שמתעוררות</title>
+<script crossorigin="anonymous" src="./external/scripts/8frame-1.5.0.min.js"></script>
+<script src="./external/xr/xr.js" async crossorigin="anonymous" data-preload-chunks="slam"></script>
+<script src="./external/landing-page/landing-page.js" crossorigin="anonymous"></script>
+<script src="./external/xrextras/xrextras.js" crossorigin="anonymous"></script>
+<style>
+  @font-face { font-family: Heebo; src: url(fonts/heebo-hebrew.woff2) format("woff2"); font-weight: 400 800; font-display: swap; unicode-range: U+0590-05FF, U+200C-2010, U+20AA, U+25CC, U+FB1D-FB4F; }
+  body { margin: 0; background: #0e0d12; color: #f3f1ec; font: 400 16px/1.55 Heebo, system-ui, -apple-system, "Segoe UI", sans-serif; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; padding: 0 24px; border-radius: 999px; border: 0; background: #8b6cff; color: #fff; font: 700 16px/1 Heebo, system-ui, sans-serif; text-decoration: none; cursor: pointer; }
+  .btn.ghost { background: rgba(255,255,255,.1); color: #f3f1ec; }
+  .btn.big { min-height: 56px; padding: 0 34px; font-size: 18px; }
+  #screen { position: fixed; inset: 0; z-index: 100000; display: grid; place-items: center; padding: 24px 16px; background: #0e0d12; overflow: auto; }
+  #screen[hidden] { display: none; }
+  #screen .box { display: grid; gap: 14px; justify-items: center; max-width: 420px; text-align: center; }
+  #screen h1 { margin: 0; font-size: 24px; line-height: 1.3; }
+  #screen p { margin: 0; color: #c9c6d3; }
+  #screen .how { color: #f3f1ec; background: rgba(255,255,255,.07); border-radius: 14px; padding: 12px 14px; }
+  #screen .thumb { width: 140px; height: 180px; object-fit: cover; border-radius: 16px; box-shadow: 0 8px 30px rgba(0,0,0,.5); }
+  #status { position: fixed; top: calc(max(14px, env(safe-area-inset-top)) + 50px); left: 50%; transform: translateX(-50%); z-index: 9000; max-width: calc(100vw - 32px); padding: 9px 18px; border-radius: 999px; background: rgba(14,13,18,.72); color: #fff; font-size: 15px; text-align: center; backdrop-filter: blur(6px); -webkit-backdrop-filter: blur(6px); pointer-events: none; }
+  #status[hidden] { display: none; }
+  #pick { position: fixed; top: max(14px, env(safe-area-inset-top)); inset-inline-start: 14px; z-index: 9000; min-height: 40px; padding: 0 14px; border: 0; border-radius: 999px; background: rgba(14,13,18,.6); color: #fff; font: 500 14px/1 Heebo, system-ui, sans-serif; }
+  #pick[hidden], body[data-state=tracking] #pick { display: none; }
+  #sheet { position: fixed; inset: auto 0 0 0; z-index: 99000; max-height: 78vh; overflow: auto; padding: 14px 16px calc(18px + env(safe-area-inset-bottom)); border-radius: 22px 22px 0 0; background: #17161d; box-shadow: 0 -10px 40px rgba(0,0,0,.5); }
+  #sheet[hidden] { display: none; }
+  .sheet-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 12px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 10px; }
+  .tile { display: grid; gap: 6px; padding: 0; border: 0; background: none; color: #f3f1ec; font: 500 13px/1.3 Heebo, system-ui, sans-serif; text-align: center; cursor: pointer; }
+  .tile img { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 12px; background: #292733; }
+  #err { position: fixed; inset: 0; display: none; place-items: center; background: #fff; z-index: 199999; font: 16px/1.7 sans-serif; text-align: center; padding: 24px; }
+</style>
+</head>
+<body data-state="loading">
+<div id="screen"><div class="box"><p>רגע…</p></div></div>
+<div id="status" role="status" aria-live="polite" hidden></div>
+<button id="pick" type="button" hidden>לא מזהה? לבחור מרשימה</button>
+<div id="sheet" role="dialog" aria-label="בחירת יצירה" hidden></div>
+<div id="err"></div>
+<script src="vendor/gifanim.js"></script>
+<script src="actions.js?v=rc95"></script>
+<script src="shared.js?v=rc95"></script>
+<script src="recognize.js?v=rc95"></script>
+<script src="portal.js?v=rc95"></script>
+<script src="ar-mount.js?v=rc95"></script>
+<script src="viewer.js?v=rc95"></script>
+</body>
+</html>
