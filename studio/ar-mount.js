@@ -7,7 +7,7 @@ window.ARMount = (() => {
   // The scene and what it holds once per page: camera, lights, and the 10-second capture (sound mixed in, no mic).
   function makeScene(opts) {
     const o = opts || {}, scene = document.createElement("a-scene");
-    if (o.holdMs > 0) holdLost(scene, o.holdMs);
+    if (o.holdMs > 0) holdLost(scene, o.holdMs, o);
     // gltf-model is BOTH a system and a component name; A-Frame's setAttribute override
     // parses against the component schema and mangles the system value. Write the raw
     // attribute so the system schema (decoder paths) sees it at scene init.
@@ -46,17 +46,24 @@ window.ARMount = (() => {
   // the artwork away for a fraction of a second. The engine's "lost" is held back for holdMs, and dropped if the artwork
   // is found again meanwhile, so the content stays where it was instead of blinking out and starting over. Registered
   // before anything else listens on the scene, so it has the first word. Events without a name (tests) pass at once.
-  function holdLost(scene, ms) {
-    const held = new Map(); // name -> timer
-    const pass = (name, detail) => { held.delete(name); scene.__passLost = true; try { scene.emit("xrimagelost", detail, false); } finally { scene.__passLost = false; } };
+  // opts.holdKeep(name, heldMs) may keep it longer: it answers how many ms to wait before asking again (0: let go now);
+  // the portal keeps it only while its own recogniser still sees that artwork where the content stands. opts.onHold(name)
+  // hears the moment a hold begins. The content never waits on the screen without one of those reasons.
+  function holdLost(scene, ms, o) {
+    const held = new Map(); // name -> {timer, since}
+    const pass = (name, detail) => { const h = held.get(name); if (h) clearTimeout(h.timer); held.delete(name); scene.__passLost = true; try { scene.emit("xrimagelost", detail, false); } finally { scene.__passLost = false; } };
+    const ask = (name, detail) => { const h = held.get(name); if (!h) return; const more = o.holdKeep ? +o.holdKeep(name, performance.now() - h.since) || 0 : 0; if (more > 0) h.timer = setTimeout(() => ask(name, detail), more); else pass(name, detail); };
     scene.addEventListener("xrimagelost", (e) => {
       const d = e.detail, name = d && d.name;
       if (scene.__passLost || !name) return;
       e.stopImmediatePropagation();
-      clearTimeout(held.get(name)); held.set(name, setTimeout(() => pass(name, d), ms));
+      const h = held.get(name); if (h) clearTimeout(h.timer);
+      held.set(name, { since: h ? h.since : performance.now(), timer: setTimeout(() => ask(name, d), ms) });
+      if (!h && o.onHold) o.onHold(name);
     }, true);
-    scene.addEventListener("xrimagefound", (e) => { const name = e.detail && e.detail.name; if (name && held.has(name)) { clearTimeout(held.get(name)); held.delete(name); } }, true);
-    scene.__releaseLost = (name) => { if (held.has(name)) { clearTimeout(held.get(name)); pass(name, { name }); return true; } return false; };
+    scene.addEventListener("xrimagefound", (e) => { const name = e.detail && e.detail.name, h = name && held.get(name); if (h) { clearTimeout(h.timer); held.delete(name); } }, true);
+    scene.__releaseLost = (name) => { if (held.has(name)) { pass(name, { name }); return true; } return false; };
+    scene.__holding = (name) => held.has(name);
   }
   // The creation under the image target `name` steps aside at once: its artwork counts as lost (content hidden, motion
   // and media paused), whether or not the engine has said so yet. The portal does this when it switches to another artwork.
@@ -175,6 +182,7 @@ window.ARMount = (() => {
     const onLost = (e) => { if (mine(e)) { if (tlDrv) tlDrv.pause(); trackRunner.pauseAll(); actionRunner.pause(); } };
     if (!editMode) { scene.addEventListener("xrimagefound", onFound); scene.addEventListener("xrimagelost", onLost); }
 
+    if (o.lostGraceMs != null) target._studioGraceMs = o.lostGraceMs; // the portal holds flickers itself: media stop the moment the content goes
     const stopMonitor = Studio.monitorMedia(target, rec);
     const start = () => {
       Studio.ensurePlayback(mediaEls.filter((m) => m.kind === "video"));

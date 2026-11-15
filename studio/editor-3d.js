@@ -10,7 +10,7 @@ window.Editor3D = (() => {
   let wrapEl, sceneEl, rig, cam, host;
   let getRec, getSelected, onSelect, onChange;
   let onPoint = null;
-  let sampleEl = null, clockFor = null, freezeAt = null, beginFrame = null, onGate = null, getFrozen = null, restoreFrozen = null;
+  let sampleEl = null, clockFor = null, fxTimesFor = null, freezeAt = null, beginFrame = null, onGate = null, getFrozen = null, restoreFrozen = null;
   let active = false, mounted = false, orb = null, gizmo = null, helper = null;
   let gizmoDrag = null, busy = false, gizmoMode = "move";
   // Two-finger pinch zooms the embedded 3D view (camera dolly, same range as the wheel):
@@ -51,7 +51,7 @@ window.Editor3D = (() => {
   function init(opts) {
     wrapEl = opts.wrap; getRec = opts.getRec; getSelected = opts.getSelected;
     onSelect = opts.onSelect; onChange = opts.onChange;
-    sampleEl = opts.sampleEl || null; clockFor = opts.clockFor || null;
+    sampleEl = opts.sampleEl || null; clockFor = opts.clockFor || null; fxTimesFor = opts.fxTimes || null;
     freezeAt = opts.freezeAt || null; beginFrame = opts.beginFrame || null; getFrozen = opts.getFrozen || null; restoreFrozen = opts.restoreFrozen || null;
     onGate = opts.onGate || null; onPoint = opts.onPoint || null; getView2d = opts.getView2d || null; getArt = opts.getArt || null; getCropId = opts.getCropId || null;
   }
@@ -104,6 +104,7 @@ window.Editor3D = (() => {
     host.appendChild(assets);
     await ensureMedia(rec);
     sceneEl = document.createElement("a-scene");
+    sceneEl.__fxTimes = (el) => (fxTimesFor ? fxTimesFor(el) : { since: 1e9, until: Infinity }); // entrances and exits on the editor's own clock (shared.js watchEnterExit)
     // gltf-model is BOTH a system and a component name; A-Frame's setAttribute override
     // parses against the component schema and mangles the system value. Write the raw
     // attribute so the system schema (decoder paths) sees it at scene init.

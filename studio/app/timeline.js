@@ -1,7 +1,8 @@
 "use strict";
-/* Timeline: the "motion" tab of a layer. A layer either has a ready-made movement (spin, float, pulse) or a motion
-   path: steps in time, each remembering where the layer is, how big, how turned and how see-through. Between two
-   steps the layer glides. Moving the layer on the canvas while the playhead is parked writes a step there. */
+/* Timeline: the "motion" tab of a layer. On top, how it comes in and goes out (an entrance and an exit effect, each with
+   its speed; the entrance may wait a little). Then either a ready-made movement (spin, float, pulse, with its speed) or
+   a motion path: steps in time, each remembering where the layer is, how big, how turned and how see-through. Between
+   two steps the layer glides. Moving the layer on the canvas while the playhead is parked writes a step there. */
 window.Timeline = (() => {
   const { h, icon, toast, clamp } = UI;
   const ANIMS = [{ id: "none", name: "בלי" }, { id: "spin", name: "סיבוב" }, { id: "float", name: "ריחוף" }, { id: "pulse", name: "פעימה" }];
@@ -33,11 +34,40 @@ window.Timeline = (() => {
     App.emit("structure"); App.emit("change"); App.save();
   }
 
+  // the same speed control everywhere: x0.25 (slow) to x4 (fast)
+  const speed = (get, set) => UI.slider({ label: "מהירות", min: 0.25, max: 4, step: 0.25, unit: "×", get, set });
+  // ---------- entrance and exit ----------
+  function enterExit(e, add) {
+    const fx = Studio.enterExitFor(e.type); if (!fx.length) return null;
+    const out = [];
+    for (const [kind, title] of [["enter", "כניסה"], ["exit", "יציאה"]]) {
+      const v = () => e[kind] || null, on = () => !!(v() && v().fx !== "none");
+      const show = () => App.previewEnterExit(e.id, kind);
+      const chips = add(UI.chips({ label: title, wrap: true, options: fx.map((x) => ({ id: x.id, name: x[kind] })), get: () => (on() ? v().fx : "none"),
+        set: (id) => {
+          const was = on();
+          if (id === "none") delete e[kind]; else e[kind] = Object.assign({ speed: 1 }, kind === "enter" ? { delay: 0 } : {}, v(), { fx: id });
+          App.changed(true); show();
+          if (was !== on()) App.emit("structure"); // its speed (and delay) appear or go
+        } }));
+      chips.node.dataset.ee = kind;
+      out.push(chips);
+      if (!on()) continue;
+      out.push(add(speed(() => v().speed || 1, (x, final) => { e[kind].speed = x; App.changed(final); if (final) show(); })));
+      if (kind === "enter") out.push(add(UI.slider({ label: "לחכות לפני", min: 0, max: 5, step: 0.1, unit: "שנ׳", get: () => v().delay || 0, set: (x, final) => { e.enter.delay = x; App.changed(final); if (final) show(); } })));
+      out.push(UI.button("לראות שוב", show, { small: true, icon: "play" }));
+    }
+    return UI.group("כניסה ויציאה", ...out,
+      h("p.ctl-hint", "הכניסה מתחילה כשהשכבה מופיעה: כשהיצירה נמצאת, או בשלב שמראה אותה. היציאה נגמרת בשלב שמסתיר אותה, או כשעוברים למצב אחר."));
+  }
+
   function simple(e, add) {
     const out = [];
+    const ee = enterExit(e, add); if (ee) out.push(ee);
     if (e.type !== "sound") {
-      const c = add(UI.chips({ label: "תנועה מוכנה", options: ANIMS, get: () => e.anim || "none", set: (v) => { e.anim = v; App.changed(true); } }));
-      out.push(UI.group("תנועה שחוזרת על עצמה", c));
+      const c = add(UI.chips({ label: "תנועה מוכנה", options: ANIMS, get: () => e.anim || "none", set: (v) => { const was = e.anim && e.anim !== "none"; e.anim = v; App.changed(true); if (was !== (v !== "none")) App.emit("structure"); } }));
+      const sp = e.anim && e.anim !== "none" ? add(speed(() => Studio.animSpeed(e), (x, final) => { if (x === 1) delete e.animSpeed; else e.animSpeed = x; App.changed(final); })) : null;
+      out.push(UI.group("תנועה שחוזרת על עצמה", c, sp));
     }
     out.push(UI.group("מסלול תנועה",
       h("p.note", icon("motion", 18), h("span", "מסלול בנוי משלבים: בכל שלב השכבה במקום, בגודל ובסיבוב אחרים, והיא גולשת מאחד לשני.")),
@@ -148,7 +178,8 @@ window.Timeline = (() => {
     const dur = add(UI.slider({ label: "אורך הסיבוב כולו", min: 0, max: 30, step: 0.5, unit: "שנ׳", get: () => (e.timeline.dur > 0 ? e.timeline.dur : 0),
       set: (v, final) => { e.timeline.dur = v > 0 ? v : null; sig = ""; App.changed(final); } }));
 
-    const node = h("div.tl",
+    const ee = enterExit(e, add);
+    const node = h("div.tl", ee && ee.node ? ee.node : ee,
       UI.group("מסלול תנועה",
         h("div.tl-bar", playBtn, time, stepInfo),
         track,

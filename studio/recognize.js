@@ -258,6 +258,19 @@
     return a.id;
   }
 
-  const api = { gray, resize, smooth, fast, extract, artFeatures, frameFeatures, pack, unpack, buildIndex, match, decide, ART, CAM };
+  // One frame is enough when the leader is far ahead: many agreeing corners and the runner-up nowhere near (a wrong
+  // artwork never reached 8 in the tests, so 16 with three times the runner-up leaves a wide margin).
+  function confident(res) { const a = res[0], b = res[1]; return !!a && a.inliers >= 16 && a.inliers >= 3 * (b ? b.inliers : 0) ? a.id : null; }
+  // Where the artwork's centre lies in a w x h frame, from a placement m (frame -> artwork, see verify): [x, y] as
+  // fractions of the frame's width and height, or null.
+  function centre(m, F, w, h) {
+    if (!m || !F) return null;
+    const det = m[0] * m[4] - m[1] * m[3]; if (!det) return null;
+    const ax = (F.aspect >= 1 ? 1 : F.aspect) / 2 - m[2], ay = (F.aspect >= 1 ? 1 / F.aspect : 1) / 2 - m[5], L = Math.max(w, h);
+    const fx = (m[4] * ax - m[1] * ay) / det, fy = (-m[3] * ax + m[0] * ay) / det;
+    return [fx * L / w, fy * L / h];
+  }
+
+  const api = { confident, centre, gray, resize, smooth, fast, extract, artFeatures, frameFeatures, pack, unpack, buildIndex, match, decide, ART, CAM };
   if (typeof module !== "undefined") module.exports = api; else root.Recognize = api;
 })(typeof window !== "undefined" ? window : globalThis);

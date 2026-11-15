@@ -105,7 +105,19 @@ window.Publish = (() => {
       const other = items.find(same);
       return other ? { kind: "other", item: other } : { kind: "none" };
     };
-    let st = null, live = false, busy = false;
+    let st = null, live = false, busy = false, known = [], room = ""; // known: rooms already used; room: the one typed before a first publish
+    // "חדר / קבוצה": free text, with the rooms already used offered. A published creation saves it on its own (only the
+    // catalogue changes, nothing is uploaded again); before the first publish it goes with the publish.
+    const roomRow = (s) => {
+      const was = s.kind === "mine" ? s.item.room || "" : room;
+      const inp = h("input.field", { id: "portal-room", type: "text", maxLength: 40, dir: "auto", autocomplete: "off", enterKeyHint: "done", placeholder: "למשל: חדר 1", value: was, list: "portal-rooms" });
+      const save = s.kind === "mine" ? h("button.btn.small", { id: "portal-room-save", type: "button", hidden: true }, "שמירה") : null;
+      inp.oninput = () => { if (save) save.hidden = Portal.cleanRoom(inp.value) === was; else room = inp.value; };
+      if (save) save.onclick = () => run((x) => Portal.setRoom(rec.id, inp.value, x), Portal.cleanRoom(inp.value) ? "החדר נשמר. אצל הצופים זה מתעדכן בתוך כמה דקות." : "היצירה כבר לא שייכת לחדר.");
+      return h("div.portal-room",
+        h("label", { htmlFor: "portal-room" }, h("b", "חדר / קבוצה"), h("span", "יצירות באותו חדר יורדות מראש אצל הצופים בזמן שהם מסתכלים על אחת מהן")),
+        h("div.portal-room-row", inp, save), h("datalist", { id: "portal-rooms" }, known.map((r) => h("option", { value: r }))));
+    };
     const run = async (work, doneText) => {
       busy = true; draw(st);
       try {
@@ -126,8 +138,8 @@ window.Publish = (() => {
     };
     const settings = () => tile("portal-settings", "key", "הגדרות הפרסום", "החלפה או מחיקה של הטוקן", async () => { await setup(); section(box, rec, status); });
     const publishNew = blocked(() => run(async (s) => {
-      try { await Portal.publish(rec, {}, s); }
-      catch (e) { if (!e.clash) throw e; if (await UI.confirm({ title: "התמונה הזו כבר מפורסמת", text: "״" + e.clash.name + "״ מפורסמת עם אותה תמונה. להחליף אותה בזו? הקישור והקוד יישארו אותו דבר.", yes: "להחליף את המפורסמת" })) await Portal.publish(rec, { replace: true }, s); else throw Object.assign(new Error("לא פורסם."), { portal: true }); }
+      try { await Portal.publish(rec, { room }, s); }
+      catch (e) { if (!e.clash) throw e; if (await UI.confirm({ title: "התמונה הזו כבר מפורסמת", text: "״" + e.clash.name + "״ מפורסמת עם אותה תמונה. להחליף אותה בזו? הקישור והקוד יישארו אותו דבר.", yes: "להחליף את המפורסמת" })) await Portal.publish(rec, { replace: true, room: room || null }, s); else throw Object.assign(new Error("לא פורסם."), { portal: true }); }
     }, "היצירה פורסמה. צופים יראו אותה בתוך כמה דקות."));
     const tiles = (s) => {
       const it = s.item;
@@ -138,22 +150,22 @@ window.Publish = (() => {
           if (!await UI.confirm({ title: "להסיר את ״" + rec.name + "״ מהפורטל?", text: "היצירה נשארת שמורה אצלך. צופים יפסיקו לראות אותה בתוך כמה דקות, והקישור שלה יגיד שהיא כבר לא מוצגת.", yes: "להסיר", danger: true })) return;
           run((x) => Portal.unpublish(rec.id, x), "היצירה הוסרה מהפורטל.");
         }, true),
-        settings())];
+        settings()), roomRow(s)];
       if (s.kind === "other") return [h("p.note.portal-other", icon("layers", 18), h("span", "יצירה אחרת עם אותה תמונה כבר מפורסמת: ״" + it.name + "״. בפורטל יכולה להיות רק אחת לכל תמונה.")),
         h("div.share-list",
           tile("portal-replace", "refresh", "להחליף את המפורסמת", "הצופים יראו את זו במקומה. הקישור והקוד יישארו אותו דבר", blocked(() => run((x) => Portal.publish(rec, { replace: true }, x), "היצירה הזו מוצגת עכשיו בפורטל במקום ״" + it.name + "״."))),
           tile("portal-link", "link", "הקישור והקוד (QR)", "של התמונה הזו בפורטל", () => linkDialog(it)),
           settings())];
-      return [h("div.share-list", tile("portal-publish", "upload", "פרסום בפורטל", "כל מי שמכוון מצלמה אל היצירה יראה אותה, בלי להתקין כלום", publishNew), settings())];
+      return [h("div.share-list", tile("portal-publish", "upload", "פרסום בפורטל", "כל מי שמכוון מצלמה אל היצירה יראה אותה, בלי להתקין כלום", publishNew), settings()), roomRow(s)];
     };
     // draw the tiles for s; the same kind and item again only switches buttons and relabels, in place
     const draw = (s) => {
-      const key = s.kind + ":" + (s.item ? s.item.id + ":" + s.item.at + ":" + !!s.stale : "");
+      const key = s.kind + ":" + (s.item ? s.item.id + ":" + s.item.at + ":" + !!s.stale + ":" + (s.item.room || "") : "") + ":" + known.join("|");
       if (box.dataset.key !== key) { box.replaceChildren(head, ...tiles(s)); box.dataset.key = key; }
-      box.querySelectorAll("button").forEach((b) => { b.disabled = busy || (!live && b.id !== "portal-link" && b.id !== "portal-settings"); });
+      box.querySelectorAll("button, input").forEach((b) => { b.disabled = busy || (!live && b.id !== "portal-link" && b.id !== "portal-settings"); });
     };
     const seen = Portal.remembered();
-    st = read(seen ? seen.items : [], null);
+    known = Portal.rooms(seen); st = read(seen ? seen.items : [], null);
     draw(st);
     const check = async () => {
       live = false; draw(st); say("בודקת מול הפורטל…"); delete box.dataset.portal;
@@ -167,7 +179,7 @@ window.Publish = (() => {
         box.dataset.portal = "error";
         return;
       }
-      st = read(cat.items, trig); live = true; draw(st);
+      known = Portal.rooms(cat); st = read(cat.items, trig); live = true; draw(st);
       box.dataset.portal = st.kind === "mine" ? "published" : st.kind;
       const r = await space, mb = r ? Math.round(r.left / 1048576 / 10) * 10 : 0;
       const left = !r ? "" : mb >= 50 ? " · במאגר נשאר מקום לעוד כ־" + mb + "MB" : " · המאגר כמעט מלא (מומלץ פחות מ־1GB)";

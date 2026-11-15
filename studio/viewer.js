@@ -83,7 +83,13 @@
   $("screen").hidden = true;
 
   // ---------- the AR scene (one for the whole visit) ----------
-  const scene = ARMount.makeScene({ filePrefix: "brill-ar-", holdMs: 2000 }); // holdMs: a lost artwork keeps its creation 2 s (a reflection or a hand passing makes the engine let go for a moment)
+  // When the engine lets go of the artwork, its creation goes after HOLD ms (enough to hide a one-frame flicker), and
+  // stays longer only while the recogniser still sees that same artwork, in the place where the creation stands, in
+  // frames taken after the loss (a reflection on a glossy print makes the engine let go while the artwork is right
+  // there). Anything else (another artwork, nothing, the artwork elsewhere in the picture) and it goes at once.
+  const HOLD = 250, HOLD_MAX = 3000;
+  let hold = null; // {name, since}: the engine has let go of this artwork; its creation waits for the recogniser's word
+  const scene = ARMount.makeScene({ filePrefix: "brill-ar-", holdMs: HOLD, holdKeep: keepHeld, onHold: (name) => { hold = { name, since: performance.now() }; } });
   document.body.appendChild(scene);
   const status = $("status"), pick = $("pick"), bar = $("bar");
   let sayTimer = 0;
@@ -97,7 +103,7 @@
   const mounted = new Map(); // id -> {handle, targetData, used, started}
   const times = []; // test/debug: [{id, chose, found}]
   const go = (s) => { if (s === "looking" && state !== "looking") lookSince = Date.now(); state = s; setState(s); };
-  window.__portal = { state: () => state, current: () => current, mounted: () => [...mounted.keys()], loaded: () => [...loaded.keys()], times: () => times.slice(), heard: () => heard.slice(), choose: (id) => choose(byId.get(id), true), frame: (px, w, h) => sendFrame(px, w, h, true) }; // test/debug handle
+  window.__portal = { state: () => state, current: () => current, mounted: () => [...mounted.keys()], loaded: () => [...loaded.keys()], times: () => times.slice(), heard: () => heard.slice(), ahead: () => ({ ids: aheadLog.slice(), spent, budget: AHEAD.budget, at: AHEAD.at }), where: (id) => where(id || current, last), holding: () => hold && hold.name, choose: (id) => choose(byId.get(id), true), frame: (px, w, h) => sendFrame(px, w, h, true) }; // test/debug handle
 
   // the files of a creation and its engine target: fetched once, then kept
   function fetchCreation(it, onProgress) {
@@ -117,19 +123,62 @@
     if (mounted.has(it.id)) return mounted.get(it.id);
     const { rec, targetData } = await fetchCreation(it);
     if (mounted.has(it.id)) return mounted.get(it.id);
-    const handle = await ARMount.mount(scene, rec, { name: it.id, autoStart: false, quietSound: true });
+    const handle = await ARMount.mount(scene, rec, { name: it.id, autoStart: false, quietSound: true, lostGraceMs: 0 });
     const m = { handle, targetData, used: 0, started: false };
     mounted.set(it.id, m);
+    if (it.id !== current) prime(m);
     // and the files they hold stay under about 150MB, so a few big creations never use up a phone's memory
     const heavy = () => [...mounted.keys()].reduce((n, id) => n + ((byId.get(id) || {}).bytes || 0), 0) > 150 * 1048576;
     for (const [id, x] of [...mounted].sort((a, b) => a[1].used - b[1].used)) if ((mounted.size > KEEP || heavy()) && id !== it.id && id !== current) { x.handle.destroy(); mounted.delete(id); loaded.delete(id); }
     return m;
   }
-  // with a small catalogue, everything else is fetched (and made ready) in the background, one at a time
-  let prefetching = false;
+  // a creation made ready ahead: its videos decode their first picture now (muted, played for a moment and stopped at
+  // the start), so when its artwork is found there is a picture to show at once (an iPhone loads nothing before play())
+  function prime(m) {
+    for (const x of m.handle.mediaEls) {
+      const v = x.node; if (x.kind !== "video" || !v.paused || v.__priming) continue;
+      v.__priming = true; v.muted = true;
+      const done = () => { if (!v.__priming) return; v.__priming = false; if (!m.started) { v.pause(); try { v.currentTime = 0; } catch (e) {} } };
+      const p = v.play(); if (p && p.then) p.then(done, () => { v.__priming = false; }); else done();
+      setTimeout(done, 3000); // a phone that never answers play(): stopped all the same
+
+    }
+  }
+  // ---------- downloading ahead ----------
+  // With a small catalogue (and no wish to save data), everything else is fetched and made ready in the background, one
+  // at a time, as before. Otherwise only what the visitor is likely to meet next goes into the browser's Cache Storage
+  // (on the phone's storage, not in memory): the other creations of the same room, else the catalogue's neighbours and
+  // the recogniser's close runner-up. Limits, for a visitor's data plan and phone: a budget per visit (none at all when
+  // the browser asks to save data), nothing bigger than ONE_MAX, one download at a time (two on wifi), and none while
+  // the creation that is about to be shown is still downloading.
+  const MB = 1048576, conn = navigator.connection || {}, saveData = !!conn.saveData;
+  const cellular = conn.type === "cellular" || /(^|-)(2g|3g)$/.test(conn.effectiveType || "");
+  const AHEAD = { budget: saveData ? 0 : cellular ? 40 * MB : 120 * MB, oneMax: 30 * MB, at: conn.type === "wifi" || conn.type === "ethernet" ? 2 : 1 };
+  let prefetching = false, spent = 0, warming = 0;
+  const queue = [], warmed = new Set(), aheadLog = []; // aheadLog: test/debug
   async function prefetchAll() {
-    if (prefetching || !small) return; prefetching = true;
+    if (prefetching || !small || saveData) return; prefetching = true;
     for (const it of cat.items) { if (mounted.has(it.id)) continue; try { await mountCreation(it); } catch (e) { console.warn("prefetch", e); } await new Promise((r) => setTimeout(r, 150)); }
+  }
+  // the creations worth having ready once `it` is shown
+  function nextOf(it) {
+    if (it.room) return cat.items.filter((x) => x.id !== it.id && x.room === it.room);
+    if (small) return []; // prefetchAll has them all
+    const i = cat.items.indexOf(it);
+    return [cat.items[i + 1], cat.items[i - 1], cat.items[i + 2]].filter(Boolean);
+  }
+  function ahead(list, first) {
+    for (const it of list) if (it && !warmed.has(it.id) && !queue.includes(it)) first ? queue.unshift(it) : queue.push(it);
+    pump();
+  }
+  function pump() {
+    while (warming < AHEAD.at && queue.length && !choosing) {
+      const it = queue.shift(), b = it.bytes || 0;
+      if (warmed.has(it.id) || mounted.has(it.id) || loaded.has(it.id) || b > AHEAD.oneMax || spent + b > AHEAD.budget) continue;
+      warmed.add(it.id); spent += b; warming++; aheadLog.push(it.id);
+      Portal.warm(it, { stop: () => !!choosing && choosing !== it.id }).then((got) => { spent += got - b; }, (e) => { console.warn("ahead", e); warmed.delete(it.id); spent -= b; })
+        .finally(() => { warming--; setTimeout(pump, 100); });
+    }
   }
 
   // which artwork the engine is told about: the one being shown, nothing else
@@ -161,14 +210,15 @@
     go("waking");
     // not found by the engine after a while: back to looking (the recogniser may have been wrong, or it is too far)
     wakeTimer = setTimeout(() => { if (state === "waking") { go("looking"); forced = false; } }, 12000);
-    prefetchAll();
+    prefetchAll(); ahead(nextOf(it));
   }
   scene.addEventListener("xrimagefound", (e) => {
-    const n = e.detail && e.detail.name; if (!mounted.has(n)) return;
+    const n = e.detail && e.detail.name; if (hold && hold.name === n) hold = null; if (!mounted.has(n)) return;
     clearTimeout(lostTimer); clearTimeout(wakeTimer); current = n; go("tracking"); say("");
     const t = times.filter((x) => x.id === n && !x.found).pop(); if (t) t.found = performance.now();
   });
   scene.addEventListener("xrimagelost", (e) => {
+    if (hold && e.detail && hold.name === e.detail.name) hold = null;
     if (!e.detail || e.detail.name !== current || state !== "tracking") return;
     go("lost");
     clearTimeout(lostTimer); lostTimer = setTimeout(() => { if (state === "lost") { go("looking"); forced = false; } }, 3000);
@@ -176,28 +226,59 @@
 
   // ---------- recognition (frames from the engine's camera, compared in a worker), all the time ----------
   // While a creation is shown it goes on, a little slower: pointing at another artwork switches to it.
-  let worker = null, busy = false, lastSent = 0;
+  let worker = null, busy = false, lastSent = 0, inFlight = null, last = null; // last: {sent, w, h, res} of the newest answer
   const votes = [], heard = []; // heard: the recogniser's last answers (test/debug)
-  const cadence = () => (state === "tracking" ? 650 : 280);
+  const cadence = () => (hold ? 0 : state === "tracking" ? 450 : 280); // while a creation waits on a hold: every frame it can
+  // where the creation of `name` stands on the screen and where the recogniser saw its artwork in answer r ([x, y] as
+  // fractions of the screen; the camera frame fills the screen, its overflow cut off evenly)
+  function where(name, r) {
+    const m = mounted.get(name), t = m && m.handle.target, a = r && r.res.find((x) => x.id === name);
+    if (!t || !t.object3D || !scene.camera) return null;
+    const v = t.object3D.getWorldPosition(new AFRAME.THREE.Vector3()).project(scene.camera), out = { screen: [(v.x + 1) / 2, (1 - v.y) / 2], seen: null };
+    if (a && a.at) {
+      const W = innerWidth, H = innerHeight, af = r.w / r.h, as = W / H; let [u, w] = a.at;
+      if (af > as) { const k = as / af; u = (u - (1 - k) / 2) / k; } else { const k = af / as; w = (w - (1 - k) / 2) / k; }
+      out.seen = [u, w];
+    }
+    return out;
+  }
+  // the recogniser's answer r still sees artwork `name`, clearly, where its creation stands
+  function stillThere(r, name) {
+    const a = r.res[0], b = r.res[1];
+    if (!a || a.id !== name || a.inliers < 6 || (b && b.inliers * 1.5 > a.inliers)) return false;
+    const p = where(name, r);
+    return !!(p && p.seen && Math.abs(p.seen[0] - p.screen[0]) < 0.18 && Math.abs(p.seen[1] - p.screen[1]) < 0.18);
+  }
+  // asked by the hold (ar-mount.js): how much longer the creation of `name` may wait for the recogniser (0: not at all)
+  function keepHeld(name, heldMs) {
+    if (!hold || hold.name !== name || heldMs >= HOLD_MAX) return 0;
+    if (!last || last.sent < hold.since) return inFlight && inFlight.sent >= hold.since && heldMs < 600 ? 50 : 0; // a frame taken after the loss is being compared
+    if (!stillThere(last, name) || performance.now() - last.sent > 900) return 0;
+    return 100;
+  }
   try {
     worker = new Worker("recognize-worker.js" + V);
     worker.postMessage({ type: "index", items: cat.items.filter((i) => i.trigger.f).map((i) => ({ id: i.id, f: i.trigger.f })) });
     worker.onmessage = (e) => {
       const m = e.data; if (m.type !== "result") return; busy = false;
-      const id = Recognize.decide(m.res);
+      last = Object.assign({}, inFlight, { res: m.res }); inFlight = null;
+      // a creation waiting on a hold goes the moment a frame taken after the loss does not show its artwork there
+      if (hold && last.sent >= hold.since && !stillThere(last, hold.name) && scene.__releaseLost) scene.__releaseLost(hold.name);
+      const id = Recognize.decide(m.res), sure = Recognize.confident(m.res);
       heard.push([Math.round(performance.now()), id, m.res[0] && m.res[0].inliers, m.ms]); if (heard.length > 60) heard.shift();
       votes.push(id); if (votes.length > 3) votes.shift();
       // a close runner-up: its files are fetched now, in case the camera is on its way there
       const a = m.res[0], b = m.res[1];
-      if (!small && a && b && b.inliers >= 6 && b.inliers >= a.inliers * 0.6 && byId.has(b.id)) fetchCreation(byId.get(b.id)).catch(() => {});
-      // the same artwork named in two of the last three frames, and it is not the one shown (or being made ready)
-      if (id && id !== current && votes.filter((v) => v === id).length >= 2 && !(forced && state === "waking")) { votes.length = 0; choose(byId.get(id)); }
+      if (!small && a && b && b.inliers >= 6 && b.inliers >= a.inliers * 0.6 && byId.has(b.id)) ahead([byId.get(b.id)], true);
+      // the same artwork named in two of the last three frames (or in one, when it is far ahead of any other), and it is
+      // not the one shown (or being made ready)
+      if (id && id !== current && (sure === id || votes.filter((v) => v === id).length >= 2) && !(forced && state === "waking")) { votes.length = 0; choose(byId.get(id)); }
     };
     worker.onerror = (e) => { console.warn("recogniser", e.message); worker = null; };
   } catch (e) { console.warn(e); worker = null; }
   function sendFrame(px, w, h, now) {
     if (!worker || busy || (!now && Date.now() - lastSent < cadence())) return;
-    busy = true; lastSent = Date.now();
+    busy = true; lastSent = Date.now(); inFlight = { sent: performance.now(), w, h };
     worker.postMessage({ type: "frame", w, h, px }, [px.buffer]);
   }
   const startRecognition = () => {
@@ -256,6 +337,7 @@
     window.addEventListener("mediarecorder-previewclosed", () => { const b = document.getElementById("portal-save"); if (b) b.remove(); });
   }
 
+  setTimeout(() => Portal.pruneBox(cat), 20000); // files of creations no longer published are let go (after the start is over)
   const ready = () => {
     startRecognition();
     if (item) choose(item, true); else go("looking");

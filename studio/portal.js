@@ -12,6 +12,10 @@
                              and the small corner descriptions the viewer recognises the artwork by: recognize.js)
      c/<id>/<rev>.json       the creation (the editor's export, with media as references, not embedded)
      m/<git blob sha>.<ext>  media, named by their content: never rewritten, shared between versions, safe to cache
+   Media and creation files never change under their names, so viewers keep them in the browser's Cache Storage: a second
+   visit, or a return to an earlier room, needs no download. The catalogue is always read fresh.
+   An entry may carry a room (free text, "חדר" / "קבוצה" in the editor): the viewer downloads the other creations of the
+   room in the background while one of them is shown (an exhibition of 50 in rooms of 5).
    The link id of an entry stays when its creation is replaced by another version with the same artwork, so a printed
    QR keeps working. */
 window.Portal = (() => {
@@ -39,6 +43,8 @@ window.Portal = (() => {
 
   // ---------- catalogue ----------
   const emptyCatalogue = () => ({ format: "brill-portal/1", updated: 0, items: [] });
+  // A room label as stored: one line, single spaces, at most 40 characters ("" = none)
+  const cleanRoom = (r) => (typeof r === "string" ? r.replace(/\s+/g, " ").trim().slice(0, 40) : "");
   // Keeps only well-formed entries: the catalogue is read by every viewer, so nothing in it is trusted blindly.
   function cleanCatalogue(o) {
     const out = emptyCatalogue();
@@ -53,6 +59,7 @@ window.Portal = (() => {
       seen.add(it.id);
       out.items.push({ id: it.id, src: typeof it.src === "string" ? it.src.slice(0, 64) : "", name: it.name.slice(0, 120), rev: String(it.rev || "").slice(0, 16), scene: it.scene, files: it.files.slice(0, 200), thumb: it.thumb || null,
         bytes: Number(it.bytes) || 0, at: Number(it.at) || 0, trigger: { sha: t.sha, fp: t.fp, fpe: Number(t.fpe) || 0, ph: /^[0-9a-f]{16}$/.test(t.ph) ? t.ph : "", f: t.f || "" } });
+      const room = cleanRoom(it.room); if (room) out.items[out.items.length - 1].room = room;
     }
     return out;
   }
@@ -81,11 +88,51 @@ window.Portal = (() => {
     }
     throw last;
   }
-  // A media file or creation file by its path: immutable, so either door will do.
-  async function getFile(path, cap, onBytes) {
+  // ---------- the viewer's own copy of files (Cache Storage) ----------
+  // Kept under the raw address whichever door they came from. Nothing here is needed: without Cache Storage (an old
+  // browser, a private window, a full phone) files are simply downloaded.
+  const CACHE = "brill-portal-files-v1", lasting = (path) => MEDIA.test(path) || SCENE.test(path);
+  const box = () => (typeof caches !== "undefined" ? caches.open(CACHE) : Promise.reject(new Error("no cache")));
+  async function fromBox(path) { try { const r = await (await box()).match(raw() + path); return r ? await r.blob() : null; } catch (e) { return null; } }
+  const toBox = (path, blob) => box().then((c) => c.put(raw() + path, new Response(blob, { headers: { "content-type": blob.type || TYPE[path.split(".").pop()] || "application/octet-stream" } }))).catch(() => {});
+  async function inBox(path) { try { return !!(await (await box()).match(raw() + path)); } catch (e) { return false; } }
+  // Files no entry of cat needs any more are let go (creations removed or replaced since an earlier visit)
+  async function pruneBox(cat) {
+    try {
+      const keep = new Set(); for (const it of cat.items) { keep.add(it.scene); it.files.forEach((f) => keep.add(f)); }
+      const c = await box(), base = raw();
+      for (const req of await c.keys()) { const path = req.url.startsWith(base) ? req.url.slice(base.length) : ""; if (!keep.has(path)) await c.delete(req); }
+    } catch (e) {}
+  }
+  // A media file or creation file by its path: immutable, so either door will do (and the copy kept from before first).
+  const flying = new Map(); // path -> the download under way (fetching ahead and showing never download a file twice at once)
+  function getFile(path, cap, onBytes) {
+    if (flying.has(path)) return flying.get(path).then((b) => { if (b.size > cap) throw new Error("too large"); if (onBytes) onBytes(b.size); return b; });
+    const p = getFile1(path, cap, onBytes); flying.set(path, p);
+    p.then(() => flying.delete(path), () => flying.delete(path));
+    return p;
+  }
+  async function getFile1(path, cap, onBytes) {
+    if (lasting(path)) { const b = await fromBox(path); if (b && b.size <= cap) { if (onBytes) onBytes(b.size); return b; } }
     let last;
-    for (const base of [raw(), cdn()]) { try { return await getCapped(base + path, cap, { cache: "default", onBytes }); } catch (e) { last = e; if (e.message === "too large") throw e; } }
+    for (const base of [raw(), cdn()]) {
+      try { const b = await getCapped(base + path, cap, { cache: "default", onBytes }); if (lasting(path)) toBox(path, b); return b; }
+      catch (e) { last = e; if (e.message === "too large") throw e; }
+    }
     throw last;
+  }
+  // A creation's files fetched ahead into Cache Storage only (nothing kept in memory). Resolves to the bytes actually
+  // downloaded (0 when everything was there already). opts.stop(): asked between files; true ends it early.
+  async function warm(item, opts) {
+    const o = opts || {}; let n = 0;
+    const scene = await inBox(item.scene) ? await fromBox(item.scene) : await getFile(item.scene, LIM.scene, (k) => { n += k; });
+    const refs = Object.values(JSON.parse(await scene.text()).assets || {});
+    for (const r of refs) {
+      if (o.stop && o.stop()) break;
+      if (!r || !MEDIA.test(r.file) || !(r.size >= 0) || await inBox(r.file)) continue;
+      await getFile(r.file, Math.min(LIM.file + MB, r.size + 1024), (k) => { n += k; });
+    }
+    return n;
   }
   // A published creation, ready for the AR scene. Nothing is saved on the viewer's phone.
   async function loadCreation(item, onProgress) {
@@ -291,11 +338,26 @@ window.Portal = (() => {
       for (const m of media) scene.assets[m.id] = { file: m.path, type: m.blob.type || "application/octet-stream", size: m.blob.size };
       const sceneBlob = new Blob([JSON.stringify(scene)], { type: "application/json" }), scenePath = "c/" + id + "/" + rev + ".json";
       const item = { id, src: rec.id, name: rec.name || "יצירה", rev, scene: scenePath, files: media.map((m) => m.path), thumb: thumb.path, bytes: media.reduce((s, m) => s + m.blob.size, 0), at: Date.now(), trigger: trig };
+      const room = cleanRoom(o.room != null ? o.room : (mine || clash[0] || {}).room); if (room) item.room = room; // an update keeps the room
       const gone = [mine, ...clash].filter(Boolean), items = cat.items.filter((i) => !gone.includes(i)).concat(item);
       return { cat: Object.assign(cat, { items }), put: [...media, thumb, { path: scenePath, blob: sceneBlob }], drop: orphans(gone, items),
         message: (mine ? "עדכון: " : clash.length ? "החלפה: " : "פרסום: ") + item.name + " (" + id + ")" };
     }, onStep);
   }
+  // The room of a published creation (by the editor's creation id or the link id): only the catalogue changes, nothing
+  // is uploaded again. "" takes it out of its room.
+  async function setRoom(srcOrId, room, onStep) {
+    const token = getToken(); if (!token) throw fail("צריך קודם לחבר את הפורטל (הגדרה חד־פעמית).", 401);
+    const r = cleanRoom(room);
+    return commit(token, async (cat) => {
+      const it = cat.items.find((i) => i.src === srcOrId) || cat.items.find((i) => i.id === srcOrId);
+      if (!it) throw fail("היצירה כבר לא מפורסמת בפורטל.", 404);
+      if (r) it.room = r; else delete it.room;
+      return { cat, put: [], drop: [], message: "חדר: " + it.name + " (" + it.id + ") ← " + (r || "בלי חדר") };
+    }, onStep);
+  }
+  // The rooms already used, most used first (the suggestions under the room field)
+  const rooms = (cat) => { const n = new Map(); for (const it of (cat && cat.items) || []) if (it.room) n.set(it.room, (n.get(it.room) || 0) + 1); return [...n].sort((a, b) => b[1] - a[1]).map((x) => x[0]); };
   // Takes a creation off the portal (by the editor's creation id, or by the entry's link id)
   async function unpublish(srcOrId, onStep) {
     const token = getToken(); if (!token) throw fail("צריך קודם לחבר את הפורטל (הגדרה חד־פעמית).", 401);
@@ -307,9 +369,9 @@ window.Portal = (() => {
 
   // ---------- the catalogue as last seen by this phone (for the gallery marks while offline / before the read ends) ----------
   const SEEN_KEY = "brill-portal-seen";
-  function remember(cat) { try { localStorage.setItem(SEEN_KEY, JSON.stringify({ at: Date.now(), items: cat.items.map((i) => ({ id: i.id, src: i.src, name: i.name, at: i.at, trigger: { sha: i.trigger.sha, fp: i.trigger.fp, fpe: i.trigger.fpe, ph: i.trigger.ph } })) })); } catch (e) {} }
+  function remember(cat) { try { localStorage.setItem(SEEN_KEY, JSON.stringify({ at: Date.now(), items: cat.items.map((i) => ({ id: i.id, src: i.src, name: i.name, at: i.at, room: i.room || "", trigger: { sha: i.trigger.sha, fp: i.trigger.fp, fpe: i.trigger.fpe, ph: i.trigger.ph } })) })); } catch (e) {} }
   function remembered() { try { const o = JSON.parse(localStorage.getItem(SEEN_KEY) || "null"); return o && Array.isArray(o.items) ? o : null; } catch (e) { return null; } }
 
   return { CFG, LIM, ID, viewURL, readCatalogue, cleanCatalogue, loadCreation, getFile, trigger, phash, sameTrigger, sameArtwork, getToken, setToken, looksLikeToken, checkToken,
-    myCatalogue, publish, unpublish, blocker, weight, room, gitSha, remember, remembered, emptyCatalogue, raw, api };
+    myCatalogue, publish, unpublish, setRoom, rooms, cleanRoom, warm, pruneBox, inBox, blocker, weight, room, gitSha, remember, remembered, emptyCatalogue, raw, api };
 })();

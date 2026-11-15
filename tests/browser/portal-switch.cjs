@@ -4,7 +4,8 @@ const fs=require('fs'),path=require('path'),os=require('os'),{execFileSync}=requ
 // creations: ~/Desktop/brill-ar-work/cache/published-snapshot, fetched from the public branch if missing). Chrome's fake
 // camera shows her artwork "יצירה 3" (a video with colour removal) for 16 seconds, then an artwork added for the test
 // (a detailed picture with a video over its middle). Measured: the
-// time from the camera turning to the second artwork until the engine holds it, and until its content is showing.
+// time from the camera turning to the second artwork until the first creation is gone, until the engine holds the
+// second, and until its content is showing.
 // (Her other two, a card's back and a lip-balm box photographed sideways, are mostly big flat letters: the engine does
 // not find them in headless Chrome at all, so they are not the second artwork here.)
 // The videos start the way an iPhone starts them (nothing loaded before play(), then a moment until the first picture),
@@ -62,8 +63,8 @@ const A='d0e29245-a1aa-4391-bcbe-7ae502d7751f',SEG=16,SEGB=45;let B='';
       Object.defineProperty(P,'preload',{configurable:true,get(){return pre.get.call(this);},set(x){pre.set.call(this,/^m-/.test(this.id||'')?'none':x);}});
       P.play=function(){if(!mine(this)||this.__slow)return play.call(this);const v=this;v.__slow=true;return new Promise((res,rej)=>setTimeout(()=>play.call(v).then(res,rej),1500));};}
       // every frame: a video layer drawn (visible, not transparent) while its video has no picture is a black sheet
-      window.__black=[];window.__shown={};
-      const check=()=>{const sc=document.querySelector('a-scene');if(sc&&sc.object3D)for(const t of document.querySelectorAll('xrextras-named-image-target')){if(!t.object3D||!t.object3D.visible)continue;const name=t.getAttribute('name');
+      window.__black=[];window.__shown={};window.__lastVis={};
+      const check=()=>{const sc=document.querySelector('a-scene');if(sc&&sc.object3D)for(const t of document.querySelectorAll('xrextras-named-image-target')){if(!t.object3D||!t.object3D.visible)continue;const name=t.getAttribute('name');window.__lastVis[name]=performance.now();
         t.object3D.traverse((m)=>{if(!m.isMesh||!m.material)return;let o=m,vis=true;while(o){if(!o.visible){vis=false;break;}o=o.parent;}if(!vis)return;
           const tex=m.material.map||(m.material.uniforms&&m.material.uniforms.map&&m.material.uniforms.map.value),v=tex&&tex.image;if(!v||v.tagName!=='VIDEO')return;
           if(v.readyState>=2)v.__hadPic=true;if(m.material.opacity>0.02&&v.readyState<2&&!v.__hadPic)window.__black.push({name,t:performance.now(),op:+m.material.opacity.toFixed(2),rs:v.readyState});
@@ -89,11 +90,12 @@ const A='d0e29245-a1aa-4391-bcbe-7ae502d7751f',SEG=16,SEGB=45;let B='';
     // a few pictures while it switches
     for(let i=0;i<6;i++){await p.waitForTimeout(700);await p.screenshot({path:SHOTS+'switch-'+i+'.png'});}
     await p.waitForFunction((B)=>window.__found[B]&&window.__shown[B],B,{timeout:(SEGB-5)*1000}).catch(()=>{});
-    const r=await p.evaluate(({A,B})=>({tB:window.__tB,foundB:window.__found[B]||0,shownB:window.__shown[B]||0,shownA:window.__shown[A]||0,black:window.__black.length,blackFirst:window.__black.slice(0,3),gum:window.__gum,mounted:window.__portal&&__portal.mounted(),cur:window.__portal&&__portal.current(),st:window.__portal&&__portal.state(),times:window.__portal&&__portal.times&&__portal.times().map(x=>[x.id.slice(0,4),Math.round(x.chose-window.__tB),x.found?Math.round(x.found-window.__tB):0]),heard:window.__portal&&__portal.heard&&__portal.heard().map(h=>[Math.round(h[0]-window.__tB),h[1]&&h[1].slice(0,4),h[2],h[3]])}),{A,B});console.log(JSON.stringify(r));
-    const out={foundBAfterMs:r.foundB?Math.round(r.foundB-r.tB):null,contentBAfterMs:r.shownB?Math.round(r.shownB-r.tB):null,blackFrames:r.black,blackSample:r.blackFirst,getUserMediaCalls:r.gum,mounted:r.mounted};
+    const r=await p.evaluate(({A,B})=>({tB:window.__tB,lastVisA:window.__lastVis[A]||0,foundB:window.__found[B]||0,shownB:window.__shown[B]||0,shownA:window.__shown[A]||0,black:window.__black.length,blackFirst:window.__black.slice(0,3),gum:window.__gum,mounted:window.__portal&&__portal.mounted(),cur:window.__portal&&__portal.current(),st:window.__portal&&__portal.state(),times:window.__portal&&__portal.times&&__portal.times().map(x=>[x.id.slice(0,4),Math.round(x.chose-window.__tB),x.found?Math.round(x.found-window.__tB):0]),heard:window.__portal&&__portal.heard&&__portal.heard().map(h=>[Math.round(h[0]-window.__tB),h[1]&&h[1].slice(0,4),h[2],h[3]])}),{A,B});console.log(JSON.stringify(r));
+    const out={aGoneAfterMs:Math.max(0,Math.round(r.lastVisA-r.tB)),foundBAfterMs:r.foundB?Math.round(r.foundB-r.tB):null,contentBAfterMs:r.shownB?Math.round(r.shownB-r.tB):null,blackFrames:r.black,blackSample:r.blackFirst,getUserMediaCalls:r.gum,mounted:r.mounted};
     console.log(JSON.stringify(out));
     await p.screenshot({path:SHOTS+'switch-final.png'});
     if(process.env.MEASURE_ONLY)return;
+    assert.ok(out.aGoneAfterMs<1500,'the first creation leaves with its artwork: '+out.aGoneAfterMs+' ms');
     assert.ok(r.foundB,'the engine found the second artwork');assert.ok(r.shownB,'its content is showing');
     assert.equal(r.black,0,'no video layer drawn before its video has a picture (no black sheet): '+JSON.stringify(r.blackFirst));
     assert.equal(r.gum,1,'the camera is asked for once for the whole visit');

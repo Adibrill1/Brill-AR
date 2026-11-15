@@ -3,7 +3,7 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
 // editor's own code; then: a clean start (straight to the camera, nothing of ours on the screen; on an iPhone without
 // the motion permission one wordless full-screen tap); camera frames of one artwork go through the recogniser worker,
 // which names it, and only then its media are downloaded and it is mounted under its own image target; the other two
-// are made ready in the background; a short loss is held; turning to another artwork while one is shown switches in
+// are made ready in the background; a short loss is held only while the recogniser still sees it; turning to another artwork while one is shown switches in
 // place; a blocked camera gets a Hebrew screen with the help page; a direct link (view.html#id) opens its creation;
 // "לא מזהה? לבחור מרשימה" (a small icon, after a while);
 // a removed creation's link shows a kind message (and keeps working while the public copy still lags); a link to a
@@ -71,11 +71,30 @@ const ANDROID='Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTM
   assert.equal(await p.evaluate(()=>__portal.state()),'tracking');assert.deepEqual(await ours(),[],'nothing of ours over the creation while it is shown');
   // the other two (a small catalogue) are fetched and made ready in the background meanwhile
   await p.waitForFunction(()=>__portal.mounted().length===3,null,{timeout:20000});
-  // a moment's loss (a reflection): the content holds; found again within the moment: nothing happened
-  await p.evaluate((id)=>document.querySelector('a-scene').emit('xrimagelost',{name:id},false),ids[1]);await p.waitForTimeout(500);
-  assert.equal(await p.evaluate(()=>__portal.state()),'tracking','a short loss is held back');
-  await p.evaluate((id)=>document.querySelector('a-scene').emit('xrimagefound',{name:id,position:{x:0,y:0,z:-1},rotation:{x:0,y:0,z:0,w:1},scale:1},false),ids[1]);await p.waitForTimeout(1200);
-  assert.equal(await p.evaluate(()=>__portal.state()),'tracking','found again within the moment: still shown');
+  // the engine lets go and the recogniser sees nothing: the creation goes after a moment (~0.25 s), never 2 s later
+  const vis=(id)=>p.evaluate((id)=>[...document.querySelectorAll('xrextras-named-image-target')].find(t=>t.getAttribute('name')===id).object3D.visible,id);
+  // found one metre in front of the camera, facing it (the engine moves the camera, so the pose is the camera's own)
+  const found=(id)=>p.evaluate((id)=>{const sc=document.querySelector('a-scene'),c=sc.camera,T=AFRAME.THREE;c.updateMatrixWorld();const pos=c.localToWorld(new T.Vector3(0,0,-1)),q=c.getWorldQuaternion(new T.Quaternion());
+    sc.emit('xrimagefound',{name:id,position:{x:pos.x,y:pos.y,z:pos.z},rotation:{x:q.x,y:q.y,z:q.z,w:q.w},scale:1},false);},id);
+  await p.evaluate((id)=>document.querySelector('a-scene').emit('xrimagelost',{name:id},false),ids[1]);
+  await p.waitForTimeout(500);
+  assert.equal(await vis(ids[1]),false,'lost and not seen: the creation goes within half a second');assert.equal(await p.evaluate(()=>__portal.state()),'lost');
+  // a reflection: the engine lets go, but the recogniser still sees the same artwork where the creation stands: it stays
+  await found(ids[1]);assert.equal(await p.evaluate(()=>__portal.state()),'tracking');
+  // (the fake camera's own test picture is paused here: only the frames below reach the recogniser)
+  await p.evaluate(()=>XR8.pause());await p.waitForTimeout(300);
+  await p.evaluate((id)=>document.querySelector('a-scene').emit('xrimagelost',{name:id},false),ids[1]);
+  await p.waitForTimeout(120);assert.equal(await vis(ids[1]),true,'a one-frame flicker is hidden');
+  for(let k=0;k<8;k++){await frame(22);await p.waitForTimeout(150);}
+  assert.equal(await p.evaluate(()=>__portal.holding()),ids[1],'held while the recogniser sees it');assert.equal(await vis(ids[1]),true,'still shown under the reflection');
+  const w=await p.evaluate(()=>__portal.where());assert.ok(w&&w.seen&&Math.abs(w.seen[0]-w.screen[0])<0.1&&Math.abs(w.seen[1]-w.screen[1])<0.1,'seen where it stands: '+JSON.stringify(w));
+  // found again within the hold: nothing happened
+  await found(ids[1]);await p.waitForTimeout(400);
+  assert.equal(await p.evaluate(()=>__portal.state()),'tracking','found again within the moment: still shown');assert.equal(await p.evaluate(()=>__portal.holding()),null);
+  // lost again, and a frame taken after it shows something else: the creation goes at once (no waiting out the hold)
+  await p.evaluate((id)=>document.querySelector('a-scene').emit('xrimagelost',{name:id},false),ids[1]);await frame(99);
+  await p.waitForFunction((id)=>![...document.querySelectorAll('xrextras-named-image-target')].find(t=>t.getAttribute('name')===id).object3D.visible,ids[1],{timeout:400});
+  await found(ids[1]);
   // turning to the next artwork while this one is shown: it switches in place, without a new download
   const cBefore=raws.filter(u=>u.startsWith('c/')).length;
   for(let k=0;k<6&&(await p.evaluate(()=>__portal.current()))!==ids[2];k++){await frame(33);await p.waitForTimeout(700);}

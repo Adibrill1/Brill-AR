@@ -1022,7 +1022,7 @@ vec4 bpPattern(vec2 uv) {
   function ensureTargetVideoComponent() {
     if (!window.AFRAME || AFRAME.components["studio-target-video"]) return;
     AFRAME.registerComponent("studio-target-video", {
-      schema: { video: { type: "string" }, fadeMs: { type: "int", default: 800 } },
+      schema: { video: { type: "string" }, fadeMs: { type: "int", default: 400 } },
       init() {
         this.video = document.querySelector(this.data.video);
         this.target = 0;
@@ -1293,10 +1293,17 @@ vec4 bpPattern(vec2 uv) {
   // The letters of one line in the order they stand from left to right: Hebrew right to left, with Latin words and
   // numbers left to right inside it (enough of the Unicode bidi rules for a title); brackets in Hebrew are mirrored.
   const MIRRORED = { "(": ")", ")": "(", "[": "]", "]": "[", "{": "}", "}": "{", "<": ">", ">": "<" };
-  function visualLetters(line) {
-    const chars = typeof Intl !== "undefined" && Intl.Segmenter ? Array.from(new Intl.Segmenter("he", { granularity: "grapheme" }).segment(line), (s) => s.segment) : Array.from(line);
+  // A line's own direction, as the Unicode rules decide it: its first letter (Hebrew: right to left), "rtl" with none.
+  // A canvas that is not in the page draws left to right whatever the page says, which put a Hebrew line's closing
+  // full stop (and ?, !, a closing bracket) at its right end: every text canvas is told its line's direction instead.
+  function lineDir(line) { const m = /[\u0590-\u05FF\uFB1D-\uFB4F]|\p{L}/u.exec(String(line)); return !m || /[\u0590-\u05FF\uFB1D-\uFB4F]/.test(m[0]) ? "rtl" : "ltr"; }
+  const graphemes = (line) => typeof Intl !== "undefined" && Intl.Segmenter ? Array.from(new Intl.Segmenter("he", { granularity: "grapheme" }).segment(line), (s) => s.segment) : Array.from(line);
+  function visualLetters(line) { return visualOrder(line).map((g) => g.ch); }
+  // visualLetters with each letter's place in the typed line: [{ch, i}] from left to right
+  function visualOrder(line) {
+    const chars = graphemes(line);
     const kind = chars.map((ch) => /[\u0590-\u05FF\uFB1D-\uFB4F]/.test(ch) ? "R" : /[\p{L}\p{N}]/u.test(ch) ? "L" : "N");
-    const base = kind.find((k) => k !== "N") || "R";
+    const base = lineDir(line) === "rtl" ? "R" : "L"; // digits do not set a line's direction
     const near = (i, step) => { for (let j = i + step; j >= 0 && j < kind.length; j += step) if (kind[j] !== "N") return kind[j]; return null; };
     // a bracket pair goes with what it holds: the line's direction if that is inside, else the other one when the
     // text before it runs that way too ("AR (2026)" in a Hebrew line keeps its brackets with the English)
@@ -1313,16 +1320,17 @@ vec4 bpPattern(vec2 uv) {
     kind.forEach((k, i) => {
       const d = k !== "N" ? k : near(i, -1) && near(i, -1) === near(i, 1) ? near(i, 1) : base; // a space or mark between two letters of one direction joins them
       const last = runs[runs.length - 1];
-      if (last && last.d === d) last.c.push(chars[i]); else runs.push({ d, c: [chars[i]] });
+      const g = { ch: chars[i], i };
+      if (last && last.d === d) last.c.push(g); else runs.push({ d, c: [g] });
     });
     if (base === "R") runs.reverse();
-    return runs.flatMap((r) => r.d === "R" ? r.c.slice().reverse().map((ch) => MIRRORED[ch] || ch) : r.c);
+    return runs.flatMap((r) => r.d === "R" ? r.c.slice().reverse().map((g) => ({ ch: MIRRORED[g.ch] || g.ch, i: g.i })) : r.c);
   }
   function drawCutLetters(el, fontPx) {
     const rnd = seededRandom(String(el.id || "") + ":" + (Math.floor(el.cutSeed) || 0));
     const m = document.createElement("canvas").getContext("2d");
-    const lines = String(el.text || "").split("\n").map((line) => visualLetters(line).map((ch) => {
-      if (!ch.trim()) return { space: true, w: fontPx * 0.32 };
+    const lines = String(el.text || "").split("\n").map((line) => visualOrder(line).map(({ ch, i }) => {
+      if (!ch.trim()) return { space: true, w: fontPx * 0.32, i };
       const size = Math.round(fontPx * (0.82 + rnd() * 0.36)), id = CUT_FONTS[Math.floor(rnd() * CUT_FONTS.length)];
       const font = (rnd() < 0.6 ? "700" : "400") + " " + size + "px " + fontStack(id);
       m.font = font;
@@ -1330,7 +1338,7 @@ vec4 bpPattern(vec2 uv) {
       const left = mt.actualBoundingBoxLeft || 0, right = mt.actualBoundingBoxRight || mt.width;
       const gw = Math.max(left + right, size * 0.3), gh = Math.max(asc + desc, size * 0.5);
       const padX = size * (0.1 + rnd() * 0.1), padY = size * (0.08 + rnd() * 0.1), [paper, ink] = CUT_PAPERS[Math.floor(rnd() * CUT_PAPERS.length)];
-      return { ch, font, left, right, asc, desc, paper, ink, w: gw + padX * 2, h: gh + padY * 2, rot: (rnd() - 0.5) * 0.24, dy: (rnd() - 0.5) * size * 0.14,
+      return { ch, i, font, left, right, asc, desc, paper, ink, w: gw + padX * 2, h: gh + padY * 2, rot: (rnd() - 0.5) * 0.24, dy: (rnd() - 0.5) * size * 0.14,
         corners: Array.from({ length: 8 }, () => (rnd() - 0.5) * size * 0.12) };
     }));
     const gap = fontPx * 0.05, lineH = fontPx * 1.5, pad = Math.round(fontPx * 0.4);
@@ -1338,10 +1346,12 @@ vec4 bpPattern(vec2 uv) {
     const c = document.createElement("canvas"), ctx = c.getContext("2d");
     c.width = Math.ceil(Math.max(1, ...widths) + pad * 2);
     c.height = Math.ceil(lines.length * lineH + pad * 2);
+    const glyphs = [];
     lines.forEach((l, li) => {
       let x = (c.width - widths[li]) / 2;
       const cy = pad + lineH * (li + 0.5);
       for (const p of l) {
+        glyphs.push({ x0: x - gap / 2, x1: x + p.w + gap / 2, y0: cy - lineH / 2, y1: cy + lineH / 2, line: li, i: p.i, space: !!p.space });
         if (!p.space) {
           const hw = p.w / 2, hh = p.h / 2, k = p.corners;
           ctx.save(); ctx.translate(x + hw, cy + p.dy); ctx.rotate(p.rot);
@@ -1355,12 +1365,12 @@ vec4 bpPattern(vec2 uv) {
         x += p.w + gap;
       }
     });
-    return { canvas: c, aspect: c.width / c.height };
+    return { canvas: c, aspect: c.width / c.height, glyphs: glyphOrder(glyphs, c, lines.map((l) => l.length)), lineH };
   }
 
   // Draw a text element to an offscreen canvas (used by editor panel preview and player texture).
   // fontPx: reference font size in canvas pixels. Returns {canvas, aspect}.
-  function drawTextCanvas(el, fontPx) {
+  function drawTextCanvas(el, fontPx, opts) {
     if (el.textStyle === "cut") return drawCutLetters(el, fontPx);
     const c = document.createElement("canvas");
     const ctx = c.getContext("2d");
@@ -1376,8 +1386,213 @@ vec4 bpPattern(vec2 uv) {
     ctx.font = font; ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.shadowColor = "rgba(0,0,0,0.55)"; ctx.shadowBlur = Math.round(fontPx * 0.12);
     ctx.fillStyle = el.color || "#ffffff";
-    lines.forEach((l, i) => ctx.fillText(l, c.width / 2, pad + fontPx * 1.25 * (i + 0.5)));
-    return { canvas: c, aspect: c.width / c.height };
+    lines.forEach((l, i) => { ctx.direction = lineDir(l); ctx.fillText(l, c.width / 2, pad + fontPx * 1.25 * (i + 0.5)); });
+    const out = { canvas: c, aspect: c.width / c.height, lineH: fontPx * 1.25 };
+    // where each letter stands (for the letter-by-letter entrances): its column from the widths of the letters before
+    // it in the order they stand on the line; the letters themselves are never drawn one by one (the whole line keeps
+    // its own shaping and spacing), they are cut out of this picture while they move
+    if (opts && opts.glyphs) {
+      const m = document.createElement("canvas").getContext("2d"), glyphs = [];
+      m.font = font;
+      lines.forEach((l, li) => {
+        const v = visualOrder(l), left = (c.width - m.measureText(l).width) / 2, y0 = pad + fontPx * 1.25 * li;
+        let acc = "", x = left;
+        v.forEach((g, k) => { acc += g.ch; const nx = left + m.measureText(acc).width; glyphs.push({ x0: k ? x : 0, x1: k === v.length - 1 ? c.width : nx, y0: li ? y0 : 0, y1: li === lines.length - 1 ? c.height : y0 + fontPx * 1.25, line: li, i: g.i, space: !g.ch.trim() }); x = nx; });
+      });
+      out.glyphs = glyphOrder(glyphs, c, lines.map((l) => graphemes(l).length));
+    }
+    return out;
+  }
+  // letters numbered in reading order across the lines (k), and their words (w), for the entrances that go one by one
+  function glyphOrder(glyphs, c, counts) {
+    const start = []; counts.reduce((n, x, i) => { start[i] = n; return n + x; }, 0);
+    glyphs.forEach((g) => { g.k = start[g.line] + g.i; });
+    let w = -1, gap = true;
+    glyphs.slice().sort((a, b) => a.k - b.k).forEach((g) => { if (g.space) gap = true; else { if (gap) w++; gap = false; } g.w = Math.max(0, w); });
+    return { list: glyphs, n: counts.reduce((a, b) => a + b, 0), words: w + 1, W: c.width, H: c.height };
+  }
+
+  // ---------- entrance and exit ("כניסה" / "יציאה") ----------
+  // How a layer comes in when it appears (the artwork found, a step of its motion path that shows it, its state
+  // entered, its track started) and goes out when it is about to go (a step that hides it: the exit ends right then;
+  // its state or track left: the exit plays and then it goes). el.enter = {fx, speed, delay}, el.exit = {fx, speed}:
+  // speed 0.25-4 (x the effect's own pace), delay 0-5 s before the entrance. Losing the artwork plays nothing: the
+  // content goes at once. One description of every effect (fxLook) feeds the editor's canvas, its 3D view, preview.html,
+  // play.html and the viewer portal, so it looks the same everywhere. [id, entrance name, exit name, base seconds, text only]
+  const ENTER_EXIT = [["none", "בלי", "בלי", 0], ["fade", "דהייה", "דהייה", 0.6], ["pop", "קפיצה", "קפיצה", 0.5], ["zoom", "זום", "זום", 0.6],
+    ["stamp", "חותמת", "חותמת", 0.45], ["slideR", "מימין", "ימינה", 0.7], ["slideL", "משמאל", "שמאלה", 0.7], ["slideU", "מלמעלה", "למעלה", 0.7], ["slideD", "מלמטה", "למטה", 0.7],
+    ["spin", "סיבוב", "סיבוב", 0.8], ["blur", "טשטוש", "טשטוש", 0.7, true], ["type", "מכונת כתיבה", "מחיקה אות אחר אות", 0, true], ["words", "מילה אחרי מילה", "מילה אחרי מילה", 0, true],
+    ["rise", "אותיות עולות", "אותיות עפות למעלה", 0, true], ["fall", "אותיות נופלות", "אותיות נופלות", 0, true], ["wave", "גל", "גל", 0, true], ["flicker", "הבהוב", "הבהוב", 0.9, true]];
+  const EE = new Map(ENTER_EXIT.map((x) => [x[0], x]));
+  const LETTER_FX = new Set(["type", "words", "rise", "fall", "wave", "flicker"]);
+  // the effects a layer of this type can take (text: all; sound: none; everything else: the ones that move the whole layer)
+  const enterExitFor = (type) => type === "sound" ? [] : ENTER_EXIT.filter((x) => type === "text" || !x[4]).map(([id, a, b]) => ({ id, enter: a, exit: b }));
+  function validEnterExit(el) {
+    for (const k of ["enter", "exit"]) {
+      const v = el[k]; if (v == null) continue;
+      if (typeof v !== "object" || Array.isArray(v) || !EE.has(v.fx)) return false;
+      if (v.speed != null && !(Number.isFinite(v.speed) && v.speed >= 0.25 && v.speed <= 4)) return false;
+      if (v.delay != null && !(Number.isFinite(v.delay) && v.delay >= 0 && v.delay <= 5)) return false;
+    }
+    if (el.animSpeed != null && !(Number.isFinite(el.animSpeed) && el.animSpeed >= 0.25 && el.animSpeed <= 4)) return false;
+    return true;
+  }
+  const eeOf = (el, k) => { const v = el && el[k]; return v && v.fx && v.fx !== "none" && EE.has(v.fx) && (el.type === "text" || !EE.get(v.fx)[4]) ? v : null; };
+  const hasEnterExit = (el) => !!(eeOf(el, "enter") || eeOf(el, "exit"));
+  // seconds the effect takes: its base pace (letter effects: by the length of the text) over the chosen speed
+  function enterExitDur(el, v) {
+    const n = Math.max(1, graphemes(String(el.text || "")).filter((c) => c.trim()).length), words = Math.max(1, String(el.text || "").trim().split(/\s+/).length);
+    const base = v.fx === "type" ? Math.min(6, 0.25 + n * 0.07) : v.fx === "words" ? Math.min(6, 0.2 + words * 0.3) : LETTER_FX.has(v.fx) ? Math.min(4, 0.6 + n * 0.035) : EE.get(v.fx)[3];
+    return base / (v.speed > 0 ? v.speed : 1);
+  }
+  const clamp01 = (v) => v < 0 ? 0 : v > 1 ? 1 : v;
+  const easeOut = (t) => 1 - (1 - t) * (1 - t) * (1 - t), easeIn = (t) => t * t * t;
+  const backOut = (t) => { const c = 1.9; return 1 + (c + 1) * Math.pow(t - 1, 3) + c * Math.pow(t - 1, 2); };
+  // one effect at appearance progress e (0: not there yet / gone, 1: fully there), laid over look o
+  function lookAt(o, fx, e, exit) {
+    if (exit && fx === "rise") fx = "fall"; else if (exit && fx === "fall") fx = "rise"; // an exit "rise": the letters fly up and away
+    const D = 0.45; // slides: from this far (in artwork heights)
+    switch (fx) {
+      case "fade": o.a *= e; break;
+      case "pop": o.s *= Math.max(0, backOut(e)); o.a *= clamp01(e * 3); break;
+      case "zoom": o.s *= 0.25 + 0.75 * easeOut(e); o.a *= easeOut(e); break;
+      case "stamp": o.s *= e < 0.7 ? 2.6 - 1.6 * easeIn(e / 0.7) : 1 + 0.07 * Math.sin((e - 0.7) / 0.3 * Math.PI) * (1 - (e - 0.7) / 0.3); o.a *= clamp01(e * 2.5); break;
+      case "slideR": o.x += (1 - easeOut(e)) * D; o.a *= clamp01(e * 2); break;
+      case "slideL": o.x -= (1 - easeOut(e)) * D; o.a *= clamp01(e * 2); break;
+      case "slideU": o.y += (1 - easeOut(e)) * D; o.a *= clamp01(e * 2); break;
+      case "slideD": o.y -= (1 - easeOut(e)) * D; o.a *= clamp01(e * 2); break;
+      case "spin": o.r += (1 - easeOut(e)) * 360; o.s *= 0.35 + 0.65 * easeOut(e); o.a *= easeOut(e); break;
+      case "blur": o.blur = Math.max(o.blur, 1 - easeOut(e)); o.a *= clamp01(e * 1.6); break;
+      default: if (LETTER_FX.has(fx)) o.text = { fx, e }; // drawn letter by letter (drawEnterExitText)
+    }
+    if (e < 1) o.active = true;
+  }
+  // The look of a layer that has been showing for `since` seconds and goes in `until` seconds (Infinity: not known):
+  // {a: opacity factor, x, y: offset (artwork heights, y up), s: scale factor, r: turn (degrees, anticlockwise),
+  // blur 0..1, text: {fx, e} for a letter effect, hidden: before the entrance's delay, active: anything to do}.
+  function fxLook(el, since, until) {
+    const o = { a: 1, x: 0, y: 0, s: 1, r: 0, blur: 0, text: null, hidden: false, active: false };
+    const en = eeOf(el, "enter"), ex = eeOf(el, "exit");
+    if (en) {
+      const delay = en.delay || 0;
+      if (since < delay) { o.hidden = o.active = true; return o; }
+      const p = (since - delay) / enterExitDur(el, en); if (p < 1) lookAt(o, en.fx, clamp01(p), false);
+    }
+    if (ex && until < Infinity) { const d = enterExitDur(el, ex); if (until < d) lookAt(o, ex.fx, clamp01(until / d), true); }
+    return o;
+  }
+  // When a layer with a motion path appeared and when it goes, at time t of that path (its steps that hide and show it,
+  // around and around when it loops): {since, until}. Without such steps: showing since t, no end known.
+  function fxTimes(el, t) {
+    const tl = el && el.timeline, keys = tl && Array.isArray(tl.keys) ? tl.keys.filter((k) => k.visible != null).sort((a, b) => a.t - b.t) : [];
+    if (!keys.length) return { since: t, until: Infinity };
+    const dur = timelineDur(el), loop = !!tl.loop && dur > 0, at = (x) => { let v = true; for (const k of keys) if (k.t <= x) v = k.visible !== false; return v; };
+    const times = [...new Set(keys.map((k) => k.t).filter((x) => !loop || x <= dur))], end = at(dur);
+    const events = [];
+    const cycle = (base) => { let v = base === 0 ? true : end; for (const x of [0, ...times]) { const nv = at(x); if (nv !== v) events.push([base + x, nv]); v = nv; } };
+    if (loop) { const n = Math.floor(t / dur); for (let i = Math.max(0, n - 1); i <= n + 1; i++) cycle(i * dur); } else cycle(0);
+    let since = t, until = Infinity;
+    for (const [x, on] of events) { if (x <= t && on) since = t - x; if (x > t && !on && until === Infinity) until = x - t; }
+    return { since, until };
+  }
+  // The letters of a text layer drawn into `out` (a canvas the size of tb.canvas) as letter effect look.text shows them
+  // at its moment, or the whole text softened (look.blur). Only pieces of the text's own picture are copied: no text is
+  // laid out again, so a long text costs a few image copies a frame, only while its effect runs.
+  const hash01 = (a, b) => { let h = Math.imul(a + 0x9E3779B9, 0x85EBCA6B) ^ Math.imul(b + 7, 0xC2B2AE35); h ^= h >>> 15; h = Math.imul(h, 0x27D4EB2D); h ^= h >>> 13; return (h >>> 0) / 4294967296; };
+  function drawEnterExitText(tb, look, out) {
+    const g = out.getContext("2d"), W = tb.canvas.width, H = tb.canvas.height;
+    if (out.width !== W || out.height !== H) { out.width = W; out.height = H; } else g.clearRect(0, 0, W, H);
+    let src = tb.canvas;
+    if (look.blur > 0.01) { // softened: drawn small and stretched back (cheap, and the same on every phone)
+      const k = 1 / (1 + look.blur * 14), sm = tb._small || (tb._small = document.createElement("canvas")), sw = Math.max(1, Math.round(W * k)), sh = Math.max(1, Math.round(H * k));
+      sm.width = sw; sm.height = sh; const sg = sm.getContext("2d"); sg.imageSmoothingQuality = "high"; sg.drawImage(tb.canvas, 0, 0, sw, sh);
+      const mid = tb._mid || (tb._mid = document.createElement("canvas")); mid.width = W; mid.height = H; const mg = mid.getContext("2d"); mg.imageSmoothingEnabled = true; mg.drawImage(sm, 0, 0, W, H); src = mid;
+    }
+    const t = look.text;
+    if (!t || !tb.glyphs) { g.drawImage(src, 0, 0); return out; }
+    const G = tb.glyphs, n = Math.max(1, G.n), lh = tb.lineH || H, e = t.e;
+    for (const q of G.list) {
+      if (q.space) continue;
+      const f = q.k / n; let a = 1, dy = 0, sc = 1;
+      if (t.fx === "type") a = clamp01(e * n - q.k);
+      else if (t.fx === "words") a = clamp01(e * G.words - q.w);
+      else if (t.fx === "flicker") { const r = hash01(q.k, 1) * 0.65; a = e >= r + 0.3 ? 1 : e < r ? 0 : hash01(q.k, Math.floor(e * 36)) > 0.45 ? 1 : 0.12; }
+      else { const l = clamp01((e - f * 0.55) / 0.45);
+        if (t.fx === "rise") { dy = (1 - easeOut(l)) * 0.8 * lh; a = l; }
+        else if (t.fx === "fall") { dy = -(1 - easeOut(l)) * 0.8 * lh; a = l; }
+        else { sc = Math.max(0, backOut(l)); dy = (1 - l) * 0.35 * lh; a = clamp01(l * 2); } } // wave
+      if (a <= 0.003 || sc <= 0.01) continue;
+      const w = q.x1 - q.x0, h = q.y1 - q.y0, cx = q.x0 + w / 2, cy = q.y0 + h / 2;
+      g.globalAlpha = a; g.drawImage(src, q.x0, q.y0, w, h, cx - w * sc / 2, cy - h * sc / 2 + dy, w * sc, h * sc);
+    }
+    g.globalAlpha = 1;
+    return out;
+  }
+  // AR and the 3D views (A-Frame scenes): the entrance and exit are laid over each layer only while a frame is drawn
+  // (the scene's onBeforeRender, taken back in onAfterRender), so they never fight the drivers that move the layer
+  // (motion path, ready-made movement, tap sequences, states) and taps still find the layer where it really is.
+  // A scene may answer the times itself (scene.__fxTimes(el) -> {since, until}: the editor's 3D view follows the
+  // editor's own clock); otherwise they come from when the layer was last seen appearing.
+  function watchEnterExit(e, el, rec) {
+    const go = () => {
+      const sc = e.sceneEl; if (!sc || !sc.object3D) return;
+      const list = sc.__eeList || (sc.__eeList = new Set());
+      if (!sc.__eeHooked) {
+        sc.__eeHooked = true;
+        const before = sc.object3D.onBeforeRender, after = sc.object3D.onAfterRender;
+        sc.object3D.onBeforeRender = function (...a) { if (before) before.apply(this, a); enterExitFrame(sc); };
+        sc.object3D.onAfterRender = function (...a) { enterExitUndo(sc); if (after) after.apply(this, a); };
+      }
+      list.add({ e, el, vis: false, since0: 0, outAt: null, lastUntil: Infinity });
+    };
+    if (e.hasLoaded && e.sceneEl) go(); else e.addEventListener("loaded", function on(ev) { if (ev.target !== e) return; e.removeEventListener("loaded", on); go(); });
+  }
+  const D2R = Math.PI / 180;
+  function enterExitFrame(sc) {
+    const now = performance.now() / 1000, undo = sc.__eeUndo || (sc.__eeUndo = []);
+    for (const it of sc.__eeList) {
+      const { e, el } = it, o3 = e.object3D;
+      if (!e.isConnected || !o3) { sc.__eeList.delete(it); continue; }
+      let shown = true; for (let p = o3.parent; p; p = p.parent) if (!p.visible) { shown = false; break; }
+      if (!shown) { it.vis = false; it.outAt = null; continue; } // its artwork is not in view (or a wrapper hides it): nothing drawn, a fresh entrance next time
+      const own = o3.visible, ex = eeOf(el, "exit");
+      let since, until = Infinity;
+      if (sc.__fxTimes) { if (!own) continue; ({ since, until } = sc.__fxTimes(el)); }
+      else {
+        if (own && !it.vis) { it.vis = true; it.since0 = now; it.outAt = null; }
+        else if (!own && it.vis) { it.vis = false; it.outAt = ex && it.lastUntil > 0.05 ? now : null; } // an exit already played up to this moment (a step that hides it) is not played again
+        since = now - it.since0;
+        if (el.timeline && e._tlTime != null) { const ft = fxTimes(el, e._tlTime); until = ft.until; since = Math.min(since, ft.since); }
+        if (!own) { if (it.outAt == null) continue; const left = enterExitDur(el, ex) - (now - it.outAt); if (left <= 0) { it.outAt = null; continue; } until = left; }
+        it.lastUntil = until;
+      }
+      const look = fxLook(el, since, until);
+      if (!look.active && own) continue;
+      const u = { o3, vis: o3.visible, px: o3.position.x, py: o3.position.y, sx: o3.scale.x, sy: o3.scale.y, sz: o3.scale.z, rz: o3.rotation.z, mats: [], map: null };
+      undo.push(u);
+      o3.visible = !look.hidden;
+      o3.position.x += look.x; o3.position.y += look.y; o3.scale.multiplyScalar(look.s); o3.rotation.z += look.r * D2R;
+      o3.updateMatrixWorld(true);
+      if (look.a < 1) o3.traverse((n) => { if (!n.material) return; for (const m of Array.isArray(n.material) ? n.material : [n.material]) { u.mats.push([m, m.opacity]); if (!m.transparent) { m.transparent = true; m.needsUpdate = true; } m.opacity *= look.a; } });
+      if (el.type === "text" && (look.text || look.blur > 0.01) && e._eeText) {
+        const mesh = e.getObject3D("mesh"), mat = mesh && mesh.material;
+        if (mat && mat.map) {
+          const tb = e._eeText, work = tb._work || (tb._work = document.createElement("canvas"));
+          drawEnterExitText(tb, look, work);
+          if (!tb._tex) { tb._tex = new AFRAME.THREE.CanvasTexture(work); tb._tex.colorSpace = mat.map.colorSpace; if (mat.map.encoding != null) tb._tex.encoding = mat.map.encoding; tb._tex.flipY = mat.map.flipY; }
+          tb._tex.needsUpdate = true; u.map = [mat, mat.map]; mat.map = tb._tex;
+        }
+      }
+    }
+  }
+  function enterExitUndo(sc) {
+    const undo = sc.__eeUndo; if (!undo || !undo.length) return;
+    for (const u of undo) {
+      const o3 = u.o3; o3.visible = u.vis; o3.position.x = u.px; o3.position.y = u.py; o3.scale.set(u.sx, u.sy, u.sz); o3.rotation.z = u.rz; o3.updateMatrixWorld(true);
+      for (const [m, op] of u.mats) m.opacity = op;
+      if (u.map) u.map[0].map = u.map[1];
+    }
+    undo.length = 0;
   }
 
 
@@ -1492,7 +1707,7 @@ vec4 bpPattern(vec2 uv) {
   const SCATTER_TYPES = ["image", "video", "text", "model"];
   const SCATTER_MAX = { image: 60, text: 60, video: 16, model: 12 }; // fewer for videos and models: a phone draws each one
   const SCATTER_SPACING = ["even", "grow", "shrink"], SCATTER_SIZE = ["constant", "grow", "shrink"], SCATTER_FACING = ["keep", "follow"];
-  const SCATTER_DROP = ["id", "name", "x", "y", "z", "timeline", "seq", "track", "onTap", "tapUrl", "anim", "spin", "locked", "assetId", "children", "flush", "scatter", "spatial", "spatialMode", "spatialInner", "spatialOuter", "_ownerId"];
+  const SCATTER_DROP = ["id", "name", "x", "y", "z", "timeline", "seq", "track", "onTap", "tapUrl", "anim", "animSpeed", "enter", "exit", "spin", "locked", "assetId", "children", "flush", "scatter", "spatial", "spatialMode", "spatialInner", "spatialOuter", "_ownerId"];
   const mediaType = (el) => (el && el.type === "scatter" ? (el.scatter && el.scatter.item && el.scatter.item.type) || "" : el && el.type);
   function scatterItem(src) { const it = structuredClone(src); for (const k of SCATTER_DROP) delete it[k]; return it; }
   function scatterLimit(el) { return SCATTER_MAX[mediaType(el)] || 60; }
@@ -1635,7 +1850,7 @@ vec4 bpPattern(vec2 uv) {
       return Object.assign(k, { id: newId(), name: (el.name || "פיזור").replace(/^(פיזור|מניפה): /, "") + " " + (n + 1), x: (el.x || 0) + (dx * Math.cos(a) - dy * Math.sin(a)) / r, y: (el.y || 0) + dx * Math.sin(a) + dy * Math.cos(a), rot: c.rot + (el.rot || 0), opacity: it.opacity == null ? 1 : it.opacity });
     });
     const group = { id: newId(), type: "group", name: el.name || "פיזור", children: kids.map((k) => k.id), x: el.x || 0, y: el.y || 0, z: el.z || 0, w: el.w, h: el.h, rot: el.rot || 0, opacity: el.opacity == null ? 1 : el.opacity, flush: true };
-    for (const f of ["timeline", "anim", "seq", "track", "onTap", "tapUrl", "rotX", "rotY"]) if (el[f] != null) group[f] = structuredClone(el[f]);
+    for (const f of ["timeline", "anim", "animSpeed", "enter", "exit", "seq", "track", "onTap", "tapUrl", "rotX", "rotY"]) if (el[f] != null) group[f] = structuredClone(el[f]);
     const at = rec.elements.indexOf(el);
     rec.elements.splice(at, 1, ...kids, group);
     for (const q of ActionCore.list(rec)) for (const act of q.actions) if (act.layerId === el.id) act.layerId = group.id;
@@ -1814,7 +2029,8 @@ vec4 bpPattern(vec2 uv) {
     } else if (el.type === "text") {
       e = document.createElement("a-plane");
       const paint = () => {
-        const tb = drawTextCanvas(el, 128);
+        const tb = drawTextCanvas(el, 128, { glyphs: hasEnterExit(el) });
+        e._eeText = tb; // the letters' places, for a letter-by-letter entrance or exit
         const tts = toTargetSpace(rec, el, tb.aspect); // plane must match the canvas aspect or glyphs distort
         e.setAttribute("material", { src: tb.canvas.toDataURL("image/png"), transparent: true, alphaTest: 0.001, shader: "flat" });
         e.setAttribute("width", tts.w); e.setAttribute("height", tts.h);
@@ -1852,13 +2068,15 @@ vec4 bpPattern(vec2 uv) {
     e.setAttribute("position", pos);
     e.setAttribute("rotation", rot);
     e.dataset.elId = el.id;
+    if (hasEnterExit(el)) watchEnterExit(e, el, rec);
     // a scatter's copies carry their own order (farthest first), a group's members their own
     if (el.flush && el.type !== "scatter" && el.type !== "group") { const ro = 1 + idx; const apply = () => { const o = e.object3D; if (!o) return; o.traverse((m) => { if (m.isMesh || m.isPoints) { m.renderOrder = ro; if (el.type !== 'model' && el.type !== 'timecube' && m.material) { const ms = Array.isArray(m.material) ? m.material : [m.material]; ms.forEach((mm) => { mm.depthWrite = false; }); } } }); }; e.addEventListener('object3dset', apply); e.addEventListener('model-loaded', apply); e.addEventListener('materialtextureloaded', apply); e.addEventListener('componentchanged', (ev) => { if (ev.detail && ev.detail.name === 'material') apply(); }); apply(); setTimeout(apply, 600); setTimeout(apply, 2500); }
     e._studioFrame = { ox, oy, oz, angle, baseRotation: opts.baseRotation || 0, zTie: tie };
     const hasTl = ActionCore.list(rec).some(q=>q.actions.some(a=>a.type!=="sequence"&&a.layerId===el.id)) || el.timeline && Array.isArray(el.timeline.keys) && el.timeline.keys.length;
-    if (el.anim === "spin" && !hasTl) e.setAttribute("animation__spin", `property: rotation; to: 0 0 ${(el.rot || 0) - (opts.baseRotation || 0) + 360}; loop: true; dur: 14000; easing: linear`);
-    else if (el.anim === "float" && !hasTl) e.setAttribute("animation__float", `property: position; from: ${pos}; to: ${dx * Math.cos(angle) - dy * Math.sin(angle)} ${dx * Math.sin(angle) + dy * Math.cos(angle) + 0.03} ${z - oz}; dir: alternate; loop: true; dur: 2600; easing: easeInOutSine`);
-    else if (el.anim === "pulse" && !hasTl) e.setAttribute("animation__pulse", `property: scale; to: 1.08 1.08 1; dir: alternate; loop: true; dur: 1600; easing: easeInOutSine`);
+    const asp = animSpeed(el); // the ready-made movements' pace (x1 = as they always were)
+    if (el.anim === "spin" && !hasTl) e.setAttribute("animation__spin", `property: rotation; to: 0 0 ${(el.rot || 0) - (opts.baseRotation || 0) + 360}; loop: true; dur: ${Math.round(14000 / asp)}; easing: linear`);
+    else if (el.anim === "float" && !hasTl) e.setAttribute("animation__float", `property: position; from: ${pos}; to: ${dx * Math.cos(angle) - dy * Math.sin(angle)} ${dx * Math.sin(angle) + dy * Math.cos(angle) + 0.03} ${z - oz}; dir: alternate; loop: true; dur: ${Math.round(2600 / asp)}; easing: easeInOutSine`);
+    else if (el.anim === "pulse" && !hasTl) e.setAttribute("animation__pulse", `property: scale; to: 1.08 1.08 1; dir: alternate; loop: true; dur: ${Math.round(1600 / asp)}; easing: easeInOutSine`);
     if (el.onTap && el.onTap !== "none") e.classList.add("cantap");
     if (el.opacity != null && el.opacity < 1) e.dataset.opacity = String(el.opacity);
     return e;
@@ -2099,6 +2317,7 @@ vec4 bpPattern(vec2 uv) {
     const root = container.object3D;
     const hidden = (o) => { let content = false, tracking = false, inside = !!root; while (o) { if (o === root) inside = false; if (!o.visible) { if (inside) content = true; else tracking = true; } o = o.parent; } return { content, tracking }; };
     for (const m of container._studioMedia || []) {
+      if (m.node.__priming) continue; // the portal is decoding its first picture ahead (viewer.js prime)
       let allowed = m._studioBaseAllowed !== false && !m._actionBlocked && m._actionPlaying!==false, lost = false;
       const node = container.querySelector('[data-el-id="' + m.el.id + '"]');
       if (node && node.object3D) { const h = hidden(node.object3D); if (h.content) allowed = false; if (h.tracking) lost = true; }
@@ -2107,7 +2326,7 @@ vec4 bpPattern(vec2 uv) {
         let g = container.querySelector('[data-el-id="'+group.id+'"]');
         if (g && g.object3D) { const h = hidden(g.object3D); if (h.content) allowed = false; if (h.tracking) lost = true; }
       }
-      if (lost) { if (m._lostSince == null) m._lostSince = now; if (now - m._lostSince >= TRACKING_GRACE_MS) allowed = false; }
+      if (lost) { if (m._lostSince == null) m._lostSince = now; if (now - m._lostSince >= (container._studioGraceMs != null ? container._studioGraceMs : TRACKING_GRACE_MS)) allowed = false; }
       else m._lostSince = null;
       m.node._studioBlocked = !allowed;
       if (!allowed) { if (!m.node.paused) { m.resumeOnVisible = true; m.node.pause(); } }
@@ -2178,13 +2397,15 @@ vec4 bpPattern(vec2 uv) {
     }
     tl.keys.push(k); return k;
   }
+  const animSpeed = (el) => (el.animSpeed >= 0.25 && el.animSpeed <= 4 ? el.animSpeed : 1);
   function sampleVisual(rec,el,t) {
     const out=sampleTimeline(el,t);
     if(el.timeline&&Array.isArray(el.timeline.keys)&&el.timeline.keys.length)return out;
     const phase=(duration)=>{const p=Math.max(0,t)%(duration*2)/duration;return (1-Math.cos(Math.PI*(p<=1?p:2-p)))/2;};
-    if(el.anim==='spin')out.rot+=Math.max(0,t)%14/14*360;
-    else if(el.anim==='float')out.y+=.03/geom(rec).artH*phase(2.6);
-    else if(el.anim==='pulse')out.scale=1+.08*phase(1.6);
+    const sp=animSpeed(el);
+    if(el.anim==='spin')out.rot+=Math.max(0,t)%(14/sp)/(14/sp)*360;
+    else if(el.anim==='float')out.y+=.03/geom(rec).artH*phase(2.6/sp);
+    else if(el.anim==='pulse')out.scale=1+.08*phase(1.6/sp);
     return out;
   }
   // Canvas uses the same artwork-space samples and parent-base frame as runtime.
@@ -2250,7 +2471,8 @@ vec4 bpPattern(vec2 uv) {
           }
         }
         for (const tr of tracks) {
-          const s = sampleTimeline(tr.el, (now - tr.startedAt) / 1000);
+          tr.e._tlTime = (now - tr.startedAt) / 1000; // where its path is (an exit ends right at a step that hides it)
+          const s = sampleTimeline(tr.el, tr.e._tlTime);
           const ts = toTargetSpace(rec, Object.assign({}, tr.el, { x: s.x, y: s.y, z: s.z }), tr.el.aspect || 1);
           const f = tr.e._studioFrame;
           if (f) {
@@ -2621,6 +2843,7 @@ vec4 bpPattern(vec2 uv) {
       if(!validChroma(el))throw new Error('bad colour removal');
       if(!validScatter(el))throw new Error('bad scatter');
       if(!validPattern(el))throw new Error('bad pattern');
+      if(!validEnterExit(el))throw new Error('bad entrance or exit');
       if (el.timeline != null) {
         const tl = el.timeline;
         if (!Array.isArray(tl.keys) || tl.keys.length > 1000) throw new Error("bad timeline keys");
@@ -2954,7 +3177,7 @@ vec4 bpPattern(vec2 uv) {
   }
 
   return { TARGET_W, TARGET_H, newId, inspectVideo, validateModelBlob, prepareModelBlob, modelCompressionKinds, DECODER_DRACO_PATH, DECODER_MESHOPT_PATH, modelClipNames, modelClipInfo, loadImage, loadImageBlob, loadFailed, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON, steadyTarget,
-           audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, blobURL, releaseBlobURL, blobURLs, historyState, restoreHistory, duplicateLayer, exportJSON, exportObject, exportedAssetIds, importPublished, missingAssets, importJSON, exportZIP, importZIP, zipToJSON, fetchPublished, ownBlob, assetHealth, fileHealth, seedDemo, normEl, ANIMS, drawTextCanvas, loadTextFonts, FX: FX.map(([id, name]) => ({ id, name, moving: FX_MOVING.has(id) })), fxFrame,
+           audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, blobURL, releaseBlobURL, blobURLs, historyState, restoreHistory, duplicateLayer, exportJSON, exportObject, exportedAssetIds, importPublished, missingAssets, importJSON, exportZIP, importZIP, zipToJSON, fetchPublished, ownBlob, assetHealth, fileHealth, seedDemo, normEl, ANIMS, drawTextCanvas, loadTextFonts, lineDir, visualOrder, ENTER_EXIT: ENTER_EXIT.map(([id, enter, exit, , text]) => ({ id, enter, exit, text: !!text })), enterExitFor, validEnterExit, hasEnterExit, enterExitDur, fxLook, fxTimes, drawEnterExitText, animSpeed, FX: FX.map(([id, name]) => ({ id, name, moving: FX_MOVING.has(id) })), fxFrame,
            PATTERNS: PATTERNS.map(([id, name, colors, speed]) => ({ id, name, colors: colors.slice(), speed })), PATTERN_PALETTES: PATTERN_PALETTES.map(([name, colors]) => ({ name, colors: colors.slice() })),
            PATTERN_SHAPES: PATTERN_SHAPES.map(([id, name]) => ({ id, name })), patternDefaults, patternAspect, patternFrame, validPattern, validFx, validChroma, keyValues, pixelAt, CHROMA_DEFAULT, SCATTER_TYPES, SCATTER_MAX, mediaType, isStill, stillAt, setStill, scatterItem, scatterLimit, scatterPath, scatterCopies, scatterCopyEl, scatterBounds, refreshScatter, makeScatter, makeFan, scaleScatter, breakScatter, validScatter, FONTS: FONTS.map(([id, name]) => ({ id, name })), buildElementEntity, groupOf, fitGroup, makeGroup, breakGroup, leaveGroup, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, videoHasPicture, ensureTimeCubeComponent, bakeTimeCube, validTimeCube, TIMECUBE_DIRS, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, artworkFingerprint, fingerprintDistance, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, turnImageBlob, turnLayers, trackList, makeTrackRunner,
            load: id=>settledRead(id), all: ()=>settledRead(), del: delExperience, LIMITS, mediaBytes, pushBack, addBlocker, publishBlocker, restoreBlocker, exportWarning, exportJSONSize,

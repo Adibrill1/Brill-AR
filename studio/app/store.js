@@ -28,6 +28,26 @@ window.App = (() => {
   const keyed = (e) => !!(e && e.timeline && Array.isArray(e.timeline.keys) && e.timeline.keys.length);
   const clock = () => (S.frozen != null ? S.frozen : (performance.now() - S.t0) / 1000);
   const sample = (e) => Studio.sampleComposition(S.rec, e, clock, null);
+  // ---------- entrance and exit, as the editor shows them ----------
+  // On the editor's own clock: a layer comes in when the creation opens (or plays again) and goes out before a step of
+  // its path that hides it. A parked playhead shows every layer at rest (it is being worked on). The effect she has just
+  // chosen plays on its layer at once (S.eePreview): the entrance, or the layer resting a moment and then the exit.
+  const REST = { since: 1e9, until: Infinity };
+  function fxTimes(e) {
+    const pv = S.eePreview;
+    if (pv && pv.id === e.id) {
+      const t = (performance.now() - pv.at) / 1000;
+      if (pv.kind === "enter" && t < pv.dur + 0.5) return { since: t, until: Infinity };
+      if (pv.kind === "exit" && t < pv.dur + 1.1) return { since: 1e9, until: Math.max(0, 0.4 + pv.dur - t) };
+      S.eePreview = null;
+    }
+    return S.frozen != null ? REST : Studio.fxTimes(e, clock());
+  }
+  const fxLook = (e) => { const t = fxTimes(e); return Studio.fxLook(e, t.since, t.until); };
+  function previewEnterExit(id, kind) {
+    const e = el(id), v = e && e[kind];
+    S.eePreview = v && v.fx && v.fx !== "none" ? { id, kind, at: performance.now(), dur: Studio.enterExitDur(e, v) } : null;
+  }
 
   // ---------- media for the canvas ----------
   let artBlob = null;
@@ -397,7 +417,7 @@ window.App = (() => {
   function setCropping(on) { S.cropping = !!on; emit("mode"); }
 
   return {
-    on, emit, el, sel, keyed, clock, sample, hydrate, loadArt, save, saveSoon, flush, changed, open, close, select, blocked,
+    on, emit, el, sel, keyed, clock, sample, fxTimes, fxLook, previewEnterExit, hydrate, loadArt, save, saveSoon, flush, changed, open, close, select, blocked,
     addLayer, removeLayer, duplicateLayer, moveLayer, scatterFrom, fanFrom, addScatter, redrawScatter, scatterDepth, breakScatter, setLocked, startMulti, endMulti, toggleMulti, groupLayers, ungroup, leaveGroup, setStill, setStillAt, mediaFor, movesItself, undo, redo, freeze, replay, keyAt, editKey, setTab, setPane, setMode3d, setCropping,
     get rec() { return S.rec; }, get selId() { return S.selId; }, get art() { return S.art; }, get artBlob() { return artBlob; }, get artState() { return S.artState; }, get media() { return S.media; },
     get frozen() { return S.frozen; }, get tab() { return S.tab; }, get pane() { return S.pane; }, get mode3d() { return S.mode3d; },

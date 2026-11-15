@@ -86,8 +86,8 @@ window.Stage = (() => {
   function textBitmap(el) {
     const key = JSON.stringify([el.text, el.color, el.bold, el.font, el.textStyle, el.cutSeed]), c = textCache[el.id];
     if (c && c.key === key) return c;
-    const out = Studio.drawTextCanvas(el, 64);
-    textCache[el.id] = { key, canvas: out.canvas, aspect: out.aspect };
+    const out = Studio.drawTextCanvas(el, 64, { glyphs: true });
+    textCache[el.id] = { key, canvas: out.canvas, aspect: out.aspect, tb: out };
     // drawn with the device font until its own font arrives; then measured again, without a new undo step
     Studio.loadTextFonts(el).then((fresh) => {
       if (!fresh) return;
@@ -140,7 +140,13 @@ window.Stage = (() => {
     ctx.fillStyle = "#fff"; ctx.font = "600 " + fs + "px Heebo, sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.fillText(el.type === "model" && Editor3D.modelError(el.id) ? "המודל לא נטען" : label, 0, 0);
   }
-  function drawLayer(el, b) {
+  // a text layer in the middle of a letter-by-letter (or softening) entrance or exit: its letters drawn as they are now
+  const eeWork = {};
+  function textNow(el, look) {
+    if (!look || !(look.text || look.blur > 0.01)) return textBitmap(el).canvas;
+    return Studio.drawEnterExitText(textBitmap(el).tb, look, eeWork[el.id] || (eeWork[el.id] = document.createElement("canvas")));
+  }
+  function drawLayer(el, b, look) {
     const w = b.w, hh = b.h, m = App.mediaFor(el);
     if (!App.mode3d && Editor3D.drawsIn2d(el.id)) return; // the real scene above the canvas draws it
     if ((el.type === "video" || el.type === "image") && mediaReady(m)) {
@@ -148,7 +154,7 @@ window.Stage = (() => {
       if (fx) ctx.drawImage(fx, -w / 2, -hh / 2, w, hh);
       else { const c = el.crop || { x: 0, y: 0, w: 1, h: 1 }, s = mediaSize(m); ctx.drawImage(m, c.x * s.w, c.y * s.h, c.w * s.w, c.h * s.h, -w / 2, -hh / 2, w, hh); }
     } else if (el.type === "text") {
-      ctx.drawImage(textBitmap(el).canvas, -w / 2, -hh / 2, w, hh);
+      ctx.drawImage(textNow(el, look), -w / 2, -hh / 2, w, hh);
     } else if (el.type === "pattern") {
       const pic = patternDrawable(el, w, hh);
       if (pic) ctx.drawImage(pic, -w / 2, -hh / 2, w, hh); else { ctx.fillStyle = el.pattern.colors[0]; ctx.fillRect(-w / 2, -hh / 2, w, hh); }
@@ -416,8 +422,15 @@ window.Stage = (() => {
       boxes[el.id] = b; if (el.id === selId) selEl = el;
       if (!s.visible) { b.hidden = true; continue; }
       if (el.id === selId && App.cropping) continue; // drawn by the crop overlay
-      ctx.save(); ctx.translate(b.cx, b.cy); ctx.rotate(b.rot); ctx.globalAlpha = clamp(s.opacity, 0, 1);
-      drawLayer(el, b);
+      // its entrance or exit (and its group's) laid over the drawing only: the box she grabs stays where the layer is
+      const lk = Studio.hasEnterExit(el) ? App.fxLook(el) : null, g = Studio.groupOf(rec, el.id), gl = g && Studio.hasEnterExit(g) ? App.fxLook(g) : null;
+      if ((lk && lk.hidden) || (gl && gl.hidden)) continue;
+      const u = view.H / Studio.geom(rec).artH; // pixels per artwork-target unit (the effects' offsets)
+      ctx.save();
+      if (gl && gl.active) { const gs = App.sample(g), gx = view.mx + (gs.x + 0.5) * view.W, gy = view.my + (0.5 - gs.y) * view.H; ctx.translate(gx + gl.x * u, gy - gl.y * u); ctx.rotate(-gl.r * Math.PI / 180); ctx.scale(gl.s, gl.s); ctx.translate(-gx, -gy); }
+      if (lk && lk.active) { ctx.translate(b.cx + lk.x * u, b.cy - lk.y * u); ctx.rotate(b.rot - lk.r * Math.PI / 180); ctx.scale(lk.s, lk.s); } else { ctx.translate(b.cx, b.cy); ctx.rotate(b.rot); }
+      ctx.globalAlpha = clamp(s.opacity, 0, 1) * (lk ? lk.a : 1) * (gl ? gl.a : 1);
+      drawLayer(el, b, lk);
       ctx.restore();
     }
     for (const g of rec.elements) if (g.type === "group") { const b = groupBox(g); if (b) { boxes[g.id] = b; if (g.id === selId) selEl = g; } }
@@ -654,7 +667,7 @@ window.Stage = (() => {
       wrap, getRec: () => App.rec, getSelected: () => App.selId,
       onSelect: (id) => { App.select(id); Editor3D.refreshGizmo(); },
       onChange: () => App.changed(true),
-      sampleEl: (el) => (App.rec ? App.sample(el) : null), clockFor: () => App.clock(),
+      sampleEl: (el) => (App.rec ? App.sample(el) : null), clockFor: () => App.clock(), fxTimes: (el) => App.fxTimes(el),
       freezeAt: (t) => App.freeze(t), getFrozen: () => App.frozen, restoreFrozen: (t) => App.freeze(t),
       onGate: (text) => toast(text), getView2d: () => ({ view, zoom, pan }),
       getArt: () => ({ pic: App.art, blob: App.artBlob }), getCropId: () => (App.cropping ? App.selId : null),

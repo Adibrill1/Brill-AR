@@ -44,7 +44,11 @@ window.Inspector = (() => {
     const cut = e.textStyle === "cut";
     const look = C({ label: "סגנון", options: [{ id: "plain", name: "רגיל" }, { id: "cut", name: "אותיות גזורות" }], get: () => (App.sel().textStyle === "cut" ? "cut" : "plain"),
       set: upd((x, v) => { if (v === "cut") { x.textStyle = "cut"; x.cutSeed = x.cutSeed || 0; } else delete x.textStyle; Stage.fitText(x); }, build) });
-    const out = [UI.group("טקסט", UI.field("הטקסט", ta), look)];
+    // how the text comes in and goes out lives with the other motion; a way there from the text itself
+    const ee = e.enter || e.exit ? Studio.ENTER_EXIT.filter((x) => (e.enter && e.enter.fx === x.id) || (e.exit && e.exit.fx === x.id)).map((x) => x.enter).join(" · ") : "";
+    const toMotion = UI.button(ee ? "כניסה ויציאה: " + ee : "כניסה ויציאה (מכונת כתיבה, חותמת, גל…)", () => App.setTab("motion"), { small: true, icon: "motion" });
+    toMotion.id = "to-enter-exit";
+    const out = [UI.group("טקסט", UI.field("הטקסט", ta), look, toMotion)];
     if (cut) {
       out.push(UI.group("אותיות גזורות", note("כל אות נגזרת מנייר אחר, כמו קולאז׳."),
         UI.button("ערבוב מחדש", () => upd((x) => { x.cutSeed = Math.floor(Math.random() * 100000); Stage.fitText(x); })(null, true), { icon: "refresh" })));
