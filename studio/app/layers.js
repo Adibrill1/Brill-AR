@@ -50,7 +50,59 @@ window.Layers = (() => {
     } catch (e) { console.error(e); toast("התמונה לא נטענה. כדאי לנסות קובץ אחר.", { kind: "error" }); }
     finally { end(); }
   }
-  async function pickArtwork() { const f = await UI.pickFile(ACCEPT.artwork); if (f) await setArtwork(f); }
+  async function pickArtwork() { const f = await UI.pickFile(ACCEPT.artwork); if (f) await chooseArtwork(f); }
+  // A picture was chosen: she may cut it down to the artwork itself before it becomes the target (closing the sheet cancels).
+  async function chooseArtwork(f) {
+    if (!/^image\/(jpeg|png)$/.test(f.type) || f.size > 8 * 1048576) return setArtwork(f); // setArtwork says what is wrong
+    const cut = await cropStep(f).catch((e) => { console.warn(e); return f; });
+    if (cut) await setArtwork(cut);
+  }
+  // The crop sheet: the picture with a frame over it; the corners resize the frame, its middle moves it. Resolves with
+  // the same file when the frame holds the whole picture, a new file cut to the frame, or null when she closed the sheet.
+  function cropStep(f) {
+    return new Promise((res, rej) => {
+      const url = URL.createObjectURL(f), r = { x: 0, y: 0, w: 1, h: 1 }, MIN = 0.08;
+      const img = h("img", { alt: "", draggable: false }), frame = h("div.crop-frame", ["nw", "ne", "sw", "se"].map((c) => h("i.crop-h", { data: { c } })));
+      const box = h("div.crop-box", img, frame), size = h("span.crop-size");
+      const show = () => { Object.assign(frame.style, { left: r.x * 100 + "%", top: r.y * 100 + "%", width: r.w * 100 + "%", height: r.h * 100 + "%" });
+        size.textContent = img.naturalWidth ? Math.round(r.w * img.naturalWidth) + " × " + Math.round(r.h * img.naturalHeight) : ""; };
+      let drag = null;
+      frame.onpointerdown = (e) => { e.preventDefault(); frame.setPointerCapture(e.pointerId); drag = { c: e.target.dataset.c || "", x: e.clientX, y: e.clientY, r: Object.assign({}, r) }; };
+      frame.onpointermove = (e) => {
+        if (!drag) return;
+        const b = box.getBoundingClientRect(), dx = (e.clientX - drag.x) / b.width, dy = (e.clientY - drag.y) / b.height, o = drag.r, c = drag.c;
+        if (!c) { r.x = UI.clamp(o.x + dx, 0, 1 - o.w); r.y = UI.clamp(o.y + dy, 0, 1 - o.h); }
+        else {
+          let x0 = o.x, y0 = o.y, x1 = o.x + o.w, y1 = o.y + o.h;
+          if (c.includes("w")) x0 = UI.clamp(o.x + dx, 0, x1 - MIN); else x1 = UI.clamp(x1 + dx, x0 + MIN, 1);
+          if (c.includes("n")) y0 = UI.clamp(o.y + dy, 0, y1 - MIN); else y1 = UI.clamp(y1 + dy, y0 + MIN, 1);
+          r.x = x0; r.y = y0; r.w = x1 - x0; r.h = y1 - y0;
+        }
+        show();
+      };
+      frame.onpointerup = frame.onpointercancel = () => { drag = null; };
+      let out = null;
+      const ok = h("button.btn.primary", { id: "crop-ok", type: "button", onclick: async () => {
+        try {
+          if (r.w > 0.995 && r.h > 0.995) out = f;
+          else {
+            const c = document.createElement("canvas"), W = img.naturalWidth, H = img.naturalHeight;
+            c.width = Math.max(1, Math.round(r.w * W)); c.height = Math.max(1, Math.round(r.h * H));
+            c.getContext("2d").drawImage(img, Math.round(r.x * W), Math.round(r.y * H), c.width, c.height, 0, 0, c.width, c.height);
+            const blob = await new Promise((done) => c.toBlob(done, f.type, 0.95));
+            out = blob ? new File([blob], f.name, { type: f.type }) : f;
+          }
+        } catch (e) { console.warn(e); out = f; }
+        d.close();
+      } }, "המשך");
+      const all = h("button.btn.ghost", { type: "button", onclick: () => { Object.assign(r, { x: 0, y: 0, w: 1, h: 1 }); show(); } }, "כל התמונה");
+      const d = UI.dialog({ title: "חיתוך התמונה", body: [h("p.dlg-text", "אפשר לגרור את הפינות כדי להשאיר רק את היצירה עצמה. אם התמונה כבר מדויקת, פשוט ממשיכים."), box, size], foot: [all, ok],
+        onClose: () => { URL.revokeObjectURL(url); res(out); } });
+      d.classList.add("crop-dlg");
+      img.onload = show; img.onerror = () => { out = f; d.close(); };
+      img.src = url; show();
+    });
+  }
   // A quarter turn clockwise, as many times as she likes. The picture is drawn again from the file she uploaded (kept
   // aside as __artworkOrig while it is turned), never from the last turned copy, so turning four times gives back the
   // very same file and no turn loses anything. The layers turn with it: the creation looks on the artwork as before.
@@ -251,7 +303,7 @@ window.Layers = (() => {
   };
   async function addFiles(files) {
     if (!App.rec) return;
-    if (!App.rec.target) { const img = files.find((f) => /^image\/(jpeg|png)$/.test(f.type)); return img ? setArtwork(img) : toast("קודם מעלים את תמונת היצירה (JPG או PNG)", { kind: "error" }); }
+    if (!App.rec.target) { const img = files.find((f) => /^image\/(jpeg|png)$/.test(f.type)); return img ? chooseArtwork(img) : toast("קודם מעלים את תמונת היצירה (JPG או PNG)", { kind: "error" }); }
     for (const f of files) { const k = kindOf(f); if (!k) { toast("״" + f.name + "״: סוג קובץ לא נתמך", { kind: "error" }); continue; } await addFile(k, f); }
   }
 

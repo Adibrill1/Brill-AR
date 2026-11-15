@@ -84,7 +84,7 @@ window.Stage = (() => {
   // ---------- what a layer looks like ----------
   const textCache = {}, fxCache = {}, patternCache = {};
   function textBitmap(el) {
-    const key = JSON.stringify([el.text, el.color, el.bold, el.font, el.textStyle, el.cutSeed]), c = textCache[el.id];
+    const key = JSON.stringify([el.text, el.color, el.bold, el.font, el.textStyle, el.cutSeed, el.textFx]), c = textCache[el.id];
     if (c && c.key === key) return c;
     const out = Studio.drawTextCanvas(el, 64, { glyphs: true });
     textCache[el.id] = { key, canvas: out.canvas, aspect: out.aspect, tb: out };
@@ -637,7 +637,23 @@ window.Stage = (() => {
     bar.hidden = !el;
     if (!el) return;
     const btn = (name, label, run, on) => h("button.icon-btn" + (on ? ".on" : ""), { title: label, "aria-label": label, onclick: run }, icon(name, 18));
-    bar.append(h("span.sel-name", el.name || ""));
+    // the handle: a drag moves the bar anywhere on the stage, a tap folds it down to the handle alone (both remembered)
+    const grip = h("button.sel-grip", { type: "button", title: "גרירה מזיזה את הסרגל, נגיעה מצמצמת אותו", "aria-label": "להזיז או לצמצם את הסרגל", "aria-expanded": String(!barAt.min) }, icon("grip", 16));
+    grip.onpointerdown = (e) => {
+      e.preventDefault(); grip.setPointerCapture(e.pointerId); barDragged = false;
+      const s = stage.getBoundingClientRect(), b = bar.getBoundingClientRect(), d = { x: e.clientX, y: e.clientY, l: b.left - s.left, t: b.top - s.top, moved: false };
+      grip.onpointermove = (m) => {
+        if (!d.moved && Math.hypot(m.clientX - d.x, m.clientY - d.y) < 6) return;
+        d.moved = true;
+        const fx = s.width - b.width, fy = s.height - b.height;
+        barAt.x = fx > 0 ? clamp((d.l + m.clientX - d.x) / fx, 0, 1) : 0; barAt.y = fy > 0 ? clamp((d.t + m.clientY - d.y) / fy, 0, 1) : 0;
+        placeBar();
+      };
+      grip.onpointerup = grip.onpointercancel = () => { grip.onpointermove = null; if (d.moved) { saveBar(); barDragged = true; } };
+    };
+    // folding waits for the click itself: redrawing the bar on finger-up would put another button under that click
+    grip.onclick = () => { if (barDragged) { barDragged = false; return; } barAt.min = !barAt.min; saveBar(); renderBar(); };
+    bar.append(grip, h("span.sel-name", el.name || ""));
     if (CROP_TYPES.includes(el.type) && !App.mode3d) bar.append(btn("crop", "חיתוך", () => App.setCropping(!App.cropping), App.cropping));
     if (Studio.SCATTER_TYPES.includes(el.type)) bar.append(btn("path", "פיזור על נתיב", () => App.scatterFrom(el.id)), btn("fan", "מניפה", () => App.fanFrom(el.id)));
     if (App.movesItself(el)) { const still = Studio.isStill(el); bar.append(btn(still ? "play" : "snow", still ? "להפעיל תנועה" : "להקפיא תנועה", () => App.setStill(el.id, !still).then(() => toast(still ? "התנועה חזרה" : "התנועה הוקפאה. את הרגע שמוצג בוחרים בלשונית ״עיצוב״.")), still)); }
@@ -646,6 +662,18 @@ window.Stage = (() => {
     else if (inGroup) bar.append(btn("group", "לבחור את כל הקבוצה", () => App.select(inGroup.id)));
     bar.append(btn("lock", "נעילה במקום", () => { App.setLocked(el.id, true); toast("השכבה ננעלה. משחררים אותה מרשימת השכבות."); }),
       btn("copy", "שכפול", () => App.duplicateLayer(el.id)), btn("trash", "מחיקה", () => App.removeLayer(el.id)));
+    placeBar();
+  }
+  // where she left the bar: x, y as shares of the room it has on the stage (so it stays inside at any size), min: folded
+  const barAt = (() => { try { const v = JSON.parse(localStorage.getItem("brill-sel-bar") || "null"); if (v && typeof v === "object") return { x: Number.isFinite(v.x) ? clamp(v.x, 0, 1) : null, y: Number.isFinite(v.y) ? clamp(v.y, 0, 1) : null, min: !!v.min }; } catch (e) {} return { x: null, y: null, min: false }; })();
+  let barDragged = false;
+  function saveBar() { try { localStorage.setItem("brill-sel-bar", JSON.stringify(barAt)); } catch (e) {} }
+  function placeBar() {
+    const bar = $("sel-bar"); bar.classList.toggle("min", barAt.min);
+    if (barAt.x == null || bar.hidden) { bar.classList.remove("moved"); bar.style.left = bar.style.top = ""; return; }
+    bar.classList.add("moved");
+    const s = stage.getBoundingClientRect(), b = bar.getBoundingClientRect();
+    bar.style.left = Math.max(0, (s.width - b.width) * barAt.x) + "px"; bar.style.top = Math.max(0, (s.height - b.height) * barAt.y) + "px";
   }
   function renderTime() {
     const chip = $("time-chip"), t = App.frozen;
@@ -682,7 +710,7 @@ window.Stage = (() => {
     let gz = 1;
     canvas.addEventListener("gesturestart", (e) => { e.preventDefault(); gz = zoom; });
     canvas.addEventListener("gesturechange", (e) => { e.preventDefault(); if (!pointers.size) setZoom(gz * e.scale); });
-    new ResizeObserver(() => { layout(); if (App.mode3d) window.dispatchEvent(new Event("resize")); }).observe(stage);
+    new ResizeObserver(() => { layout(); placeBar(); if (App.mode3d) window.dispatchEvent(new Event("resize")); }).observe(stage);
     $("btn-zoom-in").onclick = () => setZoom(zoom * 1.25);
     $("btn-zoom-out").onclick = () => setZoom(zoom / 1.25);
     $("zoom-label").onclick = () => setZoom(1);
@@ -693,7 +721,7 @@ window.Stage = (() => {
     App.on("open", () => { setZoom(1); for (const k in textCache) delete textCache[k]; layout(); renderEmpty(); applyMode(); renderTime(); });
     App.on("select", () => { if (App.mode3d) Editor3D.refreshGizmo(); stage.classList.toggle("is-crop", App.cropping); if (!App.sel() || App.sel().id !== (pointSel && pointSel.id)) pointSel = null; if (picker && App.selId !== picker.id) stopPick(); renderBar(); });
     App.on("structure still", () => { layout(); renderEmpty(); renderBar(); });
-    App.on("change", () => { const el = App.sel(); if (el && $("sel-bar").firstChild && $("sel-bar").firstChild.textContent !== (el.name || "")) renderBar(); });
+    App.on("change", () => { const el = App.sel(); const n = $("sel-bar").querySelector(".sel-name"); if (el && n && n.textContent !== (el.name || "")) renderBar(); });
     App.on("mode", applyMode);
     App.on("art", () => { layout(); renderEmpty(); applyMode(); });
     $("btn-art-retry").onclick = () => App.loadArt();
@@ -710,7 +738,7 @@ window.Stage = (() => {
     if (shown) { layout(); applyMode(); } else { if (Editor3D.isActive()) Editor3D.hide(); Editor3D.overlay(false); }
   }
 
-  return { init, show, layout, draw, nudge, fitText, setCropRatio, resetCrop, pickColor, stopPick, startScatter, stopDrawing, copyBoxes,
+  return { init, show, layout, draw, nudge, fitText, textBitmap, textFxColor: (el) => (Studio.textFxOf(el) || {}).color || "#ffffff", setCropRatio, resetCrop, pickColor, stopPick, startScatter, stopDrawing, copyBoxes,
     get picking() { return picker ? picker.id : null; }, get drawing() { return drawing ? { srcId: drawing.srcId, straight: drawing.straight, taps: drawing.taps.length } : null; },
     get pointSel() { return pointSel; }, set pointSel(v) { pointSel = v; }, get cropRatio() { return cropRatio; }, get view() { return view; }, get zoom() { return zoom; }, get pan() { return pan; }, boxes, CROP_TYPES };
 })();

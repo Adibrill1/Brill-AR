@@ -23,7 +23,7 @@ for(const phone of [true,false]){
   assert.equal(await p.locator('dialog[open]').count(),0,tag+': no add sheet without artwork');
   // the artwork goes through the real file picker
   const [fc]=await Promise.all([p.waitForEvent('filechooser'),p.locator('#btn-empty-art').click()]);
-  await fc.setFiles(path.join(__dirname,'../fixtures/target-a.png'));
+  await fc.setFiles(path.join(__dirname,'../fixtures/target-a.png'));await p.locator('#crop-ok').click();
   await p.waitForFunction(()=>App.rec&&App.rec.target,null,{timeout:30000});await p.waitForTimeout(600);
   assert.equal(await p.locator('#stage-empty').isVisible(),false,tag+': the stage shows the artwork');
   assert.ok((await stored()).assets.__artwork,tag+': artwork saved');

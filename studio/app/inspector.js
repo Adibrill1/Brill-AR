@@ -58,6 +58,17 @@ window.Inspector = (() => {
       out.push(UI.group("אותיות", fonts,
         K({ label: "צבע", get: () => App.sel().color, set: upd((x, v) => { x.color = v; }) }),
         T({ label: "מודגש", get: () => App.sel().bold !== false, set: upd((x, v) => { x.bold = v; Stage.fitText(x); }) })));
+      // the look of the letters; the layer is resized with the picture's margin, so the letters keep their size
+      const fxNow = () => { const f = App.sel().textFx; return f && Studio.TEXT_FX.find((t) => t.id === f.id); };
+      const F = (fn, then) => upd((x, v) => { const w0 = Stage.textBitmap(x).canvas.width; x.textFx = Object.assign({}, x.textFx); fn(x, v); const w1 = Stage.textBitmap(x).canvas.width; if (w0 > 0 && w1 > 0) x.w *= w1 / w0; Stage.fitText(x); }, then);
+      const def = fxNow();
+      out.push(UI.group("אפקט",
+        C({ label: "", bare: true, wrap: true, options: [{ id: "none", name: "בלי" }].concat(Studio.TEXT_FX.map((t) => ({ id: t.id, name: t.name }))), get: () => (fxNow() ? fxNow().id : "none"),
+          set: F((x, v) => { if (v === "none") delete x.textFx; else x.textFx = { id: v }; }, build) }),
+        def && def.color ? K({ label: def.id === "neon" ? "צבע הזוהר" : def.id === "gradient" ? "הצבע השני" : def.id === "deep" ? "צבע העומק" : def.id === "shadow" ? "צבע הצל" : "צבע הקו",
+          get: () => (App.sel().textFx && App.sel().textFx.color) || (def.id === "sticker" ? Stage.textFxColor(App.sel()) : (fxNow() || def).color), set: F((x, v) => { x.textFx.color = v; }) }) : null,
+        def && def.amount ? S(Object.assign({ label: "עוצמה", min: 0, max: 1, step: 0.05, get: () => { const f = App.sel().textFx; return f && Number.isFinite(f.amount) ? f.amount : 0.5; }, set: F((x, v) => { x.textFx.amount = v; }) }, pct)) : null,
+        def && def.id === "neon" ? note("לניאון הכי יפה: אותיות בהירות (לבן) וצבע זוהר חזק.") : null));
     }
     out.push(UI.group("", opacity()));
     return out;

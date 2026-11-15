@@ -9,7 +9,7 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
   await p.goto(base+'/index.html');await p.waitForSelector('#home-empty:not([hidden])');
   await p.locator('#btn-new-empty').click();await p.waitForSelector('#editor:not([hidden])');
   const [fc]=await Promise.all([p.waitForEvent('filechooser'),p.locator('#btn-empty-art').click()]);
-  await fc.setFiles(path.join(__dirname,'../fixtures/target-a.png'));
+  await fc.setFiles(path.join(__dirname,'../fixtures/target-a.png'));await p.locator('#crop-ok').click();
   await p.waitForFunction(()=>App.rec&&App.rec.target&&App.artState==='ok',null,{timeout:30000});
   assert.equal(await p.locator('#stage-art').isVisible(),false,'no artwork message while it shows');
 

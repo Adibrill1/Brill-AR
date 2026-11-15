@@ -1441,8 +1441,27 @@ vec4 bpPattern(vec2 uv) {
 
   // Draw a text element to an offscreen canvas (used by editor panel preview and player texture).
   // fontPx: reference font size in canvas pixels. Returns {canvas, aspect}.
+  // The looks of plain text ("אפקט"): el.textFx = {id, color, amount 0-1}. All of them are drawn into the text's own
+  // picture, so the editor, the preview, the camera and the letter-by-letter entrances show the same thing; the picture
+  // only grows a margin for what spills past the letters (room, in font sizes). [id, name, own colour's default, has strength]
+  const TEXT_FX = [["neon", "ניאון", "#ff2bd6", true], ["outline", "קו מתאר", "#000000", true], ["hollow", "אותיות חלולות", null, true], ["shadow", "צל חד", "#000000", true],
+    ["deep", "תלת־ממד", "#7a3cff", true], ["gradient", "מעבר צבע", "#ff7ad9", false], ["glitch", "גליץ׳", null, true], ["sticker", "מדבקה", "#ffffff", true]];
+  const TFX = new Map(TEXT_FX.map((x) => [x[0], x]));
+  function textFxOf(el) {
+    const f = el.textFx, d = f && TFX.get(f.id); if (!d || el.textStyle === "cut") return null;
+    // a sticker's rim, unless she chose its colour, is white around dark letters and dark around light ones
+    const ink = /^#[0-9a-f]{6}$/i.test(el.color || "") ? el.color : "#ffffff", light = (parseInt(ink.slice(1, 3), 16) * 299 + parseInt(ink.slice(3, 5), 16) * 587 + parseInt(ink.slice(5, 7), 16) * 114) / 255000 > 0.6;
+    return { id: f.id, color: /^#[0-9a-f]{6}$/i.test(f.color || "") ? f.color : f.id === "sticker" && light ? "#1d1b26" : d[2], a: Number.isFinite(f.amount) ? Math.min(1, Math.max(0, f.amount)) : 0.5 };
+  }
+  function validTextFx(el) {
+    const f = el.textFx; if (f == null) return true;
+    return typeof f === "object" && !Array.isArray(f) && TFX.has(f.id) && (f.color == null || /^#[0-9a-f]{6}$/i.test(f.color)) && (f.amount == null || (Number.isFinite(f.amount) && f.amount >= 0 && f.amount <= 1));
+  }
+  const textFxRoom = (fx) => !fx ? 0 : fx.id === "neon" ? 0.5 * (0.5 + fx.a) : fx.id === "outline" ? 0.04 + 0.1 * fx.a : fx.id === "sticker" ? 0.14 + 0.1 * fx.a
+    : fx.id === "shadow" ? 0.04 + 0.14 * fx.a : fx.id === "deep" ? 0.05 + 0.2 * fx.a : fx.id === "glitch" ? 0.02 + 0.08 * fx.a : 0;
   function drawTextCanvas(el, fontPx, opts) {
     if (el.textStyle === "cut") return drawCutLetters(el, fontPx);
+    const fx = textFxOf(el);
     const c = document.createElement("canvas");
     const ctx = c.getContext("2d");
     const weight = el.bold ? "700" : "400";
@@ -1450,14 +1469,34 @@ vec4 bpPattern(vec2 uv) {
     ctx.font = font;
     const lines = String(el.text || "").split("\n");
     const wMax = Math.max(1, ...lines.map((l) => ctx.measureText(l).width));
-    const pad = Math.round(fontPx * 0.25);
+    const pad = Math.round(fontPx * (0.25 + textFxRoom(fx)));
     // resizing the canvas resets its context state, so re-apply the font explicitly
     c.width = Math.ceil(wMax + pad * 2);
     c.height = Math.ceil(lines.length * fontPx * 1.25 + pad * 2);
     ctx.font = font; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.shadowColor = "rgba(0,0,0,0.55)"; ctx.shadowBlur = Math.round(fontPx * 0.12);
-    ctx.fillStyle = el.color || "#ffffff";
-    lines.forEach((l, i) => { ctx.direction = lineDir(l); ctx.fillText(l, c.width / 2, pad + fontPx * 1.25 * (i + 0.5)); });
+    const ink = el.color || "#ffffff", soft = () => { ctx.shadowColor = "rgba(0,0,0,0.55)"; ctx.shadowBlur = Math.round(fontPx * 0.12); }, bare = () => { ctx.shadowColor = "rgba(0,0,0,0)"; ctx.shadowBlur = 0; };
+    // every line once: fill (or stroke) it, moved by dx, dy
+    const each = (stroke, dx, dy) => lines.forEach((l, i) => { ctx.direction = lineDir(l); const y = pad + fontPx * 1.25 * (i + 0.5);
+      ctx[stroke ? "strokeText" : "fillText"](l, c.width / 2 + (dx || 0), y + (dy || 0)); });
+    ctx.lineJoin = "round"; ctx.fillStyle = ink;
+    if (!fx) { soft(); each(); }
+    else if (fx.id === "neon") { // a lit tube: wide, then tighter halos in the glow colour, and the letters' own colour as the bright core
+      ctx.fillStyle = fx.color; ctx.shadowColor = fx.color;
+      for (const b of [0.5, 0.5, 0.3, 0.3, 0.15, 0.08]) { ctx.shadowBlur = fontPx * b * (0.5 + fx.a); each(); }
+      ctx.fillStyle = ink; ctx.shadowBlur = fontPx * 0.04; each();
+    } else if (fx.id === "outline" || fx.id === "sticker") {
+      const st = fx.id === "sticker"; ctx.strokeStyle = fx.color; ctx.lineWidth = fontPx * (st ? 0.12 + 0.2 * fx.a : 0.06 + 0.2 * fx.a);
+      if (st) { ctx.shadowColor = "rgba(0,0,0,0.45)"; ctx.shadowBlur = fontPx * 0.06; ctx.shadowOffsetY = fontPx * 0.04; } else soft();
+      each(true); bare(); ctx.shadowOffsetY = 0; each();
+    } else if (fx.id === "hollow") { soft(); ctx.strokeStyle = ink; ctx.lineWidth = fontPx * (0.025 + 0.07 * fx.a); each(true); }
+    else if (fx.id === "shadow") { const d = fontPx * (0.04 + 0.14 * fx.a); bare(); ctx.fillStyle = fx.color; each(false, d, d); ctx.fillStyle = ink; each(); }
+    else if (fx.id === "deep") { const d = Math.max(1, Math.round(fontPx * (0.05 + 0.2 * fx.a))); bare(); ctx.fillStyle = fx.color; for (let k = d; k >= 1; k--) each(false, k, k); ctx.fillStyle = ink; each(); }
+    else if (fx.id === "glitch") { const o = fontPx * (0.02 + 0.08 * fx.a); bare(); ctx.fillStyle = "#00e5ff"; each(false, -o, 0); ctx.fillStyle = "#ff2a6d"; each(false, o, 0); ctx.fillStyle = ink; each(); }
+    else { // gradient: each line runs from the letters' colour at its top to the second colour at its bottom
+      soft();
+      lines.forEach((l, i) => { const y = pad + fontPx * 1.25 * (i + 0.5), g = ctx.createLinearGradient(0, y - fontPx * 0.45, 0, y + fontPx * 0.45); g.addColorStop(0, ink); g.addColorStop(1, fx.color);
+        ctx.fillStyle = g; ctx.direction = lineDir(l); ctx.fillText(l, c.width / 2, y); });
+    }
     const out = { canvas: c, aspect: c.width / c.height, lineH: fontPx * 1.25 };
     // where each letter stands (for the letter-by-letter entrances): its column from the widths of the letters before
     // it in the order they stand on the line; the letters themselves are never drawn one by one (the whole line keeps
@@ -2902,6 +2941,7 @@ vec4 bpPattern(vec2 uv) {
       ids.add(el.id);
       for (const key of ["x","y","z","w","h","rot","rotX","rotY","opacity","aspect","volume","stillAt"]) if (el[key] != null && (typeof el[key] !== "number" || !Number.isFinite(el[key]))) throw new Error("bad numeric field");
       if(!validParticles(el))throw new Error('bad particles');
+      if(!validTextFx(el))throw new Error('bad text effect');
       if(!validTimeCube(el))throw new Error('bad time cube');
       // bindTap may navigate to el.tapUrl on tap - refuse script-executing schemes
       // (normalized: browsers ignore case and embedded whitespace/control chars in schemes).
@@ -3250,7 +3290,7 @@ vec4 bpPattern(vec2 uv) {
   return { TARGET_W, TARGET_H, newId, inspectVideo, validateModelBlob, prepareModelBlob, modelCompressionKinds, DECODER_DRACO_PATH, DECODER_MESHOPT_PATH, modelClipNames, modelClipInfo, loadImage, loadImageBlob, loadFailed, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON, steadyTarget,
            audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, blobURL, releaseBlobURL, blobURLs, historyState, restoreHistory, duplicateLayer, exportJSON, exportObject, exportedAssetIds, importPublished, missingAssets, importJSON, exportZIP, importZIP, zipToJSON, fetchPublished, ownBlob, assetHealth, fileHealth, seedDemo, normEl, ANIMS, drawTextCanvas, loadTextFonts, lineDir, visualOrder, ENTER_EXIT: ENTER_EXIT.map(([id, enter, exit, , text]) => ({ id, enter, exit, text: !!text })), enterExitFor, validEnterExit, hasEnterExit, enterExitDur, fxLook, fxTimes, drawEnterExitText, animSpeed, FX: FX.map(([id, name]) => ({ id, name, moving: FX_MOVING.has(id) })), fxFrame,
            PATTERNS: PATTERNS.map(([id, name, colors, speed]) => ({ id, name, colors: colors.slice(), speed })), PATTERN_PALETTES: PATTERN_PALETTES.map(([name, colors]) => ({ name, colors: colors.slice() })),
-           fingerGrab: () => finger.grab, TOUCH_MODES,
+           fingerGrab: () => finger.grab, TOUCH_MODES, textFxOf, TEXT_FX: TEXT_FX.map(([id, name, color, amount]) => ({ id, name, color, amount })), validTextFx,
            PATTERN_SHAPES: PATTERN_SHAPES.map(([id, name]) => ({ id, name })), patternDefaults, patternAspect, patternFrame, validPattern, validFx, validChroma, keyValues, pixelAt, CHROMA_DEFAULT, SCATTER_TYPES, SCATTER_MAX, mediaType, isStill, stillAt, setStill, scatterItem, scatterLimit, scatterPath, scatterCopies, scatterCopyEl, scatterBounds, refreshScatter, makeScatter, makeFan, scaleScatter, breakScatter, validScatter, FONTS: FONTS.map(([id, name]) => ({ id, name })), buildElementEntity, groupOf, fitGroup, makeGroup, breakGroup, leaveGroup, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, videoHasPicture, ensureTimeCubeComponent, bakeTimeCube, validTimeCube, TIMECUBE_DIRS, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, artworkFingerprint, fingerprintDistance, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, turnImageBlob, turnLayers, trackList, makeTrackRunner,
            load: id=>settledRead(id), all: ()=>settledRead(), del: delExperience, LIMITS, mediaBytes, pushBack, addBlocker, publishBlocker, restoreBlocker, exportWarning, exportJSONSize,
            onSaveState, installSaveGuard, saveState, soundOnTouch, snapAngle, syncMedia,
