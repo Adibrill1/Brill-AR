@@ -220,7 +220,7 @@
 
   // Orbit by drag, zoom by wheel/pinch.
   let orb = null;
-  window.addEventListener("pointerdown", (e) => { if(e.defaultPrevented||e.target.closest("#camera-edit-panel,#action-runtime-panel,#topbar"))return;orb = { x: e.clientX, y: e.clientY }; });
+  window.addEventListener("pointerdown", (e) => { if(e.defaultPrevented||Studio.fingerGrab()||e.target.closest("#camera-edit-panel,#action-runtime-panel,#topbar"))return;orb = { x: e.clientX, y: e.clientY }; });
   window.addEventListener("pointermove", (e) => {
     if (!orb||e.defaultPrevented) return;
     const rot = rig.getAttribute("rotation");

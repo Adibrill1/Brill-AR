@@ -249,7 +249,14 @@ window.Inspector = (() => {
     const dirs = [{ id: "preset", name: "רגיל" }, { id: "0", name: "למעלה" }, { id: "180", name: "למטה" }, { id: "90", name: "ימינה" }, { id: "270", name: "שמאלה" }, { id: "-2", name: "לכל הכיוונים" }, { id: "-3", name: "מהמרכז החוצה" }];
     const d0 = e.particles && e.particles.direction;
     if (d0 != null && !dirs.some((d) => d.id === String(d0))) dirs.push({ id: String(d0), name: "זווית " + d0 + "°" });
-    const two = !!pc().color2;
+    const two = !!pc().color2, touch = Studio.TOUCH_MODES.includes(pc().touch) ? pc().touch : "none";
+    const touchGroup = UI.group("מגע",
+      L({ label: "כשנוגעים במסך", options: [{ id: "none", name: "לא מגיבים" }, { id: "follow", name: "עוקבים אחרי האצבע" }, { id: "attract", name: "נמשכים לאצבע" }, { id: "repel", name: "בורחים מהאצבע" }, { id: "swirl", name: "מסתחררים סביב האצבע" }],
+        get: () => (Studio.TOUCH_MODES.includes(pc().touch) ? pc().touch : "none"), set: (v, f) => { P((p, val) => { if (val === "none") delete p.touch; else p.touch = val; })(v, f); build(); } }),
+      touch !== "none" ? S(Object.assign({ label: touch === "follow" ? "זריזות" : "עוצמה", min: 0.1, max: 1, step: 0.05, get: () => (pc().touchPower > 0 ? pc().touchPower : 0.6), set: P((p, v) => { p.touchPower = v; }) }, pct)) : null,
+      touch !== "none" && touch !== "follow" ? S(Object.assign({ label: "עד כמה רחוק מהאצבע", min: 0.1, max: 1.5, step: 0.05, get: () => (pc().touchRange > 0 ? pc().touchRange : 0.6), set: P((p, v) => { p.touchRange = v; }) }, pct)) : null,
+      touch !== "none" ? T({ label: "חוזרים למקום", hint: "כשמרימים את האצבע", get: () => pc().touchBack !== false, set: P((p, v) => { p.touchBack = v; }) }) : null,
+      touch !== "none" ? note(touch === "follow" ? "בתצוגה ובמצלמה: מניחים אצבע על החלקיקים וגוררים, והם באים אחריה." : "בתצוגה ובמצלמה: נוגעים במסך או גוררים אצבע ליד החלקיקים.") : null);
     return [
       UI.group("סוג", preset, pc().preset === "custom" ? UI.button("החלפת התמונה", ownSprite, { kind: "ghost", small: true, icon: "image" }) : null),
       UI.group("כמות ותנועה",
@@ -264,7 +271,8 @@ window.Inspector = (() => {
         T({ label: "צבע שני", hint: "חלק מהחלקיקים בצבע אחר", get: () => !!pc().color2, set: (v, f) => { P((p, val) => { if (val) p.color2 = p.color2 || "#ffffff"; else delete p.color2; })(v, f); build(); } }),
         two ? K({ label: "הצבע השני", get: () => pc().color2 || "#ffffff", set: P((p, v) => { p.color2 = v; }) }) : null,
         T({ label: "דעיכה בסוף", hint: "החלקיק נעלם בעדינות", get: () => !!pc().fade, set: P((p, v) => { p.fade = v; }) }),
-        opacity())
+        opacity()),
+      touchGroup
     ];
   }
 

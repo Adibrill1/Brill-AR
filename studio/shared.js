@@ -445,11 +445,28 @@ const Studio = (() => {
     }
     return (builtinSprites[kind] = new THREE.CanvasTexture(c));
   }
+  // A finger on the screen, for layers that answer touch (el.particles.touch). One set of window listeners follows the
+  // primary pointer; each touch layer turns it into a point on its own plane (fingerPoint) once a frame. A press that
+  // lands on such a layer "grabs" it, and Studio.fingerGrab() tells the preview not to turn the view for that drag.
+  const finger = { x: 0, y: 0, held: false, mouse: false, seen: false, grab: false, bound: false, users: new Set() };
+  const TOUCH_MODES = ["follow", "attract", "repel", "swirl"];
+  function watchFinger() {
+    if (finger.bound) return; finger.bound = true;
+    const at = (e) => { finger.x = e.clientX; finger.y = e.clientY; finger.mouse = e.pointerType === "mouse"; finger.seen = true; };
+    window.addEventListener("pointerdown", (e) => {
+      if (e.isPrimary === false || (e.target.closest && e.target.closest("button,a,input,select,textarea,[role=button]"))) return;
+      at(e); finger.held = true; finger.grab = false;
+      for (const c of finger.users) if (c.grab()) finger.grab = true;
+    }, true);
+    window.addEventListener("pointermove", (e) => { if (e.isPrimary !== false) at(e); }, true);
+    const up = (e) => { if (e.isPrimary === false) return; finger.held = false; finger.grab = false; if (!finger.mouse) finger.seen = false; for (const c of finger.users) c.grabbed = null; };
+    window.addEventListener("pointerup", up, true); window.addEventListener("pointercancel", up, true);
+  }
   // Particles: lightweight THREE.Points emitter (sparkle rises, confetti falls).
   function ensureParticlesComponent() {
     if (!window.AFRAME || AFRAME.components["particles"]) return;
     AFRAME.registerComponent("particles", {
-      schema: { preset: { default: "sparkle" }, count: { default: 120 }, color: { default: "#ffd94d" }, width: { default: 0.5 }, height: { default: 0.5 }, size: { default: 12 }, speed: { default: 1 }, sprite: { default: "" }, direction: { default: -1 },lifetime:{default:0},life2:{default:0},emitter:{default:"box"},endColor:{default:"#ffffff"},endSize:{default:1},fade:{default:false},spread:{default:1},color2:{default:""} }, // direction: degrees (0=up,90=right,180=down,270=left); -1 = preset's fixed direction; -2 = random per particle; -3 = outward from center. spread: emission-area scale (documented Artivive control)
+      schema: { preset: { default: "sparkle" }, count: { default: 120 }, color: { default: "#ffd94d" }, width: { default: 0.5 }, height: { default: 0.5 }, size: { default: 12 }, speed: { default: 1 }, sprite: { default: "" }, direction: { default: -1 },lifetime:{default:0},life2:{default:0},emitter:{default:"box"},endColor:{default:"#ffffff"},endSize:{default:1},fade:{default:false},spread:{default:1},color2:{default:""},touch:{default:"none"},touchPower:{default:0.6},touchRange:{default:0.6},touchBack:{default:true} }, // direction: degrees (0=up,90=right,180=down,270=left); -1 = preset's fixed direction; -2 = random per particle; -3 = outward from center. spread: emission-area scale (documented Artivive control)
       init() {
         const n = Math.min(500, Math.max(10, this.data.count | 0));
         const pos = new Float32Array(n * 3);
@@ -484,12 +501,65 @@ const Studio = (() => {
         material.onBeforeCompile=shader=>{shader.vertexShader='attribute float particleSize; attribute float particleAlpha; varying float vParticleAlpha;\n'+shader.vertexShader;shader.vertexShader=shader.vertexShader.replace('gl_PointSize = size;', 'gl_PointSize = size * particleSize; vParticleAlpha = particleAlpha;');shader.fragmentShader='varying float vParticleAlpha;\n'+shader.fragmentShader;shader.fragmentShader=shader.fragmentShader.replace('#include <color_fragment>','#include <color_fragment>\ndiffuseColor.a *= vParticleAlpha;');};
         this.points = new THREE.Points(geo,material);
         this.el.object3D.add(this.points);
+        // touch: every particle keeps an offset on top of its own motion, so the motion itself stays as it was
+        if (TOUCH_MODES.includes(this.data.touch)) {
+          this.off = new Float32Array(n * 3); this.lag = new Float32Array(n); for (let i = 0; i < n; i++) this.lag[i] = 3 + Math.random() * 9;
+          this.centre = { x: 0, y: 0 }; this.grabbed = null; this.turn = 0;
+          watchFinger(); finger.users.add(this);
+        }
+      },
+      shown() { for (let o = this.points; o; o = o.parent) if (!o.visible) return false; return !this.el.closest("[data-studio-editing]"); },
+      // where the finger is on this layer's own plane (its z = 0), or null. The projection is inverted here each time:
+      // the AR engine writes the camera's projection matrix directly and leaves three's stored inverse stale.
+      fingerPoint() {
+        const sc = this.el.sceneEl, cam = sc && sc.camera, cv = sc && sc.canvas; if (!cam || !cv) return null;
+        const r = cv.getBoundingClientRect(); if (!r.width || !r.height) return null;
+        const T = this.fingerTmp || (this.fingerTmp = { m: new THREE.Matrix4(), a: new THREE.Vector3(), b: new THREE.Vector3(), p: { x: 0, y: 0 } });
+        T.a.setFromMatrixPosition(cam.matrixWorld);
+        T.b.set((finger.x - r.left) / r.width * 2 - 1, 1 - (finger.y - r.top) / r.height * 2, 0.5).applyMatrix4(T.m.copy(cam.projectionMatrix).invert()).applyMatrix4(cam.matrixWorld);
+        T.m.copy(this.points.matrixWorld).invert(); T.a.applyMatrix4(T.m); T.b.applyMatrix4(T.m);
+        const dz = T.b.z - T.a.z; if (Math.abs(dz) < 1e-9) return null;
+        const t = -T.a.z / dz; if (!(t > 0) || !Number.isFinite(t)) return null;
+        T.p.x = T.a.x + (T.b.x - T.a.x) * t; T.p.y = T.a.y + (T.b.y - T.a.y) * t; return T.p;
+      },
+      // a press: does it land on this layer (with a little room around it)? A following cloud remembers where it was held.
+      grab() {
+        this.grabbed = null; if (!this.off || !this.shown()) return false;
+        const p = this.fingerPoint(), d = this.data; if (!p) return false;
+        const sp = d.spread > 0 ? Math.min(2, d.spread) : 1, room = Math.max(d.width, d.height) * 0.15;
+        if (Math.abs(p.x - this.centre.x) > d.width * sp / 2 + room || Math.abs(p.y - this.centre.y) > d.height / 2 + room) return false;
+        this.grabbed = { x: p.x - this.centre.x, y: p.y - this.centre.y }; return true;
+      },
+      touchStep(arr, dt) {
+        const d = this.data, off = this.off, mode = d.touch, back = d.touchBack;
+        const s = Math.min(1, Math.max(0.1, d.touchPower)), R = Math.max(d.width, d.height) / 2 * Math.min(1.5, Math.max(0.1, d.touchRange));
+        const live = mode === "follow" ? !!this.grabbed : (finger.held || (finger.mouse && finger.seen));
+        const p = live && this.shown() ? this.fingerPoint() : null, c = this.centre;
+        if (mode === "follow") { if (p) { c.x = p.x - this.grabbed.x; c.y = p.y - this.grabbed.y; } else if (back) { c.x = 0; c.y = 0; } }
+        this.turn = mode === "swirl" && p ? this.turn + dt * (1 + 4 * s) : 0;
+        const ease = 1 - Math.exp(-(p ? 10 : 4) * dt);
+        for (let i = 0, j = 0; i < arr.length; i += 3, j++) {
+          let tx = back ? 0 : off[i], ty = back ? 0 : off[i + 1], k = ease;
+          if (mode === "follow") { tx = c.x; ty = c.y; k = 1 - Math.exp(-this.lag[j] * (0.4 + 1.2 * s) * dt); }
+          else if (p) {
+            const dx = p.x - arr[i], dy = p.y - arr[i + 1], r = Math.hypot(dx, dy);
+            if (r < R) {
+              const f = 1 - (r / R) * (r / R);
+              if (mode === "attract") { tx = dx * s * f; ty = dy * s * f; }
+              else if (mode === "repel") { const m = r > 1e-6 ? -s * (R - r) * 0.9 / r : 0; tx = dx * m; ty = dy * m; }
+              else { const a = this.turn * f, ca = Math.cos(a), sa = Math.sin(a); tx = dx - dx * ca + dy * sa; ty = dy - dx * sa - dy * ca; }
+            }
+          }
+          off[i] += (tx - off[i]) * k; off[i + 1] += (ty - off[i + 1]) * k;
+          arr[i] += off[i]; arr[i + 1] += off[i + 1];
+        }
       },
       tick(time, dt) {
         if(!this.points||this.el.closest("[data-studio-editing]"))return;
         const dtS = Math.min(0.1, (dt || 16) / 1000);
         const arr = this.points.geometry.attributes.position.array;
-        const half = this.data.height / 2;
+        const half = this.data.height / 2, off = this.off;
+        if (off) for (let i = 0; i < arr.length; i += 3) { arr[i] -= off[i]; arr[i + 1] -= off[i + 1]; }
         for (let i = 0; i < arr.length; i += 3) {
           const index=i/3,d=this.data,life=this.lives?this.lives[index]:d.lifetime;if(d.lifetime>0&&life>0){this.ages[index]+=dtS;if(this.ages[index]>=life){this.ages[index]%=life;this.spawn(index);this.setVelocity(index);}const f=this.ages[index]/life;this.sizes[index]=1+(d.endSize-1)*f;this.alphas[index]=d.fade?Math.sin(Math.PI*f):1;this.ageColor=this.ageColor||new THREE.Color();if(this.color2)this.ageColor.setRGB(this.startColors[i],this.startColors[i+1],this.startColors[i+2]);else this.ageColor.copy(this.startColor);this.ageColor.lerp(this.endColor,f).toArray(this.points.geometry.attributes.color.array,i);}
           arr[i] += this.vel[i] * dtS;
@@ -500,10 +570,11 @@ const Studio = (() => {
           if (this.data.lifetime<=0&&this.vel[i + 1] > 0 && arr[i + 1] > half) arr[i + 1] = -half;
           if (this.data.lifetime<=0&&this.vel[i + 1] < 0 && arr[i + 1] < -half) arr[i + 1] = half;
         }
+        if (off) this.touchStep(arr, dtS);
         this.points.geometry.attributes.position.needsUpdate = true;
         for(const name of ['color','particleSize','particleAlpha'])this.points.geometry.attributes[name].needsUpdate=true;
       },
-      remove(){if(this.points){this.el.object3D.remove(this.points);this.points.geometry.dispose();if(this.points.material.map)this.points.material.map.dispose();this.points.material.dispose();}}
+      remove(){finger.users.delete(this);if(this.points){this.el.object3D.remove(this.points);this.points.geometry.dispose();if(this.points.material.map)this.points.material.map.dispose();this.points.material.dispose();}}
     });
   }
 
@@ -1211,7 +1282,7 @@ vec4 bpPattern(vec2 uv) {
       remove() { this.el.removeObject3D("mesh"); this.mesh.geometry.dispose(); if (this.mat.uniforms.atlas.value) this.mat.uniforms.atlas.value.dispose(); this.mat.dispose(); }
     });
   }
-  function validParticles(el){const p=el.particles;if(!p)return true;if(typeof p!=='object'||Array.isArray(p))return false;for(const [k,min,max]of [['lifetime',0,60],['endSize',0,5],['count',10,500],['size',2,60],['speed',.2,3]])if(p[k]!=null&&(!Number.isFinite(p[k])||p[k]<min||p[k]>max))return false;if(p.emitter!=null&&!['box','disc','sphere'].includes(p.emitter))return false;if(p.direction!=null&&(!Number.isInteger(p.direction)||p.direction<-3||p.direction>359))return false;if(p.spread!=null&&(!Number.isFinite(p.spread)||p.spread<.1||p.spread>2))return false;if(p.endColor!=null&&!/^#[0-9a-f]{6}$/i.test(p.endColor))return false;if(p.life2!=null&&(!Number.isFinite(p.life2)||p.life2<0||p.life2>60))return false;if(p.color2!=null&&p.color2!==''&&!/^#[0-9a-f]{6}$/i.test(p.color2))return false;if(p.fade!=null&&typeof p.fade!=='boolean')return false;return true;}
+  function validParticles(el){const p=el.particles;if(!p)return true;if(typeof p!=='object'||Array.isArray(p))return false;for(const [k,min,max]of [['lifetime',0,60],['endSize',0,5],['count',10,500],['size',2,60],['speed',.2,3]])if(p[k]!=null&&(!Number.isFinite(p[k])||p[k]<min||p[k]>max))return false;if(p.emitter!=null&&!['box','disc','sphere'].includes(p.emitter))return false;if(p.direction!=null&&(!Number.isInteger(p.direction)||p.direction<-3||p.direction>359))return false;if(p.spread!=null&&(!Number.isFinite(p.spread)||p.spread<.1||p.spread>2))return false;if(p.endColor!=null&&!/^#[0-9a-f]{6}$/i.test(p.endColor))return false;if(p.life2!=null&&(!Number.isFinite(p.life2)||p.life2<0||p.life2>60))return false;if(p.color2!=null&&p.color2!==''&&!/^#[0-9a-f]{6}$/i.test(p.color2))return false;if(p.fade!=null&&typeof p.fade!=='boolean')return false;if(p.touch!=null&&p.touch!=='none'&&!TOUCH_MODES.includes(p.touch))return false;if(p.touchPower!=null&&(!Number.isFinite(p.touchPower)||p.touchPower<.1||p.touchPower>1))return false;if(p.touchRange!=null&&(!Number.isFinite(p.touchRange)||p.touchRange<.1||p.touchRange>1.5))return false;if(p.touchBack!=null&&typeof p.touchBack!=='boolean')return false;return true;}
   function validCrop(el){const c=el.crop;return !c||['image','video'].includes(el.type)&&['x','y','w','h'].every(k=>Number.isFinite(c[k]))&&c.x>=0&&c.y>=0&&c.w>=.01&&c.h>=.01&&c.x+c.w<=1.000001&&c.y+c.h<=1.000001;}
   function setImageCrop(rec,el,crop){
     const old=el.crop||{x:0,y:0,w:1,h:1};const sourceAspect=(el.aspect||1)/(old.w/old.h);
@@ -1990,7 +2061,7 @@ vec4 bpPattern(vec2 uv) {
       e = document.createElement("a-entity");
       let spriteAttr = "";
       if (pc.preset === "custom" && pc.spriteAssetId && rec.assets && rec.assets[pc.spriteAssetId]) spriteAttr = `; sprite: ${blobURL(rec.assets[pc.spriteAssetId])}`;
-      e.setAttribute("particles", `preset: ${pc.preset || "sparkle"}; count: ${pc.count || 120}; color: ${pc.color || "#ffd94d"}; size: ${pc.size || 12}; speed: ${pc.speed || 1}; width: ${ts.w}; height: ${ts.h}; lifetime: ${pc.lifetime||0}; emitter: ${pc.emitter||"box"}; endColor: ${pc.endColor||pc.color||"#ffd94d"}; endSize: ${pc.endSize==null?1:pc.endSize}; fade: ${!!pc.fade}; spread: ${pc.spread>0?Math.min(2,pc.spread):1}${pc.life2>0?"; life2: "+pc.life2:""}${pc.color2?"; color2: "+pc.color2:""}${spriteAttr}${pc.direction != null ? "; direction: " + (pc.direction | 0) : ""}`);
+      e.setAttribute("particles", `preset: ${pc.preset || "sparkle"}; count: ${pc.count || 120}; color: ${pc.color || "#ffd94d"}; size: ${pc.size || 12}; speed: ${pc.speed || 1}; width: ${ts.w}; height: ${ts.h}; lifetime: ${pc.lifetime||0}; emitter: ${pc.emitter||"box"}; endColor: ${pc.endColor||pc.color||"#ffd94d"}; endSize: ${pc.endSize==null?1:pc.endSize}; fade: ${!!pc.fade}; spread: ${pc.spread>0?Math.min(2,pc.spread):1}${pc.life2>0?"; life2: "+pc.life2:""}${pc.color2?"; color2: "+pc.color2:""}${spriteAttr}${pc.direction != null ? "; direction: " + (pc.direction | 0) : ""}${TOUCH_MODES.includes(pc.touch) ? `; touch: ${pc.touch}; touchPower: ${pc.touchPower > 0 ? pc.touchPower : 0.6}; touchRange: ${pc.touchRange > 0 ? pc.touchRange : 0.6}; touchBack: ${pc.touchBack !== false}` : ""}`);
     } else if (el.type === "model") {
       // glTF/GLB: wrapper carries placement (timeline/tap target); inner child carries the
       // normalized model scale so timeline scale keys don't fight the fit-to-size normalization.
@@ -3179,6 +3250,7 @@ vec4 bpPattern(vec2 uv) {
   return { TARGET_W, TARGET_H, newId, inspectVideo, validateModelBlob, prepareModelBlob, modelCompressionKinds, DECODER_DRACO_PATH, DECODER_MESHOPT_PATH, modelClipNames, modelClipInfo, loadImage, loadImageBlob, loadFailed, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON, steadyTarget,
            audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, blobURL, releaseBlobURL, blobURLs, historyState, restoreHistory, duplicateLayer, exportJSON, exportObject, exportedAssetIds, importPublished, missingAssets, importJSON, exportZIP, importZIP, zipToJSON, fetchPublished, ownBlob, assetHealth, fileHealth, seedDemo, normEl, ANIMS, drawTextCanvas, loadTextFonts, lineDir, visualOrder, ENTER_EXIT: ENTER_EXIT.map(([id, enter, exit, , text]) => ({ id, enter, exit, text: !!text })), enterExitFor, validEnterExit, hasEnterExit, enterExitDur, fxLook, fxTimes, drawEnterExitText, animSpeed, FX: FX.map(([id, name]) => ({ id, name, moving: FX_MOVING.has(id) })), fxFrame,
            PATTERNS: PATTERNS.map(([id, name, colors, speed]) => ({ id, name, colors: colors.slice(), speed })), PATTERN_PALETTES: PATTERN_PALETTES.map(([name, colors]) => ({ name, colors: colors.slice() })),
+           fingerGrab: () => finger.grab, TOUCH_MODES,
            PATTERN_SHAPES: PATTERN_SHAPES.map(([id, name]) => ({ id, name })), patternDefaults, patternAspect, patternFrame, validPattern, validFx, validChroma, keyValues, pixelAt, CHROMA_DEFAULT, SCATTER_TYPES, SCATTER_MAX, mediaType, isStill, stillAt, setStill, scatterItem, scatterLimit, scatterPath, scatterCopies, scatterCopyEl, scatterBounds, refreshScatter, makeScatter, makeFan, scaleScatter, breakScatter, validScatter, FONTS: FONTS.map(([id, name]) => ({ id, name })), buildElementEntity, groupOf, fitGroup, makeGroup, breakGroup, leaveGroup, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, videoHasPicture, ensureTimeCubeComponent, bakeTimeCube, validTimeCube, TIMECUBE_DIRS, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, artworkFingerprint, fingerprintDistance, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, turnImageBlob, turnLayers, trackList, makeTrackRunner,
            load: id=>settledRead(id), all: ()=>settledRead(), del: delExperience, LIMITS, mediaBytes, pushBack, addBlocker, publishBlocker, restoreBlocker, exportWarning, exportJSONSize,
            onSaveState, installSaveGuard, saveState, soundOnTouch, snapAngle, syncMedia,
