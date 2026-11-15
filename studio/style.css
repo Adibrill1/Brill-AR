@@ -378,3 +378,4 @@ dialog::backdrop { background: rgba(6,5,10,.66); backdrop-filter: blur(3px); }
 .badge { display: inline-flex; align-items: center; gap: 4px; min-height: 24px; padding: 0 9px; border-radius: 999px; background: rgba(14,13,18,.78); color: #fff; font-size: 12px; font-weight: 600; backdrop-filter: blur(4px); }
 .badge.pub { background: rgba(76,212,160,.9); color: #062a1d; }
 .card-pic { position: relative; }
+.portal-msg { margin: 0; color: var(--muted); font-size: 13px; }

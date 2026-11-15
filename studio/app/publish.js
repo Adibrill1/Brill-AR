@@ -19,7 +19,7 @@ window.Publish = (() => {
       let ok = false;
       const has = !!Portal.getToken();
       const inp = h("input.field", { id: "portal-token", type: "text", autocomplete: "off", autocapitalize: "off", spellcheck: false, dir: "ltr", placeholder: "github_pat_…" });
-      const msg = h("p.share-state", { id: "portal-token-msg" });
+      const msg = h("p.portal-msg", { id: "portal-token-msg" });
       const save = h("button.btn.primary", { id: "portal-token-save", type: "button" }, "שמירה");
       save.onclick = async () => {
         const t = inp.value.trim();
@@ -83,7 +83,7 @@ window.Publish = (() => {
   // Fills `box` (an element in the share sheet) with what fits this creation's state on the portal.
   async function section(box, rec) {
     const tile = (id, ic, title, text, run, danger) => h("button.share-tile" + (danger ? ".danger" : ""), { id, type: "button", onclick: run }, h("span.share-ic", icon(ic, 24)), h("span.share-text", h("b", title), h("span", text)));
-    const state = h("p.share-state", { id: "portal-state" }), head = h("h3.portal-head", icon("eye", 18), h("span", "פורטל הצפייה"));
+    const state = h("p.portal-msg", { id: "portal-state" }), head = h("h3.portal-head", icon("eye", 18), h("span", "פורטל הצפייה"));
     const show = (...kids) => box.replaceChildren(head, ...kids, state);
     const token = Portal.getToken();
     if (!token) {

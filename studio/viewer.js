@@ -64,7 +64,7 @@
   $("screen").hidden = true;
 
   // ---------- the AR scene (one for the whole visit) ----------
-  const scene = ARMount.makeScene({ filePrefix: "brill-ar-", xrweb: params.get("xrweb") || "" });
+  const scene = ARMount.makeScene({ filePrefix: "brill-ar-" });
   document.body.appendChild(scene);
   const status = $("status"), pick = $("pick");
   const say = (t) => { status.textContent = t || ""; status.hidden = !t; };
@@ -140,7 +140,7 @@
       name: "portal-recognise",
       onProcessCpu: ({ processGpuResult }) => {
         const a = processGpuResult && processGpuResult.camerapixelarray; if (!a || !a.pixels) return;
-        if (busy || Date.now() - lastSent < 280) return;
+        if (busy || Date.now() - lastSent < 280 || !(state === "looking" || (state === "waking" && !forced))) return;
         const w = a.cols, h = a.rows, px = new Uint8Array(w * h);
         for (let y = 0; y < h; y++) px.set(a.pixels.subarray(y * a.rowBytes, y * a.rowBytes + w), y * w);
         sendFrame(px, w, h);
@@ -160,6 +160,25 @@
     sheet.replaceChildren(el("div", { className: "sheet-head" }, el("b", { textContent: "בוחרים את היצירה שמולכם" }), close), list);
     sheet.hidden = false;
   };
+
+  // ---------- the 10-second recording ----------
+  // The engine's preview offers "Share" (the share sheet: on iPhone that is where "Save Video" is). On Android the share
+  // sheet does not always offer saving to the gallery, so a plain download sits beside it there.
+  if (android) {
+    let video = null, waiting = null;
+    const got = (e) => { const v = e.detail && e.detail.videoBlob; if (v) { video = v; if (waiting) { const w = waiting; waiting = null; w(); } } };
+    window.addEventListener("mediarecorder-previewready", got); // the clip may still be finishing here
+    window.addEventListener("mediarecorder-recordcomplete", got); // the finished clip
+    window.addEventListener("mediarecorder-recordstart", () => { video = null; });
+    window.addEventListener("mediarecorder-previewopened", () => {
+      const box = document.getElementById("previewContainer"); if (!box || document.getElementById("portal-save")) return;
+      const save = el("button", { id: "portal-save", type: "button", className: "btn", textContent: "שמירה בטלפון" });
+      save.style.cssText = "position:absolute;left:50%;transform:translateX(-50%);bottom:calc(env(safe-area-inset-bottom) + 96px);z-index:10;";
+      save.onclick = async () => { if (!video) { save.textContent = "רגע…"; await new Promise((r) => { waiting = r; }); } const u = URL.createObjectURL(video), a = el("a", { href: u, download: "brill-ar-" + Date.now() + ".mp4" }); document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 30000); save.textContent = "נשמר ✓"; };
+      box.appendChild(save);
+    });
+    window.addEventListener("mediarecorder-previewclosed", () => { const b = document.getElementById("portal-save"); if (b) b.remove(); });
+  }
 
   const ready = () => {
     startRecognition();

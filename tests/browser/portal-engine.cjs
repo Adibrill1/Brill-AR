@@ -36,7 +36,7 @@ const ANDROID='Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTM
     const ctx=await b.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,userAgent:ANDROID,permissions:['camera']});await mock.attach(ctx);
     // the fake camera has no "back camera" label; a phone does. Test-only: drop that one wish so the engine gets the fake camera.
     await ctx.addInitScript(()=>{const md=navigator.mediaDevices;if(!md)return;const o=md.getUserMedia.bind(md);md.getUserMedia=(c)=>{if(c&&c.video&&c.video.facingMode)delete c.video.facingMode;return o(c);};});
-    const p=await ctx.newPage(),errs=[],raws=[];p.on('pageerror',e=>errs.push(String(e)));p.on('request',r=>{if(r.url().startsWith('https://raw.githubusercontent.com/'))raws.push(r.url().split('/published/')[1]);});
+    const p=await ctx.newPage(),errs=[],raws=[];p.on('pageerror',e=>errs.push('view: '+String(e)));p.on('request',r=>{if(r.url().startsWith('https://raw.githubusercontent.com/'))raws.push(r.url().split('/published/')[1]);});
     await p.goto(base+'/view.html');await p.waitForSelector('#start');const t0=Date.now();await p.click('#start');
     await p.waitForFunction(()=>window.__portal&&__portal.state()!=='start'&&__portal.mounted().length>0,null,{timeout:120000});
     const tRec=Date.now()-t0,named=await p.evaluate(()=>__portal.current());
@@ -46,8 +46,18 @@ const ANDROID='Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTM
     const tTrack=Date.now()-t0;
     await p.waitForTimeout(800);await p.screenshot({path:SHOTS+'viewer-engine-tracking.png'});
     console.log(JSON.stringify({recognisedAfterMs:tRec,trackingAfterMs:tTrack,named:ids.indexOf(named)}));
+    // the record button: a short clip, then the engine's preview with "Share", and on Android our "שמירה בטלפון" beside it
+    assert.deepEqual(errs,[],'no page errors while recognising and tracking');
+    await p.evaluate(()=>{window.__prev=0;addEventListener('mediarecorder-previewopened',()=>window.__prev++);});
+    await p.locator('#recorder-button').tap();await p.waitForTimeout(2500);await p.locator('#recorder-button').tap().catch(()=>{});
+    await p.waitForFunction(()=>window.__prev>0,null,{timeout:40000});await p.waitForSelector('#portal-save',{timeout:10000});await p.waitForTimeout(1200);
+    await p.screenshot({path:SHOTS+'viewer-record-preview.png'});
+    const [dl]=await Promise.all([p.waitForEvent('download',{timeout:20000}),p.click('#portal-save')]);assert.match(dl.suggestedFilename(),/^brill-ar-\d+\.mp4$/,'the clip downloads');
+    await p.waitForTimeout(1500);await p.click('#closePreviewButton').catch(()=>{});
+    // the engine's own preview video rejects play() in headless Chrome once the clip is shown (no stack, native); not on a phone as far as known
+    for(let i=errs.length-1;i>=0;i--)if(/^view: NotSupportedError: Failed to load because no supported source/.test(errs[i]))errs.splice(i,1);
     // the creator's own camera (play.html, built by the same ar-mount.js): her creation from this phone's storage, found by the engine
-    const e=await ctx.newPage();e.on('pageerror',x=>errs.push(String(x)));await e.goto(base+'/index.html');await e.waitForFunction(()=>typeof Studio!=='undefined');
+    const e=await ctx.newPage();e.on('pageerror',x=>errs.push('play: '+String(x)));await e.goto(base+'/index.html');await e.waitForFunction(()=>typeof Studio!=='undefined');
     const local=await e.evaluate(async(png)=>{const blob=await (await fetch(png)).blob(),img=await Studio.loadImageBlob(blob),t=await Studio.makeTarget(img);
       const a=Studio.blankExperience('שלי');a.target={artRect:t.artRect,natural:{w:600,h:800}};a.assets.__artwork=blob;a.elements=[{id:'txt',type:'text',text:'שלי',x:0,y:0,w:0.5,rot:0}];await Studio.save(a,{noHistory:true});return a.id;},shown);
     await e.addInitScript(()=>{window.__found=0;addEventListener('xrimagefound',()=>{},true);document.addEventListener('DOMContentLoaded',()=>{new MutationObserver(()=>{const sc=document.querySelector('a-scene');if(sc&&!sc.__w){sc.__w=1;sc.addEventListener('xrimagefound',()=>window.__found++);}}).observe(document.body,{childList:true});});});
