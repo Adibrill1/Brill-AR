@@ -192,3 +192,18 @@ run with Blender 5.2's own Python and Blender itself):
   displacement, with forks) drawn over them in time with the flashes. Fog, rays and storm close their loop with a short
   cross-fade.
 Thumbnails are a frame shown through the key over a quiet dusk gradient.
+
+## Flowers — `models/dandelion_01.glb`, `models/fl-rose.glb`, `models/fl-tulip.glb`, `models/fl-sunflower.glb`
+- **Dandelion** (`dandelion_01`): Poly Haven, CC0. Poly Haven ships it as five plants; only variant `dandelion_01_b_LOD0` is
+  kept (`--drop-node` on the rest, then `tools/slim-plants.py` keeps only the scene's own meshes, 23k triangles, 1K
+  textures unchanged).
+- **Rose, tulip and sunflower** (`fl-*`): self-made for this library, so free of any licence. They are modelled at real
+  size by `tools/make-flowers.py` (Blender, headless; outside this repository).
+  - Every petal, sepal and leaf is a curved sheet. The rose's petals spiral at the golden angle, and each one wraps
+    round the flower's axis at its own distance, so they nest without crossing; the outer petals open wider and roll
+    back. The tulip has six cupped tepals with stamens and a pistil inside. The sunflower's disc has 1,400 florets on
+    Fermat's spiral, with two rings of rays and green bracts behind.
+  - Textures are drawn in numpy: colour with veins and mottling, plus a normal map, as 2×2 atlases whose darker tiles go
+    to the inner petals that sit in shadow. They are packed as JPEG.
+- All four sway in a breeze through the same "Loop" clip as the other plants (`tools/make-ph-loops.py`, two morph
+  targets bending by height above the ground).

@@ -39,13 +39,17 @@ window.StarterLibrary = (() => {
     ['potted_plant_01','צמח בעציץ טרקוטה'],['shrub_sorrel_01','חמציץ פורח'],['pachira_aquatica_01','פכירה'],['flower_stinkkruid','פרחי בר'],
     ['leipoldtia_schultzei','סקולנט פורח סגול'],['didelta_spinosa','שיח מדברי'],['othonna_cerarioides','סקולנט שיחי'],['quiver_tree_02','עץ אלואה'],
     ['jacaranda_tree','עץ סיגלון'],['island_tree_02','עץ ירוק רחב'],['tree_small_02','עץ צעיר'],['fir_sapling','שתיל אשוח'],
-    ['pine_sapling_small','שתיל אורן'],['dead_tree_trunk_02','ענף עץ יבש'],['planter_box_01','אדנית עץ'],['food_kiwi_01','קיווי'],
+    ['pine_sapling_small','שתיל אורן'],['dead_tree_trunk_02','ענף עץ יבש'],['planter_box_01','אדנית עץ'],['dandelion_01','שן הארי'],['food_kiwi_01','קיווי'],
     ['food_lime_01','ליים'],['food_lychee_01','ליצ׳י'],['food_ginger_01','ג׳ינג׳ר'],['yellow_onion','בצל'],['sweet_potato','בטטה'],['street_rat','עכברוש']
   ].map(([id,name]) => ({id:'ph-'+id,name,detail:STILL.has(id)?'תלת־ממד · חינמי (CC0)':'תלת־ממד בתנועה · חינמי (CC0)',kind:'model',file:'models/'+id+'.glb',thumb:'thumbs/'+id+'.png',clip:STILL.has(id)?undefined:'Loop',group:ANIMAL.has(id)?'animal':'model'}));
   // Scanned CC0 models with a looping move added (tools/make-gramophone.py): [file id, Hebrew name, start width]
   const scans = [
     ['sk-gramophone','גרמופון עם תקליט מסתובב',.5]
   ].map(([id,name,w]) => ({id,name,detail:'תלת־ממד בתנועה · סריקה חינמית (CC0)',kind:'model',file:'models/'+id+'.glb',thumb:'thumbs/'+id+'.png',clip:'Loop',w,group:'model'}));
+  // Flowers modelled for this library (tools/make-flowers.py, self-made), swaying in a breeze: [file id, Hebrew name, start width]
+  const flowers = [
+    ['fl-rose','ורד אדום',.4],['fl-tulip','צבעוני',.35],['fl-sunflower','חמנייה',.5]
+  ].map(([id,name,w]) => ({id,name,detail:'תלת־ממד בתנועה · נבנה כאן (חינמי)',kind:'model',file:'models/'+id+'.glb',thumb:'thumbs/'+id+'.png',clip:'Loop',w,group:'model'}));
   // Animated CC0 models by Quaternius (packed to GLB): [file id, Hebrew name, the move they start on, start width]
   const animated = [
     ['q-alpaca','אלפקה','Idle',.5],['q-bull','שור','Idle',.55],['q-cow','פרה','Eating',.55],['q-deer','איילה','Idle',.5],
@@ -161,12 +165,12 @@ window.StarterLibrary = (() => {
     ['k-galaxy','גלקסיה ספירלית',.7],['k-dna','סליל DNA',.3],['k-gyro','טבעות מסתובבות',.5],['k-sphere','כדור חלקיקים נושם',.45],
     ['k-terrain','נוף קווים',.9],['k-constellation','קבוצת כוכבים',.7],['k-orb','כדור קוסמי',.45],['k-fibres','מנורת סיבים אופטיים',.45]
   ].map(([id,name,w]) => ({id:'fx3d-'+id,name,detail:'חלל · תלת־ממד · לולאה',kind:'model',file:'models/fx3d-'+id+'.glb',thumb:'thumbs/fx3d-'+id+'.png',clip:'Loop',w,group:'cosmic'}));
-  const entries = [...scenes, ...fx3d, ...w3d, ...weatherParticles, ...wreal, ...k3d, ...models, ...scans, ...animated, ...stickers];
+  const entries = [...scenes, ...fx3d, ...w3d, ...weatherParticles, ...wreal, ...k3d, ...models, ...flowers, ...scans, ...animated, ...stickers];
   const groups = [['all','הכול'],['scene','סצנות בתנועה'],['fx','אפקטים מרחפים'],['weather','מזג אוויר'],['weather-real','מזג אוויר ריאליסטי'],['cosmic','חלל וחלקיקים'],['model','תלת־ממד'],['animal','חיות בתנועה'],['sea','ים'],['dino','דינוזאורים'],['creature','דמויות'],['sticker','מדבקות']];
   // The 3D shelf (opened from the add sheet's "תלת־ממד"): only the models, by kind. The 'model' group is split here by
   // file id (without the 'ph-' prefix); an id in none of the lists lands in 'home'. A new plant or flower: add its id to plant.
   const CAT3D = {
-    plant: 'potted_plant_04 potted_plant_02 potted_plant_01 shrub_sorrel_01 pachira_aquatica_01 flower_stinkkruid leipoldtia_schultzei didelta_spinosa othonna_cerarioides quiver_tree_02 jacaranda_tree island_tree_02 tree_small_02 fir_sapling pine_sapling_small dead_tree_trunk_02 planter_box_01',
+    plant: 'potted_plant_04 potted_plant_02 potted_plant_01 shrub_sorrel_01 pachira_aquatica_01 flower_stinkkruid leipoldtia_schultzei didelta_spinosa othonna_cerarioides quiver_tree_02 jacaranda_tree island_tree_02 tree_small_02 fir_sapling pine_sapling_small dead_tree_trunk_02 planter_box_01 dandelion_01 fl-rose fl-tulip fl-sunflower',
     food: 'food_pomegranate_01 food_apple_01 lemon croissant carrot_cake strawberry_chocolate_cake bananas food_avocado_01 food_pears_asian_01 food_kiwi_01 food_lime_01 food_lychee_01 food_ginger_01 yellow_onion sweet_potato',
     statue: 'fancy_picture_frame_01 marble_bust_01 horse_statue_01 concrete_cat_statue carved_wooden_elephant garden_gnome bronze_shark_statue bronze_whale_statue bull_head gothic_statue horse_head lion_head',
     light: 'lantern_01 wooden_lantern_01 brass_diya_lantern chinese_chandelier lightbulb_01 chandelier_03 desk_lamp_arm_01 street_lamp_01 brass_candleholders wooden_candlestick vintage_flashlight',
