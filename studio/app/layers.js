@@ -315,7 +315,7 @@ window.Layers = (() => {
     }, opts);
   }
   // The 3D shelf of the library, with a small button there for a model file of one's own.
-  const open3d = () => openLibrary({ group: "model", onImport: async () => { const f = await UI.pickFile(ACCEPT.model); if (f) addFile("model", f); } });
+  const open3d = () => openLibrary({ only3d: true, onImport: async () => { const f = await UI.pickFile(ACCEPT.model); if (f) addFile("model", f); } });
   function needArt() { toast("קודם מעלים את תמונת היצירה", { action: { label: "העלאה", run: pickArtwork } }); }
 
   // ---------- the "add" sheet ----------
@@ -395,8 +395,9 @@ window.Layers = (() => {
     $("layer-count").textContent = els.length ? String(els.length) : "";
     if (!els.length) {
       list.append(h("div.layers-empty", icon("layers", 28), h("p", rec.target ? "עדיין אין שכבות. מוסיפים תמונה, סרטון, טקסט או משהו מהספרייה, והם יופיעו מעל היצירה." : "מתחילים בתמונת היצירה: התמונה שהמצלמה תזהה."),
-        rec.target ? UI.button("הוספת שכבה", openAdd, { kind: "primary", icon: "plus" }) : UI.button("העלאת תמונת היצירה", pickArtwork, { kind: "primary", icon: "upload" })));
+        rec.target ? null : UI.button("העלאת תמונת היצירה", pickArtwork, { kind: "primary", icon: "upload" })));
     }
+    $("add-row").hidden = !rec.target || !!App.multi;
     const multi = App.multi;
     for (const e of els) {
       const member = !!Studio.groupOf(rec, e.id);
@@ -426,11 +427,11 @@ window.Layers = (() => {
     row.onkeydown = (ev) => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); row.click(); } };
     return row;
   }
-  // The head of the list: "הוספה" and "בחירת כמה", or while choosing, the way to group them and the way out.
+  // The head of the list: "בחירת כמה", or while choosing, the way to group them and the way out.
   function renderHead() {
     const head = $("layers-pane").querySelector(".pane-head"), multi = App.multi;
     let box = $("multi-head");
-    $("btn-add").hidden = !!multi; $("btn-multi").hidden = !!multi || !(App.rec && App.rec.elements.length > 1);
+    $("add-row").hidden = !!multi || !(App.rec && App.rec.target); $("btn-multi").hidden = !!multi || !(App.rec && App.rec.elements.length > 1);
     if (!multi) { if (box) box.remove(); return; }
     if (!box) { box = h("div.multi-head", { id: "multi-head" }); head.append(box); }
     const n = multi.size, go = UI.button("לקבץ (" + n + ")", () => App.groupLayers(), { kind: "primary", small: true, icon: "group" });
@@ -480,7 +481,7 @@ window.Layers = (() => {
     list = $("layer-list"); artCard = $("art-card");
     $("btn-add").onclick = openAdd;
     const head = $("layers-pane").querySelector(".pane-head"), pick = UI.button("בחירת כמה", () => { App.startMulti(); App.setPane("layers"); }, { kind: "ghost", small: true, icon: "checks" });
-    pick.id = "btn-multi"; pick.title = "לבחור כמה שכבות ולקבץ אותן"; head.insertBefore(pick, $("btn-add"));
+    pick.id = "btn-multi"; pick.title = "לבחור כמה שכבות ולקבץ אותן"; head.append(pick);
     App.on("multi", render);
     $("btn-empty-art").onclick = pickArtwork;
     App.on("open structure", render);

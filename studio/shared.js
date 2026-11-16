@@ -450,6 +450,7 @@ const Studio = (() => {
   // lands on such a layer "grabs" it, and Studio.fingerGrab() tells the preview not to turn the view for that drag.
   const finger = { x: 0, y: 0, held: false, mouse: false, seen: false, grab: false, bound: false, users: new Set() };
   const TOUCH_MODES = ["follow", "attract", "repel", "swirl"];
+  const PATTERN_TOUCH = ["ripple", "lens", "swirl"]; // how an animated background answers the finger
   function watchFinger() {
     if (finger.bound) return; finger.bound = true;
     const at = (e) => { finger.x = e.clientX; finger.y = e.clientY; finger.mouse = e.pointerType === "mouse"; finger.seen = true; };
@@ -466,7 +467,7 @@ const Studio = (() => {
   function ensureParticlesComponent() {
     if (!window.AFRAME || AFRAME.components["particles"]) return;
     AFRAME.registerComponent("particles", {
-      schema: { preset: { default: "sparkle" }, count: { default: 120 }, color: { default: "#ffd94d" }, width: { default: 0.5 }, height: { default: 0.5 }, size: { default: 12 }, speed: { default: 1 }, sprite: { default: "" }, direction: { default: -1 },lifetime:{default:0},life2:{default:0},emitter:{default:"box"},endColor:{default:"#ffffff"},endSize:{default:1},fade:{default:false},spread:{default:1},color2:{default:""},touch:{default:"none"},touchPower:{default:0.6},touchRange:{default:0.6},touchBack:{default:true},turn:{default:false} }, // direction: degrees (0=up,90=right,180=down,270=left); -1 = preset's fixed direction; -2 = random per particle; -3 = outward from center. spread: emission-area scale (documented Artivive control)
+      schema: { preset: { default: "sparkle" }, count: { default: 120 }, color: { default: "#ffd94d" }, width: { default: 0.5 }, height: { default: 0.5 }, size: { default: 12 }, speed: { default: 1 }, sprite: { default: "" }, direction: { default: -1 },lifetime:{default:0},life2:{default:0},emitter:{default:"box"},endColor:{default:"#ffffff"},endSize:{default:1},fade:{default:false},spread:{default:1},color2:{default:""},touch:{default:"none"},touchPower:{default:0.6},touchRange:{default:0.6},touchBack:{default:true},turn:{default:false},flap:{default:0} }, // direction: degrees (0=up,90=right,180=down,270=left); -1 = preset's fixed direction; -2 = random per particle; -3 = outward from center. spread: emission-area scale (documented Artivive control)
       init() {
         const n = Math.min(500, Math.max(10, this.data.count | 0));
         const pos = new Float32Array(n * 3);
@@ -494,13 +495,22 @@ const Studio = (() => {
         const geo = new THREE.BufferGeometry();
         geo.setAttribute("position", new THREE.BufferAttribute(pos, 3));
         geo.setAttribute('color',new THREE.BufferAttribute(colors,3));geo.setAttribute('particleSize',new THREE.BufferAttribute(this.sizes,1));geo.setAttribute('particleAlpha',new THREE.BufferAttribute(this.alphas,1));
+        const phases=new Float32Array(n);for(let i=0;i<n;i++)phases[i]=Math.random();geo.setAttribute('particlePhase',new THREE.BufferAttribute(phases,1));this.flapU={pTime:{value:0},pFlap:{value:Math.min(12,Math.max(0,this.data.flap||0))}};
         const matOpts = { color: new THREE.Color("#ffffff"),vertexColors:true, size: Math.min(0.2, Math.max(0.002, this.data.size / 1000)), transparent: true, opacity: 0.9, depthWrite: false };
         if (this.data.sprite) { matOpts.map = new THREE.TextureLoader().load(this.data.sprite); matOpts.alphaTest = 0.05;
           // turn: the picture is drawn falling straight down and is turned to the way the particles travel (rain in wind)
           if (this.data.turn && this.data.direction >= 0) { matOpts.map.center.set(0.5, 0.5); matOpts.map.rotation = (this.data.direction - 180) * Math.PI / 180; } } // custom sprite texture (PNG with alpha)
         else { matOpts.map = builtinSprite(this.data.preset); matOpts.alphaTest = 0.02; } // without a map every particle is a plain square
         const material=new THREE.PointsMaterial(matOpts);
-        material.onBeforeCompile=shader=>{shader.vertexShader='attribute float particleSize; attribute float particleAlpha; varying float vParticleAlpha;\n'+shader.vertexShader;shader.vertexShader=shader.vertexShader.replace('gl_PointSize = size;', 'gl_PointSize = size * particleSize; vParticleAlpha = particleAlpha;');shader.fragmentShader='varying float vParticleAlpha;\n'+shader.fragmentShader;shader.fragmentShader=shader.fragmentShader.replace('#include <color_fragment>','#include <color_fragment>\ndiffuseColor.a *= vParticleAlpha;');};
+        material.onBeforeCompile=shader=>{shader.vertexShader='attribute float particleSize; attribute float particleAlpha; varying float vParticleAlpha;\n'+shader.vertexShader;shader.vertexShader=shader.vertexShader.replace('gl_PointSize = size;', 'gl_PointSize = size * particleSize; vParticleAlpha = particleAlpha;');shader.fragmentShader='varying float vParticleAlpha;\n'+shader.fragmentShader;shader.fragmentShader=shader.fragmentShader.replace('#include <color_fragment>','#include <color_fragment>\ndiffuseColor.a *= vParticleAlpha;');
+          // flap: the picture is squeezed toward its middle line and opened again, each particle in its own time
+          const chunk=THREE.ShaderChunk&&THREE.ShaderChunk.map_particle_fragment;
+          if(chunk&&chunk.includes('gl_PointCoord')&&shader.fragmentShader.includes('#include <map_particle_fragment>')){
+            Object.assign(shader.uniforms,this.flapU);
+            shader.vertexShader='attribute float particlePhase; varying float vParticlePhase;\n'+shader.vertexShader.replace('gl_PointSize = size * particleSize;','gl_PointSize = size * particleSize; vParticlePhase = particlePhase;');
+            shader.fragmentShader='uniform float pTime; uniform float pFlap; varying float vParticlePhase;\n'+shader.fragmentShader.replace('#include <map_particle_fragment>',
+              'vec2 pCoord = gl_PointCoord;\nif (pFlap > 0.0) { float pw = max(0.2, abs(cos(pTime * pFlap * 3.14159 + vParticlePhase * 6.2832))); pCoord.x = (pCoord.x - 0.5) / pw + 0.5; if (pCoord.x < 0.0 || pCoord.x > 1.0) discard; }\n'+chunk.split('gl_PointCoord').join('pCoord'));
+          }};
         this.points = new THREE.Points(geo,material);
         this.el.object3D.add(this.points);
         // touch: every particle keeps an offset on top of its own motion, so the motion itself stays as it was
@@ -559,6 +569,7 @@ const Studio = (() => {
       tick(time, dt) {
         if(!this.points||this.el.closest("[data-studio-editing]"))return;
         const dtS = Math.min(0.1, (dt || 16) / 1000);
+        if (this.flapU) this.flapU.pTime.value = (this.flapU.pTime.value + dtS) % 1000;
         const arr = this.points.geometry.attributes.position.array;
         const half = this.data.height / 2, off = this.off;
         if (off) for (let i = 0; i < arr.length; i += 3) { arr[i] -= off[i]; arr[i + 1] -= off[i + 1]; }
@@ -852,6 +863,15 @@ vec4 baFilter(vec2 uv) {
   const PATTERN_GLSL = `
 uniform float bpMode; uniform vec3 bpC1; uniform vec3 bpC2; uniform vec3 bpC3; uniform float bpSize; uniform float bpTime;
 uniform float bpSeed; uniform float bpAspect; uniform float bpShape; uniform float bpPx;
+uniform vec3 bpTouch; uniform float bpTouchMode; uniform float bpClock; // the finger: x, y on the layer (0..1) and how strongly (0 = none)
+vec2 bpWarp(vec2 uv) { // the picture bends around the finger: 1 ripples, 2 a lens that pulls it in, 3 a whirl
+  if (bpTouch.z < 0.001 || bpTouchMode < 0.5) return uv;
+  vec2 d = (uv - bpTouch.xy) * vec2(bpAspect, 1.0); float r = length(d), s = bpTouch.z;
+  if (bpTouchMode < 1.5) { float f = exp(-r * r / 0.16); d += (r > 0.0001 ? d / r : vec2(0.0)) * sin(r * 34.0 - bpClock * 7.0) * 0.022 * f * s; }
+  else if (bpTouchMode < 2.5) { d *= 1.0 - 0.62 * s * exp(-r * r / 0.07); }
+  else { float a = 2.6 * s * exp(-r * r / 0.09), ca = cos(a), sa = sin(a); d = vec2(d.x * ca - d.y * sa, d.x * sa + d.y * ca); }
+  return bpTouch.xy + d / vec2(bpAspect, 1.0);
+}
 float bpHash(vec2 p) { vec3 q = fract(vec3(p.xyx) * 0.1031 + bpSeed * 0.0137); q += dot(q, q.yzx + 33.33); return fract((q.x + q.y) * q.z); }
 vec2 bpHash2(vec2 p) { return vec2(bpHash(p), bpHash(p + 17.31)); }
 float bpNoise(vec2 p) { // gradient noise, about 0..1
@@ -986,7 +1006,8 @@ vec4 bpPattern(vec2 uv) {
     const p = el.pattern;
     if (el.type !== "pattern") return p == null;
     return !!p && PATTERN_IDS.includes(p.look) && Array.isArray(p.colors) && p.colors.length === 3 && p.colors.every((c) => /^#[0-9a-f]{6}$/i.test(c))
-      && [p.size, p.speed].every((v) => Number.isFinite(v) && v >= 0 && v <= 1) && Number.isInteger(p.seed) && p.seed >= 0 && p.seed < 1000 && PATTERN_SHAPES.some((s) => s[0] === p.shape);
+      && [p.size, p.speed].every((v) => Number.isFinite(v) && v >= 0 && v <= 1) && Number.isInteger(p.seed) && p.seed >= 0 && p.seed < 1000 && PATTERN_SHAPES.some((s) => s[0] === p.shape)
+      && (p.touch == null || p.touch === "none" || PATTERN_TOUCH.includes(p.touch)) && (p.touchPower == null || (Number.isFinite(p.touchPower) && p.touchPower >= 0.1 && p.touchPower <= 1));
   }
   // Uniform values for a layer of the given proportions (width / height); px: one pixel in square units
   function patternValues(el, aspect, px) {
@@ -1001,20 +1022,54 @@ vec4 bpPattern(vec2 uv) {
       Object.assign(shader.uniforms, uniforms);
       shader.vertexShader = "#define USE_UV\n" + shader.vertexShader;
       shader.fragmentShader = "#define USE_UV\n" + shader.fragmentShader.replace(/void main\(\)\s*\{/, PATTERN_GLSL + "\nvoid main() {")
-        .replace("#include <map_fragment>", "diffuseColor *= bpLinear(bpPattern(vUv));"); // the scene works in linear colour
+        .replace("#include <map_fragment>", "diffuseColor *= bpLinear(bpPattern(bpWarp(vUv)));"); // the scene works in linear colour
     };
     mat.customProgramCacheKey = () => "studio-pattern";
     mat.needsUpdate = true;
   }
+  // Where the finger is on an object's own flat face (its z = 0), in the object's own units; null when it cannot be told.
+  // The projection is inverted here each time: the AR engine writes the camera's projection matrix directly.
+  function fingerOnPlane(obj, sc, T) {
+    const cam = sc && sc.camera, cv = sc && sc.canvas; if (!cam || !cv || !obj) return null;
+    const r = cv.getBoundingClientRect(); if (!r.width || !r.height) return null;
+    if (!T.m) { T.m = new THREE.Matrix4(); T.a = new THREE.Vector3(); T.b = new THREE.Vector3(); T.p = { x: 0, y: 0 }; }
+    T.a.setFromMatrixPosition(cam.matrixWorld);
+    T.b.set((finger.x - r.left) / r.width * 2 - 1, 1 - (finger.y - r.top) / r.height * 2, 0.5).applyMatrix4(T.m.copy(cam.projectionMatrix).invert()).applyMatrix4(cam.matrixWorld);
+    T.m.copy(obj.matrixWorld).invert(); T.a.applyMatrix4(T.m); T.b.applyMatrix4(T.m);
+    const dz = T.b.z - T.a.z; if (Math.abs(dz) < 1e-9) return null;
+    const t = -T.a.z / dz; if (!(t > 0) || !Number.isFinite(t)) return null;
+    T.p.x = T.a.x + (T.b.x - T.a.x) * t; T.p.y = T.a.y + (T.b.y - T.a.y) * t; return T.p;
+  }
   function ensurePatternComponent() {
     if (!window.AFRAME || AFRAME.components["studio-pattern"]) return;
     AFRAME.registerComponent("studio-pattern", {
-      schema: { values: { default: "{}" }, speed: { default: 0 } },
+      schema: { values: { default: "{}" }, speed: { default: 0 }, touch: { default: "none" }, touchPower: { default: 0.6 } },
       init() {
         this.t = 0;
         this.uniforms = {};
-        for (const k of ["bpMode", "bpSize", "bpTime", "bpSeed", "bpAspect", "bpShape", "bpPx"]) this.uniforms[k] = { value: 0 };
-        for (const k of ["bpC1", "bpC2", "bpC3"]) this.uniforms[k] = { value: new THREE.Vector3() };
+        for (const k of ["bpMode", "bpSize", "bpTime", "bpSeed", "bpAspect", "bpShape", "bpPx", "bpTouchMode", "bpClock"]) this.uniforms[k] = { value: 0 };
+        for (const k of ["bpC1", "bpC2", "bpC3", "bpTouch"]) this.uniforms[k] = { value: new THREE.Vector3() };
+        this.grabbed = null;
+        if (PATTERN_TOUCH.includes(this.data.touch)) { watchFinger(); finger.users.add(this); }
+      },
+      remove() { finger.users.delete(this); },
+      shown() { for (let o = this.el.object3D; o; o = o.parent) if (!o.visible) return false; return !this.el.closest("[data-studio-editing]"); },
+      // where the finger is on the layer, as 0..1 across and up it (null when it cannot be told)
+      fingerUv() {
+        const mesh = this.el.getObject3D("mesh"), g = mesh && mesh.geometry && mesh.geometry.parameters; if (!g || !g.width || !g.height) return null;
+        const p = fingerOnPlane(mesh, this.el.sceneEl, this.tmp || (this.tmp = {})); if (!p) return null;
+        p.x = p.x / g.width + 0.5; p.y = p.y / g.height + 0.5; return p;
+      },
+      // a press on the layer keeps the preview from turning with that drag
+      grab() { this.grabbed = null; if (!PATTERN_TOUCH.includes(this.data.touch) || !this.shown()) return false; const p = this.fingerUv(); if (!p || p.x < 0 || p.x > 1 || p.y < 0 || p.y > 1) return false; this.grabbed = true; return true; },
+      touchStep(dt) {
+        const u = this.uniforms.bpTouch.value, mode = PATTERN_TOUCH.indexOf(this.data.touch) + 1;
+        this.uniforms.bpTouchMode.value = mode; if (!mode) { u.z = 0; return; }
+        const live = finger.held || (finger.mouse && finger.seen), p = live && this.shown() ? this.fingerUv() : null;
+        const on = !!p && p.x > -0.15 && p.x < 1.15 && p.y > -0.15 && p.y < 1.15, k = 1 - Math.exp(-(on ? 9 : 3) * dt);
+        if (on) { if (u.z < 0.02) { u.x = p.x; u.y = p.y; } else { const m = 1 - Math.exp(-14 * dt); u.x += (p.x - u.x) * m; u.y += (p.y - u.y) * m; } }
+        u.z += ((on ? Math.min(1, Math.max(0.1, this.data.touchPower)) : 0) - u.z) * k;
+        this.uniforms.bpClock.value = (this.uniforms.bpClock.value + dt) % 1000;
       },
       update() {
         const v = JSON.parse(this.data.values);
@@ -1023,6 +1078,7 @@ vec4 bpPattern(vec2 uv) {
       tick(time, dt) { // the material can arrive late or be rebuilt, so it is checked every frame
         this.t += Math.min(dt || 0, 100) / 1000 * this.data.speed;
         this.uniforms.bpTime.value = this.t;
+        this.touchStep(Math.min(dt || 0, 100) / 1000);
         this.el.object3D.traverse((n) => { if (n.isMesh) patchPatternMaterial(n.material, this.uniforms); });
       }
     });
@@ -1284,7 +1340,7 @@ vec4 bpPattern(vec2 uv) {
       remove() { this.el.removeObject3D("mesh"); this.mesh.geometry.dispose(); if (this.mat.uniforms.atlas.value) this.mat.uniforms.atlas.value.dispose(); this.mat.dispose(); }
     });
   }
-  function validParticles(el){const p=el.particles;if(!p)return true;if(typeof p!=='object'||Array.isArray(p))return false;for(const [k,min,max]of [['lifetime',0,60],['endSize',0,5],['count',10,500],['size',2,200],['speed',.2,10]])if(p[k]!=null&&(!Number.isFinite(p[k])||p[k]<min||p[k]>max))return false;if(p.emitter!=null&&!['box','disc','sphere'].includes(p.emitter))return false;if(p.direction!=null&&(!Number.isInteger(p.direction)||p.direction<-3||p.direction>359))return false;if(p.spread!=null&&(!Number.isFinite(p.spread)||p.spread<.1||p.spread>2))return false;if(p.endColor!=null&&!/^#[0-9a-f]{6}$/i.test(p.endColor))return false;if(p.life2!=null&&(!Number.isFinite(p.life2)||p.life2<0||p.life2>60))return false;if(p.color2!=null&&p.color2!==''&&!/^#[0-9a-f]{6}$/i.test(p.color2))return false;if(p.fade!=null&&typeof p.fade!=='boolean')return false;if(p.turn!=null&&typeof p.turn!=='boolean')return false;if(p.touch!=null&&p.touch!=='none'&&!TOUCH_MODES.includes(p.touch))return false;if(p.touchPower!=null&&(!Number.isFinite(p.touchPower)||p.touchPower<.1||p.touchPower>1))return false;if(p.touchRange!=null&&(!Number.isFinite(p.touchRange)||p.touchRange<.1||p.touchRange>1.5))return false;if(p.touchBack!=null&&typeof p.touchBack!=='boolean')return false;return true;}
+  function validParticles(el){const p=el.particles;if(!p)return true;if(typeof p!=='object'||Array.isArray(p))return false;for(const [k,min,max]of [['lifetime',0,60],['endSize',0,5],['count',10,500],['size',2,200],['speed',.2,10]])if(p[k]!=null&&(!Number.isFinite(p[k])||p[k]<min||p[k]>max))return false;if(p.emitter!=null&&!['box','disc','sphere'].includes(p.emitter))return false;if(p.direction!=null&&(!Number.isInteger(p.direction)||p.direction<-3||p.direction>359))return false;if(p.spread!=null&&(!Number.isFinite(p.spread)||p.spread<.1||p.spread>2))return false;if(p.endColor!=null&&!/^#[0-9a-f]{6}$/i.test(p.endColor))return false;if(p.life2!=null&&(!Number.isFinite(p.life2)||p.life2<0||p.life2>60))return false;if(p.color2!=null&&p.color2!==''&&!/^#[0-9a-f]{6}$/i.test(p.color2))return false;if(p.fade!=null&&typeof p.fade!=='boolean')return false;if(p.turn!=null&&typeof p.turn!=='boolean')return false;if(p.flap!=null&&(!Number.isFinite(p.flap)||p.flap<0||p.flap>12))return false;if(p.touch!=null&&p.touch!=='none'&&!TOUCH_MODES.includes(p.touch))return false;if(p.touchPower!=null&&(!Number.isFinite(p.touchPower)||p.touchPower<.1||p.touchPower>1))return false;if(p.touchRange!=null&&(!Number.isFinite(p.touchRange)||p.touchRange<.1||p.touchRange>1.5))return false;if(p.touchBack!=null&&typeof p.touchBack!=='boolean')return false;return true;}
   function validCrop(el){const c=el.crop;return !c||['image','video'].includes(el.type)&&['x','y','w','h'].every(k=>Number.isFinite(c[k]))&&c.x>=0&&c.y>=0&&c.w>=.01&&c.h>=.01&&c.x+c.w<=1.000001&&c.y+c.h<=1.000001;}
   function setImageCrop(rec,el,crop){
     const old=el.crop||{x:0,y:0,w:1,h:1};const sourceAspect=(el.aspect||1)/(old.w/old.h);
@@ -2102,7 +2158,7 @@ vec4 bpPattern(vec2 uv) {
       e = document.createElement("a-entity");
       let spriteAttr = "";
       if (pc.preset === "custom" && pc.spriteAssetId && rec.assets && rec.assets[pc.spriteAssetId]) spriteAttr = `; sprite: ${blobURL(rec.assets[pc.spriteAssetId])}`;
-      e.setAttribute("particles", `preset: ${pc.preset || "sparkle"}; count: ${pc.count || 120}; color: ${pc.color || "#ffd94d"}; size: ${pc.size || 12}; speed: ${pc.speed || 1}; width: ${ts.w}; height: ${ts.h}; lifetime: ${pc.lifetime||0}; emitter: ${pc.emitter||"box"}; endColor: ${pc.endColor||pc.color||"#ffd94d"}; endSize: ${pc.endSize==null?1:pc.endSize}; fade: ${!!pc.fade}; spread: ${pc.spread>0?Math.min(2,pc.spread):1}${pc.life2>0?"; life2: "+pc.life2:""}${pc.color2?"; color2: "+pc.color2:""}${spriteAttr}${pc.direction != null ? "; direction: " + (pc.direction | 0) : ""}${pc.turn ? "; turn: true" : ""}${TOUCH_MODES.includes(pc.touch) ? `; touch: ${pc.touch}; touchPower: ${pc.touchPower > 0 ? pc.touchPower : 0.6}; touchRange: ${pc.touchRange > 0 ? pc.touchRange : 0.6}; touchBack: ${pc.touchBack !== false}` : ""}`);
+      e.setAttribute("particles", `preset: ${pc.preset || "sparkle"}; count: ${pc.count || 120}; color: ${pc.color || "#ffd94d"}; size: ${pc.size || 12}; speed: ${pc.speed || 1}; width: ${ts.w}; height: ${ts.h}; lifetime: ${pc.lifetime||0}; emitter: ${pc.emitter||"box"}; endColor: ${pc.endColor||pc.color||"#ffd94d"}; endSize: ${pc.endSize==null?1:pc.endSize}; fade: ${!!pc.fade}; spread: ${pc.spread>0?Math.min(2,pc.spread):1}${pc.life2>0?"; life2: "+pc.life2:""}${pc.color2?"; color2: "+pc.color2:""}${spriteAttr}${pc.direction != null ? "; direction: " + (pc.direction | 0) : ""}${pc.turn ? "; turn: true" : ""}${pc.flap > 0 ? "; flap: " + pc.flap : ""}${TOUCH_MODES.includes(pc.touch) ? `; touch: ${pc.touch}; touchPower: ${pc.touchPower > 0 ? pc.touchPower : 0.6}; touchRange: ${pc.touchRange > 0 ? pc.touchRange : 0.6}; touchBack: ${pc.touchBack !== false}` : ""}`);
     } else if (el.type === "model") {
       // glTF/GLB: wrapper carries placement (timeline/tap target); inner child carries the
       // normalized model scale so timeline scale keys don't fight the fit-to-size normalization.
@@ -2154,7 +2210,8 @@ vec4 bpPattern(vec2 uv) {
       e = document.createElement("a-plane");
       e.setAttribute("material", { shader: "flat", color: "#ffffff", transparent: true });
       e.setAttribute("width", ts.w); e.setAttribute("height", ts.h);
-      e.setAttribute("studio-pattern", { values: JSON.stringify(patternValues(el, ts.w / ts.h, 1 / 600)), speed: (el.pattern && el.pattern.speed) || 0 });
+      e.setAttribute("studio-pattern", { values: JSON.stringify(patternValues(el, ts.w / ts.h, 1 / 600)), speed: (el.pattern && el.pattern.speed) || 0,
+        touch: el.pattern && PATTERN_TOUCH.includes(el.pattern.touch) ? el.pattern.touch : "none", touchPower: el.pattern && el.pattern.touchPower > 0 ? el.pattern.touchPower : 0.6 });
     } else if (el.type === "scatter") {
       e = document.createElement("a-entity"); // like a group: motion, opacity and turns act on the whole line of copies
       buildScatter(rec, el, e, idx, mode, opts);
@@ -3292,7 +3349,7 @@ vec4 bpPattern(vec2 uv) {
   return { TARGET_W, TARGET_H, newId, inspectVideo, validateModelBlob, prepareModelBlob, modelCompressionKinds, DECODER_DRACO_PATH, DECODER_MESHOPT_PATH, modelClipNames, modelClipInfo, loadImage, loadImageBlob, loadFailed, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON, steadyTarget,
            audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, blobURL, releaseBlobURL, blobURLs, historyState, restoreHistory, duplicateLayer, exportJSON, exportObject, exportedAssetIds, importPublished, missingAssets, importJSON, exportZIP, importZIP, zipToJSON, fetchPublished, ownBlob, assetHealth, fileHealth, seedDemo, normEl, ANIMS, drawTextCanvas, loadTextFonts, lineDir, visualOrder, ENTER_EXIT: ENTER_EXIT.map(([id, enter, exit, , text]) => ({ id, enter, exit, text: !!text })), enterExitFor, validEnterExit, hasEnterExit, enterExitDur, fxLook, fxTimes, drawEnterExitText, animSpeed, FX: FX.map(([id, name]) => ({ id, name, moving: FX_MOVING.has(id) })), fxFrame,
            PATTERNS: PATTERNS.map(([id, name, colors, speed]) => ({ id, name, colors: colors.slice(), speed })), PATTERN_PALETTES: PATTERN_PALETTES.map(([name, colors]) => ({ name, colors: colors.slice() })),
-           fingerGrab: () => finger.grab, TOUCH_MODES, textFxOf, TEXT_FX: TEXT_FX.map(([id, name, color, amount]) => ({ id, name, color, amount })), validTextFx,
+           fingerGrab: () => finger.grab, TOUCH_MODES, PATTERN_TOUCH, validPattern, textFxOf, TEXT_FX: TEXT_FX.map(([id, name, color, amount]) => ({ id, name, color, amount })), validTextFx,
            PATTERN_SHAPES: PATTERN_SHAPES.map(([id, name]) => ({ id, name })), patternDefaults, patternAspect, patternFrame, validPattern, validFx, validChroma, keyValues, pixelAt, CHROMA_DEFAULT, SCATTER_TYPES, SCATTER_MAX, mediaType, isStill, stillAt, setStill, scatterItem, scatterLimit, scatterPath, scatterCopies, scatterCopyEl, scatterBounds, refreshScatter, makeScatter, makeFan, scaleScatter, breakScatter, validScatter, FONTS: FONTS.map(([id, name]) => ({ id, name })), buildElementEntity, groupOf, fitGroup, makeGroup, breakGroup, leaveGroup, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, videoHasPicture, ensureTimeCubeComponent, bakeTimeCube, validTimeCube, TIMECUBE_DIRS, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, artworkFingerprint, fingerprintDistance, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, turnImageBlob, turnLayers, trackList, makeTrackRunner,
            load: id=>settledRead(id), all: ()=>settledRead(), del: delExperience, LIMITS, mediaBytes, pushBack, addBlocker, publishBlocker, restoreBlocker, exportWarning, exportJSONSize,
            onSaveState, installSaveGuard, saveState, soundOnTouch, snapAngle, syncMedia,

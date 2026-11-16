@@ -228,6 +228,12 @@ window.Inspector = (() => {
       App.changed(true); sync();
     } }, icon("image", 16), h("span", "מילוי תמונת המקור"));
     const col = (i) => K({ label: "צבע " + (i + 1), get: () => App.sel().pattern.colors[i], set: P((p, v) => { p.colors = p.colors.slice(); p.colors[i] = v; }) });
+    const pt = () => (Studio.PATTERN_TOUCH.includes(App.sel().pattern.touch) ? App.sel().pattern.touch : "none");
+    const touchGroup = UI.group("מגע",
+      L({ label: "כשנוגעים ברקע", options: [{ id: "none", name: "לא מגיב" }, { id: "ripple", name: "אדוות, כמו אבן במים" }, { id: "lens", name: "נמשך אל האצבע" }, { id: "swirl", name: "מסתחרר סביב האצבע" }], get: pt,
+        set: (v, f) => { P((p, val) => { if (val === "none") { delete p.touch; delete p.touchPower; } else p.touch = val; })(v, f); build(); } }),
+      pt() !== "none" ? S(Object.assign({ label: "עוצמה", min: 0.1, max: 1, step: 0.05, get: () => (App.sel().pattern.touchPower > 0 ? App.sel().pattern.touchPower : 0.6), set: P((p, v) => { p.touchPower = v; }) }, pct)) : null,
+      pt() !== "none" ? note("בתצוגה ובמצלמה: נוגעים ברקע או גוררים עליו אצבע.") : null);
     return [
       UI.group("מראה", looks),
       UI.group("צבעים", pals, h("div.color-trio", col(0).node, col(1).node, col(2).node)),
@@ -237,7 +243,8 @@ window.Inspector = (() => {
         S({ label: "וריאציה", min: 0, max: 999, step: 1, get: () => App.sel().pattern.seed, set: P((p, v) => { p.seed = Math.round(v); }) }),
         L({ label: "צורה", options: Studio.PATTERN_SHAPES, get: () => App.sel().pattern.shape,
           set: P((p, v, x) => { p.shape = v; x.aspect = Studio.patternAspect(App.rec, v); x.h = (x.w / x.aspect) * artRatio(); }) }),
-        fill, opacity())
+        fill, opacity()),
+      touchGroup
     ];
   }
 
@@ -274,6 +281,7 @@ window.Inspector = (() => {
         S({ label: "מהירות", min: 0.2, max: 10, step: 0.1, get: () => pc().speed || 1, set: P((p, v) => { p.speed = v; }) }),
         S({ label: "פיזור", min: 0.1, max: 2, step: 0.1, get: () => (pc().spread > 0 ? pc().spread : 1), set: P((p, v) => { p.spread = v; }) }),
         pc().turn && pc().direction >= 0 ? S({ label: "נטייה ברוח", min: -60, max: 60, step: 1, unit: "°", get: () => (pc().direction | 0) - 180, set: (v, f) => { P((p, val) => { p.direction = 180 + Math.round(val); })(v, f); } }) : null,
+        pc().flap > 0 ? S({ label: "נפנוף כנפיים", min: 0.5, max: 8, step: 0.1, get: () => pc().flap, set: P((p, v) => { p.flap = v; }) }) : null,
         L({ label: "כיוון", options: dirs, get: () => (pc().direction == null ? "preset" : String(pc().direction)), set: P((p, v) => { p.direction = v === "preset" ? null : parseInt(v, 10); }) }),
         L({ label: "צורת האזור", options: [{ id: "box", name: "מלבן" }, { id: "disc", name: "עיגול" }, { id: "sphere", name: "כדור" }], get: () => pc().emitter || "box", set: P((p, v) => { p.emitter = v; }) })),
       UI.group("צבע",

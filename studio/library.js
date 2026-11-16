@@ -80,8 +80,10 @@ window.StarterLibrary = (() => {
     ['gold','אבק זהב','sparkle',{count:140,size:12,speed:.3,color:'#ffd94d',color2:'#fff3b0',direction:-2,lifetime:1.5,life2:3,fade:true,endSize:.3}],
     ['bubbles','בועות','bubble',{count:40,size:24,speed:.5,color:'#bfe9ff',color2:'#ffffff',direction:0,lifetime:3,life2:6,fade:true}],
     ['stars','כוכבים מתפזרים','star',{count:80,size:16,speed:.5,color:'#ffffff',color2:'#ffe680',direction:-3,lifetime:2,life2:4,fade:true,endSize:.2}],
-    ['confetti','קונפטי','confetti',{count:150,size:14,speed:.9,color:'#ff4d6d',color2:'#4dc3ff',direction:180,lifetime:3,life2:5}]
-  ].map(([id,name,sprite,particles]) => ({id:'p-'+id,name,detail:'חלקיקים · אפשר לשנות צבע וכמות',kind:'particles',file:'particles/'+sprite+'.png',thumb:'thumbs/p-'+id+'.png',particles,group:'particles'}));
+    ['confetti','קונפטי','confetti',{count:150,size:14,speed:.9,color:'#ff4d6d',color2:'#4dc3ff',direction:180,lifetime:3,life2:5}],
+    // wings open and close (flap: times a second), each butterfly in its own time; they drift up across the artwork
+    ['butterflies','פרפרים','butterfly',{count:26,size:72,speed:.5,color:'#ff9a3c',color2:'#6ec6ff',lifetime:6,life2:11,fade:true,flap:2.4},1,1]
+  ].map(([id,name,sprite,particles,w,h]) => ({id:'p-'+id,name,detail:'חלקיקים · אפשר לשנות צבע וכמות',kind:'particles',file:'particles/'+sprite+'.png',thumb:'thumbs/p-'+id+'.png',particles,w,h,group:'particles'}));
   // Weather as particles (sprites and thumbnails: tools/weather_sprites.cjs, outside this repository): unlike the filmed
   // loops these stay editable - amount, size, speed, spread, direction, colour. They cover the artwork (w = h = 1), wrap
   // around its edges (no lifetime) and, with turn, lean their streaks into the wind.
@@ -161,25 +163,44 @@ window.StarterLibrary = (() => {
   ].map(([id,name,w]) => ({id:'fx3d-'+id,name,detail:'חלל · תלת־ממד · לולאה',kind:'model',file:'models/fx3d-'+id+'.glb',thumb:'thumbs/fx3d-'+id+'.png',clip:'Loop',w,group:'cosmic'}));
   const entries = [...scenes, ...fx3d, ...w3d, ...weatherParticles, ...wreal, ...k3d, ...models, ...scans, ...animated, ...stickers];
   const groups = [['all','הכול'],['scene','סצנות בתנועה'],['fx','אפקטים מרחפים'],['weather','מזג אוויר'],['weather-real','מזג אוויר ריאליסטי'],['cosmic','חלל וחלקיקים'],['model','תלת־ממד'],['animal','חיות בתנועה'],['sea','ים'],['dino','דינוזאורים'],['creature','דמויות'],['sticker','מדבקות']];
+  // The 3D shelf (opened from the add sheet's "תלת־ממד"): only the models, by kind. The 'model' group is split here by
+  // file id (without the 'ph-' prefix); an id in none of the lists lands in 'home'. A new plant or flower: add its id to plant.
+  const CAT3D = {
+    plant: 'potted_plant_04 potted_plant_02 potted_plant_01 shrub_sorrel_01 pachira_aquatica_01 flower_stinkkruid leipoldtia_schultzei didelta_spinosa othonna_cerarioides quiver_tree_02 jacaranda_tree island_tree_02 tree_small_02 fir_sapling pine_sapling_small dead_tree_trunk_02 planter_box_01',
+    food: 'food_pomegranate_01 food_apple_01 lemon croissant carrot_cake strawberry_chocolate_cake bananas food_avocado_01 food_pears_asian_01 food_kiwi_01 food_lime_01 food_lychee_01 food_ginger_01 yellow_onion sweet_potato',
+    statue: 'fancy_picture_frame_01 marble_bust_01 horse_statue_01 concrete_cat_statue carved_wooden_elephant garden_gnome bronze_shark_statue bronze_whale_statue bull_head gothic_statue horse_head lion_head',
+    light: 'lantern_01 wooden_lantern_01 brass_diya_lantern chinese_chandelier lightbulb_01 chandelier_03 desk_lamp_arm_01 street_lamp_01 brass_candleholders wooden_candlestick vintage_flashlight',
+    retro: 'boombox cassette_player camera_01 television_01 alarm_clock_01 mantel_clock_01 vintage_pocket_watch seadogs_compass filmstrip_projector_8mm vintage_video_camera vintage_grandfather_clock_01 vintage_binocular magnifying_glass_01 vintage_microscope cashregister_01 classic_laptop korean_public_payphone_01 megaphone_01 vintage_electric_kettle vintage_microwave retro_multimeter vintage_stapler vintage_telephone_wall_clock wall_clock chemistry_set sk-gramophone',
+    play: 'rubber_duck_toy ukulele_01 dartboard football chess_set american_football baseball_01 treasure_chest dutch_ship_medium lifebuoy'
+  };
+  const cats3d = [['all','הכול'],['plant','צמחים ופרחים'],['food','אוכל'],['statue','פסלים ואמנות'],['light','תאורה'],['retro','וינטג׳ ומכשירים'],['play','משחק והרפתקה'],['home','בית וחפצים'],
+    ['animal','חיות בתנועה'],['sea','ים'],['dino','דינוזאורים'],['creature','דמויות'],['fx','אפקטים מרחפים'],['weather','מזג אוויר'],['cosmic','חלל וחלקיקים']];
+  const catOf = {}; for (const [c, ids] of Object.entries(CAT3D)) for (const id of ids.split(' ')) catOf[id] = c;
+  const cat3d = (e) => (e.group !== 'model' ? e.group : catOf[e.id.replace(/^ph-/, '')] || 'home');
   const MIME = {glb:'model/gltf-binary',mp4:'video/mp4',png:'image/png',gif:'image/gif',wav:'audio/wav'};
-  // opts.group: the group shown first. opts.onImport: with it, the 3D group gets a small button for a model file of one's own.
+  // opts.only3d: the 3D shelf - only the models, sorted and filtered by kind. opts.onImport: with it, the shelf gets a
+  // small button for a model file of one's own.
   async function open(importAsset, opts = {}) {
+    const only3d = !!opts.only3d, shelf = only3d ? cats3d : groups, order = cats3d.map(([c]) => c);
+    const shown = only3d ? entries.filter((e) => e.kind === 'model').map((e) => Object.assign({}, e, { group: cat3d(e) })).sort((a, b) => order.indexOf(a.group) - order.indexOf(b.group)) : entries;
     const dialog = document.createElement('dialog'); dialog.id='starter-library'; dialog.dir='rtl';
     const head=document.createElement('div');head.className='library-head';
-    const title=document.createElement('h2');title.textContent='ספריית התחלה';
+    const title=document.createElement('h2');title.textContent=only3d?'תלת־ממד':'ספריית התחלה';
     const close=document.createElement('button');close.textContent='סגירה';close.className='ghost';close.onclick=()=>dialog.close();
     const own=document.createElement('button');own.type='button';own.className='ghost library-import';own.title='ייבוא מודל תלת־ממד משלי (GLB, ZIP, FBX, OBJ)';own.setAttribute('aria-label',own.title);own.hidden=true;
     if(window.UI&&UI.icon)own.append(UI.icon('upload',18));const ownText=document.createElement('span');ownText.textContent='ייבוא';own.append(ownText);
     own.onclick=()=>{dialog.close();opts.onImport();};
     const side=document.createElement('span');side.className='library-side';side.append(own,close);
     head.append(title,side);dialog.append(head);
-    const note=document.createElement('p');note.className='hint';note.textContent=entries.length+' פריטים. נגיעה בפריט מוסיפה אותו ליצירה: מודלים חינמיים (CC0), גם בתנועה, אפקטים מרחפים, מזג אוויר ומדבקות. נשמרים עם היצירה במכשיר, בלי חשבון ובלי תשלום.';dialog.append(note);
+    const note=document.createElement('p');note.className='hint';note.textContent=only3d?shown.length+' מודלים, מסודרים לפי סוג. נגיעה במודל מוסיפה אותו ליצירה. כפתור ״ייבוא״ מוסיף מודל משלך.':entries.length+' פריטים. נגיעה בפריט מוסיפה אותו ליצירה: מודלים חינמיים (CC0), גם בתנועה, אפקטים מרחפים, מזג אוויר ומדבקות. נשמרים עם היצירה במכשיר, בלי חשבון ובלי תשלום.';dialog.append(note);
     const filters=document.createElement('div');filters.className='library-filters';filters.setAttribute('role','group');filters.setAttribute('aria-label','סוג פריט');dialog.append(filters);
     const grid=document.createElement('div');grid.className='library-grid';dialog.append(grid);
     const status=document.createElement('p');status.setAttribute('role','status');dialog.append(status);
     let busy=false;
     // The whole card is the add button: one tap on the picture adds the item.
-    for(const item of entries){
+    let lastGroup=null;
+    for(const item of shown){
+      if(only3d&&item.group!==lastGroup){lastGroup=item.group;const sec=document.createElement('h3');sec.className='library-section';sec.dataset.group=item.group;sec.textContent=(cats3d.find(([c])=>c===item.group)||[])[1]||'';grid.append(sec);}
       const card=document.createElement('button');card.type='button';card.className='library-card';card.dataset.group=item.group;
       card.setAttribute('aria-label','הוספת '+item.name);card.dataset.libraryId=item.id;
       const visual=document.createElement('span');visual.className='library-thumb';
@@ -202,10 +223,11 @@ window.StarterLibrary = (() => {
       };
       card.append(visual,name,detail);grid.append(card);
     }
-    const show=(g)=>{own.hidden=!(opts.onImport&&g==='model');filters.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.group===g)));grid.querySelectorAll('.library-card').forEach(c=>{c.hidden=g!=='all'&&c.dataset.group!==g;});};
-    for(const [g,label] of groups){const b=document.createElement('button');b.type='button';b.className='ghost';b.dataset.group=g;b.textContent=label+' ('+(g==='all'?entries.length:entries.filter(e=>e.group===g).length)+')';b.onclick=()=>show(g);filters.append(b);}
-    show(groups.some(([g])=>g===opts.group)?opts.group:'all');
+    const show=(g)=>{filters.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.group===g)));grid.querySelectorAll('.library-card').forEach(c=>{c.hidden=g!=='all'&&c.dataset.group!==g;});grid.querySelectorAll('.library-section').forEach(s=>{s.hidden=g!=='all';});grid.scrollTop=0;};
+    own.hidden=!(only3d&&opts.onImport);
+    for(const [g,label] of shelf){const n=g==='all'?shown.length:shown.filter(e=>e.group===g).length;if(!n)continue;const b=document.createElement('button');b.type='button';b.className='ghost';b.dataset.group=g;b.textContent=label+' ('+n+')';b.onclick=()=>show(g);filters.append(b);}
+    show('all');
     dialog.addEventListener('close',()=>dialog.remove(),{once:true});document.body.append(dialog);dialog.showModal();close.focus();
   }
-  return {open,entries,particleStyles};
+  return {open,entries,particleStyles,cat3d,cats3d};
 })();

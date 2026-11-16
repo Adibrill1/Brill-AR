@@ -187,6 +187,9 @@ body[data-pane="layers"] #inspector, body[data-pane="inspector"] #layers-pane { 
 .multi-head { display: flex; gap: 6px; }
 .layers-empty { display: grid; justify-items: center; gap: 12px; padding: 22px 16px; text-align: center; color: var(--muted); }
 .layers-empty p { max-width: 280px; font-size: 14px; }
+#add-row { padding: 0 10px 8px; }
+#add-row[hidden] { display: none; }
+#add-row .btn { width: 100%; justify-content: center; }
 #art-card { display: flex; align-items: center; gap: 10px; margin: 0 10px calc(12px + var(--safe-b)); padding: 8px 10px; border-radius: 13px; border: 1px dashed var(--line-2); }
 
 /* ---------- inspector ---------- */
@@ -334,6 +337,9 @@ dialog::backdrop { background: rgba(6,5,10,.66); backdrop-filter: blur(3px); }
 #starter-library { width: min(880px, calc(100vw - 20px)); max-height: 90dvh; padding: 16px; border: 1px solid var(--line-2); border-radius: 20px; background: var(--surface); box-shadow: var(--shadow); }
 #starter-library .library-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 #starter-library h2 { font-size: 20px; font-weight: 800; }
+#starter-library .library-section { grid-column: 1 / -1; margin: 10px 2px 0; font-size: 15px; font-weight: 800; }
+#starter-library .library-section[hidden] { display: none; }
+#starter-library .library-section:first-child { margin-top: 0; }
 #starter-library .library-side { display: flex; align-items: center; gap: 6px; }
 #starter-library .library-import { display: inline-flex; align-items: center; gap: 6px; padding: 0 12px; }
 #starter-library .library-import[hidden] { display: none; }

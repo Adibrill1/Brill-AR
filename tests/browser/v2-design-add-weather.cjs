@@ -63,11 +63,27 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
   // 5. the 3D shelf from the add sheet, with the import button only there
   await p.locator('.tab[data-tab="add"]').click();await p.waitForSelector('dialog[open] .add-grid');
   await p.locator('dialog[open] .add-tile[data-add="model"]').click();await p.waitForSelector('#starter-library[open]');
-  assert.equal(await p.locator('#starter-library .library-filters button[data-group="model"]').getAttribute('aria-pressed'),'true','opens on the 3D shelf');
-  const shown=await p.locator('#starter-library .library-card:not([hidden])').evaluateAll(n=>[...new Set(n.map(x=>x.dataset.group))]);assert.deepEqual(shown,['model']);
+  assert.equal((await p.locator('#starter-library h2').textContent()).trim(),'תלת־ממד');
+  const shelf=await p.evaluate(()=>{const kinds=new Set(StarterLibrary.entries.filter(e=>e.kind==='model').map(e=>e.id)),cards=[...document.querySelectorAll('#starter-library .library-card')];
+    return {n:cards.length,all3d:cards.every(c=>kinds.has(c.dataset.libraryId)),want:kinds.size,chips:[...document.querySelectorAll('#starter-library .library-filters button')].map(b=>b.dataset.group),
+      heads:[...document.querySelectorAll('#starter-library .library-section')].map(s=>s.textContent),order:cards.map(c=>c.dataset.group).filter((g,i,a)=>g!==a[i-1])};});
+  assert.ok(shelf.all3d&&shelf.n===shelf.want,'only the 3D items, all of them: '+shelf.n+' of '+shelf.want);
+  assert.ok(!shelf.chips.includes('sticker')&&!shelf.chips.includes('scene')&&!shelf.chips.includes('weather-real')&&!shelf.chips.includes('model'),'no shelves of the rest of the library: '+shelf.chips);
+  assert.deepEqual(shelf.chips.slice(0,4),['all','plant','food','statue']);assert.equal(new Set(shelf.order).size,shelf.order.length,'sorted: each kind in one run');
+  assert.ok(shelf.heads.includes('צמחים ופרחים')&&shelf.heads.length===shelf.chips.length-1,'a heading for every kind');
   const imp=p.locator('#starter-library .library-import');assert.ok(await imp.isVisible(),'import button on the 3D shelf');await shot('library-3d');
-  await p.locator('#starter-library .library-filters button[data-group="all"]').click();assert.ok(!(await imp.isVisible()),'and only there');
-  await p.locator('#starter-library .library-filters button[data-group="model"]').click();
+  await p.locator('#starter-library .library-filters button[data-group="plant"]').click();
+  assert.deepEqual(await p.locator('#starter-library .library-card:not([hidden])').evaluateAll(n=>[...new Set(n.map(x=>x.dataset.group))]),['plant']);
+  assert.equal(await p.locator('#starter-library .library-section:not([hidden])').count(),0,'one kind: no headings');assert.ok(await imp.isVisible());await shot('library-3d-plants');
+  // the whole library is still whole, and has no import button
+  await p.keyboard.press('Escape');await p.waitForFunction(()=>!document.querySelector('#starter-library'));
+  await p.locator('.tab[data-tab="add"]').click();await p.locator('dialog[open] .add-library').click();await p.waitForSelector('#starter-library[open]');
+  assert.equal(await p.locator('#starter-library .library-card').count(),await p.evaluate(()=>StarterLibrary.entries.length));assert.ok(!(await imp.isVisible()),'no import button in the whole library');
+  assert.equal(await p.locator('#starter-library .library-filters button[data-group="model"]').count(),1);
+  await p.keyboard.press('Escape');await p.waitForFunction(()=>!document.querySelector('#starter-library'));
+  await p.locator('.tab[data-tab="add"]').click();await p.locator('dialog[open] .add-tile[data-add="model"]').click();await p.waitForSelector('#starter-library[open]');
+  // the layers page: one full "add layer" button, no small one in the head
+  assert.equal(await p.locator('#layers-pane .pane-head #btn-add').count(),0);assert.equal((await p.locator('#add-row #btn-add').textContent()).trim(),'הוספת שכבה');
   const [fc]=await Promise.all([p.waitForEvent('filechooser'),imp.click()]);assert.ok(fc,'the import button asks for a file');await fc.setFiles([]);
   await p.waitForFunction(()=>!document.querySelector('#starter-library'));
 
