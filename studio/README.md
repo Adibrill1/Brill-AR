@@ -8,7 +8,7 @@
 - `play.html` + `player.js` - הנגן: מריץ יצירה שמורה במצלמה (WebAR). פותחים מקישור "תצוגה בטלפון" בעורך.
 - `shared.js` - ליבה משותפת: שמירה מקומית (IndexedDB), ייצוא/ייבוא לקובץ JSON, וייצור מטרת-זיהוי מהתמונה שהועלתה.
 - `assets/demo/` - יצירת הדמו (נבנה מנכסים שנוצרו עבור הפרויקט).
-- `external/` - מנוע ה-AR (קוד פתוח, רישיון MIT של Niantic Spatial - ראו `8THWALL-MIT-LICENSE.txt`). לא לערוך ידנית; לנעול גרסה עובדת.
+- `external/` - מנוע ה-AR (קוד פתוח, רישיון MIT של Niantic Spatial). `external/xr/` הוא `@8thwall/engine` 0.1.0 מ-npm, כפי שהוא, עם קובץ `LICENSE` שלו (זיהוי תמונות בלבד, בלי SLAM); xrextras ו-landing-page - ראו `8THWALL-MIT-LICENSE.txt`. לא לערוך ידנית; לנעול גרסה עובדת.
 
 ## עקרונות
 
