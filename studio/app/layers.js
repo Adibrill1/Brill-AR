@@ -168,7 +168,7 @@ window.Layers = (() => {
     let note = "";
 
     if (kind === "particles") {
-      Object.assign(el, { w: 0.6, h: 0.6, particles: Object.assign({ count: 120, color: "#ffffff" }, o.particles || {}, { preset: "custom" }) });
+      Object.assign(el, { w: o.w > 0 ? Math.min(2, o.w) : 0.6, h: o.h > 0 ? Math.min(2, o.h) : 0.6, particles: Object.assign({ count: 120, color: "#ffffff" }, o.particles || {}, { preset: "custom" }) });
     } else if (kind === "video") {
       let info;
       try { info = await Studio.inspectVideo(f); if (!(info.width > 0 && info.height > 0)) throw 0; }
@@ -277,7 +277,7 @@ window.Layers = (() => {
     const tiles = styles.map((st) => h("button.part-tile", { type: "button", data: { style: st.id }, onclick: () => put(async () => {
       const r = await fetch("library/" + st.file); if (!r.ok) throw new Error("download");
       return new File([await r.blob()], st.file.split("/").pop(), { type: "image/png" });
-    }, { name: st.name, particles: st.particles }) }, h("span.part-pic", h("img", { src: "library/" + st.thumb, alt: "", loading: "lazy", draggable: false })), h("span.part-name", st.name)));
+    }, { name: st.name, particles: st.particles, w: st.w, h: st.h }) }, h("span.part-pic", h("img", { src: "library/" + st.thumb, alt: "", loading: "lazy", draggable: false })), h("span.part-name", st.name)));
     const own = h("button.part-tile", { type: "button", onclick: async () => {
       const f = await UI.pickFile("image/png,image/webp"); if (!f) return;
       if (f.size > 2 * 1048576) return toast("תמונת החלקיק גדולה מדי (עד 2MB)", { kind: "error" });
@@ -307,19 +307,21 @@ window.Layers = (() => {
     for (const f of files) { const k = kindOf(f); if (!k) { toast("״" + f.name + "״: סוג קובץ לא נתמך", { kind: "error" }); continue; } await addFile(k, f); }
   }
 
-  function openLibrary() {
+  function openLibrary(opts) {
     if (!App.rec.target) return needArt();
     window.StarterLibrary.open(async (kind, file, options) => {
       try { await importAsset(kind, file, options); }
       catch (e) { if (e.say) toast(e.say, { kind: "error" }); throw e; }
-    });
+    }, opts);
   }
+  // The 3D shelf of the library, with a small button there for a model file of one's own.
+  const open3d = () => openLibrary({ group: "model", onImport: async () => { const f = await UI.pickFile(ACCEPT.model); if (f) addFile("model", f); } });
   function needArt() { toast("קודם מעלים את תמונת היצירה", { action: { label: "העלאה", run: pickArtwork } }); }
 
   // ---------- the "add" sheet ----------
   const ADD = [
     ["image", "תמונה", "PNG, JPG או GIF"], ["video", "סרטון", "MP4 או MOV"], ["text", "טקסט", "כותרת או ברכה"],
-    ["pattern", "רקע מונפש", "צבעים שזזים"], ["particles", "חלקיקים", "לבבות, שלג, קונפטי ועוד"], ["model", "מודל תלת־ממד", "GLB, ZIP, FBX, OBJ"],
+    ["pattern", "רקע מונפש", "צבעים שזזים"], ["particles", "חלקיקים", "גשם, שלג, לבבות ועוד"], ["model", "תלת־ממד", "מודלים מוכנים, או ייבוא משלך"],
     ["sound", "צליל", "MP3, M4A, WAV"]
   ];
   function openAdd() {
@@ -330,10 +332,11 @@ window.Layers = (() => {
       if (kind === "text") return addText();
       if (kind === "pattern") return addPattern();
       if (kind === "particles") return openParticles();
+      if (kind === "model") return open3d();
       const f = await UI.pickFile(ACCEPT[kind]);
       if (f) addFile(kind, f);
     };
-    const tiles = ADD.map(([kind, name, hint]) => h("button.add-tile", { type: "button", onclick: pick(kind), style: { "--tint": TYPES[kind].tint } },
+    const tiles = ADD.map(([kind, name, hint]) => h("button.add-tile", { type: "button", data: { add: kind }, onclick: pick(kind), style: { "--tint": TYPES[kind].tint } },
       h("span.add-ic", icon(TYPES[kind].icon, 24)), h("span.add-name", name), h("span.add-hint", hint)));
     const lib = h("button.add-library", { type: "button", onclick: () => { d.close(); openLibrary(); } },
       h("span.add-ic", icon("library", 24)), h("span", h("span.add-name", "מהספרייה"), h("span.add-hint", "דמויות, אפקטים, צלילים וסצנות מוכנות")), icon("back", 18));

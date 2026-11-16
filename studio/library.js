@@ -82,6 +82,18 @@ window.StarterLibrary = (() => {
     ['stars','כוכבים מתפזרים','star',{count:80,size:16,speed:.5,color:'#ffffff',color2:'#ffe680',direction:-3,lifetime:2,life2:4,fade:true,endSize:.2}],
     ['confetti','קונפטי','confetti',{count:150,size:14,speed:.9,color:'#ff4d6d',color2:'#4dc3ff',direction:180,lifetime:3,life2:5}]
   ].map(([id,name,sprite,particles]) => ({id:'p-'+id,name,detail:'חלקיקים · אפשר לשנות צבע וכמות',kind:'particles',file:'particles/'+sprite+'.png',thumb:'thumbs/p-'+id+'.png',particles,group:'particles'}));
+  // Weather as particles (sprites and thumbnails: tools/weather_sprites.cjs, outside this repository): unlike the filmed
+  // loops these stay editable - amount, size, speed, spread, direction, colour. They cover the artwork (w = h = 1), wrap
+  // around its edges (no lifetime) and, with turn, lean their streaks into the wind.
+  const weatherParticles = [
+    ['rain','גשם','w-rain',{count:220,size:120,speed:6,color:'#dfe9f5',color2:'#9fb4c8',direction:180,turn:true}],
+    ['rain-wind','גשם כבד ברוח','w-rain',{count:380,size:150,speed:8,color:'#dfe9f5',color2:'#8fa6bd',direction:200,turn:true}],
+    ['snow','שלג רך','w-flake',{count:170,size:30,speed:.5,color:'#ffffff',color2:'#cfe2f5',direction:180}],
+    ['blizzard','סופת שלג','w-flake',{count:400,size:24,speed:3.5,color:'#ffffff',color2:'#d5e4f2',direction:240}],
+    ['hail','ברד','w-hail',{count:140,size:44,speed:7,color:'#ffffff',color2:'#cfe0ee',direction:185,turn:true}],
+    ['dust','אבק זהוב ברוח','w-dust',{count:320,size:16,speed:.8,color:'#f1d9a0',color2:'#fff3d0',direction:100}]
+  ].map(([id,name,sprite,particles]) => ({id:'pw-'+id,name,detail:'מזג אוויר · אפשר לשנות כמות, פיזור וכיוון',kind:'particles',file:'particles/'+sprite+'.png',thumb:'thumbs/pw-'+id+'.png',particles,w:1,h:1,group:'weather-real'}));
+  particleStyles.unshift(...weatherParticles);
   // Stickers drawn here (transparent PNG, die-cut look): [file id, Hebrew name]
   const stickers = [
     ['heart','לב'],['sparkle','ניצוץ'],['speech','בועת דיבור'],['arrow','חץ'],['cloud','ענן'],['rainbow','קשת בענן'],
@@ -147,15 +159,20 @@ window.StarterLibrary = (() => {
     ['k-galaxy','גלקסיה ספירלית',.7],['k-dna','סליל DNA',.3],['k-gyro','טבעות מסתובבות',.5],['k-sphere','כדור חלקיקים נושם',.45],
     ['k-terrain','נוף קווים',.9],['k-constellation','קבוצת כוכבים',.7],['k-orb','כדור קוסמי',.45],['k-fibres','מנורת סיבים אופטיים',.45]
   ].map(([id,name,w]) => ({id:'fx3d-'+id,name,detail:'חלל · תלת־ממד · לולאה',kind:'model',file:'models/fx3d-'+id+'.glb',thumb:'thumbs/fx3d-'+id+'.png',clip:'Loop',w,group:'cosmic'}));
-  const entries = [...scenes, ...fx3d, ...w3d, ...wreal, ...k3d, ...models, ...scans, ...animated, ...stickers];
+  const entries = [...scenes, ...fx3d, ...w3d, ...weatherParticles, ...wreal, ...k3d, ...models, ...scans, ...animated, ...stickers];
   const groups = [['all','הכול'],['scene','סצנות בתנועה'],['fx','אפקטים מרחפים'],['weather','מזג אוויר'],['weather-real','מזג אוויר ריאליסטי'],['cosmic','חלל וחלקיקים'],['model','תלת־ממד'],['animal','חיות בתנועה'],['sea','ים'],['dino','דינוזאורים'],['creature','דמויות'],['sticker','מדבקות']];
   const MIME = {glb:'model/gltf-binary',mp4:'video/mp4',png:'image/png',gif:'image/gif',wav:'audio/wav'};
-  async function open(importAsset) {
+  // opts.group: the group shown first. opts.onImport: with it, the 3D group gets a small button for a model file of one's own.
+  async function open(importAsset, opts = {}) {
     const dialog = document.createElement('dialog'); dialog.id='starter-library'; dialog.dir='rtl';
     const head=document.createElement('div');head.className='library-head';
     const title=document.createElement('h2');title.textContent='ספריית התחלה';
     const close=document.createElement('button');close.textContent='סגירה';close.className='ghost';close.onclick=()=>dialog.close();
-    head.append(title,close);dialog.append(head);
+    const own=document.createElement('button');own.type='button';own.className='ghost library-import';own.title='ייבוא מודל תלת־ממד משלי (GLB, ZIP, FBX, OBJ)';own.setAttribute('aria-label',own.title);own.hidden=true;
+    if(window.UI&&UI.icon)own.append(UI.icon('upload',18));const ownText=document.createElement('span');ownText.textContent='ייבוא';own.append(ownText);
+    own.onclick=()=>{dialog.close();opts.onImport();};
+    const side=document.createElement('span');side.className='library-side';side.append(own,close);
+    head.append(title,side);dialog.append(head);
     const note=document.createElement('p');note.className='hint';note.textContent=entries.length+' פריטים. נגיעה בפריט מוסיפה אותו ליצירה: מודלים חינמיים (CC0), גם בתנועה, אפקטים מרחפים, מזג אוויר ומדבקות. נשמרים עם היצירה במכשיר, בלי חשבון ובלי תשלום.';dialog.append(note);
     const filters=document.createElement('div');filters.className='library-filters';filters.setAttribute('role','group');filters.setAttribute('aria-label','סוג פריט');dialog.append(filters);
     const grid=document.createElement('div');grid.className='library-grid';dialog.append(grid);
@@ -178,16 +195,16 @@ window.StarterLibrary = (() => {
           }
           const response=await fetch('library/'+item.file);if(!response.ok)throw Error('download');
           const blob=await response.blob(),base=item.file.split('/').pop(),type=MIME[base.split('.').pop()]||blob.type;
-          await importAsset(item.kind,new File([blob],base,{type}),{name:item.name,loop:item.kind!=='sound',clip:item.clip,w:item.w,particles:item.particles,chroma:item.chroma,timecube:item.timecube});
+          await importAsset(item.kind,new File([blob],base,{type}),{name:item.name,loop:item.kind!=='sound',clip:item.clip,w:item.w,h:item.h,particles:item.particles,chroma:item.chroma,timecube:item.timecube});
           dialog.close();
         }catch(e){status.textContent='הפריט לא נטען. אפשר לנסות שוב.';}
         finally{busy=false;grid.querySelectorAll('button').forEach(b=>b.disabled=false);}
       };
       card.append(visual,name,detail);grid.append(card);
     }
-    const show=(g)=>{filters.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.group===g)));grid.querySelectorAll('.library-card').forEach(c=>{c.hidden=g!=='all'&&c.dataset.group!==g;});};
+    const show=(g)=>{own.hidden=!(opts.onImport&&g==='model');filters.querySelectorAll('button').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.group===g)));grid.querySelectorAll('.library-card').forEach(c=>{c.hidden=g!=='all'&&c.dataset.group!==g;});};
     for(const [g,label] of groups){const b=document.createElement('button');b.type='button';b.className='ghost';b.dataset.group=g;b.textContent=label+' ('+(g==='all'?entries.length:entries.filter(e=>e.group===g).length)+')';b.onclick=()=>show(g);filters.append(b);}
-    show('all');
+    show(groups.some(([g])=>g===opts.group)?opts.group:'all');
     dialog.addEventListener('close',()=>dialog.remove(),{once:true});document.body.append(dialog);dialog.showModal();close.focus();
   }
   return {open,entries,particleStyles};

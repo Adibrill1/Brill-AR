@@ -457,10 +457,10 @@ window.Stage = (() => {
     return k ? { k, s0: App.sample(el).scale || 1 } : { k: null, w0: el.w, h0: el.h, sc0: el.type === "scatter" ? structuredClone(el.scatter) : null, group: el.type === "group" };
   }
   function sizeApply(el, st, ratio) {
-    if (st.k) { App.keyAt(el, st.k.t).scale = round(clamp(st.s0 * ratio, 0.05, 4)); return; }
-    if (st.sc0) { Studio.scaleScatter(App.rec, el, clamp(ratio, 0.05 / st.w0, 3 / st.w0), st.sc0); return; }
-    if (st.group) { Studio.transformGroup(App.rec, el, { w: round(clamp(st.w0 * ratio, 0.03, 3)) }); return; } // the members grow with it
-    const w = clamp(st.w0 * ratio, 0.05, 2);
+    if (st.k) { App.keyAt(el, st.k.t).scale = round(clamp(st.s0 * ratio, 0.05, 20)); return; }
+    if (st.sc0) { Studio.scaleScatter(App.rec, el, clamp(ratio, 0.05 / st.w0, 10 / st.w0), st.sc0); return; }
+    if (st.group) { Studio.transformGroup(App.rec, el, { w: round(clamp(st.w0 * ratio, 0.03, 10)) }); return; } // the members grow with it
+    const w = clamp(st.w0 * ratio, 0.05, 10);
     el.w = round(w); if (st.h0 != null) el.h = round(st.h0 * w / st.w0);
   }
   function onDown(e) {
@@ -671,7 +671,7 @@ window.Stage = (() => {
   function placeBar() {
     const bar = $("sel-bar"); bar.classList.toggle("min", barAt.min);
     if (barAt.x == null || bar.hidden) { bar.classList.remove("moved"); bar.style.left = bar.style.top = ""; return; }
-    bar.classList.add("moved");
+    bar.classList.add("moved"); bar.style.left = bar.style.top = "0px";
     const s = stage.getBoundingClientRect(), b = bar.getBoundingClientRect();
     bar.style.left = Math.max(0, (s.width - b.width) * barAt.x) + "px"; bar.style.top = Math.max(0, (s.height - b.height) * barAt.y) + "px";
   }

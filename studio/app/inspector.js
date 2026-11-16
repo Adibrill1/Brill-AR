@@ -4,7 +4,7 @@
    and only refreshed (sync) when values change, so a slider being dragged is never replaced under the finger. */
 window.Inspector = (() => {
   const { $, h, icon, toast, clamp, round } = UI;
-  const TABS = [["layers", "שכבות", "layers"], ["style", "עיצוב", "palette"], ["place", "מיקום", "move"], ["motion", "תנועה", "motion"], ["tap", "מגע", "tap"]];
+  const TABS = [["layers", "שכבות", "layers"], ["style", "עיצוב", "palette"], ["add", "הוספה", "plus"], ["motion", "תנועה", "motion"], ["tap", "מגע", "tap"]];
   const CUBE_DIRS = { front: "מלפנים לאחור", back: "מאחור לפנים", left: "משמאל לימין", right: "מימין לשמאל", top: "מלמעלה למטה", bottom: "מלמטה למעלה" };
   let root, tabBar, ctls = [];
 
@@ -89,9 +89,7 @@ window.Inspector = (() => {
   }
   function styleMedia(e) {
     const out = [];
-    const fx = C({ label: "", bare: true, wrap: true, options: [{ id: "none", name: "בלי" }].concat(Studio.FX.map((f) => ({ id: f.id, name: f.name }))), get: () => App.sel().fx || "none",
-      set: upd((x, v) => { if (v === "none") { delete x.fx; delete x.fxAmount; } else { x.fx = v; if (x.fxAmount == null) x.fxAmount = 0.5; } }, build) });
-    out.push(UI.group("אפקט", fx, e.fx ? S(Object.assign({ label: "עוצמה", min: 0, max: 1, step: 0.01, get: () => (App.sel().fxAmount == null ? 0.5 : App.sel().fxAmount), set: upd((x, v) => { x.fxAmount = v; }) }, pct)) : null));
+    if (e.fx) out.push(h("div.btn-row", Object.assign(UI.button("הסרת האפקט מהשכבה", () => { upd((x) => { delete x.fx; delete x.fxAmount; })(null, true); build(); }, { kind: "ghost", small: true, icon: "close" }), { id: "btn-fx-off" })));
 
     const A = artRatio(), shapes = [{ id: "free", name: "חופשי" }, { id: "art", name: "כמו היצירה" }, { id: "1", name: "ריבוע" }, { id: "1.7778", name: "16:9" }, { id: "0.5625", name: "9:16" }];
     const cropKids = [];
@@ -196,7 +194,7 @@ window.Inspector = (() => {
       UI.group("עומק",
         S(Object.assign({ label: "עומק בהתחלה", min: -0.3, max: 1, step: 0.01, get: () => fan().z0 || 0, set: P((s, v, f) => { f.z0 = round(v, 3); }) }, pct)),
         S(Object.assign({ label: "עומק בסוף", min: -0.3, max: 1, step: 0.01, get: () => fan().z1 || 0, set: P((s, v, f) => { f.z1 = round(v, 3); }) }, pct)),
-        note("עומק שונה להתחלה ולסוף מעמיד את המניפה כמו מדרגות אלייך. הטיה של כל המניפה: בלשונית ״מיקום״.", "cube")),
+        note("עומק שונה להתחלה ולסוף מעמיד את המניפה כמו מדרגות אלייך. הטיה של כל המניפה: בהמשך העמוד, ב״עומק והטיה״.", "cube")),
       h("div.btn-row", UI.button("להפריד לשכבות", () => App.breakScatter(App.selId), { kind: "ghost", icon: "layers" })),
       it.type === "image" || it.type === "video" ? chromaGroup(e) : null,
       UI.group("", opacity())
@@ -272,9 +270,10 @@ window.Inspector = (() => {
       UI.group("סוג", preset, pc().preset === "custom" ? UI.button("החלפת התמונה", ownSprite, { kind: "ghost", small: true, icon: "image" }) : null),
       UI.group("כמות ותנועה",
         S({ label: "כמות", min: 10, max: 500, step: 10, get: () => pc().count || 120, set: P((p, v) => { p.count = Math.round(v); }) }),
-        S({ label: "גודל", min: 2, max: 60, step: 1, get: () => pc().size || 12, set: P((p, v) => { p.size = v; }) }),
-        S({ label: "מהירות", min: 0.2, max: 3, step: 0.1, get: () => pc().speed || 1, set: P((p, v) => { p.speed = v; }) }),
+        S({ label: "גודל", min: 2, max: 200, step: 1, get: () => pc().size || 12, set: P((p, v) => { p.size = v; }) }),
+        S({ label: "מהירות", min: 0.2, max: 10, step: 0.1, get: () => pc().speed || 1, set: P((p, v) => { p.speed = v; }) }),
         S({ label: "פיזור", min: 0.1, max: 2, step: 0.1, get: () => (pc().spread > 0 ? pc().spread : 1), set: P((p, v) => { p.spread = v; }) }),
+        pc().turn && pc().direction >= 0 ? S({ label: "נטייה ברוח", min: -60, max: 60, step: 1, unit: "°", get: () => (pc().direction | 0) - 180, set: (v, f) => { P((p, val) => { p.direction = 180 + Math.round(val); })(v, f); } }) : null,
         L({ label: "כיוון", options: dirs, get: () => (pc().direction == null ? "preset" : String(pc().direction)), set: P((p, v) => { p.direction = v === "preset" ? null : parseInt(v, 10); }) }),
         L({ label: "צורת האזור", options: [{ id: "box", name: "מלבן" }, { id: "disc", name: "עיגול" }, { id: "sphere", name: "כדור" }], get: () => pc().emitter || "box", set: P((p, v) => { p.emitter = v; }) })),
       UI.group("צבע",
@@ -345,8 +344,8 @@ window.Inspector = (() => {
     if (keyed) out.push(h("section.group", note("השכבה בתנועה: מה שמשנים כאן נשמר לרגע שבו הסרגל עומד (לשונית ״תנועה״).", "motion")));
     if (e.type === "sound") return [UI.group("מיקום הסימון", note("לצליל אין מראה. העיגול על הקנבס רק מסמן אותו."))];
     const size = keyed
-      ? S({ label: "גודל", min: 0.05, max: 4, step: 0.01, unit: "×", get: () => App.sample(App.sel()).scale || 1, set: (v, f) => { const x = App.sel(); if (!x) return; App.editKey(x).scale = round(v); App.changed(f); } })
-      : S(Object.assign({ label: "גודל", min: 0.05, max: 2, step: 0.01, get: () => App.sel().w, set: upd((x, v) => { const k = v / x.w; if (x.type === "scatter") return void Studio.scaleScatter(App.rec, x, k); if (x.type === "group") return void Studio.transformGroup(App.rec, x, { w: round(v) }); x.w = round(v); if (x.type === "text") Stage.fitText(x); else if (x.h != null) x.h = round(x.h * k); }) }, pct));
+      ? S({ label: "גודל", min: 0.05, max: 20, step: 0.01, unit: "×", get: () => App.sample(App.sel()).scale || 1, set: (v, f) => { const x = App.sel(); if (!x) return; App.editKey(x).scale = round(v); App.changed(f); } })
+      : S(Object.assign({ label: "גודל", min: 0.05, max: 10, step: 0.01, get: () => App.sel().w, set: upd((x, v) => { const k = v / x.w; if (x.type === "scatter") return void Studio.scaleScatter(App.rec, x, k); if (x.type === "group") return void Studio.transformGroup(App.rec, x, { w: round(v) }); x.w = round(v); if (x.type === "text") Stage.fitText(x); else if (x.h != null) x.h = round(x.h * k); }) }, pct));
     out.push(UI.group("מקום וגודל",
       S(Object.assign({ label: "ימינה / שמאלה", min: -0.7, max: 0.7, step: 0.005, get: () => place("x"), set: placeSet("x") }, pct)),
       S(Object.assign({ label: "למעלה / למטה", min: -0.7, max: 0.7, step: 0.005, get: () => place("y"), set: placeSet("y") }, pct)),
@@ -434,7 +433,8 @@ window.Inspector = (() => {
     const e = App.sel();
     if (!e) { root.append(...creationPanel()); return; }
     const tab = App.tab;
-    const body = tab === "place" ? placeTab(e) : tab === "motion" ? [Timeline.panel(e, add)] : tab === "tap" ? tapTab(e) : styleTab(e);
+    // design and place are one page: what the layer looks like, then where it sits
+    const body = tab === "motion" ? [Timeline.panel(e, add)] : tab === "tap" ? tapTab(e) : [...styleTab(e), ...placeTab(e)];
     root.append(head(e), ...body.flat().filter(Boolean).map((x) => x.node || x));
     root.scrollTop = top;
   }
@@ -443,15 +443,15 @@ window.Inspector = (() => {
     const ph = Layers.phone(), has = !!App.sel();
     document.body.dataset.pane = App.pane;
     tabBar.querySelectorAll(".tab").forEach((b) => {
-      const id = b.dataset.tab, on = id === "layers" ? ph && App.pane === "layers" : (!ph || App.pane === "inspector") && id === App.tab;
+      const id = b.dataset.tab, cur = App.tab === "place" ? "style" : App.tab, on = id === "layers" ? ph && App.pane === "layers" : (!ph || App.pane === "inspector") && id === cur;
       b.classList.toggle("on", on); b.setAttribute("aria-selected", String(on));
-      b.classList.toggle("dim", id !== "layers" && !has);
+      b.classList.toggle("dim", id !== "layers" && id !== "add" && !has);
     });
   }
 
   function init() {
     root = $("inspector"); tabBar = $("tabs");
-    TABS.forEach(([id, name, ic]) => tabBar.append(h("button.tab", { type: "button", role: "tab", data: { tab: id }, onclick: () => (id === "layers" ? App.setPane("layers") : App.setTab(id)) }, icon(ic, 20), h("span", name))));
+    TABS.forEach(([id, name, ic]) => tabBar.append(h("button.tab", { type: "button", role: "tab", data: { tab: id }, onclick: () => (id === "layers" ? App.setPane("layers") : id === "add" ? Layers.openAdd() : App.setTab(id)) }, icon(ic, 20), h("span", name))));
     Studio.loadTextFonts({ font: "heebo", text: "א" }).catch(() => {});
     let lastSel = null;
     App.on("open tab structure mode still", build);

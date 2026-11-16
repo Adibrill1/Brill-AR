@@ -15,10 +15,13 @@ for(const phone of [true,false]){
   const addFile=async(tile,file,want)=>{
     if(phone){await p.locator('.tab[data-tab="layers"]').click();await p.waitForTimeout(150);}
     await p.locator('#btn-add').click();
-    const [fc]=await Promise.all([p.waitForEvent('filechooser'),p.locator('.add-tile',{has:p.locator('.add-name',{hasText:tile})}).click()]);await fc.setFiles(fx(file));
+    const tileBtn=p.locator('.add-tile',{has:p.locator('.add-name',{hasText:tile})});
+    // a model of one's own goes through the library's 3D shelf and its import button
+    if(await tileBtn.getAttribute('data-add')==='model'){await tileBtn.click();await p.waitForSelector('#starter-library .library-import');const [fc]=await Promise.all([p.waitForEvent('filechooser'),p.locator('#starter-library .library-import').click()]);await fc.setFiles(fx(file));}
+    else{const [fc]=await Promise.all([p.waitForEvent('filechooser'),tileBtn.click()]);await fc.setFiles(fx(file));}
     await p.waitForFunction((w)=>App.rec.elements.length===w&&!document.querySelector('.busy'),want,{timeout:60000});await p.waitForTimeout(500);
   };
-  await addFile('תמונה','red.png',1);await addFile('תמונה','crop-animated.gif',2);await addFile('סרטון','visual-2x1.mp4',3);await addFile('מודל','animated.glb',4);
+  await addFile('תמונה','red.png',1);await addFile('תמונה','crop-animated.gif',2);await addFile('סרטון','visual-2x1.mp4',3);await addFile('תלת־ממד','animated.glb',4);
   const rec=await p.evaluate(()=>Studio.load(App.rec.id));
   assert.deepEqual(rec.elements.map(e=>e.type),['image','image','video','model'],tag+': four layers of the right kinds, in order');
   assert.ok(rec.elements.every(e=>(e.assetId&&rec.assets[e.assetId])),tag+': every layer has its file saved');

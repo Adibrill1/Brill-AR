@@ -36,10 +36,10 @@ for(const phone of [true,false]){
   if(phone)assert.equal(await p.evaluate(()=>document.body.dataset.pane),'inspector',tag+': the phone moves to the settings');
   await p.locator('#in-text').fill('מזל טוב');await p.waitForTimeout(900);
   assert.equal((await stored()).elements[0].text,'מזל טוב',tag+': text saved');
-  for(const t of ['style','place','motion','tap']){await p.locator('.tab[data-tab="'+t+'"]').click();await p.waitForTimeout(150);assert.ok(await p.locator('#inspector .group').count()>0,tag+': tab '+t+' has controls');}
+  for(const t of ['style','motion','tap']){await p.locator('.tab[data-tab="'+t+'"]').click();await p.waitForTimeout(150);assert.ok(await p.locator('#inspector .group').count()>0,tag+': tab '+t+' has controls');}
   // a slider writes through
-  await p.locator('.tab[data-tab="place"]').click();
-  const num=p.locator('#inspector .num').first();await num.fill('20');await num.press('Enter');await p.waitForTimeout(700);
+  await p.locator('.tab[data-tab="style"]').click();
+  const num=p.locator('#inspector input.num[aria-label="ימינה / שמאלה (מספר)"]');await num.fill('20');await num.press('Enter');await p.waitForTimeout(700);
   assert.ok(Math.abs((await stored()).elements[0].x-0.2)<0.011,tag+': the position box moves the layer');
 
   await showLayers();await add('חלקיקים');await p.locator('.part-tile[data-style="p-hearts"]').click();await p.waitForTimeout(1800);await showLayers();await add('רקע מונפש');

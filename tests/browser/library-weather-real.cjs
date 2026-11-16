@@ -12,7 +12,7 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
   await p.goto(base+'/index.html');await p.waitForFunction(()=>typeof Studio!=='undefined'&&typeof App!=='undefined'&&typeof StarterLibrary!=='undefined');
 
   // the files
-  const files=await p.evaluate(async()=>{const out=[];for(const e of StarterLibrary.entries.filter(x=>x.group==='weather-real')){
+  const files=await p.evaluate(async()=>{const out=[];for(const e of StarterLibrary.entries.filter(x=>x.group==='weather-real'&&x.kind==='video')){
     const r=await fetch('library/'+e.file),blob=await r.blob(),t=await fetch('library/'+e.thumb);let info=null;try{info=await Studio.inspectVideo(new File([blob],'x.mp4',{type:'video/mp4'}));}catch(x){}
     const v=document.createElement('video');v.muted=true;v.src=URL.createObjectURL(blob);await new Promise(res=>{v.onloadedmetadata=res;v.onerror=res;});
     out.push({id:e.id,kind:e.kind,ok:r.ok,thumb:t.ok,bytes:blob.size,w:info&&info.width,h:info&&info.height,dur:v.duration,key:e.chroma});}return out;});
@@ -33,9 +33,9 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
   if(await p.locator('.tab[data-tab="layers"]').isVisible())await p.locator('.tab[data-tab="layers"]').click();
   await p.locator('#btn-add').click();await p.locator('.add-library').click();await p.waitForSelector('#starter-library[open] .library-card');
   const filter=p.locator('#starter-library .library-filters button[data-group="weather-real"]');
-  assert.equal((await filter.textContent()).trim(),'מזג אוויר ריאליסטי (10)','its own group, after the drawn weather');
+  assert.equal((await filter.textContent()).trim(),'מזג אוויר ריאליסטי (16)','its own group, after the drawn weather');
   await filter.click();
-  assert.equal(await p.locator('#starter-library .library-card:not([hidden])').count(),10,'the group shows its ten');
+  assert.equal(await p.locator('#starter-library .library-card:not([hidden])').count(),16,'the group shows its ten loops and six editable particle styles');
   await p.locator('#starter-library .library-card[data-library-id="wr-snow"]').click();
   await p.waitForFunction(()=>App.rec&&App.rec.elements.length===1,null,{timeout:30000});await p.waitForTimeout(800);
   const el=await p.evaluate(async(id)=>{const r=await Studio.load(id),e=r.elements[0];return {type:e.type,name:e.name,w:e.w,aspect:e.aspect,loop:e.loop,chroma:e.chroma,mime:r.assets[e.assetId].type,size:r.assets[e.assetId].size};},id);
