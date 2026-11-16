@@ -148,11 +148,6 @@ window.StarterLibrary = (() => {
     ['aurora','זוהר צפוני',.8],['flames','מדורה',.45],['warp','קפיצה לחלל',.7]
   ].map(([id,name,w]) => ({id:'fx3d-'+id,name,detail:'אפקט מרחף · תלת־ממד · לולאה',kind:'model',file:'models/fx3d-'+id+'.glb',thumb:'thumbs/fx3d-'+id+'.png',clip:'Loop',w,group:'fx'}));
   // Weather and cosmic effects as 3D models, built the same way (clouds are whole metaball shapes with a soft skin)
-  const w3d = [
-    ['w-sun','שמש זורחת',.5],['w-partly','שמש ועננים',.55],['w-clouds','עננים נודדים',.8],['w-raincloud','ענן גשם',.5],['w-rain','גשם',.8],
-    ['w-storm','סערה וברקים',.7],['w-lightning','ברקים',.6],['w-hail','ברד',.5],['w-snow','שלג',.8],['w-rainbow','קשת בענן',.7],
-    ['w-wind','רוח ועלים',.8],['w-fog','ערפל',.8],['w-tornado','טורנדו',.45],['w-night','לילה עם ירח',.7]
-  ].map(([id,name,w]) => ({id:'fx3d-'+id,name,detail:'מזג אוויר · תלת־ממד · לולאה',kind:'model',file:'models/fx3d-'+id+'.glb',thumb:'thumbs/fx3d-'+id+'.png',clip:'Loop',w,group:'weather'}));
   // Realistic weather as filmed-looking video loops on black (tools/weather_particles.py, and weather_volumes.py in
   // Blender, outside this repository): each arrives with the soft black ("glow") key on, across the artwork's width
   const glowKey = { enabled: true, color: '#000000', threshold: 0.2, soft: 0, edge: 0.5 };
@@ -165,8 +160,12 @@ window.StarterLibrary = (() => {
     ['k-galaxy','גלקסיה ספירלית',.7],['k-dna','סליל DNA',.3],['k-gyro','טבעות מסתובבות',.5],['k-sphere','כדור חלקיקים נושם',.45],
     ['k-terrain','נוף קווים',.9],['k-constellation','קבוצת כוכבים',.7],['k-orb','כדור קוסמי',.45],['k-fibres','מנורת סיבים אופטיים',.45]
   ].map(([id,name,w]) => ({id:'fx3d-'+id,name,detail:'חלל · תלת־ממד · לולאה',kind:'model',file:'models/fx3d-'+id+'.glb',thumb:'thumbs/fx3d-'+id+'.png',clip:'Loop',w,group:'cosmic'}));
-  const entries = [...scenes, ...fx3d, ...w3d, ...weatherParticles, ...wreal, ...k3d, ...models, ...flowers, ...scans, ...animated, ...stickers];
-  const groups = [['all','הכול'],['scene','סצנות בתנועה'],['fx','אפקטים מרחפים'],['weather','מזג אוויר'],['weather-real','מזג אוויר ריאליסטי'],['cosmic','חלל וחלקיקים'],['model','תלת־ממד'],['animal','חיות בתנועה'],['sea','ים'],['dino','דינוזאורים'],['creature','דמויות'],['sticker','מדבקות']];
+  // Nature backdrops: opaque filmed-looking loops that fill the artwork (the editor crops them to its shape and puts
+  // them behind the other layers). Shown in the add sheet's "רקעים" and in the library: [file id, Hebrew name]
+  const backdrops = [
+  ].map(([id,name]) => ({id:'bg-'+id,name,detail:'רקע מהטבע · סרטון בלולאה',kind:'video',file:'backdrops/'+id+'.mp4',thumb:'thumbs/bg-'+id+'.png',w:1,fill:true,group:'backdrop'}));
+  const entries = [...backdrops, ...scenes, ...fx3d, ...weatherParticles, ...wreal, ...k3d, ...models, ...flowers, ...scans, ...animated, ...stickers];
+  const groups = [['all','הכול'],['backdrop','רקעים מהטבע'],['scene','סצנות בתנועה'],['fx','אפקטים מרחפים'],['weather-real','מזג אוויר ריאליסטי'],['cosmic','חלל וחלקיקים'],['model','תלת־ממד'],['animal','חיות בתנועה'],['sea','ים'],['dino','דינוזאורים'],['creature','דמויות'],['sticker','מדבקות']];
   // The 3D shelf (opened from the add sheet's "תלת־ממד"): only the models, by kind. The 'model' group is split here by
   // file id (without the 'ph-' prefix); an id in none of the lists lands in 'home'. A new plant or flower: add its id to plant.
   const CAT3D = {
@@ -178,7 +177,7 @@ window.StarterLibrary = (() => {
     play: 'rubber_duck_toy ukulele_01 dartboard football chess_set american_football baseball_01 treasure_chest dutch_ship_medium lifebuoy'
   };
   const cats3d = [['all','הכול'],['plant','צמחים ופרחים'],['food','אוכל'],['statue','פסלים ואמנות'],['light','תאורה'],['retro','וינטג׳ ומכשירים'],['play','משחק והרפתקה'],['home','בית וחפצים'],
-    ['animal','חיות בתנועה'],['sea','ים'],['dino','דינוזאורים'],['creature','דמויות'],['fx','אפקטים מרחפים'],['weather','מזג אוויר'],['cosmic','חלל וחלקיקים']];
+    ['animal','חיות בתנועה'],['sea','ים'],['dino','דינוזאורים'],['creature','דמויות'],['fx','אפקטים מרחפים'],['cosmic','חלל וחלקיקים']];
   const catOf = {}; for (const [c, ids] of Object.entries(CAT3D)) for (const id of ids.split(' ')) catOf[id] = c;
   const cat3d = (e) => (e.group !== 'model' ? e.group : catOf[e.id.replace(/^ph-/, '')] || 'home');
   const MIME = {glb:'model/gltf-binary',mp4:'video/mp4',png:'image/png',gif:'image/gif',wav:'audio/wav'};
@@ -220,7 +219,7 @@ window.StarterLibrary = (() => {
           }
           const response=await fetch('library/'+item.file);if(!response.ok)throw Error('download');
           const blob=await response.blob(),base=item.file.split('/').pop(),type=MIME[base.split('.').pop()]||blob.type;
-          await importAsset(item.kind,new File([blob],base,{type}),{name:item.name,loop:item.kind!=='sound',clip:item.clip,w:item.w,h:item.h,particles:item.particles,chroma:item.chroma,timecube:item.timecube});
+          await importAsset(item.kind,new File([blob],base,{type}),{name:item.name,loop:item.kind!=='sound',clip:item.clip,w:item.w,h:item.h,particles:item.particles,fill:item.fill,chroma:item.chroma,timecube:item.timecube});
           dialog.close();
         }catch(e){status.textContent='הפריט לא נטען. אפשר לנסות שוב.';}
         finally{busy=false;grid.querySelectorAll('button').forEach(b=>b.disabled=false);}
@@ -233,5 +232,5 @@ window.StarterLibrary = (() => {
     show('all');
     dialog.addEventListener('close',()=>dialog.remove(),{once:true});document.body.append(dialog);dialog.showModal();close.focus();
   }
-  return {open,entries,particleStyles,cat3d,cats3d};
+  return {open,entries,particleStyles,backdrops,cat3d,cats3d};
 })();

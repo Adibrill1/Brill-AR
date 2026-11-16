@@ -849,7 +849,8 @@ vec4 baFilter(vec2 uv) {
     ["stripes", "פסים", ["#fdf0d5", "#c1121f", "#003049"], 0], ["gingham", "משבצות פיקניק", ["#ffffff", "#f7b2bd", "#e05a70"], 0],
     ["zigzag", "זיגזג", ["#264653", "#e9c46a", "#f4a261"], 0], ["scales", "גלים יפניים", ["#f1faee", "#457b9d", "#1d3557"], 0],
     ["hex", "חלת דבש", ["#5a3a0c", "#f6b93b", "#fad390"], 0], ["arcs", "קשתות", ["#fdfcdc", "#0081a7", "#f07167"], 0],
-    ["hearts", "לבבות", ["#ffe5ec", "#ff4d6d", "#c9184a"], 0], ["terrazzo", "טרצו", ["#f2ece4", "#e07a5f", "#3d405b"], 0]
+    ["hearts", "לבבות", ["#ffe5ec", "#ff4d6d", "#c9184a"], 0], ["terrazzo", "טרצו", ["#f2ece4", "#e07a5f", "#3d405b"], 0],
+    ["solid", "צבע אחיד", ["#7b5cff", "#7b5cff", "#7b5cff"], 0] // one flat colour (the first); always the last look
   ];
   const PATTERN_IDS = PATTERNS.map((p) => p[0]);
   // Ready colour sets for any look: [Hebrew name, colours]
@@ -988,6 +989,7 @@ vec4 bpPattern(vec2 uv) {
       col = mix(col, bpHash(sid + 6.6) < 0.5 ? bpC2 : bpC3, speck);
     }
   }
+  if (bpMode > 16.5) col = bpC1; // solid: one flat colour
   float alpha = 1.0;
   if (bpShape > 0.5) {
     float d;
@@ -1217,7 +1219,7 @@ vec4 bpPattern(vec2 uv) {
     const listener=scene.audioListener||(scene.audioListener=new THREE.AudioListener());
     const route=()=>{if(scene.camera&&!listener.parent)scene.camera.add(listener);for(const m of mediaEls){if(m.three)continue;const ent=m.el.spatial?container.querySelector('[data-el-id="'+m.el.id+'"]'):null;let audio;
       if(ent){audio=new THREE.PositionalAudio(listener);const d=audioDistances(m.el);audio.setDistanceModel(m.el.spatialMode==='linear'?'linear':'exponential');audio.setRefDistance(d.inner);audio.setMaxDistance(d.outer);audio.setRolloffFactor(m.el.spatialMode==='linear'?1:1.5);ent.object3D.add(audio);}else audio=new THREE.Audio(listener);
-      audio.setMediaElementSource(m.node);audio.gain.gain.value=1;m.three=audio;
+      audio.setMediaElementSource(m.node);audio.gain.gain.value=m.el.volume==null?1:Math.max(0,Math.min(1,+m.el.volume||0));m.three=audio; // the layer's own loudness
     }};if(scene.hasLoaded)route();else scene.addEventListener('loaded',route,{once:true});return listener;
   }
   // ---------- time cube ----------

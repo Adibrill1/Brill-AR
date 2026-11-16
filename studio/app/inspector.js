@@ -70,7 +70,7 @@ window.Inspector = (() => {
         def && def.amount ? S(Object.assign({ label: "עוצמה", min: 0, max: 1, step: 0.05, get: () => { const f = App.sel().textFx; return f && Number.isFinite(f.amount) ? f.amount : 0.5; }, set: F((x, v) => { x.textFx.amount = v; }) }, pct)) : null,
         def && def.id === "neon" ? note("לניאון הכי יפה: אותיות בהירות (לבן) וצבע זוהר חזק.") : null));
     }
-    out.push(UI.group("", opacity()));
+    out.push(UI.group("שקיפות", opacity()));
     return out;
   }
 
@@ -108,7 +108,7 @@ window.Inspector = (() => {
 
     out.push(chromaGroup(e));
     if (e.type === "video") out.push(UI.group("קול", sound()));
-    out.push(UI.group("", opacity()));
+    out.push(UI.group("שקיפות", opacity()));
     return out;
   }
   // ---------- colour removal: a picture, a GIF, a video, or the copies of a scatter ----------
@@ -167,7 +167,7 @@ window.Inspector = (() => {
         note("גוררים את הנקודות הלבנות על הקו. בתצוגת תלת־ממד נוגעים בנקודה ומזיזים אותה בחיצים, גם לעומק.", "move"))
     ];
     if (it.type === "image" || it.type === "video") out.push(chromaGroup(e));
-    out.push(UI.group("", opacity()));
+    out.push(UI.group("שקיפות", opacity()));
     return out;
   }
   // ---------- fan / rosette ----------
@@ -197,7 +197,7 @@ window.Inspector = (() => {
         note("עומק שונה להתחלה ולסוף מעמיד את המניפה כמו מדרגות אלייך. הטיה של כל המניפה: בהמשך העמוד, ב״עומק והטיה״.", "cube")),
       h("div.btn-row", UI.button("להפריד לשכבות", () => App.breakScatter(App.selId), { kind: "ghost", icon: "layers" })),
       it.type === "image" || it.type === "video" ? chromaGroup(e) : null,
-      UI.group("", opacity())
+      UI.group("שקיפות", opacity())
     ];
   }
   const sound = () => [
@@ -228,6 +228,13 @@ window.Inspector = (() => {
       App.changed(true); sync();
     } }, icon("image", 16), h("span", "מילוי תמונת המקור"));
     const col = (i) => K({ label: "צבע " + (i + 1), get: () => App.sel().pattern.colors[i], set: P((p, v) => { p.colors = p.colors.slice(); p.colors[i] = v; }) });
+    if (App.sel().pattern.look === "solid") return [
+      UI.group("צבע", K({ label: "צבע הרקע", get: () => App.sel().pattern.colors[0], set: P((p, v) => { p.colors = [v, v, v]; }) })),
+      UI.group("צורה", L({ label: "צורה", options: Studio.PATTERN_SHAPES, get: () => App.sel().pattern.shape,
+        set: P((p, v, x) => { p.shape = v; x.aspect = Studio.patternAspect(App.rec, v); x.h = (x.w / x.aspect) * artRatio(); }) }), fill),
+      UI.group("שקיפות", opacity()),
+      UI.group("מראה אחר", note("אפשר להפוך את הצבע האחיד לרקע מונפש."), looks)
+    ];
     const pt = () => (Studio.PATTERN_TOUCH.includes(App.sel().pattern.touch) ? App.sel().pattern.touch : "none");
     const touchGroup = UI.group("מגע",
       L({ label: "כשנוגעים ברקע", options: [{ id: "none", name: "לא מגיב" }, { id: "ripple", name: "אדוות, כמו אבן במים" }, { id: "lens", name: "נמשך אל האצבע" }, { id: "swirl", name: "מסתחרר סביב האצבע" }], get: pt,
@@ -308,7 +315,7 @@ window.Inspector = (() => {
         Studio.isStill(e) ? null : T({ label: "חוזרת שוב ושוב", get: () => App.sel().modelLoop !== false, set: upd((x, v) => { x.modelLoop = v; }) }),
         Studio.isStill(e) ? null : S({ label: "מהירות", min: 0.1, max: 4, step: 0.1, unit: "×", get: () => App.sel().modelSpeed || 1, set: upd((x, v) => { x.modelSpeed = v; }) })));
     } else out.push(UI.group("תנועת המודל", note("במודל הזה אין תנועה מובנית. אפשר להזיז אותו בלשונית ״תנועה״.")));
-    out.push(UI.group("", opacity(), note("כדי לסובב את המודל במרחב עוברים לתצוגת תלת־ממד, מעל הקנבס.", "cube")));
+    out.push(UI.group("שקיפות", opacity(), note("כדי לסובב את המודל במרחב עוברים לתצוגת תלת־ממד, מעל הקנבס.", "cube")));
     return out;
   }
   function styleCube() {
@@ -342,7 +349,7 @@ window.Inspector = (() => {
     if (e.type === "sound") return [UI.group("צליל", sound(), note("הצליל מתנגן כשהמצלמה מזהה את היצירה. בטלפון הוא מתחיל אחרי נגיעה ראשונה במסך."))];
     if (e.type === "group") return [UI.group("קבוצה",
       note((e.children || []).length + " שכבות שזזות, גדלות ומסתובבות יחד. נגיעה נוספת על הקנבס בוחרת שכבה אחת בתוכה, וגם ברשימת השכבות אפשר לבחור אחת.", "layers"),
-      h("div.btn-row", UI.button("לפרק קבוצה", () => App.ungroup(App.selId), { kind: "ghost", icon: "ungroup" }))), UI.group("", opacity())];
+      h("div.btn-row", UI.button("לפרק קבוצה", () => App.ungroup(App.selId), { kind: "ghost", icon: "ungroup" }))), UI.group("שקיפות", opacity())];
     return [h("section.group", note("לשכבה הזו אין הגדרות עיצוב."))];
   }
 
@@ -444,7 +451,19 @@ window.Inspector = (() => {
     // design and place are one page: what the layer looks like, then where it sits
     const body = tab === "motion" ? [Timeline.panel(e, add)] : tab === "tap" ? tapTab(e) : [...styleTab(e), ...placeTab(e)];
     root.append(head(e), ...body.flat().filter(Boolean).map((x) => x.node || x));
+    if (tab !== "motion" && tab !== "tap") foldable();
     root.scrollTop = top;
+  }
+  // The design page's groups fold at a tap on their title. Which are folded is remembered; these start folded.
+  const FOLDED = ["שקיפות", "מקום וגודל", "עומק והטיה", "סדר השכבות"];
+  const folds = (() => { try { const v = JSON.parse(localStorage.getItem("brill-folds") || "{}"); return v && typeof v === "object" ? v : {}; } catch (e) { return {}; } })();
+  const isFolded = (t) => (t in folds ? !!folds[t] : FOLDED.includes(t));
+  function foldable() {
+    root.querySelectorAll(":scope > section.group > h3.group-title").forEach((t) => {
+      const name = t.textContent, sec = t.parentNode, btn = h("button.group-fold", { type: "button", "aria-expanded": String(!isFolded(name)) }, h("span", name), icon("down", 16));
+      t.replaceChildren(btn); sec.classList.toggle("folded", isFolded(name)); sec.dataset.group = name;
+      btn.onclick = () => { const f = !sec.classList.contains("folded"); sec.classList.toggle("folded", f); btn.setAttribute("aria-expanded", String(!f)); folds[name] = f; try { localStorage.setItem("brill-folds", JSON.stringify(folds)); } catch (e) {} };
+    });
   }
   function sync() { ctls.forEach((c) => { try { if (c.sync) c.sync(); } catch (err) { console.warn(err); } }); }
   function renderTabs() {
@@ -478,5 +497,5 @@ window.Inspector = (() => {
     matchMedia("(max-width: 899px)").addEventListener("change", build);
   }
 
-  return { init, build, sync };
+  return { init, build, sync, fillArt };
 })();

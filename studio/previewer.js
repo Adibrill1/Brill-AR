@@ -127,7 +127,8 @@
     muted = !muted;
     for (const m of mediaEls) {
       const base = m.el.volume == null ? 1 : m.el.volume;
-      m.node.volume = muted ? 0 : base;
+      // loudness goes through the audio graph (an iPhone ignores a media element's own volume)
+      if (m.three) m.three.gain.gain.value = muted ? 0 : base; else m.node.volume = muted ? 0 : base;
       if (m.kind === "video") m.node.muted = muted;
     }
   };

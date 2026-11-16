@@ -128,6 +128,54 @@ window.App = (() => {
     }
     Object.keys(S.media).forEach((id) => { if (!keep.has(id)) dropMedia(id); });
   }
+  // ---------- sound while editing ----------
+  // Videos with a soundtrack and sound layers are heard in the editor, each at its own loudness. Loudness goes through
+  // an audio graph (an iPhone ignores a media element's own volume), which a browser lets start only from a touch: so
+  // the first tap or click in the editor turns the sound on. The speaker button on the stage silences the editor.
+  let actx = null, soundOn = (() => { try { return localStorage.getItem("brill-edit-sound") !== "off"; } catch (e) { return true; } })();
+  const audioNodes = {}, audioBlob = {};
+  function dropAudio(id) { const a = audioNodes[id]; if (!a) return; try { a.pause(); a.removeAttribute("src"); a.load(); if (a.__url) URL.revokeObjectURL(a.__url); } catch (e) {} delete audioNodes[id]; delete audioBlob[id]; }
+  function hydrateAudio() {
+    const rec = S.rec, keep = new Set();
+    if (rec) for (const e of rec.elements) {
+      if (e.type !== "sound" || !e.assetId || !rec.assets[e.assetId]) continue;
+      keep.add(e.id);
+      if (audioNodes[e.id] && sameFile(audioBlob[e.id], rec.assets[e.assetId])) continue;
+      dropAudio(e.id);
+      const a = document.createElement("audio"); a.preload = "auto"; a.__url = URL.createObjectURL(rec.assets[e.assetId]); a.src = a.__url;
+      audioNodes[e.id] = a; audioBlob[e.id] = rec.assets[e.assetId];
+    }
+    Object.keys(audioNodes).forEach((id) => { if (!keep.has(id)) dropAudio(id); });
+  }
+  function wire(node) {
+    if (!actx || node.__gain) return;
+    try { const g = actx.createGain(); g.gain.value = 0; actx.createMediaElementSource(node).connect(g); g.connect(actx.destination); node.__gain = g; } catch (e) { console.warn("sound", e); }
+  }
+  function applySound() {
+    const rec = S.rec, want = new Map();
+    if (rec) for (const e of rec.elements) {
+      const node = e.type === "sound" ? audioNodes[e.id] : Studio.mediaType(e) === "video" && !Studio.isStill(e) ? S.media[mediaKey(e)] : null;
+      if (!node) continue;
+      const v = e.volume == null ? 1 : Math.max(0, Math.min(1, +e.volume || 0));
+      want.set(node, Math.max(want.get(node) || 0, v)); if (e.type === "sound") node.loop = e.loop !== false;
+    }
+    const nodes = Object.values(S.media).filter((m) => m.tagName === "VIDEO").concat(Object.values(audioNodes));
+    for (const n of nodes) {
+      const v = soundOn && actx ? want.get(n) || 0 : 0;
+      if (actx) { wire(n); if (n.__gain) n.__gain.gain.value = v; }
+      if (n.tagName === "VIDEO") n.muted = !(v > 0 && n.__gain);
+      else if (v > 0 && n.__gain) { if (n.paused) n.play().catch(() => {}); } else if (!n.paused) n.pause();
+    }
+  }
+  function unlockSound() {
+    if (!S.rec) return;
+    try { if (!actx) { const AC = window.AudioContext || window.webkitAudioContext; if (!AC) return; actx = new AC(); } if (actx.state === "suspended") actx.resume().catch(() => {}); } catch (e) { return; }
+    applySound();
+  }
+  document.addEventListener("click", unlockSound, true); document.addEventListener("touchend", unlockSound, true);
+  function setSound(v) { soundOn = !!v; try { localStorage.setItem("brill-edit-sound", soundOn ? "on" : "off"); } catch (e) {} applySound(); emit("sound"); }
+  on("open structure change still", () => { hydrateAudio(); applySound(); });
+  on("close", () => { Object.keys(audioNodes).forEach(dropAudio); });
   // iOS pauses muted videos when the page comes back from the background.
   // Back on the page is also the moment to try again whatever did not load.
   document.addEventListener("visibilitychange", () => {
@@ -418,6 +466,7 @@ window.App = (() => {
 
   return {
     on, emit, el, sel, keyed, clock, sample, fxTimes, fxLook, previewEnterExit, hydrate, loadArt, save, saveSoon, flush, changed, open, close, select, blocked,
+    get soundOn() { return soundOn; }, setSound, get soundReady() { return !!actx; }, soundState: () => Object.values(S.media).filter((m) => m.tagName === "VIDEO").concat(Object.values(audioNodes)).map((n) => ({ tag: n.tagName, muted: n.muted, paused: n.paused, gain: n.__gain ? n.__gain.gain.value : null })),
     addLayer, removeLayer, duplicateLayer, moveLayer, scatterFrom, fanFrom, addScatter, redrawScatter, scatterDepth, breakScatter, setLocked, startMulti, endMulti, toggleMulti, groupLayers, ungroup, leaveGroup, setStill, setStillAt, mediaFor, movesItself, undo, redo, freeze, replay, keyAt, editKey, setTab, setPane, setMode3d, setCropping,
     get rec() { return S.rec; }, get selId() { return S.selId; }, get art() { return S.art; }, get artBlob() { return artBlob; }, get artState() { return S.artState; }, get media() { return S.media; },
     get frozen() { return S.frozen; }, get tab() { return S.tab; }, get pane() { return S.pane; }, get mode3d() { return S.mode3d; },

@@ -207,7 +207,9 @@ window.Layers = (() => {
     const assetId = Studio.newId();
     rec.assets[assetId] = await Studio.ownBlob(f);
     if (kind === "particles") el.particles.spriteAssetId = assetId; else el.assetId = assetId;
-    await App.addLayer(el);
+    // a backdrop: behind everything, cut to the artwork's shape and covering it
+    await App.addLayer(el, o.fill && kind === "video" ? { behind: true } : null);
+    if (o.fill && kind === "video") Inspector.fillArt(0);
     if (note) toast(note, { ms: 6000 });
     return el;
   }
@@ -255,6 +257,34 @@ window.Layers = (() => {
     const el = { id: Studio.newId(), type: "pattern", name: nextName("pattern"), pattern: Studio.patternDefaults("liquid"), x: 0, y: 0, w: 1, rot: 0, z: 0, flush: true, seq: null };
     el.aspect = Studio.patternAspect(App.rec, "art"); el.h = (el.w / el.aspect) * artRatio();
     return App.addLayer(el, { behind: true }).then(() => App.setTab("style"));
+  }
+  function addSolid() {
+    if (App.blocked({ layers: 1 })) return;
+    const el = { id: Studio.newId(), type: "pattern", name: "צבע אחיד", pattern: Studio.patternDefaults("solid"), x: 0, y: 0, w: 1, rot: 0, z: 0, flush: true, seq: null };
+    el.aspect = Studio.patternAspect(App.rec, "art"); el.h = (el.w / el.aspect) * artRatio();
+    return App.addLayer(el, { behind: true }).then(() => App.setTab("style"));
+  }
+  // "רקעים": a flat colour, a moving pattern, or a filmed loop of nature from the library - each lands behind the layers.
+  function openBackgrounds() {
+    const nature = (window.StarterLibrary && window.StarterLibrary.backdrops) || [];
+    let busy = false;
+    const tile = (id, name, pic, run) => h("button.part-tile", { type: "button", data: { bg: id }, onclick: async () => {
+      if (busy) return; busy = true;
+      try { await run(); } catch (e) { if (e.say == null) console.warn(e); toast(e.say || "הרקע לא נוסף. אפשר לנסות שוב.", { kind: "error" }); } finally { busy = false; }
+    } }, h("span.part-pic", pic), h("span.part-name", name));
+    const swatch = (css) => h("span.bg-swatch", { style: { background: css } });
+    const tiles = [
+      tile("solid", "צבע אחיד", swatch("#7b5cff"), async () => { d.close(); await addSolid(); }),
+      tile("pattern", "רקע מונפש", swatch("linear-gradient(135deg,#ff6b9a,#7b5cff 55%,#ffd36e)"), async () => { d.close(); await addPattern(); })
+    ].concat(nature.map((n) => tile(n.id, n.name, h("img", { src: "library/" + n.thumb, alt: "", loading: "lazy", draggable: false }), async () => {
+      const end = UI.busy("מוסיפה רקע…");
+      try {
+        const r = await fetch("library/" + n.file); if (!r.ok) throw new Error("download");
+        const f = new File([await r.blob()], n.file.split("/").pop(), { type: "video/mp4" });
+        d.close(); await importAsset("video", f, { name: n.name, w: 1, fill: true, loop: true }); App.setTab("style");
+      } finally { end(); }
+    })));
+    const d = UI.dialog({ title: "איזה רקע?", sheet: true, body: [h("div.part-grid", tiles), h("p.note", icon("image", 18), h("span", "הרקע מכסה את כל היצירה ונכנס מאחורי שאר השכבות. אחר כך אפשר לשנות צבעים, גודל ושקיפות."))] });
   }
   function addParticles() {
     if (App.blocked({ layers: 1 })) return;
@@ -321,7 +351,7 @@ window.Layers = (() => {
   // ---------- the "add" sheet ----------
   const ADD = [
     ["image", "תמונה", "PNG, JPG או GIF"], ["video", "סרטון", "MP4 או MOV"], ["text", "טקסט", "כותרת או ברכה"],
-    ["pattern", "רקע מונפש", "צבעים שזזים"], ["particles", "חלקיקים", "גשם, שלג, לבבות ועוד"], ["model", "תלת־ממד", "מודלים מוכנים, או ייבוא משלך"],
+    ["pattern", "רקעים", "צבע אחיד, תנועה או טבע"], ["particles", "חלקיקים", "גשם, שלג, לבבות ועוד"], ["model", "תלת־ממד", "מודלים מוכנים, או ייבוא משלך"],
     ["sound", "צליל", "MP3, M4A, WAV"]
   ];
   function openAdd() {
@@ -330,7 +360,7 @@ window.Layers = (() => {
     const pick = (kind) => async () => {
       d.close();
       if (kind === "text") return addText();
-      if (kind === "pattern") return addPattern();
+      if (kind === "pattern") return openBackgrounds();
       if (kind === "particles") return openParticles();
       if (kind === "model") return open3d();
       const f = await UI.pickFile(ACCEPT[kind]);

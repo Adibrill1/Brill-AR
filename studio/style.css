@@ -416,3 +416,11 @@ dialog::backdrop { background: rgba(6,5,10,.66); backdrop-filter: blur(3px); }
 .portal-status { min-height: calc(2 * 1.45em); margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.45; }
 .portal-status:empty { visibility: hidden; }
 .linkish { padding: 0; border: 0; background: none; color: var(--accent-2); font: inherit; text-decoration: underline; cursor: pointer; }
+
+/* design page: groups that fold at a tap on their title */
+.group-title .group-fold { display: flex; align-items: center; justify-content: space-between; width: 100%; padding: 0; border: 0; background: none; color: inherit; font: inherit; text-align: start; cursor: pointer; }
+.group-title .group-fold svg { transition: transform .15s; opacity: .7; }
+.group.folded > :not(.group-title) { display: none; }
+.group.folded > .group-title { margin-bottom: 0; }
+.group.folded .group-fold svg { transform: rotate(90deg); }
+.bg-swatch { display: block; width: 100%; height: 100%; border-radius: inherit; }

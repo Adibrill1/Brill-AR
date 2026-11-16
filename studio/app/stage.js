@@ -720,6 +720,9 @@ window.Stage = (() => {
     $("btn-3d").onclick = () => App.setMode3d(true);
     $("btn-snap").onclick = () => { App.snap = !App.snap; $("btn-snap").classList.toggle("on", App.snap); $("btn-snap").setAttribute("aria-pressed", String(App.snap)); toast(App.snap ? "הצמדה למרכז פועלת" : "הצמדה למרכז כבויה"); };
     $("btn-time-live").onclick = () => App.freeze(null);
+    const paintSound = () => { $("btn-sound").classList.toggle("on", App.soundOn); $("btn-sound").setAttribute("aria-pressed", String(App.soundOn)); };
+    $("btn-sound").onclick = () => { App.setSound(!App.soundOn); toast(App.soundOn ? "קול בזמן עריכה: פועל" : "קול בזמן עריכה: כבוי"); };
+    App.on("sound open", paintSound); paintSound();
     App.on("open", () => { setZoom(1); for (const k in textCache) delete textCache[k]; layout(); renderEmpty(); applyMode(); renderTime(); });
     App.on("select", () => { if (App.mode3d) Editor3D.refreshGizmo(); stage.classList.toggle("is-crop", App.cropping); if (!App.sel() || App.sel().id !== (pointSel && pointSel.id)) pointSel = null; if (picker && App.selId !== picker.id) stopPick(); renderBar(); });
     App.on("structure still", () => { layout(); renderEmpty(); renderBar(); });
