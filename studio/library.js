@@ -138,6 +138,8 @@ window.StarterLibrary = (() => {
   // Nature backdrops: opaque filmed-looking loops that fill the artwork (the editor crops them to its shape and puts
   // them behind the other layers). Shown in the add sheet's "רקעים" and in the library: [file id, Hebrew name]
   const backdrops = [
+    ['stars','שמי לילה עם כוכבים'],['sea','ים פתוח'],['field','שדה חיטה ברוח'],['sunset','שקיעה מעל הים'],
+    ['clouds','עננים נודדים'],['aurora','זוהר צפוני'],['underwater','מתחת למים']
   ].map(([id,name]) => ({id:'bg-'+id,name,detail:'רקע מהטבע · סרטון בלולאה',kind:'video',file:'backdrops/'+id+'.mp4',thumb:'thumbs/bg-'+id+'.png',w:1,fill:true,group:'backdrop'}));
   const entries = [...backdrops, ...scenes, ...fx3d, ...weatherParticles, ...wreal, ...k3d, ...models, ...flowers, ...scans, ...stickers];
   const groups = [['all','הכול'],['backdrop','רקעים מהטבע'],['scene','סצנות בתנועה'],['fx','אפקטים מרחפים'],['weather-real','מזג אוויר ריאליסטי'],['cosmic','חלל וחלקיקים'],['model','תלת־ממד'],['animal','חיות בתנועה'],['sticker','מדבקות']];

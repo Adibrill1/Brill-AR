@@ -181,3 +181,25 @@ Thumbnails are a frame shown through the key over a quiet dusk gradient.
     to the inner petals that sit in shadow. They are packed as JPEG.
 - All four sway in a breeze through the same "Loop" clip as the other plants (`tools/make-ph-loops.py`, two morph
   targets bending by height above the ground).
+
+## Nature backdrops — `backdrops/<id>.mp4`, `thumbs/bg-<id>.png`
+Seven opaque video loops (960×960 H.264, 10 s, 24 fps) that fill the artwork as a backdrop. Everything is self-made, so
+no licence applies. The generators are outside this repository: `tools/nature_bg.py` (numpy), `tools/nature_field.py`
+(Blender) and `tools/nature_compose.py`. Each is computed in linear light at 1.5× size and averaged down.
+- **Starry sky** (`stars`): about 2,000 stars with a power-law brightness and star colours, and the Milky Way with dust
+  lanes. The brightest stars twinkle on whole-number cycles per loop. There is a line of pines and one meteor.
+- **Sea** (`sea`) and **sunset over the sea** (`sunset`):
+  - The sea is a Tessendorf FFT ocean whose wave frequencies are rounded to whole cycles per loop, so it repeats
+    exactly. It is ray-traced per pixel from 4 m above the water.
+  - The normals come from two wave patches, sampled from mip levels by the pixel's footprint. The lost slope variance
+    returns as roughness for the sun's glint.
+  - The water reflects the same sky by Fresnel, with haze toward the horizon.
+- **Drifting clouds** (`clouds`): a cloud layer 1.5 km up made of tileable fbm with domain warp, lit from the sun's side.
+  It drifts by the flow-map trick: two copies half a loop apart.
+- **Wheat field** (`field`): Blender geometry nodes scatter wheat stalks (stem, leaf, an ear of grains with awns) and
+  Eevee renders them. Gust waves cross the field on whole cycles per loop. The result is laid over the cloud sky with the
+  same camera, with a hazy treeline at the horizon.
+- **Aurora** (`aurora`): a folded curtain with fine rays and a soft glow behind it, over the stars. Mountains stand
+  against it, reflected in a lake.
+- **Underwater** (`underwater`): a fan of light shafts, the rippling surface lit by caustics from an FFT ocean, and
+  drifting particles with depth of field.
