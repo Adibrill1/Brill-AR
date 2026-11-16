@@ -135,13 +135,20 @@ window.StarterLibrary = (() => {
     ['w-storm','סערה וברקים',.7],['w-lightning','ברקים',.6],['w-hail','ברד',.5],['w-snow','שלג',.8],['w-rainbow','קשת בענן',.7],
     ['w-wind','רוח ועלים',.8],['w-fog','ערפל',.8],['w-tornado','טורנדו',.45],['w-night','לילה עם ירח',.7]
   ].map(([id,name,w]) => ({id:'fx3d-'+id,name,detail:'מזג אוויר · תלת־ממד · לולאה',kind:'model',file:'models/fx3d-'+id+'.glb',thumb:'thumbs/fx3d-'+id+'.png',clip:'Loop',w,group:'weather'}));
+  // Realistic weather as filmed-looking video loops on black (tools/weather_particles.py, and weather_volumes.py in
+  // Blender, outside this repository): each arrives with the soft black ("glow") key on, across the artwork's width
+  const glowKey = { enabled: true, color: '#000000', threshold: 0.2, soft: 0, edge: 0.5 };
+  const wreal = [
+    ['rain-light','גשם קל'],['rain-heavy','גשם כבד ברוח'],['storm','ברקים בענני סערה'],['hail','ברד'],['snow','שלג רך'],
+    ['blizzard','סופת שלג'],['fog','ערפל נמוך'],['clouds','עננים נודדים'],['rays','קרני שמש באובך'],['dust','אבק זהוב ברוח']
+  ].map(([id,name]) => ({id:'wr-'+id,name,detail:'מזג אוויר ריאליסטי · סרטון בלולאה',kind:'video',file:'weather/'+id+'.mp4',thumb:'thumbs/wr-'+id+'.png',w:1,chroma:glowKey,group:'weather-real'}));
   const k3d = [
     ['k-tornado','מערבולת חלקיקים',.5],['k-saturn','שבתאי מחלקיקים',.65],['k-blackhole','חור שחור ודיסקת אור',.6],['k-globe','גלובוס נקודות',.45],
     ['k-galaxy','גלקסיה ספירלית',.7],['k-dna','סליל DNA',.3],['k-gyro','טבעות מסתובבות',.5],['k-sphere','כדור חלקיקים נושם',.45],
     ['k-terrain','נוף קווים',.9],['k-constellation','קבוצת כוכבים',.7],['k-orb','כדור קוסמי',.45],['k-fibres','מנורת סיבים אופטיים',.45]
   ].map(([id,name,w]) => ({id:'fx3d-'+id,name,detail:'חלל · תלת־ממד · לולאה',kind:'model',file:'models/fx3d-'+id+'.glb',thumb:'thumbs/fx3d-'+id+'.png',clip:'Loop',w,group:'cosmic'}));
-  const entries = [...scenes, ...fx3d, ...w3d, ...k3d, ...models, ...scans, ...animated, ...stickers];
-  const groups = [['all','הכול'],['scene','סצנות בתנועה'],['fx','אפקטים מרחפים'],['weather','מזג אוויר'],['cosmic','חלל וחלקיקים'],['model','תלת־ממד'],['animal','חיות בתנועה'],['sea','ים'],['dino','דינוזאורים'],['creature','דמויות'],['sticker','מדבקות']];
+  const entries = [...scenes, ...fx3d, ...w3d, ...wreal, ...k3d, ...models, ...scans, ...animated, ...stickers];
+  const groups = [['all','הכול'],['scene','סצנות בתנועה'],['fx','אפקטים מרחפים'],['weather','מזג אוויר'],['weather-real','מזג אוויר ריאליסטי'],['cosmic','חלל וחלקיקים'],['model','תלת־ממד'],['animal','חיות בתנועה'],['sea','ים'],['dino','דינוזאורים'],['creature','דמויות'],['sticker','מדבקות']];
   const MIME = {glb:'model/gltf-binary',mp4:'video/mp4',png:'image/png',gif:'image/gif',wav:'audio/wav'};
   async function open(importAsset) {
     const dialog = document.createElement('dialog'); dialog.id='starter-library'; dialog.dir='rtl';

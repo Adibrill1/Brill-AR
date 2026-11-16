@@ -173,3 +173,22 @@ fibre lamp's tips change colour by three overlapping tip sets that grow and shri
 Everything is built to be seen from any side: light rays and the sun's rays point in every direction, the portal has a
 tunnel behind its ring, the aurora's curtains stand on an arc, the rainbow is round tubes, clouds are as deep as they are
 tall, rain, hail and snow fall through a deep box, lightning zigzags in depth, fog is crossing soft layers.
+
+## Realistic weather — `weather/<id>.mp4`, `thumbs/wr-<id>.png`
+The group "מזג אוויר ריאליסטי": ten weather loops made to look filmed rather than drawn, all self-made (no third-party
+assets). Each is a 720×720 H.264 video on black (no sound) that arrives as a video layer across the artwork's width with
+the soft black ("glow") key on, so only the light of the weather lies over the artwork. Made by scripts outside this
+repository (`tools/weather_particles.py`, `tools/weather_volumes.py`, `tools/weather_encode.py`, `tools/weather_flash.py`,
+run with Blender 5.2's own Python and Blender itself):
+- rain-light, rain-heavy, hail, snow, blizzard, dust (30 fps): particles in 3D in front of a pinhole camera, each drawn
+  with real lens optics, a motion streak as long as its speed times the shutter and a depth-of-field blur that grows away
+  from the focus (out-of-focus snowflakes and motes become soft bokeh discs); heavy rain, the blizzard and the dust carry
+  faint gusts of mist. Every particle travels a path that starts and ends outside the picture a whole number of times per
+  loop, so the loop has no seam.
+- fog, clouds, rays, storm (rendered at 12 fps in Cycles, blended to 24): real volumes lit by a sun and by a sky only the
+  light sees (the camera sees black). Fog is fractal noise thick at the ground; clouds are noise-billowed bodies with flat
+  bases riding across and wrapping outside the picture; rays are a warm spotlight through a moving canopy of holes into
+  haze; the storm is a bank of cloud bodies lit from inside by flashes, with the bolts (jagged at every scale by midpoint
+  displacement, with forks) drawn over them in time with the flashes. Fog, rays and storm close their loop with a short
+  cross-fade.
+Thumbnails are a frame shown through the key over a quiet dusk gradient.
