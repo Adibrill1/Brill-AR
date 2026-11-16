@@ -2497,6 +2497,9 @@ vec4 bpPattern(vec2 uv) {
         let g = container.querySelector('[data-el-id="'+group.id+'"]');
         if (g && g.object3D) { const h = hidden(g.object3D); if (h.content) allowed = false; if (h.tracking) lost = true; }
       }
+      // A sound layer has nothing to look at, so it follows its creation: when the artwork is not in view (or the
+      // portal moved on to another creation) it stops with the rest, and does not start on a touch meant for another.
+      if (!node && root && hidden(root).tracking) lost = true;
       if (lost) { if (m._lostSince == null) m._lostSince = now; if (now - m._lostSince >= (container._studioGraceMs != null ? container._studioGraceMs : TRACKING_GRACE_MS)) allowed = false; }
       else m._lostSince = null;
       m.node._studioBlocked = !allowed;

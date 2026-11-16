@@ -1295,5 +1295,11 @@ window.Editor3D = (() => {
     rebuildArtwork().then(() => ensureMedia(getRec())).then(rebuildElements);
   }
 
-  return { init, show, hide, overlay, drawsIn2d, overlayType, modelError, needsOverlay: (rec) => !!rec && rec.elements.some((e) => overlayType(e) || (e.type === "group" && !!(e.rotX || e.rotY))), sync, isActive: () => active && mode === "3d", refreshGizmo, selectPoint: (i) => { pointSel = i; refreshGizmo(); }, get pointSel() { return pointSel; }, _test: { pathHelper: () => pathHelper, glLost: () => glLost, mode: () => mode, alphaAt, pickOrder, rebuilds: () => rebuildCount, gizmo: () => gizmo, node: (id) => elNode(id), scene: () => sceneEl, helper: () => helper, drag: () => gizmoDrag } };
+  // the flat view's 3D layer as a picture, drawn this moment (for the cover picture): its canvas and where it sits on screen
+  function shot2d() {
+    if (!active || mode !== "2d" || !sceneEl || !sceneEl.renderer || !sceneEl.camera || glLost || host.style.display === "none") return null;
+    try { sceneEl.renderer.render(sceneEl.object3D, sceneEl.camera); } catch (e) { return null; }
+    return { canvas: sceneEl.canvas, rect: sceneEl.canvas.getBoundingClientRect() };
+  }
+  return { init, show, hide, overlay, shot2d, drawsIn2d, overlayType, modelError, needsOverlay: (rec) => !!rec && rec.elements.some((e) => overlayType(e) || (e.type === "group" && !!(e.rotX || e.rotY))), sync, isActive: () => active && mode === "3d", refreshGizmo, selectPoint: (i) => { pointSel = i; refreshGizmo(); }, get pointSel() { return pointSel; }, _test: { pathHelper: () => pathHelper, glLost: () => glLost, mode: () => mode, alphaAt, pickOrder, rebuilds: () => rebuildCount, gizmo: () => gizmo, node: (id) => elNode(id), scene: () => sceneEl, helper: () => helper, drag: () => gizmoDrag } };
 })();

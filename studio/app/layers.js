@@ -480,7 +480,18 @@ window.Layers = (() => {
     const im = h("img", { alt: "", draggable: false }); im.src = Studio.blobURL(rec.assets.__artwork);
     artCard.append(h("span.layer-thumb.art", im), h("span.layer-text", h("span.layer-name", "תמונת היצירה"), h("span.layer-sub", "מה שהמצלמה מזהה")),
       h("button.icon-btn.art-turn", { type: "button", id: "art-rotate", title: "סיבוב התמונה", "aria-label": "סיבוב התמונה ברבע סיבוב", onclick: () => rotateArtwork() }, icon("rotate", 20)),
+      h("button.icon-btn.art-cover", { type: "button", id: "art-cover", title: "תמונת שער ממה שרואים עכשיו", "aria-label": "לקבוע את תמונת השער ממה שרואים עכשיו בתצוגה השטוחה", onclick: () => coverFromView() }, icon("image", 20)),
       h("button.btn.ghost.small", { type: "button", onclick: pickArtwork }, "החלפה"));
+  }
+  // The gallery card's picture ("תמונת שער") becomes what the flat view shows now: the artwork with its layers.
+  // Kept as __cover (home.js); the camera goes on recognising the artwork itself.
+  async function coverFromView() {
+    const rec = App.rec; if (!rec || !rec.target) return needArt();
+    if (App.mode3d) return toast("תמונת השער מצולמת מהתצוגה השטוחה. עוברים ל״שטוח״ ולוחצים שוב.", { kind: "warn" });
+    let pic = null; try { pic = await Stage.coverShot(); } catch (e) { console.warn(e); }
+    if (!pic) return toast("לא הצלחתי לצלם את התצוגה הפעם. אפשר לנסות שוב.", { kind: "error" });
+    rec.assets.__cover = pic; await App.save({ noHistory: true });
+    toast("תמונת השער עודכנה למה שרואים עכשיו");
   }
 
   // Reorder by dragging the grip: the row follows the finger, the others make room.
@@ -526,5 +537,5 @@ window.Layers = (() => {
     ed.addEventListener("drop", (e) => { ed.classList.remove("dropping"); if (!e.dataTransfer || !e.dataTransfer.files.length) return; e.preventDefault(); addFiles([...e.dataTransfer.files]); });
   }
 
-  return { init, render, openAdd, openLibrary, importAsset, pickArtwork, setArtwork, rotateArtwork, addFiles, rename, TYPES, typeOf, phone };
+  return { init, render, openAdd, openLibrary, importAsset, coverFromView, pickArtwork, setArtwork, rotateArtwork, addFiles, rename, TYPES, typeOf, phone };
 })();

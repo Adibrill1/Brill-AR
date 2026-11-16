@@ -412,7 +412,7 @@ window.Stage = (() => {
     if (App.mode3d) return;
     ctx.translate(view.cw / 2 + pan.x, view.ch / 2 + pan.y); ctx.scale(zoom, zoom); ctx.translate(-view.cw / 2, -view.ch / 2);
     // the soft shadow under the artwork is the costliest part of a frame; a phone goes without it
-    if (!COARSE) { ctx.save(); ctx.shadowColor = "rgba(0,0,0,.55)"; ctx.shadowBlur = 40; ctx.shadowOffsetY = 12; ctx.fillStyle = "#000"; ctx.fillRect(view.mx, view.my, view.W, view.H); ctx.restore(); }
+    if (!COARSE && !clean) { ctx.save(); ctx.shadowColor = "rgba(0,0,0,.55)"; ctx.shadowBlur = 40; ctx.shadowOffsetY = 12; ctx.fillStyle = "#000"; ctx.fillRect(view.mx, view.my, view.W, view.H); ctx.restore(); }
     ctx.drawImage(App.art, view.mx, view.my, view.W, view.H);
     const selId = App.selId; let selEl = null;
     for (const k in boxes) delete boxes[k];
@@ -421,7 +421,7 @@ window.Stage = (() => {
       const s = App.sample(el), b = boxOf(el, s);
       boxes[el.id] = b; if (el.id === selId) selEl = el;
       if (!s.visible) { b.hidden = true; continue; }
-      if (el.id === selId && App.cropping) continue; // drawn by the crop overlay
+      if (el.id === selId && App.cropping && !clean) continue; // drawn by the crop overlay
       // its entrance or exit (and its group's) laid over the drawing only: the box she grabs stays where the layer is
       const lk = Studio.hasEnterExit(el) ? App.fxLook(el) : null, g = Studio.groupOf(rec, el.id), gl = g && Studio.hasEnterExit(g) ? App.fxLook(g) : null;
       if ((lk && lk.hidden) || (gl && gl.hidden)) continue;
@@ -434,6 +434,7 @@ window.Stage = (() => {
       ctx.restore();
     }
     for (const g of rec.elements) if (g.type === "group") { const b = groupBox(g); if (b) { boxes[g.id] = b; if (g.id === selId) selEl = g; } }
+    if (clean) return;
     if (App.multi) drawChosen();
     if (guide) {
       ctx.save(); ctx.strokeStyle = "#ff8f6b"; ctx.lineWidth = 1 / zoom; ctx.setLineDash([5 / zoom, 4 / zoom]); ctx.beginPath();
@@ -443,6 +444,26 @@ window.Stage = (() => {
     }
     if (selEl && boxes[selEl.id]) { if (App.cropping) drawCrop(selEl); else { drawMarks(selEl, boxes[selEl.id]); if (selEl.type === "scatter" && selEl.scatter.points && !drawing) drawScatterPath(selEl, boxes[selEl.id]); } }
     drawStroke();
+  }
+  // The cover picture ("תמונת שער") from the flat view: the artwork with its layers as they look this moment, without
+  // the editing marks, cut to the artwork's edges, 800px on the long side (as home.js keeps covers). The 3D layer of
+  // the flat view (models, particles, tilted layers) is drawn over it, as on screen.
+  let clean = false;
+  async function coverShot() {
+    const rec = App.rec; if (!rec || !rec.target || !App.art || !ctx || App.mode3d || !view.W) return null;
+    const k = Math.min(1, 800 / Math.max(view.W * dpr, view.H * dpr)) , out = document.createElement("canvas");
+    out.width = Math.max(1, Math.round(view.W * dpr * k)); out.height = Math.max(1, Math.round(view.H * dpr * k));
+    const g = out.getContext("2d"), z = zoom, px = pan.x, py = pan.y;
+    g.fillStyle = "#ffffff"; g.fillRect(0, 0, out.width, out.height);
+    const r = canvas.getBoundingClientRect(), art = { left: r.left + (view.mx - view.cw / 2) * z + view.cw / 2 + px, top: r.top + (view.my - view.ch / 2) * z + view.ch / 2 + py, w: view.W * z };
+    clean = true; zoom = 1; pan.x = 0; pan.y = 0;
+    try {
+      draw();
+      g.drawImage(canvas, view.mx * dpr, view.my * dpr, view.W * dpr, view.H * dpr, 0, 0, out.width, out.height);
+      const s3 = Editor3D.shot2d();
+      if (s3 && s3.rect.width) { const q = out.width / art.w; g.drawImage(s3.canvas, (s3.rect.left - art.left) * q, (s3.rect.top - art.top) * q, s3.rect.width * q, s3.rect.height * q); }
+    } finally { clean = false; zoom = z; pan.x = px; pan.y = py; draw(); }
+    return new Promise((res) => out.toBlob(res, "image/jpeg", 0.85));
   }
   function frame() { raf = requestAnimationFrame(frame); if (shown && !document.hidden) draw(); }
 
@@ -743,7 +764,7 @@ window.Stage = (() => {
     if (shown) { layout(); applyMode(); } else { if (Editor3D.isActive()) Editor3D.hide(); Editor3D.overlay(false); }
   }
 
-  return { init, show, layout, draw, nudge, fitText, textBitmap, textFxColor: (el) => (Studio.textFxOf(el) || {}).color || "#ffffff", setCropRatio, resetCrop, pickColor, stopPick, startScatter, stopDrawing, copyBoxes,
+  return { init, show, layout, draw, coverShot, nudge, fitText, textBitmap, textFxColor: (el) => (Studio.textFxOf(el) || {}).color || "#ffffff", setCropRatio, resetCrop, pickColor, stopPick, startScatter, stopDrawing, copyBoxes,
     get picking() { return picker ? picker.id : null; }, get drawing() { return drawing ? { srcId: drawing.srcId, straight: drawing.straight, taps: drawing.taps.length } : null; },
     get pointSel() { return pointSel; }, set pointSel(v) { pointSel = v; }, get cropRatio() { return cropRatio; }, get view() { return view; }, get zoom() { return zoom; }, get pan() { return pan; }, boxes, CROP_TYPES };
 })();
