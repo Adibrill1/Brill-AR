@@ -81,32 +81,6 @@ license.txt in the download (credit not required; given here as a courtesy). Bui
 with gold print, all drawn in the script). The platter, record and spindle turn at 75 rpm in the one looping clip
 "Loop" (4 s). It sits in the 3D models filter.
 
-## Animated 3D models: Quaternius (CC0) — `models/q*-*.glb`, `thumbs/q*-*.png`
-81 rigged, animated low-poly models by Quaternius (https://quaternius.com), CC0 1.0 per the License.txt in each pack
-(free for any use, no credit needed; credited here as a courtesy). The glTF variants were downloaded from the packs'
-public Google Drive folders and packed to one GLB each by `tools/gltf-to-glb.mjs`; geometry, skins, animations and
-textures unchanged (first two packs below). Thumbnails are rendered from the GLB, posed 0.3 s into the move the item starts on
-(`tools/make-graphics.cjs mthumb`).
-
-- Ultimate Animated Animal Pack (`q-`): alpaca, bull, cow, deer, donkey, fox, horse, horse_white, husky, shibainu,
-  stag, wolf. 12–13 moves each (Idle, Walk, Gallop, Eating, Jump, Attack…); the library starts them on Idle (cow: Eating).
-- Cute Animated Monsters Pack (`qm-`): alien, alien_tall, bat, bee, cactus, chicken, crab, cthulhu, cyclops, deer,
-  demon, ghost, greendemon, mushroom, panda, penguin, pig, skull, tree, yellowdragon, yeti. Moves include Dance, Idle,
-  Yes, No, Jump, Walk; the flying ones (bat, bee, cthulhu, yellowdragon) have Flying. Started on Dance or Flying.
-
-- More packs, converted from their FBX files with the editor's own bundled converter (AssimpJS, the same one the
-  editor uses for FBX uploads) by `tools/fbx-to-glb.cjs`: Animated Fish Pack (`qf-`: dolphin, fish1, fish2, fish3,
-  manta_ray, shark, whale), Cute Fish Pack (`qc-`: clownfish, koi, goldfish, bluetang, puffer, betta, anglerfish,
-  lionfish, mandarinfish, swordfish, sunfish, blobfish), Animated Dinosaur Pack (`qd-`: apatosaurus,
-  parasaurolophus, stegosaurus, trex, triceratops, velociraptor), Farm Animal Pack (`qa-`: sheep, pig, pug, zebra) and
-  Animated Robot (`qr-robot`). These keep the FBX's centimetre units (the editor fits every model to its layer width).
-- Ultimate Monsters pack (`qu-`, glTF with a shared texture atlas, packed to GLB): bunny, frog, birb, mushroomking,
-  cactoro, dino, blob_cat, blob_dog, blob_pinkblob, blob_wizard, blob_mushnub, dragon, glub, ghost, squidle, hywirl,
-  pigeon, alpaking.
-
-All Quaternius packs above are CC0 1.0 per their pack pages and License.txt files. The move is chosen in the editor's
-model panel; the library only sets the starting one (swimming, Idle, Wave, Dance or Flying).
-
 ## Original animated models — `models/m-*.glb`, `thumbs/m-*.png`
 Six models built entirely in code by `tools/make-models.mjs` (outside this repository): geometry generated there
 (sphere, torus, lathe, box, bipyramid, star prism), plain glTF PBR materials, and node animation in one looping clip
