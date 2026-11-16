@@ -19,7 +19,8 @@ for(const phone of [true,false]){
   assert.ok(await p.locator('#stage-empty').isVisible(),tag+': asks for the artwork first');
 
   // adding before there is artwork is refused with a hint
-  await p.locator('#btn-add').click();await p.waitForTimeout(300);
+  assert.equal(await p.locator('#btn-add').isVisible(),false,tag+': no add-layer button before there is artwork');
+  await p.evaluate(()=>Layers.openAdd());await p.waitForTimeout(300);
   assert.equal(await p.locator('dialog[open]').count(),0,tag+': no add sheet without artwork');
   // the artwork goes through the real file picker
   const [fc]=await Promise.all([p.waitForEvent('filechooser'),p.locator('#btn-empty-art').click()]);
