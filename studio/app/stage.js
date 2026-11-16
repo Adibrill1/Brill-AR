@@ -660,6 +660,8 @@ window.Stage = (() => {
     const inGroup = Studio.groupOf(App.rec, el.id);
     if (el.type === "group") bar.append(btn("ungroup", "לפרק קבוצה", () => App.ungroup(el.id)));
     else if (inGroup) bar.append(btn("group", "לבחור את כל הקבוצה", () => App.select(inGroup.id)));
+    // choosing several layers to group: starts from this one, in the list of layers
+    else if (App.rec.elements.length > 1 && !App.multi) bar.append(Object.assign(btn("group", "בחירת כמה שכבות לקיבוץ", () => { const id = el.id, ok = !el.locked; App.startMulti(); if (ok) App.toggleMulti(id); App.setPane("layers"); }), { id: "btn-multi" }));
     bar.append(btn("lock", "נעילה במקום", () => { App.setLocked(el.id, true); toast("השכבה ננעלה. משחררים אותה מרשימת השכבות."); }),
       btn("copy", "שכפול", () => App.duplicateLayer(el.id)), btn("trash", "מחיקה", () => App.removeLayer(el.id)));
     placeBar();

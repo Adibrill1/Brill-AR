@@ -3,6 +3,12 @@
    one creation) and view.html (the portal, where creations come and go as the camera meets their artworks) build
    with the same code, so a creation behaves the same in both: muted autoplay + first-tap sound, motion that starts
    when the artwork is found and freezes while it is lost, tap actions, states and tracks, the steady hold. */
+// iPhones show "Would Like to Access Motion and Orientation" because the engine asks for the motion sensors whenever it
+// starts. Here it only follows pictures (disableWorldTracking), which it does from the camera alone - as on a computer
+// with a webcam, which has no such sensors. So the engine's question is answered here and never reaches the viewer.
+for (const E of [window.DeviceMotionEvent, window.DeviceOrientationEvent]) {
+  if (E && typeof E.requestPermission === "function") { try { E.requestPermission = () => Promise.resolve("granted"); } catch (e) {} }
+}
 window.ARMount = (() => {
   // The scene and what it holds once per page: camera, lights, and the 10-second capture (sound mixed in, no mic).
   function makeScene(opts) {

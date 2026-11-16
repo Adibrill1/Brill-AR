@@ -125,21 +125,18 @@ const ANDROID='Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTM
   assert.equal(await q.evaluate(()=>!!document.getElementById('start')),false);
   await q.close();
   const q2=watch(await ctx.newPage());await q2.goto(base+'/view.html?c='+ids[2]);await q2.waitForFunction((id)=>window.__portal&&__portal.mounted().includes(id),ids[2],{timeout:60000});await q2.close();
-  // an iPhone without the motion permission yet: the whole screen is one tap, one wordless mark; with it: no tap at all
+  // an iPhone, with or without the motion permission: straight to the camera, no tap and no question about motion
   const IPHONE='Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1';
   for(const allowed of [false,true]){
     const ic=await b.newContext({viewport:{width:375,height:812},isMobile:true,hasTouch:true,userAgent:IPHONE,permissions:['camera']});await mock.attach(ic);await ic.addInitScript(fakeCam);
     await ic.addInitScript((allowed)=>{window.__asked=0;const ask=()=>{window.__asked++;return navigator.userActivation&&navigator.userActivation.isActive||allowed?Promise.resolve('granted'):Promise.reject(new DOMException('needs a gesture','NotAllowedError'));};window.DeviceMotionEvent.requestPermission=ask;window.DeviceOrientationEvent.requestPermission=ask;},allowed);
     const ip=watch(await ic.newPage());await ip.goto(base+'/view.html#'+ids[0]);
-    if(!allowed){
-      await ip.waitForSelector('#start',{state:'visible',timeout:20000});
-      assert.equal((await ip.textContent('#screen')).trim(),'','the tap screen has no words');
-      const bb=await ip.locator('#start').boundingBox();assert.ok(bb.width>=370&&bb.height>=800,'the whole screen is the tap target: '+JSON.stringify(bb));
-      await ip.screenshot({path:SHOTS+'polish/viewer-start-iphone-tap.png'});
-      await ip.tap('#start');
-    }
+    // the motion sensors are never asked for (the engine's own request is answered in ar-mount.js): no tap screen either way
     await ip.waitForFunction((id)=>window.__portal&&__portal.mounted().includes(id),ids[0],{timeout:60000});
-    if(allowed)assert.equal(await ip.evaluate(()=>!!document.getElementById('start')),false,'motion already allowed: no tap screen');
+    assert.equal(await ip.evaluate(()=>!!document.getElementById('start')),false,'no tap screen (allowed before: '+allowed+')');
+    assert.equal(await ip.evaluate(()=>window.__asked),0,'the viewer is not asked for the motion sensors');
+    assert.equal(await ip.evaluate(async()=>await DeviceMotionEvent.requestPermission()),'granted','the engine gets its answer without a question');
+    assert.equal(await ip.evaluate(()=>window.__asked),0);
     await ic.close();
   }
 

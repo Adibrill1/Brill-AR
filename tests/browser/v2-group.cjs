@@ -27,9 +27,13 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
   const start=await pos();
 
   // choosing: two rows in the list, one touch on the stage
-  await p.locator('#btn-multi').click();await p.waitForTimeout(250);
+  // from the selection bar of a chosen layer: that layer is the first one chosen
+  assert.equal(await p.locator('.pane-head #btn-multi').count(),0,'no "choose several" in the head of the list');
+  await p.evaluate(()=>App.select('a'));await p.waitForTimeout(200);
+  await p.locator('#sel-bar #btn-multi').click();await p.waitForTimeout(250);
   assert.equal(await p.locator('.layer-row.choosing').count(),4,'every row gets a box');
-  await p.locator('.layer-row.choosing[data-id="a"]').click();await p.locator('.layer-row.choosing[data-id="b"]').click();
+  assert.deepEqual(await p.evaluate(()=>[...App.multi]),['a'],'the layer it started from is chosen');
+  await p.locator('.layer-row.choosing[data-id="b"]').click();
   assert.match(await p.locator('#stage-hint').textContent(),/נבחרו 2/,'the stage says how many are chosen');
   await tap(await screen(0,-0.1));
   assert.deepEqual(await p.evaluate(()=>[...App.multi].sort()),['a','b','c'],'a touch on the stage adds a layer');

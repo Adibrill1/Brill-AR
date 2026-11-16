@@ -58,7 +58,13 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
     await p.evaluate(()=>App.select(App.rec.elements.find(e=>e.type==='image').id));await p.waitForTimeout(250);assert.equal(await inside('picture again after '+dx),n1);
   }
   await shot('bar-wide-layer');
-  await p.evaluate(()=>{localStorage.removeItem('brill-sel-bar');});
+  // the 3D view, where the bar has less room: in its corner and after a drag, still every button on its background
+  await p.evaluate(()=>App.setMode3d(true));await p.waitForTimeout(1500);await inside('3D view, where it was left');
+  {const g=await p.locator('#sel-bar .sel-grip').boundingBox();await drag(g.x+g.width/2,g.y+g.height/2,g.x+g.width/2-300,g.y+g.height/2-60);await inside('3D view, dragged');await shot('bar-3d-dragged');}
+  await p.evaluate(()=>{localStorage.removeItem('brill-sel-bar');});await p.reload();await p.waitForFunction(()=>typeof App!=='undefined'&&App.rec&&App.rec.target,null,{timeout:30000});await p.waitForTimeout(800);
+  await p.evaluate(()=>{App.select(App.rec.elements.find(e=>e.type==='image').id);App.setMode3d(true);});await p.waitForTimeout(1500);await inside('3D view, in its own corner');await shot('bar-3d-corner');
+  assert.equal(await p.locator('#sel-bar #btn-multi').count(),1,'"choose several" sits on the bar');
+  await p.evaluate(()=>App.setMode3d(false));await p.waitForTimeout(600);
 
   // 5. the 3D shelf from the add sheet, with the import button only there
   await p.locator('.tab[data-tab="add"]').click();await p.waitForSelector('dialog[open] .add-grid');
@@ -82,8 +88,8 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
   assert.equal(await p.locator('#starter-library .library-filters button[data-group="model"]').count(),1);
   await p.keyboard.press('Escape');await p.waitForFunction(()=>!document.querySelector('#starter-library'));
   await p.locator('.tab[data-tab="add"]').click();await p.locator('dialog[open] .add-tile[data-add="model"]').click();await p.waitForSelector('#starter-library[open]');
-  // the layers page: one full "add layer" button, no small one in the head
-  assert.equal(await p.locator('#layers-pane .pane-head #btn-add').count(),0);assert.equal((await p.locator('#add-row #btn-add').textContent()).trim(),'הוספת שכבה');
+  // the layers page: one "add layer" button, beside the number of layers
+  assert.equal((await p.locator('#layers-pane .pane-head #btn-add').textContent()).trim(),'הוספת שכבה');
   const [fc]=await Promise.all([p.waitForEvent('filechooser'),imp.click()]);assert.ok(fc,'the import button asks for a file');await fc.setFiles([]);
   await p.waitForFunction(()=>!document.querySelector('#starter-library'));
 

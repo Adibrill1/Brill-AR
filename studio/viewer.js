@@ -9,8 +9,8 @@
    The recogniser keeps looking while a creation is shown, so turning to another artwork switches to it in place: the
    engine and the camera keep running, only the engine's one artwork and the scene's content change. Creations stay
    ready in memory once loaded, and with a small catalogue the others are fetched in the background meanwhile.
-   On an iPhone the engine needs the motion sensors, which Safari only lets a page ask for from a tap: then (and only
-   when the permission is not already there) the whole screen is one tap target with one wordless mark.
+   The viewer is asked for the camera only: the motion sensors are not needed for following a picture, and the
+   engine's request for them is answered in ar-mount.js, so there is no second question and no tap before the camera.
    Text for viewers is neutral plural Hebrew. */
 (async () => {
   const $ = (id) => document.getElementById(id);
@@ -39,7 +39,7 @@
   // ---------- iPhone: the motion sensors (asked from a tap, only when not allowed already) ----------
   // Safari answers at once, without asking, when the page already has the permission (or was refused); without a tap
   // and without an answer it rejects. So: ask quietly first, and only if that fails, wait for a tap.
-  const motionAPI = ios && typeof DeviceMotionEvent !== "undefined" && typeof DeviceMotionEvent.requestPermission === "function";
+  const motionAPI = false; // not asked any more (see ar-mount.js); the tap screen below stays for a day it is needed again
   const askMotion = () => Promise.all([DeviceMotionEvent.requestPermission(), typeof DeviceOrientationEvent !== "undefined" && DeviceOrientationEvent.requestPermission ? DeviceOrientationEvent.requestPermission() : "granted"]);
   const motionReady = motionAPI ? Promise.race([askMotion().then(() => true, () => false), new Promise((r) => setTimeout(() => r(false), 800))]) : Promise.resolve(true);
 
