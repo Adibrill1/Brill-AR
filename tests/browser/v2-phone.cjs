@@ -46,7 +46,7 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
   assert.equal(await p.evaluate(()=>Math.abs(Stage.pan.x)+Math.abs(Stage.pan.y)),0,'back at 100% the view is centred again');
 
   // 3D: a layer that covers the artwork leaves no empty space to drag on
-  await p.locator('.tab[data-tab="layers"]').click();await p.locator('#btn-add').click();await p.locator('.add-tile',{hasText:'רקע מונפש'}).click();await p.waitForTimeout(900);
+  await p.locator('.tab[data-tab="layers"]').click();await p.locator('#btn-add').click();await p.locator('.add-tile',{hasText:'רקעים'}).click();await p.locator('dialog[open] .part-tile[data-bg="pattern"]').click();await p.waitForTimeout(900);
   const id=await p.evaluate(()=>App.rec.elements[0].id);
   await p.evaluate(()=>App.select(null));
   await p.locator('#btn-3d').tap();await p.waitForSelector('#editor-3d-host a-scene canvas, a-scene canvas');await p.waitForTimeout(2500);

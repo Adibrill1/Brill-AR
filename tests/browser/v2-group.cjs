@@ -23,7 +23,7 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
   const els=()=>p.evaluate(()=>JSON.parse(JSON.stringify(App.rec.elements)));
   const pos=async()=>Object.fromEntries((await els()).filter(e=>e.type==='image').map(e=>[e.id,[e.x,e.y,e.w,e.rot||0]]));
   const near=(a,b,t=0.002)=>Math.abs(a-b)<t;
-  const setNum=async(label,v)=>{const n=p.locator('input.num[aria-label="'+label+' (מספר)"]');await n.fill(String(v));await n.dispatchEvent('change');await p.waitForTimeout(300);};
+  const setNum=async(label,v)=>{const n=p.locator('input.num[aria-label="'+label+' (מספר)"]');await n.evaluate(e=>{const s=e.closest('section.folded');if(s)s.querySelector('.group-fold').click();});await n.fill(String(v));await n.dispatchEvent('change');await p.waitForTimeout(300);};
   const start=await pos();
 
   // choosing: two rows in the list, one touch on the stage
