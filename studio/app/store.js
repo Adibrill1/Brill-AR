@@ -19,7 +19,7 @@ window.App = (() => {
     t0: performance.now(),
     tab: "style",         // inspector tab
     pane: "layers",       // phone: which pane is under the stage ("layers" | "inspector")
-    mode3d: false, cropping: false, snap: true,
+    mode3d: false, cropping: false,
     multi: null           // while choosing several layers: the Set of their ids
   };
 
@@ -164,7 +164,7 @@ window.App = (() => {
       const v = soundOn && actx ? want.get(n) || 0 : 0;
       if (actx) { wire(n); if (n.__gain) n.__gain.gain.value = v; }
       if (n.tagName === "VIDEO") n.muted = !(v > 0 && n.__gain);
-      else if (v > 0 && n.__gain) { if (n.paused) n.play().catch(() => {}); } else if (!n.paused) n.pause();
+      else if (v > 0 && n.__gain && S.frozen == null) { if (n.paused) n.play().catch(() => {}); } else if (!n.paused) n.pause();
     }
   }
   function unlockSound() {
@@ -180,7 +180,7 @@ window.App = (() => {
   // Back on the page is also the moment to try again whatever did not load.
   document.addEventListener("visibilitychange", () => {
     if (document.hidden) return;
-    Object.values(S.media).forEach((m) => { if (m.tagName === "VIDEO" && m.paused) m.play().catch(() => {}); });
+    if (S.frozen == null) Object.values(S.media).forEach((m) => { if (m.tagName === "VIDEO" && m.paused) m.play().catch(() => {}); });
     if (S.rec && S.artState === "error") loadArt();
   });
 
@@ -449,6 +449,17 @@ window.App = (() => {
   // ---------- playhead ----------
   function freeze(t) { S.frozen = t == null ? null : Math.max(0, t); if (t == null) S.t0 = performance.now(); emit("time"); }
   function replay() { S.frozen = null; S.t0 = performance.now(); emit("time"); }
+  // Go on from the parked moment (the pause button), not from the start.
+  function resume() { if (S.frozen == null) return; S.t0 = performance.now() - S.frozen * 1000; S.frozen = null; emit("time"); }
+  // While the playhead is parked everything that moves by itself rests too: videos, GIFs and sound (the 3D view holds
+  // its models, particles and effects itself). A layer frozen on one frame keeps its own still copy either way.
+  function holdMedia() {
+    const held = S.frozen != null;
+    if (window.GifAnim) window.GifAnim.held = held;
+    for (const m of Object.values(S.media)) if (m.tagName === "VIDEO") { if (held) m.pause(); else if (m.paused) m.play().catch(() => {}); }
+    if (held) Object.values(audioNodes).forEach((n) => { if (!n.paused) n.pause(); }); else applySound();
+  }
+  on("time open", holdMedia);
   // The key of a layer at time t (made when missing): where a drag on a moving layer writes.
   function keyAt(e, t) { return e.timeline.keys.find((k) => Math.abs(k.t - t) < 1e-6) || Studio.addTimelineKey(e, { t }); }
   // Before changing place/turn/size of a layer on the canvas: a moving layer is parked on a round time and gets a key there.
@@ -469,8 +480,8 @@ window.App = (() => {
     get soundOn() { return soundOn; }, setSound, get soundReady() { return !!actx; }, soundState: () => Object.values(S.media).filter((m) => m.tagName === "VIDEO").concat(Object.values(audioNodes)).map((n) => ({ tag: n.tagName, muted: n.muted, paused: n.paused, gain: n.__gain ? n.__gain.gain.value : null })),
     addLayer, removeLayer, duplicateLayer, moveLayer, scatterFrom, fanFrom, addScatter, redrawScatter, scatterDepth, breakScatter, setLocked, startMulti, endMulti, toggleMulti, groupLayers, ungroup, leaveGroup, setStill, setStillAt, mediaFor, movesItself, undo, redo, freeze, replay, keyAt, editKey, setTab, setPane, setMode3d, setCropping,
     get rec() { return S.rec; }, get selId() { return S.selId; }, get art() { return S.art; }, get artBlob() { return artBlob; }, get artState() { return S.artState; }, get media() { return S.media; },
-    get frozen() { return S.frozen; }, get tab() { return S.tab; }, get pane() { return S.pane; }, get mode3d() { return S.mode3d; },
-    get cropping() { return S.cropping; }, get multi() { return S.multi; }, get snap() { return S.snap; }, set snap(v) { S.snap = !!v; },
+    get frozen() { return S.frozen; }, resume, get tab() { return S.tab; }, get pane() { return S.pane; }, get mode3d() { return S.mode3d; },
+    get cropping() { return S.cropping; }, get multi() { return S.multi; },
     set rec(r) { S.rec = r; }
   };
 })();

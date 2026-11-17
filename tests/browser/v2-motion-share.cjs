@@ -44,7 +44,8 @@ for(const phone of [true,false]){
   // flat / 3D
   await p.locator('#btn-3d').click();await p.waitForFunction(()=>document.querySelector('#stage').classList.contains('is-3d'),null,{timeout:20000});
   assert.ok(await p.locator('#editor-3d-host').isVisible(),tag+': the 3D view opens');
-  assert.equal(await p.locator('#btn-snap').isVisible(),false,tag+': flat-only tools step aside');
+  assert.equal(await p.locator('#stage-tools .zoom').isVisible(),false,tag+': flat-only tools step aside');
+  assert.ok(await p.locator('#btn-pause').isVisible(),tag+': the pause button stays in 3D');
   await p.locator('#btn-2d').click();await p.waitForTimeout(600);
   assert.equal(await p.evaluate(()=>document.querySelector('#stage').classList.contains('is-3d')),false,tag+': back to flat');
 

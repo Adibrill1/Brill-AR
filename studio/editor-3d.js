@@ -109,12 +109,22 @@ window.Editor3D = (() => {
     try { localStorage.setItem("brill-3d-errors", JSON.stringify(errLog)); } catch (_) {}
   }
   let mountedAt = 0, remounts = 0, healthN = 0;
+  // The pause button: the parts that move by themselves (model clips, particles, effects, time cubes) get one held
+  // moment and no time passing; everything else (gizmo, orbit, layers following the parked playhead) runs as usual.
+  const MOVES = new Set(["model-clips", "particles", "studio-fx", "time-cube", "studio-pattern"]);
+  let held = false, heldAt = null;
+  function hold(on) {
+    held = !!on; if (!held) heldAt = null;
+    const assets = host && host.querySelector("#editor-3d-media");
+    if (assets) assets.querySelectorAll("video").forEach((v) => { if (held) v.pause(); else if (v.paused && !(v.ended && !v.loop)) v.play().catch(() => {}); });
+  }
   function guardScene(sc) {
     const each = (kind) => function (a, b, c) {
       const list = this.behaviors[kind];
+      if (held && heldAt == null) heldAt = a;
       for (let i = 0; i < list.length; i++) {
         const it = list[i]; if (!it.el.isPlaying) continue;
-        try { it[kind](a, b, c); it.__fails = 0; }
+        try { if (held && MOVES.has(it.attrName || it.name)) it[kind](heldAt, 1e-6, c); else it[kind](a, b, c); it.__fails = 0; }
         catch (e) { it.__fails = (it.__fails || 0) + 1; note3d(kind + ":" + (it.attrName || it.name || "?"), e, it.el); if (it.__fails >= 3) { list.splice(i, 1); i--; } }
       }
       for (const n of this.systemNames) { const y = this.systems[n]; if (!y[kind] || y.__dead) continue; try { y[kind](a, b, c); y.__fails = 0; } catch (e) { y.__fails = (y.__fails || 0) + 1; note3d(kind + ":system:" + n, e, null); if (y.__fails >= 3) y.__dead = true; } }
@@ -1191,7 +1201,7 @@ window.Editor3D = (() => {
   // The layer's own video copies (keyed clips) run while it is shown, as in the experience, and rest when it is hidden.
   let clipCheck = 0;
   function playClips(on) {
-    if (on && ++clipCheck % 30) return;
+    if (on && (held || ++clipCheck % 30)) return;
     const assets = host && host.querySelector("#editor-3d-media"); if (!assets) return;
     assets.querySelectorAll("video").forEach((v) => { if (!on) v.pause(); else if (v.paused && !(v.ended && !v.loop)) v.play().catch(() => {}); });
   }
@@ -1360,5 +1370,5 @@ window.Editor3D = (() => {
     try { sceneEl.renderer.render(sceneEl.object3D, sceneEl.camera); } catch (e) { return null; }
     return { canvas: sceneEl.canvas, rect: sceneEl.canvas.getBoundingClientRect() };
   }
-  return { init, show, hide, overlay, shot2d, drawsIn2d, overlayType, modelError, needsOverlay: (rec) => !!rec && rec.elements.some((e) => overlayType(e) || (e.type === "group" && !!(e.rotX || e.rotY))), sync, isActive: () => active && mode === "3d", refreshGizmo, selectPoint: (i) => { pointSel = i; refreshGizmo(); }, get pointSel() { return pointSel; }, _test: { pathHelper: () => pathHelper, glLost: () => glLost, mode: () => mode, alphaAt, pickOrder, rebuilds: () => rebuildCount, gizmo: () => gizmo, node: (id) => elNode(id), scene: () => sceneEl, helper: () => helper, drag: () => gizmoDrag } };
+  return { init, show, hide, hold, overlay, shot2d, drawsIn2d, overlayType, modelError, needsOverlay: (rec) => !!rec && rec.elements.some((e) => overlayType(e) || (e.type === "group" && !!(e.rotX || e.rotY))), sync, isActive: () => active && mode === "3d", refreshGizmo, selectPoint: (i) => { pointSel = i; refreshGizmo(); }, get pointSel() { return pointSel; }, _test: { pathHelper: () => pathHelper, glLost: () => glLost, mode: () => mode, alphaAt, pickOrder, rebuilds: () => rebuildCount, gizmo: () => gizmo, node: (id) => elNode(id), scene: () => sceneEl, helper: () => helper, drag: () => gizmoDrag } };
 })();

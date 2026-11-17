@@ -551,7 +551,7 @@ window.Stage = (() => {
       }
       let nx = clamp(drag.x0 + (p.x - drag.start.x) / view.W, -0.7, 0.7), ny = clamp(drag.y0 - (p.y - drag.start.y) / view.H, -0.7, 0.7);
       guide = null;
-      if (App.snap && !e.altKey) { const g = {}; if (Math.abs(nx) < 0.018) { nx = 0; g.v = true; } if (Math.abs(ny) < 0.014) { ny = 0; g.h = true; } if (g.v || g.h) guide = g; }
+      if (!e.altKey) { /* snapping to the middle is always on (Alt lets go of it) */ const g = {}; if (Math.abs(nx) < 0.018) { nx = 0; g.v = true; } if (Math.abs(ny) < 0.014) { ny = 0; g.h = true; } if (g.v || g.h) guide = g; }
       const t = drag.k ? App.keyAt(el, drag.k.t) : el;
       if (el.type === "group" && !drag.k) Studio.transformGroup(App.rec, el, { x: round(nx), y: round(ny) }); // the members move with it
       else { t.x = round(nx); t.y = round(ny); }
@@ -739,8 +739,13 @@ window.Stage = (() => {
     $("zoom-label").onclick = () => setZoom(1);
     $("btn-2d").onclick = () => App.setMode3d(false);
     $("btn-3d").onclick = () => App.setMode3d(true);
-    $("btn-snap").onclick = () => { App.snap = !App.snap; $("btn-snap").classList.toggle("on", App.snap); $("btn-snap").setAttribute("aria-pressed", String(App.snap)); toast(App.snap ? "הצמדה למרכז פועלת" : "הצמדה למרכז כבויה"); };
-    $("btn-time-live").onclick = () => App.freeze(null);
+    // the pause button: stops the creation's motion while she works, and goes on from the same moment
+    const paintPause = () => { const b = $("btn-pause"), held = App.frozen != null, label = held ? "להמשיך את התנועה" : "לעצור את התנועה";
+      b.replaceChildren(icon(held ? "play" : "pause", 18)); b.classList.toggle("on", held); b.setAttribute("aria-pressed", String(held)); b.title = label; b.setAttribute("aria-label", label);
+      Editor3D.hold(held); };
+    $("btn-pause").onclick = () => { if (App.frozen == null) App.freeze(Math.round(App.clock() * 10) / 10); else App.resume(); };
+    App.on("time open", paintPause); paintPause();
+    $("btn-time-live").onclick = () => App.resume();
     const paintSound = () => { $("btn-sound").classList.toggle("on", App.soundOn); $("btn-sound").setAttribute("aria-pressed", String(App.soundOn)); };
     $("btn-sound").onclick = () => { App.setSound(!App.soundOn); toast(App.soundOn ? "קול בזמן עריכה: פועל" : "קול בזמן עריכה: כבוי"); };
     App.on("sound open", paintSound); paintSound();

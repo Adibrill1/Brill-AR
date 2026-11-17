@@ -126,8 +126,12 @@
       if (t.wrapT !== 1001) t.wrapT = 1001;
       t.needsUpdate = true;
     };
+    let shown = false;
     const draw = () => {
       if (stopped) return;
+      // GifAnim.held (the editor's pause): a running GIF waits on its current frame
+      if (shown && hold == null && window.GifAnim && window.GifAnim.held) { timer = setTimeout(draw, 120); return; }
+      shown = true;
       if (prevDispose) { // undo the PREVIOUS frame per its disposal mode
         const pv = prevDispose;
         if (pv.disposal === 2) {
