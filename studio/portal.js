@@ -17,7 +17,17 @@
    An entry may carry a room (free text, "חדר" / "קבוצה" in the editor): the viewer downloads the other creations of the
    room in the background while one of them is shown (an exhibition of 50 in rooms of 5).
    The link id of an entry stays when its creation is replaced by another version with the same artwork, so a printed
-   QR keeps working. */
+   QR keeps working.
+   Private creations ("פרסום פרטי"): every file of the creation (media, creation file, thumbnail, and the description the
+   viewer recognises it by) is encrypted (AES-GCM, 256-bit key) before it is uploaded, and the key is only in the link,
+   after the "#" (view.html#<id>.<key>), which browsers never send to any server. The catalogue lists such a creation
+   under `sealed` without a name or anything readable: only its link id, the editor's creation id, and the paths of its
+   encrypted files (so the editor can update or remove it and viewers can keep their cached copies):
+     s/<id>/<rev>.bin        the encrypted description (name, files, thumbnail, recognition data)
+   Its media are m/<sha>.bin and its creation file c/<id>/<rev>.json, both encrypted. A file's IV is drawn from the key
+   and the file's own content, so an unchanged file encrypts to the same bytes and is not uploaded again on an update.
+   Without the link the files are unreadable, also to someone browsing the public repository. A leaked link cannot be
+   revoked; publishing the creation again with a new key ("קישור חדש") makes every earlier link stop working. */
 window.Portal = (() => {
   const CFG = { owner: "Adibrill1", repo: "Brill-AR", branch: "published", site: "https://adibrill1.github.io/Brill-AR/" };
   const raw = () => "https://raw.githubusercontent.com/" + CFG.owner + "/" + CFG.repo + "/" + CFG.branch + "/";
@@ -30,19 +40,24 @@ window.Portal = (() => {
   // serves files of up to 20MB only, so a bigger file has the one door. BIG: above this a publish says it will be slow
   // for viewers on mobile data. ROOM: GitHub asks repositories to stay under 1GB; the sheet says how much is left.
   const LIM = { file: 50 * MB, total: 100 * MB, big: 40 * MB, scene: 4 * MB, catalogue: 12 * MB, items: 2000, room: 1024 * MB };
-  const ID = /^[A-Za-z0-9_-]{4,64}$/, MEDIA = /^m\/[0-9a-f]{40}\.[a-z0-9]{1,5}$/, SCENE = /^c\/[A-Za-z0-9_-]{4,64}\/[a-z0-9]{1,16}\.json$/;
+  const ID = /^[A-Za-z0-9_-]{4,64}$/, KEY = /^[A-Za-z0-9_-]{43}$/, DESC = /^s\/[A-Za-z0-9_-]{4,64}\/[a-z0-9]{1,16}\.bin$/, MEDIA = /^m\/[0-9a-f]{40}\.[a-z0-9]{1,5}$/, SCENE = /^c\/[A-Za-z0-9_-]{4,64}\/[a-z0-9]{1,16}\.json$/;
   const EXT = { "image/png": "png", "image/jpeg": "jpg", "image/webp": "webp", "image/gif": "gif", "video/mp4": "mp4", "video/quicktime": "mov", "video/webm": "webm", "audio/mpeg": "mp3", "audio/mp4": "m4a", "audio/aac": "aac", "audio/wav": "wav", "audio/x-wav": "wav", "audio/ogg": "ogg", "model/gltf-binary": "glb" };
   const TYPE = { png: "image/png", jpg: "image/jpeg", webp: "image/webp", gif: "image/gif", mp4: "video/mp4", mov: "video/quicktime", webm: "video/webm", mp3: "audio/mpeg", m4a: "audio/mp4", aac: "audio/aac", wav: "audio/wav", ogg: "audio/ogg", glb: "model/gltf-binary", bin: "application/octet-stream" };
 
   // ---------- the viewer address ----------
   // From the live site the link points at the site itself; from anywhere else (a test, a local copy) at the live site.
-  function viewURL(id) {
+  function viewURL(id, key) {
     const base = /\.github\.io$/.test(location.hostname) ? new URL("view.html", location.href).href : CFG.site + "view.html";
-    return id ? base + "#" + encodeURIComponent(id) : base;
+    return id ? base + "#" + encodeURIComponent(id) + (key ? "." + key : "") : base;
+  }
+  // "<id>" or "<id>.<key>" (a private creation) from a link's part after "#"
+  function parseLink(s) {
+    const m = /^([A-Za-z0-9_-]{4,64})(?:\.([A-Za-z0-9_-]{43}))?$/.exec(s || "");
+    return m ? { id: m[1], key: m[2] || "" } : null;
   }
 
   // ---------- catalogue ----------
-  const emptyCatalogue = () => ({ format: "brill-portal/1", updated: 0, items: [] });
+  const emptyCatalogue = () => ({ format: "brill-portal/1", updated: 0, items: [], sealed: [] });
   // A room label as stored: one line, single spaces, at most 40 characters ("" = none)
   const cleanRoom = (r) => (typeof r === "string" ? r.replace(/\s+/g, " ").trim().slice(0, 40) : "");
   // Keeps only well-formed entries: the catalogue is read by every viewer, so nothing in it is trusted blindly.
@@ -60,6 +75,11 @@ window.Portal = (() => {
       out.items.push({ id: it.id, src: typeof it.src === "string" ? it.src.slice(0, 64) : "", name: it.name.slice(0, 120), rev: String(it.rev || "").slice(0, 16), scene: it.scene, files: it.files.slice(0, 200), thumb: it.thumb || null,
         bytes: Number(it.bytes) || 0, at: Number(it.at) || 0, trigger: { sha: t.sha, fp: t.fp, fpe: Number(t.fpe) || 0, ph: /^[0-9a-f]{16}$/.test(t.ph) ? t.ph : "", f: t.f || "" } });
       const room = cleanRoom(it.room); if (room) out.items[out.items.length - 1].room = room;
+    }
+    for (const it of (Array.isArray(o.sealed) ? o.sealed : []).slice(0, LIM.items)) {
+      if (!it || !ID.test(it.id) || seen.has(it.id) || !DESC.test(it.desc) || !SCENE.test(it.scene) || !Array.isArray(it.files) || !it.files.every((f) => MEDIA.test(f)) || (it.thumb != null && !MEDIA.test(it.thumb))) continue;
+      seen.add(it.id);
+      out.sealed.push({ id: it.id, src: typeof it.src === "string" ? it.src.slice(0, 64) : "", desc: it.desc, scene: it.scene, files: it.files.slice(0, 200), thumb: it.thumb || null, at: Number(it.at) || 0 });
     }
     return out;
   }
@@ -99,7 +119,7 @@ window.Portal = (() => {
   // Files no entry of cat needs any more are let go (creations removed or replaced since an earlier visit)
   async function pruneBox(cat) {
     try {
-      const keep = new Set(); for (const it of cat.items) { keep.add(it.scene); it.files.forEach((f) => keep.add(f)); }
+      const keep = new Set(); for (const it of cat.items.concat(cat.sealed || [])) { keep.add(it.scene); it.files.forEach((f) => keep.add(f)); }
       const c = await box(), base = raw();
       for (const req of await c.keys()) { const path = req.url.startsWith(base) ? req.url.slice(base.length) : ""; if (!keep.has(path)) await c.delete(req); }
     } catch (e) {}
@@ -125,7 +145,7 @@ window.Portal = (() => {
   // downloaded (0 when everything was there already). opts.stop(): asked between files; true ends it early.
   async function warm(item, opts) {
     const o = opts || {}; let n = 0;
-    const scene = await inBox(item.scene) ? await fromBox(item.scene) : await getFile(item.scene, LIM.scene, (k) => { n += k; });
+    const scene = await opened(item, await inBox(item.scene) ? await fromBox(item.scene) : await getFile(item.scene, LIM.scene, (k) => { n += k; }));
     const refs = Object.values(JSON.parse(await scene.text()).assets || {});
     for (const r of refs) {
       if (o.stop && o.stop()) break;
@@ -136,14 +156,14 @@ window.Portal = (() => {
   }
   // A published creation, ready for the AR scene. Nothing is saved on the viewer's phone.
   async function loadCreation(item, onProgress) {
-    const o = JSON.parse(await (await getFile(item.scene, LIM.scene)).text());
+    const o = JSON.parse(await (await opened(item, await getFile(item.scene, LIM.scene))).text());
     if (!o || typeof o.assets !== "object") throw new Error("bad scene");
     const refs = Object.entries(o.assets);
     let total = 0; for (const [, r] of refs) { if (!r || !MEDIA.test(r.file) || !(r.size >= 0)) throw new Error("bad asset reference"); total += r.size; }
     if (total > LIM.total + MB) throw new Error("too large");
     let got = 0; const tick = (n) => { got += n; if (onProgress) onProgress(Math.min(1, got / Math.max(1, total))); };
     const assets = {};
-    for (const [id, r] of refs) { const b = await getFile(r.file, Math.min(LIM.file + MB, r.size + 1024), tick); assets[id] = new Blob([b], { type: TYPE[r.file.split(".").pop()] || r.type || "application/octet-stream" }); }
+    for (const [id, r] of refs) { const b = await opened(item, await getFile(r.file, Math.min(LIM.file + MB, r.size + 1024), tick)); assets[id] = new Blob([b], { type: (item.key && r.type) || TYPE[r.file.split(".").pop()] || r.type || "application/octet-stream" }); }
     o.assets = {};
     return Studio.importPublished(o, assets);
   }
@@ -289,6 +309,89 @@ window.Portal = (() => {
     return [...out];
   }
 
+  // ---------- private creations: encryption ----------
+  const b64url = (u8) => { let b = ""; for (let i = 0; i < u8.length; i += 0x8000) b += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(b).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, ""); };
+  const unb64url = (s) => Uint8Array.from(atob(s.replace(/-/g, "+").replace(/_/g, "/") + "=".repeat((4 - s.length % 4) % 4)), (c) => c.charCodeAt(0));
+  const newKey = () => b64url(crypto.getRandomValues(new Uint8Array(32)));
+  const newId = () => b64url(crypto.getRandomValues(new Uint8Array(12))); // 16 characters
+  const keys = new Map(); // key text -> {aes, mac}
+  function keyOf(text) {
+    if (!keys.has(text)) {
+      const raw = unb64url(text);
+      keys.set(text, Promise.all([crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]), crypto.subtle.importKey("raw", raw, { name: "HMAC", hash: "SHA-256" }, false, ["sign"])]).then(([aes, mac]) => ({ aes, mac })));
+    }
+    return keys.get(text);
+  }
+  // iv (12 bytes, from the key and the content) + ciphertext with its 16-byte tag
+  async function seal(keyText, blob) {
+    const k = await keyOf(keyText), data = await blob.arrayBuffer();
+    const iv = new Uint8Array(await crypto.subtle.sign("HMAC", k.mac, await crypto.subtle.digest("SHA-256", data))).slice(0, 12);
+    return new Blob([iv, await crypto.subtle.encrypt({ name: "AES-GCM", iv }, k.aes, data)], { type: "application/octet-stream" });
+  }
+  async function unseal(keyText, blob) {
+    const k = await keyOf(keyText), u = new Uint8Array(await blob.arrayBuffer());
+    if (u.length < 28) throw fail("bad sealed file", 400);
+    return new Blob([await crypto.subtle.decrypt({ name: "AES-GCM", iv: u.subarray(0, 12) }, k.aes, u.subarray(12))]);
+  }
+  // a downloaded file as it can be used: as it is, or decrypted when its creation is private
+  const opened = (item, blob) => (item && item.key ? unseal(item.key, blob) : blob);
+  // Viewers: the private creation of a link, as a catalogue entry (with its key, so its files are decrypted on the way).
+  // null: no such private creation (removed, or published again with a new link); throws when the key does not fit.
+  async function openSealed(cat, link) {
+    let e = (cat.sealed || []).find((i) => i.id === link.id);
+    if (!e) { try { const fresh = await readCatalogue({ fresh: true }); e = fresh.sealed.find((i) => i.id === link.id); if (e) cat.sealed = fresh.sealed; } catch (err) {} }
+    if (!e) return null;
+    let d;
+    try { d = JSON.parse(await (await unseal(link.key, await getFile(e.desc, LIM.catalogue))).text()); }
+    catch (err) { const x = fail("wrong key", 403); x.badKey = true; throw x; }
+    const t = d && d.trigger;
+    if (!d || d.format !== "brill-sealed/1" || !t || !/^[0-9a-f]{64}$/.test(t.sha)) throw fail("bad sealed description", 400);
+    const item = { id: e.id, src: "", name: String(d.name || "יצירה").slice(0, 120), rev: "", scene: e.scene, files: e.files, thumb: null, bytes: Number(d.bytes) || 0, at: e.at,
+      trigger: { sha: t.sha, fp: String(t.fp || ""), fpe: Number(t.fpe) || 0, ph: String(t.ph || ""), f: typeof t.f === "string" ? t.f : "" }, key: link.key, alone: d.alone !== false };
+    if (e.thumb) { try { item.thumbURL = URL.createObjectURL(new Blob([await unseal(link.key, await getFile(e.thumb, 2 * MB))], { type: "image/jpeg" })); } catch (err) {} }
+    return item;
+  }
+  // The editor: publishes rec as a private creation (or updates it: same link id and key, so the link and QR stay).
+  // opts: {id, key} of the earlier private publish (none: a new link), alone (viewers of the link see only this one; else
+  // also the public creations). Resolves to {id, key}.
+  async function publishSealed(rec, opts, onStep) {
+    const o = opts || {}, token = getToken();
+    if (!token) throw fail("צריך קודם לחבר את הפורטל (הגדרה חד־פעמית).", 401);
+    const why = blocker(rec); if (why) throw fail(why, 400);
+    if (onStep) onStep({ step: "prepare" });
+    const id = o.id && ID.test(o.id) ? o.id : newId(), key = o.key && KEY.test(o.key) ? o.key : newKey();
+    const trig = await trigger(rec), img = await Studio.loadImageBlob(rec.assets.__artwork);
+    trig.f = await features(img);
+    const thumbPlain = await new Promise((r) => thumbOf(img, 360).then((c) => c.toBlob(r, "image/jpeg", 0.8)));
+    const media = [];
+    for (const aid of Studio.exportedAssetIds(rec)) { const b = rec.assets[aid], enc = await seal(key, b); media.push({ id: aid, blob: enc, plain: b, path: "m/" + await gitSha(enc) + ".bin" }); }
+    const thumbEnc = await seal(key, thumbPlain), thumb = { blob: thumbEnc, path: "m/" + await gitSha(thumbEnc) + ".bin" };
+    const rev = Date.now().toString(36), scene = Studio.exportObject(rec);
+    for (const m of media) scene.assets[m.id] = { file: m.path, type: m.plain.type || "application/octet-stream", size: m.plain.size };
+    const scenePath = "c/" + id + "/" + rev + ".json", sceneBlob = await seal(key, new Blob([JSON.stringify(scene)]));
+    const bytes = media.reduce((s, m) => s + m.plain.size, 0);
+    const desc = { format: "brill-sealed/1", name: rec.name || "יצירה", bytes, alone: o.alone !== false, trigger: trig };
+    const descPath = "s/" + id + "/" + rev + ".bin", descBlob = await seal(key, new Blob([JSON.stringify(desc)]));
+    await commit(token, async (cat) => {
+      cat.sealed = cat.sealed || [];
+      const gone = cat.sealed.filter((i) => i.id === id || i.src === rec.id);
+      const entry = { id, src: rec.id, desc: descPath, scene: scenePath, files: media.map((m) => m.path), thumb: thumb.path, at: Date.now() };
+      cat.sealed = cat.sealed.filter((i) => !gone.includes(i)).concat(entry);
+      return { cat, put: [...media, thumb, { path: scenePath, blob: sceneBlob }, { path: descPath, blob: descBlob }], drop: orphans(gone, cat.items.concat(cat.sealed)).concat(gone.map((g) => g.desc)),
+        message: (gone.length ? "עדכון פרטי (" : "פרסום פרטי (") + id + ")" };
+    }, onStep);
+    return { id, key };
+  }
+  // Takes a private creation off the portal (by the editor's creation id or its link id): its link stops working.
+  async function unpublishSealed(srcOrId, onStep) {
+    const token = getToken(); if (!token) throw fail("צריך קודם לחבר את הפורטל (הגדרה חד־פעמית).", 401);
+    return commit(token, async (cat) => {
+      const gone = (cat.sealed || []).filter((i) => i.src === srcOrId || i.id === srcOrId);
+      cat.sealed = (cat.sealed || []).filter((i) => !gone.includes(i));
+      return { cat, put: [], drop: orphans(gone, cat.items.concat(cat.sealed)).concat(gone.map((g) => g.desc)), message: "הסרה פרטית (" + (gone[0] ? gone[0].id : srcOrId) + ")" };
+    }, onStep);
+  }
+
   // ---------- what a creation needs on the portal ----------
   async function thumbOf(img, side) {
     const k = Math.min(1, side / Math.max(img.naturalWidth, img.naturalHeight)), c = document.createElement("canvas");
@@ -340,7 +443,7 @@ window.Portal = (() => {
       const item = { id, src: rec.id, name: rec.name || "יצירה", rev, scene: scenePath, files: media.map((m) => m.path), thumb: thumb.path, bytes: media.reduce((s, m) => s + m.blob.size, 0), at: Date.now(), trigger: trig };
       const room = cleanRoom(o.room != null ? o.room : (mine || clash[0] || {}).room); if (room) item.room = room; // an update keeps the room
       const gone = [mine, ...clash].filter(Boolean), items = cat.items.filter((i) => !gone.includes(i)).concat(item);
-      return { cat: Object.assign(cat, { items }), put: [...media, thumb, { path: scenePath, blob: sceneBlob }], drop: orphans(gone, items),
+      return { cat: Object.assign(cat, { items }), put: [...media, thumb, { path: scenePath, blob: sceneBlob }],  drop: orphans(gone, items.concat(cat.sealed || [])),
         message: (mine ? "עדכון: " : clash.length ? "החלפה: " : "פרסום: ") + item.name + " (" + id + ")" };
     }, onStep);
   }
@@ -363,7 +466,7 @@ window.Portal = (() => {
     const token = getToken(); if (!token) throw fail("צריך קודם לחבר את הפורטל (הגדרה חד־פעמית).", 401);
     return commit(token, async (cat) => {
       const gone = cat.items.filter((i) => i.src === srcOrId || i.id === srcOrId), items = cat.items.filter((i) => !gone.includes(i));
-      return { cat: Object.assign(cat, { items }), put: [], drop: orphans(gone, items), message: "הסרה: " + (gone[0] ? gone[0].name + " (" + gone[0].id + ")" : srcOrId) };
+      return { cat: Object.assign(cat, { items }), put: [], drop: orphans(gone, items.concat(cat.sealed || [])), message: "הסרה: " + (gone[0] ? gone[0].name + " (" + gone[0].id + ")" : srcOrId) };
     }, onStep);
   }
 
@@ -372,6 +475,6 @@ window.Portal = (() => {
   function remember(cat) { try { localStorage.setItem(SEEN_KEY, JSON.stringify({ at: Date.now(), items: cat.items.map((i) => ({ id: i.id, src: i.src, name: i.name, at: i.at, room: i.room || "", trigger: { sha: i.trigger.sha, fp: i.trigger.fp, fpe: i.trigger.fpe, ph: i.trigger.ph } })) })); } catch (e) {} }
   function remembered() { try { const o = JSON.parse(localStorage.getItem(SEEN_KEY) || "null"); return o && Array.isArray(o.items) ? o : null; } catch (e) { return null; } }
 
-  return { CFG, LIM, ID, viewURL, readCatalogue, cleanCatalogue, loadCreation, getFile, trigger, phash, sameTrigger, sameArtwork, getToken, setToken, looksLikeToken, checkToken,
+  return { CFG, LIM, ID, KEY, viewURL, parseLink, openSealed, publishSealed, unpublishSealed, seal, unseal, readCatalogue, cleanCatalogue, loadCreation, getFile, trigger, phash, sameTrigger, sameArtwork, getToken, setToken, looksLikeToken, checkToken,
     myCatalogue, publish, unpublish, setRoom, rooms, cleanRoom, warm, pruneBox, inBox, blocker, weight, room, gitSha, remember, remembered, emptyCatalogue, raw, api };
 })();

@@ -3,6 +3,8 @@
    creation: the camera, the creation waking up on the artwork, and the 10-second record button. Nothing else on the
    screen: no words, no buttons, unless something needs the viewer (a browser inside an app, a removed creation, a
    blocked camera).
+   view.html#<id>.<key> opens a private creation: its files are encrypted, the key is the part of the link after the
+   dot (never sent anywhere), and the creation is not in the public list at all (portal.js, "Private creations").
    view.html#<id> (or ?c=<id>) opens one creation straight away (a QR or a link beside an artwork); with no id the portal
    finds the artwork by itself: camera frames go to the recogniser (recognize.js, in a worker), and only the artwork it
    names is handed to the AR engine, which then finds and holds it (the engine slows down sharply with a long list).
@@ -53,6 +55,18 @@
     setState("offline"); return;
   }
   let item = null;
+  const link = Portal.parseLink(want);
+  if (link && link.key) {
+    try { item = await Portal.openSealed(cat, link); } catch (e) { console.warn("private link", e && e.message); item = false; }
+    if (!item) {
+      screen(el("h1", { textContent: item === false ? "הקישור לא שלם" : "היצירה הזו כבר לא מוצגת כאן" }),
+        el("p", { textContent: item === false ? "כנראה חסר חלק מהקישור. כדאי לפתוח אותו שוב מההודעה המקורית, בשלמותו." : "ייתכן שהיא הוסרה, או שנשלח במקומה קישור חדש." }));
+      setState(item === false ? "badlink" : "gone"); return;
+    }
+    // the private creation, alone or before the public ones (as it was published)
+    cat = Object.assign({}, cat, { items: item.alone ? [item] : [item].concat(cat.items.filter((i) => !Portal.sameTrigger(i.trigger, item.trigger))) });
+    want = "";
+  }
   if (want) {
     item = Portal.ID.test(want) && cat.items.find((i) => i.id === want);
     // a creation published a moment ago is not in the public copy yet (it lags up to ~5 minutes): ask GitHub directly
@@ -299,7 +313,7 @@
   pick.onclick = () => {
     const list = el("div", { className: "grid" });
     for (const it of cat.items) {
-      const b = el("button", { type: "button", className: "tile" }, it.thumb ? el("img", { src: Portal.raw() + it.thumb, alt: "", loading: "lazy" }) : null, el("span", { textContent: it.name }));
+      const b = el("button", { type: "button", className: "tile" }, it.thumb || it.thumbURL ? el("img", { src: it.thumbURL || Portal.raw() + it.thumb, alt: "", loading: "lazy" }) : null, el("span", { textContent: it.name }));
       b.onclick = () => { sheet.hidden = true; choose(it, true); };
       list.append(b);
     }

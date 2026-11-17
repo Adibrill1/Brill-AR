@@ -44,6 +44,7 @@ window.Home = (() => {
     const now = Date.now();
     const copy = Object.assign(JSON.parse(JSON.stringify(Object.assign({}, cur, { assets: undefined }))),
       { id: Studio.newId(), name: (cur.name || "יצירה") + " (עותק)", createdAt: now, updatedAt: now, assets: Object.assign({}, cur.assets) });
+    delete copy.sealed; // a copy is not the private creation of the original (its link and key stay with the original)
     try { await Studio.save(copy); toast("נוצר עותק"); } catch (e) { toast("אין מספיק מקום לעותק", { kind: "error" }); }
     render();
   }

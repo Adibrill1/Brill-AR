@@ -56,8 +56,8 @@ window.Publish = (() => {
     for (let r = 0; r < n; r++) for (let k = 0; k < n; k++) if (q.isDark(r, k)) g.fillRect((k + 4) * cell, (r + 4) * cell, cell, cell);
     return c;
   }
-  function linkDialog(item) {
-    const url = Portal.viewURL(item.id), c = qrCanvas(url), img = h("img.portal-qr", { src: c.toDataURL("image/png"), alt: "קוד QR של הקישור" });
+  function linkDialog(item, key) {
+    const url = Portal.viewURL(item.id, key), c = qrCanvas(url), img = h("img.portal-qr", { src: c.toDataURL("image/png"), alt: "קוד QR של הקישור" });
     const name = (item.name || "יצירה").replace(/[\\/:*?"<>|]+/g, " ").trim().slice(0, 50) || "יצירה";
     const copy = async () => { try { await navigator.clipboard.writeText(url); toast("הקישור הועתק"); } catch (e) { UI.prompt({ title: "הקישור", value: url, yes: "סגירה" }); } };
     const share = async () => { try { if (navigator.share) await navigator.share({ title: item.name, url }); else copy(); } catch (e) { if (e && e.name !== "AbortError") copy(); } };
@@ -74,7 +74,8 @@ window.Publish = (() => {
           h("button.share-tile", { type: "button", onclick: copy }, h("span.share-ic", icon("copy", 24)), h("span.share-text", h("b", "העתקת הקישור"), h("span", "להדביק בהודעה, בפוסט או בביו"))),
           h("button.share-tile", { type: "button", onclick: share }, h("span.share-ic", icon("share", 24)), h("span.share-text", h("b", "שיתוף הקישור"), h("span", "בוואטסאפ או בכל אפליקציה"))),
           h("button.share-tile", { type: "button", onclick: saveQR }, h("span.share-ic", icon("download", 24)), h("span.share-text", h("b", "שמירת הקוד כתמונה"), h("span", "להדפסה ולתלייה ליד היצירה")))),
-        h("p.note", icon("eye", 18), h("span", "מי שסורק את הקוד מגיע ישר ליצירה הזו. גם בלי קוד, הכתובת " + Portal.viewURL() + " מזהה לבד כל יצירה שפורסמה."))
+        key ? h("p.note", icon("lock", 18), h("span", "קישור פרטי: רק מי שיש לו את הקישור הזה (או את הקוד) יראה את היצירה. המפתח לפתיחת הקבצים נמצא בתוך הקישור, אז שולחים אותו רק למי שצריך. אם הוא הגיע למי שלא צריך, ״קישור חדש״ מבטל אותו."))
+          : h("p.note", icon("eye", 18), h("span", "מי שסורק את הקוד מגיע ישר ליצירה הזו. גם בלי קוד, הכתובת " + Portal.viewURL() + " מזהה לבד כל יצירה שפורסמה."))
       ]
     });
   }
@@ -141,7 +142,56 @@ window.Publish = (() => {
       try { await Portal.publish(rec, { room }, s); }
       catch (e) { if (!e.clash) throw e; if (await UI.confirm({ title: "התמונה הזו כבר מפורסמת", text: "״" + e.clash.name + "״ מפורסמת עם אותה תמונה. להחליף אותה בזו? הקישור והקוד יישארו אותו דבר.", yes: "להחליף את המפורסמת" })) await Portal.publish(rec, { replace: true, room: room || null }, s); else throw Object.assign(new Error("לא פורסם."), { portal: true }); }
     }, "היצירה פורסמה. צופים יראו אותה בתוך כמה דקות."));
-    const tiles = (s) => {
+    // ---------- private: only whoever has the link (the files are encrypted, the key is in the link) ----------
+    // sealed: the catalogue's private entry of this creation (null: not published privately). Its key is kept with the
+    // creation on this device (rec.sealed); on another device the link is pasted once to bring it.
+    let sealed = rec.sealed && rec.sealed.id ? { id: rec.sealed.id, at: rec.sealed.at || 0 } : null;
+    const myKey = () => (rec.sealed && sealed && rec.sealed.id === sealed.id && Portal.KEY.test(rec.sealed.key || "") ? rec.sealed.key : "");
+    const keep = async (r, alone) => { rec.sealed = { id: r.id, key: r.key, alone, at: Date.now() }; if (window.App && App.rec === rec) await App.save({ noHistory: true }); else await Studio.save(rec, { noHistory: true }); };
+    const askKey = () => new Promise((done) => {
+      let out = "";
+      const inp = h("input.field", { id: "portal-private-paste", type: "text", dir: "ltr", autocomplete: "off", spellcheck: false, placeholder: Portal.viewURL("…") });
+      const msg = h("p.portal-msg");
+      const ok = h("button.btn.primary", { type: "button", onclick: () => {
+        const l = Portal.parseLink((inp.value.trim().split("#")[1] || "").trim());
+        if (!l || !l.key || l.id !== sealed.id) { msg.textContent = "זה לא הקישור הפרטי של היצירה הזו. צריך להדביק את הקישור המלא, כפי שנשלח."; return; }
+        out = l.key; d.close();
+      } }, "שמירה");
+      const d = UI.dialog({ title: "הקישור הפרטי", sheet: true, body: [h("p.dlg-text", "המפתח של הקישור הפרטי שמור במכשיר שממנו פרסמת. כדי להשתמש בו כאן, מדביקים פעם אחת את הקישור הפרטי המלא:"), inp, msg],
+        foot: [h("button.btn.ghost", { type: "button", onclick: () => d.close() }, "ביטול"), ok], onClose: () => done(out) });
+      inp.focus();
+    });
+    const withKey = async () => { let k = myKey(); if (!k) { k = await askKey(); if (k) await keep({ id: sealed.id, key: k }, rec.sealed ? rec.sealed.alone !== false : true); } return k; };
+    const askPrivate = (title, text, yes) => new Promise((done) => {
+      let ok = false;
+      const cb = h("input", { id: "portal-private-public", type: "checkbox", checked: rec.sealed ? rec.sealed.alone === false : false });
+      const d = UI.dialog({ title, sheet: true,
+        body: [h("p.dlg-text", text), h("label.portal-check", cb, h("span", "מי שפותח את הקישור יראה גם את היצירות הציבוריות שלך"))],
+        foot: [h("button.btn.ghost", { type: "button", onclick: () => d.close() }, "ביטול"), h("button.btn.primary", { id: "portal-private-go", type: "button", onclick: () => { ok = true; d.close(); } }, yes)],
+        onClose: () => done(ok ? { alone: !cb.checked } : null) });
+    });
+    const privateRun = (o, doneText) => blocked(async () => {
+      const a = await askPrivate(o.title, o.text, o.yes); if (!a) return;
+      let k = "";
+      if (o.same) { k = await withKey(); if (!k) return; }
+      let r = null;
+      await run(async (x) => { r = await Portal.publishSealed(rec, { id: o.same ? sealed.id : null, key: o.same ? k : null, alone: a.alone }, x); await keep(r, a.alone); }, doneText);
+      if (r) { sealed = { id: r.id, at: Date.now() }; linkDialog({ id: r.id, name: rec.name }, r.key); }
+    })();
+    const privateTiles = () => sealed ? h("div.share-list.portal-private",
+      tile("portal-private-link", "lock", "הקישור הפרטי והקוד", "רק מי שיש לו את הקישור יראה את היצירה", async () => { const k = await withKey(); if (k) linkDialog({ id: sealed.id, name: rec.name }, k); }),
+      tile("portal-private-update", "refresh", "עדכון הפרסום הפרטי", "הקישור והקוד נשארים אותו דבר", () => privateRun({ same: true, title: "עדכון הפרסום הפרטי", text: "מי שיש לו את הקישור יראה את הגרסה החדשה בתוך כמה דקות. הקישור והקוד לא משתנים.", yes: "לעדכן" }, "הפרסום הפרטי עודכן.")),
+      tile("portal-private-new", "link", "קישור חדש", "הקישור הקודם יפסיק לעבוד, גם בקודים שהודפסו", async () => {
+        if (!await UI.confirm({ title: "ליצור קישור חדש?", text: "הקישור הקודם והקוד שלו יפסיקו לעבוד, גם אם הודפסו. משתמשים בזה כשקישור הגיע למי שלא צריך.", yes: "ליצור קישור חדש", danger: true })) return;
+        privateRun({ same: false, title: "קישור חדש", text: "היצירה תוצפן מחדש עם מפתח חדש.", yes: "ליצור" }, "נוצר קישור פרטי חדש. הקודם כבר לא עובד.");
+      }),
+      tile("portal-private-remove", "trash", "הסרת הפרסום הפרטי", "הקישור הפרטי יפסיק לעבוד", async () => {
+        if (!await UI.confirm({ title: "להסיר את הפרסום הפרטי?", text: "היצירה נשארת אצלך. הקישור הפרטי והקוד שלו יפסיקו לעבוד בתוך כמה דקות.", yes: "להסיר", danger: true })) return;
+        run(async (x) => { await Portal.unpublishSealed(rec.id, x); sealed = null; }, "הפרסום הפרטי הוסר.");
+      }, true))
+      : h("div.share-list.portal-private", tile("portal-private", "lock", "פרסום פרטי", "רק מי שיש לו את הקישור יראה אותה. הקבצים מוצפנים", () => privateRun({ same: false, title: "פרסום פרטי", text: "היצירה תוצפן ותעלה לפורטל בלי שם ובלי תמונה גלויה. רק מי שיש לו את הקישור שתקבלי יוכל לראות אותה, והיא לא תופיע לאחרים.", yes: "לפרסם באופן פרטי" }, "היצירה פורסמה באופן פרטי.")));
+    const tiles0 = (s) => tiles1(s).concat(privateTiles());
+    const tiles1 = (s) => {
       const it = s.item;
       if (s.kind === "mine") return [h("div.share-list",
         tile("portal-update", "refresh", "עדכון הפרסום", s.stale ? "התמונה השתנתה מאז הפרסום. בלי עדכון הצופים לא יזהו אותה" : "פורסמה ב־" + UI.fmtDate(it.at) + ". העדכון מחליף את מה שהצופים רואים", blocked(() => run((x) => Portal.publish(rec, {}, x), "הפרסום עודכן. צופים יראו את השינוי בתוך כמה דקות."))),
@@ -160,8 +210,8 @@ window.Publish = (() => {
     };
     // draw the tiles for s; the same kind and item again only switches buttons and relabels, in place
     const draw = (s) => {
-      const key = s.kind + ":" + (s.item ? s.item.id + ":" + s.item.at + ":" + !!s.stale + ":" + (s.item.room || "") : "") + ":" + known.join("|");
-      if (box.dataset.key !== key) { box.replaceChildren(head, ...tiles(s)); box.dataset.key = key; }
+      const key = s.kind + ":" + (s.item ? s.item.id + ":" + s.item.at + ":" + !!s.stale + ":" + (s.item.room || "") : "") + ":" + known.join("|") + ":" + (sealed ? sealed.id + sealed.at : "");
+      if (box.dataset.key !== key) { box.replaceChildren(head, ...tiles0(s)); box.dataset.key = key; }
       box.querySelectorAll("button, input").forEach((b) => { b.disabled = busy || (!live && b.id !== "portal-link" && b.id !== "portal-settings"); });
     };
     const seen = Portal.remembered();
@@ -179,6 +229,7 @@ window.Publish = (() => {
         box.dataset.portal = "error";
         return;
       }
+      const se = (cat.sealed || []).find((i) => i.src === rec.id); sealed = se ? { id: se.id, at: se.at } : null;
       known = Portal.rooms(cat); st = read(cat.items, trig); live = true; draw(st);
       box.dataset.portal = st.kind === "mine" ? "published" : st.kind;
       const r = await space, mb = r ? Math.round(r.left / 1048576 / 10) * 10 : 0;
