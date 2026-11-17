@@ -93,6 +93,64 @@ window.Editor3D = (() => {
     for (const el of rec.elements) { const n = own(el) && assets.querySelector('[id="m3-' + el.id + '"]'); if (n) Studio.setStill(n, Studio.isStill(el), Studio.stillAt(el)); } // frozen videos and GIFs on their frame
   }
 
+  // One layer must never blank the whole view. The engine runs every layer's per-frame code and then draws, all in one
+  // go: an error thrown by any single layer stopped the frame before anything was drawn, and stopped the frame loop
+  // too, so the view stayed grey (3D) or showed only stand-in tiles (flat) until the page was reloaded. Here each
+  // layer's per-frame code runs on its own (one that keeps failing is dropped), and a draw that keeps failing sets
+  // layers aside one at a time until the rest draws again. What failed is kept in a short log (localStorage
+  // "brill-3d-errors") so the cause can be found afterwards.
+  const errLog = [];
+  function note3d(where, e, el) {
+    const id = el && el.closest ? ((el.closest("[data-el-root]") || {}).dataset || {}).elRoot || "" : "";
+    const row = { at: new Date().toISOString(), where, layer: id, msg: String((e && e.message) || e).slice(0, 200) };
+    if (errLog.length && errLog[errLog.length - 1].msg === row.msg && errLog[errLog.length - 1].where === where) { errLog[errLog.length - 1].n = (errLog[errLog.length - 1].n || 1) + 1; return; }
+    errLog.push(row); if (errLog.length > 20) errLog.shift();
+    console.warn("3d view:", where, id, e);
+    try { localStorage.setItem("brill-3d-errors", JSON.stringify(errLog)); } catch (_) {}
+  }
+  let mountedAt = 0, remounts = 0, healthN = 0;
+  function guardScene(sc) {
+    const each = (kind) => function (a, b, c) {
+      const list = this.behaviors[kind];
+      for (let i = 0; i < list.length; i++) {
+        const it = list[i]; if (!it.el.isPlaying) continue;
+        try { it[kind](a, b, c); it.__fails = 0; }
+        catch (e) { it.__fails = (it.__fails || 0) + 1; note3d(kind + ":" + (it.attrName || it.name || "?"), e, it.el); if (it.__fails >= 3) { list.splice(i, 1); i--; } }
+      }
+      for (const n of this.systemNames) { const y = this.systems[n]; if (!y[kind] || y.__dead) continue; try { y[kind](a, b, c); y.__fails = 0; } catch (e) { y.__fails = (y.__fails || 0) + 1; note3d(kind + ":system:" + n, e, null); if (y.__fails >= 3) y.__dead = true; } }
+    };
+    sc.tick = each("tick"); sc.tock = each("tock");
+    const raw = sc.render; let fails = 0; const aside = [];
+    sc.render = function (t, f) {
+      for (const n of aside) if (n.object3D) n.object3D.visible = false;
+      try { raw(t, f); fails = 0; sc.__drawn = (sc.__drawn || 0) + 1; }
+      catch (e) {
+        fails++; note3d("draw", e, null);
+        if (fails < 2 || !rig) return;
+        // set the next layer aside (the newest first); the draw that succeeds tells which one it was
+        const roots = [...rig.querySelectorAll("[data-el-root]")].filter((n) => !aside.includes(n));
+        const n = roots.pop(); if (!n) return;
+        aside.push(n); note3d("set aside", "layer " + n.dataset.elRoot, n);
+      }
+    };
+    sc.__aside = aside;
+  }
+  // Called every frame of the editor's own loop, whatever the scene does: a scene that never started, stopped playing,
+  // lost its drawing context without saying so, or has an empty canvas is put right (and built anew when it must be).
+  function health() {
+    if (!sceneEl || remounting || ++healthN % 30) return;
+    const now = performance.now();
+    if (sceneEl.hasLoaded && !sceneEl.isPlaying) { try { sceneEl.play(); } catch (e) {} }
+    try {
+      if (sceneEl.renderer && sceneEl.renderer.getContext().isContextLost() && !glLost) { glLost = true; clearTimeout(lostTimer); lostTimer = setTimeout(() => { if (glLost) { glLost = false; remount(); } }, 1500); }
+    } catch (e) {}
+    const c = sceneEl.canvas;
+    if (c && mode === "3d" && host && host.style.display !== "none" && (!c.width || !c.height) && host.clientWidth) { try { sceneEl.resize(); } catch (e) {} }
+    const started = !!(sceneEl.renderer && sceneEl.renderStarted);
+    if (!started && now - mountedAt > 6000 && remounts < 3) { remounts++; note3d("never started", "built anew (" + remounts + ")", null); remount(); }
+    else if (started && now - mountedAt > 20000) remounts = 0;
+  }
+
   async function mount() {
     if (mounted) return;
     const rec = getRec(); if (!rec || !rec.target) return;
@@ -109,6 +167,7 @@ window.Editor3D = (() => {
     // parses against the component schema and mangles the system value. Write the raw
     // attribute so the system schema (decoder paths) sees it at scene init.
     window.HTMLElement.prototype.setAttribute.call(sceneEl, "gltf-model", "dracoDecoderPath: " + Studio.DECODER_DRACO_PATH + "; meshoptDecoderPath: " + Studio.DECODER_MESHOPT_PATH);
+    guardScene(sceneEl); mountedAt = performance.now();
     sceneEl.setAttribute("embedded", "");
     sceneEl.setAttribute("renderer", "colorManagement:true");
     sceneEl.setAttribute("vr-mode-ui", "enabled: false");
@@ -1214,7 +1273,7 @@ window.Editor3D = (() => {
     // A viewport change (rotation) can leave A-Frame on its fallback camera at the origin, which
     // makes every projection (and the gizmo fit) NaN. Keep the editor's own camera the active one.
     if (artNode && artNode.object3D && artNode.object3D.visible !== (mode === "3d")) artNode.object3D.visible = mode === "3d"; // the 2D canvas draws the artwork itself
-    playClips(true); watchContext();
+    playClips(true); watchContext(); health();
     if (mode === "3d") artWatch();
     if (mode === "2d") frame2d();
     else if (cam && sceneEl && cam.components && cam.components.camera) {
