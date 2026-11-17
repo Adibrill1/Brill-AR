@@ -337,9 +337,10 @@ window.Portal = (() => {
   const opened = (item, blob) => (item && item.key ? unseal(item.key, blob) : blob);
   // Viewers: the private creation of a link, as a catalogue entry (with its key, so its files are decrypted on the way).
   // null: no such private creation (removed, or published again with a new link); throws when the key does not fit.
-  async function openSealed(cat, link) {
+  // opts.noFresh: only the catalogue already read (a remembered link: no extra GitHub API reads, they are limited)
+  async function openSealed(cat, link, opts) {
     let e = (cat.sealed || []).find((i) => i.id === link.id);
-    if (!e) { try { const fresh = await readCatalogue({ fresh: true }); e = fresh.sealed.find((i) => i.id === link.id); if (e) cat.sealed = fresh.sealed; } catch (err) {} }
+    if (!e && !(opts && opts.noFresh)) { try { const fresh = await readCatalogue({ fresh: true }); e = fresh.sealed.find((i) => i.id === link.id); if (e) cat.sealed = fresh.sealed; } catch (err) {} }
     if (!e) return null;
     let d;
     try { d = JSON.parse(await (await unseal(link.key, await getFile(e.desc, LIM.catalogue))).text()); }
@@ -470,11 +471,19 @@ window.Portal = (() => {
     }, onStep);
   }
 
+  // ---------- private links opened on this phone (viewers) ----------
+  // A private link opened once is kept here, so on this phone the portal's plain address (or any other link) recognises
+  // that creation too, without the link. Only on this phone and this browser; nothing is sent anywhere.
+  const PRIV_KEY = "brill-private-links", PRIV_MAX = 30;
+  function privateLinks() { try { const a = JSON.parse(localStorage.getItem(PRIV_KEY) || "[]"); return Array.isArray(a) ? a.filter((l) => l && ID.test(l.id) && KEY.test(l.key)) : []; } catch (e) { return []; } }
+  function keepPrivateLink(link) { try { const a = privateLinks().filter((l) => l.id !== link.id); a.unshift({ id: link.id, key: link.key, at: Date.now() }); localStorage.setItem(PRIV_KEY, JSON.stringify(a.slice(0, PRIV_MAX))); } catch (e) {} }
+  function forgetPrivateLink(id) { try { localStorage.setItem(PRIV_KEY, JSON.stringify(privateLinks().filter((l) => l.id !== id))); } catch (e) {} }
+
   // ---------- the catalogue as last seen by this phone (for the gallery marks while offline / before the read ends) ----------
   const SEEN_KEY = "brill-portal-seen";
   function remember(cat) { try { localStorage.setItem(SEEN_KEY, JSON.stringify({ at: Date.now(), items: cat.items.map((i) => ({ id: i.id, src: i.src, name: i.name, at: i.at, room: i.room || "", trigger: { sha: i.trigger.sha, fp: i.trigger.fp, fpe: i.trigger.fpe, ph: i.trigger.ph } })) })); } catch (e) {} }
   function remembered() { try { const o = JSON.parse(localStorage.getItem(SEEN_KEY) || "null"); return o && Array.isArray(o.items) ? o : null; } catch (e) { return null; } }
 
-  return { CFG, LIM, ID, KEY, viewURL, parseLink, openSealed, publishSealed, unpublishSealed, seal, unseal, readCatalogue, cleanCatalogue, loadCreation, getFile, trigger, phash, sameTrigger, sameArtwork, getToken, setToken, looksLikeToken, checkToken,
+  return { CFG, LIM, ID, KEY, viewURL, parseLink, openSealed, privateLinks, keepPrivateLink, forgetPrivateLink, publishSealed, unpublishSealed, seal, unseal, readCatalogue, cleanCatalogue, loadCreation, getFile, trigger, phash, sameTrigger, sameArtwork, getToken, setToken, looksLikeToken, checkToken,
     myCatalogue, publish, unpublish, setRoom, rooms, cleanRoom, warm, pruneBox, inBox, blocker, weight, room, gitSha, remember, remembered, emptyCatalogue, raw, api };
 })();

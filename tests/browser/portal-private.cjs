@@ -5,7 +5,8 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
 // public portal does not list it; the link opens it in the viewer (decrypted: the same artwork, the same text layer);
 // the link with its key cut or changed says so; "alone" keeps the public creations out of a private visit; an update keeps
 // the link and does not upload unchanged media again; "קישור חדש" makes the old link stop working; removal drops its
-// files; a copy of the creation does not carry the link. On another device (no key kept) the link is pasted once.
+// files; a copy of the creation does not carry the link; a private link opened once is remembered on that phone (the
+// plain portal address shows it), not on another, and forgotten once it stops working. On another device (no key kept) the link is pasted once.
 // Headless Chrome; the camera and the AR engine are not part of this test (portal-viewer / portal-engine cover them).
 const SHOTS='/Users/adibrill/Desktop/brill-ar-work/wt-portal-shots/private/';
 const ANDROID='Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Mobile Safari/537.36';
@@ -65,6 +66,12 @@ const ANDROID='Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTM
   assert.ok(!seen.list.includes(pid),'not in the public list');
   assert.deepEqual(await v.evaluate(()=>__portal.mounted()),[pid],'alone: only the private creation in this visit');
   await v.screenshot({path:SHOTS+'4-viewer.png'});await v.close();
+  // remembered on this phone: the plain portal address now knows it too; another phone (a fresh browser) does not
+  assert.deepEqual(await (async()=>{const q=watch(await ctx.newPage());await q.goto(base+'/view.html');await q.waitForFunction(()=>window.__portal&&__portal.state()==='looking',null,{timeout:60000});
+    const kept=await q.evaluate(()=>Portal.privateLinks().map(l=>l.id));await q.evaluate((id)=>__portal.choose(id),pid);await q.waitForFunction((id)=>__portal.mounted().includes(id),pid,{timeout:60000});await q.close();return kept;})(),[pid],'kept on this phone, and the plain portal shows it');
+  {const other=await b.newContext({viewport:{width:390,height:844},isMobile:true,hasTouch:true,userAgent:ANDROID,permissions:['camera']});await mock.attach(other);const q=watch(await other.newPage());
+    await q.goto(base+'/view.html');await q.waitForFunction(()=>window.__portal&&__portal.state()==='looking',null,{timeout:60000});await q.evaluate((id)=>__portal.choose(id),pid);await q.waitForTimeout(2500);
+    assert.ok(!(await q.evaluate(()=>__portal.mounted())).includes(pid),'another phone does not know it without the link');await other.close();}
   // a cut or changed key
   for(const bad of [key.slice(0,-1)+(key.endsWith('A')?'B':'A'),key.slice(0,20)]){const q=watch(await ctx.newPage());await q.goto(base+'/view.html#'+pid+'.'+bad);
     await q.waitForFunction(()=>['badlink','gone'].includes(document.body.dataset.state),null,{timeout:30000});
@@ -100,6 +107,8 @@ const ANDROID='Mozilla/5.0 (Linux; Android 14; Pixel 8) AppleWebKit/537.36 (KHTM
   const cat3=mock.catalogue();assert.equal(cat3.sealed.length,1);assert.notEqual(cat3.sealed[0].id,pid);
   for(const f of se.files)assert.equal(mock.read(f),null,'the old encrypted files are dropped: '+f);
   const old=watch(await ctx.newPage());await old.goto(base+'/view.html#'+pid+'.'+key);await old.waitForFunction(()=>document.body.dataset.state==='gone',null,{timeout:30000});await old.close();
+  {const q=watch(await ctx.newPage());await q.goto(base+'/view.html');await q.waitForFunction(()=>window.__portal&&__portal.state()==='looking',null,{timeout:60000});
+    assert.ok(!(await q.evaluate(()=>Portal.privateLinks().map(l=>l.id))).includes(pid),'a link that stopped working is forgotten');await q.close();}
 
   // 7) a copy does not carry the link; removal drops the files
   await ed.evaluate(()=>document.querySelectorAll('dialog[open]').forEach(d=>d.close()));

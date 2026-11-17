@@ -5,6 +5,7 @@
    blocked camera).
    view.html#<id>.<key> opens a private creation: its files are encrypted, the key is the part of the link after the
    dot (never sent anywhere), and the creation is not in the public list at all (portal.js, "Private creations").
+   A private link opened once is remembered on that phone, so later visits recognise its creation without the link.
    view.html#<id> (or ?c=<id>) opens one creation straight away (a QR or a link beside an artwork); with no id the portal
    finds the artwork by itself: camera frames go to the recogniser (recognize.js, in a worker), and only the artwork it
    names is handed to the AR engine, which then finds and holds it (the engine slows down sharply with a long list).
@@ -63,9 +64,22 @@
         el("p", { textContent: item === false ? "כנראה חסר חלק מהקישור. כדאי לפתוח אותו שוב מההודעה המקורית, בשלמותו." : "ייתכן שהיא הוסרה, או שנשלח במקומה קישור חדש." }));
       setState(item === false ? "badlink" : "gone"); return;
     }
+    Portal.keepPrivateLink(link); // from now on this phone recognises it without the link too
     // the private creation, alone or before the public ones (as it was published)
     cat = Object.assign({}, cat, { items: item.alone ? [item] : [item].concat(cat.items.filter((i) => !Portal.sameTrigger(i.trigger, item.trigger))) });
     want = "";
+  } else {
+    // private links opened on this phone before: their creations join this visit (a removed one, or one whose link was
+    // replaced, is forgotten). Only the catalogue already read is asked, and they are opened side by side.
+    const kept = Portal.privateLinks();
+    if (kept.length) {
+      const got = await Promise.all(kept.map(async (l) => {
+        try { const it = await Portal.openSealed(cat, l, { noFresh: true }); if (!it) Portal.forgetPrivateLink(l.id); return it; }
+        catch (e) { if (e && e.badKey) Portal.forgetPrivateLink(l.id); return null; }
+      }));
+      const mine = got.filter(Boolean);
+      if (mine.length) cat = Object.assign({}, cat, { items: mine.concat(cat.items.filter((i) => !mine.some((m) => Portal.sameTrigger(i.trigger, m.trigger)))) });
+    }
   }
   if (want) {
     item = Portal.ID.test(want) && cat.items.find((i) => i.id === want);
