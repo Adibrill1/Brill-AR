@@ -263,24 +263,28 @@ window.Inspector = (() => {
     return UI.group("תצוגה", C({ label: "", bare: true, options: [{ id: "flat", name: "שטוח" }, { id: "3d", name: "תלת־ממד" }], get: () => (get() ? "3d" : "flat"), set }), note(text, "cube"));
   }
   // The sun and smoke: kind, size (the layer's own width, keeping its proportions), intensity, tint, speed, variation.
-  const WX_TINTS = { sun: ["#ffd27a", "#fff3d6", "#ffb347", "#ff7b3a", "#ffe9a8"], smoke: ["#d9d4cc", "#f4f2ee", "#8f8a84", "#c9b79a", "#a7b4c2"] };
+  const WX_TINTS = { sun: ["#ffd27a", "#fff3d6", "#ffb347", "#ff7b3a", "#ffe9a8"], smoke: ["#d9d4cc", "#f4f2ee", "#8f8a84", "#c9b79a", "#a7b4c2"], fire: ["#ff8a2a", "#ffb340", "#ff5a1f", "#4da3ff", "#7dff6a"] };
   function styleWeather(P) {
     const look = App.sel().pattern.look, w = Studio.WEATHER.find((x) => x.id === look);
-    const kinds = C({ label: "", bare: true, wrap: true, options: w.kinds.map((name, i) => ({ id: String(i), name })), get: () => String(App.sel().pattern.kind || 0), set: P((p, v) => { p.kind = +v; }) });
+    const kinds = C({ label: "", bare: true, wrap: true, options: w.kinds.map((name, i) => ({ id: String(i), name })), get: () => String(App.sel().pattern.kind || 0), set: (v, f) => { P((p, val) => { p.kind = +val; })(v, f); if (look === "sun") build(); } });
+    const rayKind = look === "sun" && [0, 2].includes(App.sel().pattern.kind || 0);
     const swatch = (c) => h("span.swatch", h("i", { style: { background: c } }));
     const tints = C({ label: "גוונים מוכנים", wrap: true, options: WX_TINTS[look].map((c) => ({ id: c, swatch: swatch(c), title: c })), get: () => App.sel().pattern.colors[0], set: P((p, v) => { p.colors = [v, v, v]; }, sync) });
     tints.node.classList.add("swatches");
     const size = S(Object.assign({ label: "גודל", min: 0.1, max: 2, step: 0.01, get: () => App.sel().w, set: upd((x, v) => { x.w = round(v, 3); x.h = (x.w / x.aspect) * artRatio(); }) }, pct));
     return [
       viewGroup(() => App.sel().pattern.depth3d === true, P((p, v) => { if (v === "3d") p.depth3d = true; else delete p.depth3d; }),
-        look === "sun" ? "בתלת־ממד השמש מתרוממת מהיצירה ופונה תמיד אל הצופה. רואים את זה במבט תלת־ממד ובמצלמה." : "בתלת־ממד העשן עולה מנקודה אחת על היצירה ונפתח אל הצופה. רואים את זה במבט תלת־ממד ובמצלמה."),
+        look === "sun" ? "בתלת־ממד השמש מתרוממת מהיצירה ופונה תמיד אל הצופה. רואים את זה במבט תלת־ממד ובמצלמה." : (look === "fire" ? "בתלת־ממד האש עולה מנקודה אחת על היצירה ונפתחת אל הצופה. רואים את זה במבט תלת־ממד ובמצלמה." : "בתלת־ממד העשן עולה מנקודה אחת על היצירה ונפתח אל הצופה. רואים את זה במבט תלת־ממד ובמצלמה.")),
       UI.group("סוג", kinds),
       UI.group("התאמה",
         size,
         S(Object.assign({ label: "עוצמה", min: 0, max: 1, step: 0.01, get: () => (App.sel().pattern.power == null ? 0.6 : App.sel().pattern.power), set: P((p, v) => { p.power = v; }) }, pct)),
-        S(Object.assign({ label: look === "sun" ? "גודל השמש" : "גודל הענן", min: 0, max: 1, step: 0.01, get: () => App.sel().pattern.size, set: P((p, v) => { p.size = v; }) }, pct)),
+        S(Object.assign({ label: look === "sun" ? "גודל השמש" : look === "fire" ? "גובה הלהבה" : "גודל הענן", min: 0, max: 1, step: 0.01, get: () => App.sel().pattern.size, set: P((p, v) => { p.size = v; }) }, pct)),
         S(Object.assign({ label: "מהירות", min: 0, max: 1, step: 0.01, get: () => App.sel().pattern.speed, set: P((p, v) => { p.speed = v; }) }, pct)),
         S({ label: "וריאציה", min: 0, max: 999, step: 1, get: () => App.sel().pattern.seed, set: P((p, v) => { p.seed = Math.round(v); }) })),
+      rayKind ? UI.group("קרניים",
+        S(Object.assign({ label: "אורך הקרניים", min: 0, max: 1, step: 0.01, get: () => (App.sel().pattern.rayLen == null ? 0.5 : App.sel().pattern.rayLen), set: P((p, v) => { p.rayLen = v; }) }, pct)),
+        S(Object.assign({ label: "צפיפות הקרניים", min: 0, max: 1, step: 0.01, get: () => (App.sel().pattern.rayDen == null ? 0.5 : App.sel().pattern.rayDen), set: P((p, v) => { p.rayDen = v; }) }, pct))) : null,
       UI.group("גוון צבע", tints, K({ label: "גוון", get: () => App.sel().pattern.colors[0], set: P((p, v) => { p.colors = [v, v, v]; }) })),
       UI.group("שקיפות", opacity())
     ];

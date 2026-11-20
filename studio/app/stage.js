@@ -700,7 +700,7 @@ window.Stage = (() => {
   }
   function renderTime() {
     const chip = $("time-chip"), t = App.frozen;
-    chip.hidden = t == null;
+    chip.hidden = true; // the pause button itself shows that the creation is paused
     if (t != null) $("time-chip-text").textContent = "עצור ב־" + t.toFixed(1) + " שנ׳";
   }
   function renderEmpty() {

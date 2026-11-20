@@ -22,7 +22,7 @@ for(const phone of [true,false]){
   // a motion path
   await btn('להתחיל מסלול תנועה').click();await p.waitForTimeout(800);
   let e=await el();assert.equal(e.timeline.keys.length,1,tag+': the path starts with one step');assert.equal(e.anim,'none',tag+': and replaces the ready-made motion');
-  assert.ok(await p.locator('#time-chip').isVisible(),tag+': the stage says it is stopped at a moment');
+  assert.equal(await p.locator('#btn-pause').getAttribute('aria-pressed'),'true',tag+': the pause button says it is stopped at a moment');assert.equal(await p.locator('#time-chip').isVisible(),false,tag+': no yellow note');
   assert.equal(await p.locator('.tl-key').count(),1,tag+': one diamond');
   await p.evaluate(()=>App.freeze(2));await p.waitForTimeout(200);
   await btn('שלב חדש כאן').click();await p.waitForTimeout(800);
@@ -35,7 +35,7 @@ for(const phone of [true,false]){
   assert.notEqual((await el()).timeline.keys[1].visible,false,tag+': shown again');
   // play: the stage goes back to live
   await p.locator('.tl-play').click();await p.waitForTimeout(400);
-  assert.equal(await p.locator('#time-chip').isVisible(),false,tag+': playing hides the "stopped" chip');
+  assert.equal(await p.locator('#btn-pause').getAttribute('aria-pressed'),'false',tag+': playing again');
   // delete the whole path (asks first)
   await btn('מחיקת כל המסלול').click();await p.locator('dialog[open] .btn.danger, dialog[open] .btn.primary').last().click();await p.waitForTimeout(800);
   assert.equal((await el()).timeline,undefined,tag+': the path is gone');

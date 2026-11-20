@@ -856,7 +856,8 @@ vec4 baFilter(vec2 uv) {
   // with their own intensity (power) and one colour tint (the first colour). [id, Hebrew name, colours, start speed, kinds]
   const WEATHER = [
     ["sun", "שמש", ["#ffd27a", "#ffd27a", "#ffd27a"], 0.35, ["שמש קורנת", "שמש באובך", "הבזק עדשה", "שמש שוקעת"]],
-    ["smoke", "עשן", ["#d9d4cc", "#d9d4cc", "#d9d4cc"], 0.4, ["עשן עולה", "עשן סמיך", "אדים", "עשן נודד"]]
+    ["smoke", "עשן", ["#d9d4cc", "#d9d4cc", "#d9d4cc"], 0.4, ["עשן עולה", "עשן סמיך", "אדים", "עשן נודד"]],
+    ["fire", "אש", ["#ff8a2a", "#ff8a2a", "#ff8a2a"], 0.5, ["להבת נר", "מדורה", "קיר אש", "גחלים לוחשות"]]
   ];
   const PATTERN_IDS = PATTERNS.concat(WEATHER).map((p) => p[0]);
   const isWeather = (el) => !!(el && el.type === "pattern" && el.pattern && WEATHER.some((w) => w[0] === el.pattern.look));
@@ -872,6 +873,7 @@ vec4 baFilter(vec2 uv) {
 uniform float bpMode; uniform vec3 bpC1; uniform vec3 bpC2; uniform vec3 bpC3; uniform float bpSize; uniform float bpTime;
 uniform float bpSeed; uniform float bpAspect; uniform float bpShape; uniform float bpPx;
 uniform float bpKind; uniform float bpPower; // weather: which kind, and how strong
+uniform float bpRayLen; uniform float bpRayDen; // the sun's rays: how long, how many (0..1, 0.5 = as drawn first)
 uniform vec3 bpTouch; uniform float bpTouchMode; uniform float bpClock; // the finger: x, y on the layer (0..1) and how strongly (0 = none)
 vec2 bpWarp(vec2 uv) { // the picture bends around the finger: 1 ripples, 2 a lens that pulls it in, 3 a whirl
   if (bpTouch.z < 0.001 || bpTouchMode < 0.5) return uv;
@@ -909,16 +911,18 @@ vec4 bpSun(vec2 p, vec2 uv) {
   float corona = exp(-(r * r) / (R * R * 3.2)), halo = exp(-r / (R * 3.2)), wide = 0.22 / (1.0 + r * r / (R * R * 2.0));
   float light;
   if (k < 0.5) { // radiant: soft rays that slowly breathe around the disc
-    float rays = bpNoise(dir * 3.2 + vec2(t * 0.11, bpSeed)) * bpNoise(dir * 9.0 - vec2(0.0, t * 0.07)) * 2.2;
-    rays = pow(clamp(rays, 0.0, 1.4), 2.0) * exp(-r / (R * 3.6)) * smoothstep(R * 0.8, R * 1.6, r);
+    float den = exp2(clamp(bpRayDen, 0.0, 1.0) * 2.4 - 1.2), len = 3.6 * exp2(clamp(bpRayLen, 0.0, 1.0) * 3.0 - 1.5);
+    float rays = bpNoise(dir * 3.2 * den + vec2(t * 0.11, bpSeed)) * bpNoise(dir * 9.0 * den - vec2(0.0, t * 0.07)) * 2.2;
+    rays = pow(clamp(rays, 0.0, 1.4), 2.0) * exp(-r / (R * len)) * smoothstep(R * 0.8, R * 1.6, r);
     light = disc + corona * 0.85 + halo * 0.55 + wide + rays * 0.6;
   } else if (k < 1.5) { // in haze: a softer, wider disc in a shimmering cloud of light
     float haze = bpFbm(p * 3.0 + vec2(t * 0.06, -t * 0.03)) - 0.5;
     light = (1.0 - smoothstep(R * 0.6, R * 1.25, r)) * 0.9 + exp(-r * r / (R * R * 9.0)) * 0.75 + (halo * 0.6 + wide * 1.4) * (1.0 + haze * 0.9);
   } else if (k < 2.5) { // lens flare: a star of thin spikes, a long sideways streak and ghosts across the lens
-    float spikes = pow(abs(cos(a * 3.0 + t * 0.03)), 160.0) + 0.6 * pow(abs(cos(a * 3.0 + 0.52 - t * 0.02)), 260.0);
+    float sn = floor(mix(1.0, 6.0, clamp(bpRayDen, 0.0, 1.0)) + 0.5), slen = 3.5 * exp2(clamp(bpRayLen, 0.0, 1.0) * 3.0 - 1.5);
+    float spikes = pow(abs(cos(a * sn + t * 0.03)), 160.0) + 0.6 * pow(abs(cos(a * sn + 0.52 - t * 0.02)), 260.0);
     float streak = exp(-abs(p.y) / (R * 0.18)) * exp(-abs(p.x) / (R * 9.0));
-    light = disc + corona * 0.9 + halo * 0.45 + wide * 0.8 + spikes * exp(-r / (R * 3.5)) * 0.8 + streak * 0.9;
+    light = disc + corona * 0.9 + halo * 0.45 + wide * 0.8 + spikes * exp(-r / (R * slen)) * 0.8 + streak * 0.9;
     vec2 axis = normalize(vec2(-0.75, -0.55));
     for (int i = 0; i < 5; i++) { // ghosts: discs and rings along a line through the sun, each a little coloured
       float fi = float(i), d = 0.09 + fi * 0.075 + 0.02 * sin(fi * 2.3), s = R * (0.35 + 0.45 * fract(fi * 0.618 + 0.3));
@@ -930,7 +934,7 @@ vec4 bpSun(vec2 p, vec2 uv) {
     float flat2 = exp(-abs(p.y) / (R * 1.4)) * exp(-abs(p.x) / (R * 7.0));
     light = disc * bands + corona * 0.7 + halo * 0.5 + wide * 0.9 + flat2 * 0.55 * bands;
   }
-  vec2 e = abs(uv - 0.5) * 2.0; light *= 1.0 - smoothstep(0.45, 0.98, length(e)); // a round fade: nothing reaches the layer's edges, no square outline
+  vec2 e = abs(uv - 0.5) * 2.0; light *= (1.0 - smoothstep(0.72, 1.0, max(e.x, e.y))); // nothing reaches the layer's edges
   light *= mix(0.35, 1.6, clamp(bpPower, 0.0, 1.0));
   vec3 tint = bpC1 * (k > 2.5 ? vec3(1.0, 0.72, 0.46) : vec3(1.0));
   vec3 col = mix(tint, vec3(1.0, 0.99, 0.95), smoothstep(0.75, 1.6, light)); // the brightest light runs to white
@@ -967,10 +971,62 @@ vec4 bpSmoke(vec2 p, vec2 uv) {
   vec3 col = tint * (0.7 + 0.3 * smoothstep(0.35, 0.8, n) + clamp((n - nl) * 3.5, -0.18, 0.22) + (d2 - 0.5) * 0.12); // billows lit from the upper left
   return vec4(clamp(col, 0.0, 1.0), clamp(dens, 0.0, 1.0));
 }
+vec4 bpFire(vec2 p, vec2 uv) {
+  float t = bpTime * 2.2, k = bpKind, z = clamp(bpSize, 0.0, 1.0), pw = clamp(bpPower, 0.0, 1.0);
+  float heat, glow = 0.0, y = uv.y;
+  if (k < 0.5) { // a candle flame: a calm teardrop that sways and flickers, blue at its root, a white core
+    float h = mix(0.3, 0.6, z) * (0.93 + 0.07 * bpNoise(vec2(t * 2.3, 1.0))), b = 0.14;
+    float yy = clamp((y - b) / h, 0.0, 1.0);
+    float sway = (bpNoise(vec2(t * 0.9, 4.0)) - 0.5) * 0.12 * h * yy * yy;
+    float wdt = h * 0.5 * pow(yy, 0.42) * pow(1.0 - yy, 0.95) * (0.97 + 0.06 * bpNoise(vec2(y * 8.0 - t * 2.0, 3.0))) + 0.002;
+    float dx = (p.x - sway) / wdt, dy = (y - b) / h;
+    float f = (dy > 0.0 && dy < 1.0) ? 1.0 - smoothstep(0.55, 1.0, abs(dx)) : 0.0;
+    f *= smoothstep(0.0, 0.05, dy) * (1.0 - smoothstep(0.82, 1.0, dy));
+    float core = (1.0 - smoothstep(0.0, 0.55, abs(dx) * 1.7)) * smoothstep(0.08, 0.2, dy) * (1.0 - smoothstep(0.35, 0.7, dy));
+    heat = f * (0.55 + 0.25 * (1.0 - dy)) + core * 0.6;
+    float r = length(vec2(p.x - sway * 0.5, (y - b - h * 0.35) * 0.8));
+    glow = exp(-r * r / (0.03 * mix(0.6, 1.4, z))) * 0.35 * (0.9 + 0.1 * bpNoise(vec2(t * 3.0, 7.0)));
+    vec3 col = mix(vec3(0.25, 0.45, 1.0), bpC1, smoothstep(0.04, 0.14, dy)); // blue root, then the flame's colour
+    col = mix(col, vec3(1.0, 0.93, 0.72), smoothstep(0.55, 0.95, heat)); col = mix(col, vec3(1.0), smoothstep(0.95, 1.15, heat));
+    float a = clamp(max(f * 0.95, smoothstep(0.0, 1.0, glow)), 0.0, 1.0);
+    vec3 gc = bpC1 * vec3(1.0, 0.75, 0.5);
+    col = mix(gc, col, clamp(f * 1.5, 0.0, 1.0));
+    vec2 e = abs(uv - 0.5) * 2.0; a *= 1.0 - smoothstep(0.8, 1.0, max(e.x, e.y));
+    return vec4(clamp(col, 0.0, 1.0), a * mix(0.55, 1.15, pw));
+  }
+  // the others: tongues of flame from noise, lifted and torn as they rise, with sparks
+  float wide = k > 1.5 && k < 2.5 ? 1.0 : 0.0, embers = k > 2.5 ? 1.0 : 0.0;
+  float top = mix(0.45, 0.95, z) * mix(1.0, 0.75, wide) * mix(1.0, 0.35, embers) * mix(0.75, 1.1, pw);
+  float base = 0.06;
+  vec2 q = vec2(p.x * mix(4.0, 6.0, wide), (y - base) * 3.0 - t * 1.3);
+  float n = bpFbm(q + vec2(bpFbm(q * 0.8 + vec2(0.0, -t * 0.4)) * 1.4, 0.0));
+  float n2 = bpNoise(vec2(p.x * 9.0, y * 6.0 - t * 2.4));
+  float xs = wide > 0.5 ? 1.0 - smoothstep(0.12, 0.48, abs(p.x) / bpAspect) : exp(-pow(p.x / (mix(0.16, 0.24, z) * min(bpAspect, 1.6) * (1.0 - 0.55 * clamp((y - base) / top, 0.0, 1.0))), 2.0));
+  float yy = (y - base) / top;
+  heat = (n * 1.15 + n2 * 0.25) * xs - yy * 0.95 + 0.15;
+  heat *= smoothstep(0.0, 0.1, y);
+  if (embers > 0.5) { // a bed of glowing coals along the bottom, breathing
+    float by = (y - 0.08) / 0.05, bed = exp(-by * by) * (1.0 - smoothstep(0.2, 0.46, abs(p.x) / bpAspect));
+    float coal = bpFbm(vec2(p.x * 10.0, y * 14.0)) * (0.75 + 0.25 * bpNoise(vec2(p.x * 4.0 + t * 0.25, t * 0.4)));
+    heat = max(heat * 0.8, bed * (0.35 + 0.65 * smoothstep(0.35, 0.7, coal)) * 0.8);
+  }
+  // sparks: tiny bright points that rise and drift, each in its own cell
+  vec2 sc = vec2(p.x * 14.0, y * 9.0 - t * 1.1); vec2 ci = floor(sc), cf = fract(sc);
+  vec2 rp = bpHash2(ci); float sp = 0.0;
+  if (rp.x > 0.72) { vec2 d = cf - vec2(0.2 + 0.6 * rp.y, 0.5 + 0.3 * sin(t + rp.x * 9.0)); sp = exp(-dot(d, d) * 260.0) * (1.0 - smoothstep(0.3, 1.0, yy * 0.8)) * smoothstep(0.0, 0.2, y - base) * (wide > 0.5 ? 1.0 : smoothstep(0.5, 0.0, abs(p.x) / bpAspect)); }
+  heat = clamp(heat, 0.0, 1.3);
+  vec3 deep = bpC1 * vec3(0.75, 0.28, 0.12);
+  vec3 col = mix(deep, bpC1, smoothstep(0.08, 0.4, heat));
+  col = mix(col, vec3(1.0, 0.88, 0.55), smoothstep(0.45, 0.85, heat)); col = mix(col, vec3(1.0, 0.98, 0.9), smoothstep(0.85, 1.2, heat));
+  col = mix(col, vec3(1.0, 0.85, 0.5), clamp(sp * 1.5, 0.0, 1.0));
+  float a = clamp(smoothstep(0.02, 0.3, heat) + sp, 0.0, 1.0);
+  vec2 e = abs(uv - 0.5) * 2.0; a *= (1.0 - smoothstep(wide > 0.5 ? 0.85 : 0.75, 1.0, e.x)) * (1.0 - smoothstep(0.85, 1.0, e.y));
+  return vec4(clamp(col, 0.0, 1.0), a * mix(0.6, 1.1, pw));
+}
 vec4 bpLinear(vec4 c) { return vec4(mix(c.rgb / 12.92, pow((c.rgb + 0.055) / 1.055, vec3(2.4)), step(0.04045, c.rgb)), c.a); }
 vec4 bpPattern(vec2 uv) {
   vec2 p = (uv - 0.5) * vec2(bpAspect, 1.0);
-  if (bpMode > 17.5) return bpMode < 18.5 ? bpSun(p, uv) : bpSmoke(p, uv);
+  if (bpMode > 17.5) return bpMode < 18.5 ? bpSun(p, uv) : (bpMode < 19.5 ? bpSmoke(p, uv) : bpFire(p, uv));
   float t = bpTime, z = clamp(bpSize, 0.0, 1.0);
   vec3 col = bpC1;
   if (bpMode < 1.5) { // liquid gradient: the three colours folded into each other by slow, warped noise
@@ -1091,13 +1147,13 @@ vec4 bpPattern(vec2 uv) {
       && [p.size, p.speed].every((v) => Number.isFinite(v) && v >= 0 && v <= 1) && Number.isInteger(p.seed) && p.seed >= 0 && p.seed < 1000 && PATTERN_SHAPES.some((s) => s[0] === p.shape)
       && (p.touch == null || p.touch === "none" || PATTERN_TOUCH.includes(p.touch)) && (p.touchPower == null || (Number.isFinite(p.touchPower) && p.touchPower >= 0.1 && p.touchPower <= 1))
       && (p.kind == null || (Number.isInteger(p.kind) && p.kind >= 0 && p.kind < 4)) && (p.power == null || (Number.isFinite(p.power) && p.power >= 0 && p.power <= 1))
-      && (p.depth3d == null || typeof p.depth3d === "boolean");
+      && (p.depth3d == null || typeof p.depth3d === "boolean") && [p.rayLen, p.rayDen].every((v) => v == null || (Number.isFinite(v) && v >= 0 && v <= 1));
   }
   // Uniform values for a layer of the given proportions (width / height); px: one pixel in square units
   function patternValues(el, aspect, px) {
     const p = el.pattern || patternDefaults(), s = PATTERN_SHAPES.find((x) => x[0] === p.shape);
     return { bpMode: PATTERN_IDS.indexOf(p.look) + 1 || 1, bpC1: hexRgb(p.colors[0]), bpC2: hexRgb(p.colors[1]), bpC3: hexRgb(p.colors[2]),
-      bpSize: p.size, bpSeed: p.seed, bpAspect: aspect, bpShape: s ? s[3] : 0, bpPx: px, bpKind: p.kind || 0, bpPower: p.power == null ? 0.6 : p.power };
+      bpSize: p.size, bpSeed: p.seed, bpAspect: aspect, bpShape: s ? s[3] : 0, bpPx: px, bpKind: p.kind || 0, bpPower: p.power == null ? 0.6 : p.power, bpRayLen: p.rayLen == null ? 0.5 : p.rayLen, bpRayDen: p.rayDen == null ? 0.5 : p.rayDen };
   }
   function patchPatternMaterial(mat, uniforms) {
     if (!mat || mat._studioPattern === uniforms || mat.isShaderMaterial) return;
@@ -1131,7 +1187,7 @@ vec4 bpPattern(vec2 uv) {
       init() {
         this.t = 0;
         this.uniforms = {};
-        for (const k of ["bpMode", "bpSize", "bpTime", "bpSeed", "bpAspect", "bpShape", "bpPx", "bpTouchMode", "bpClock", "bpKind", "bpPower"]) this.uniforms[k] = { value: 0 };
+        for (const k of ["bpMode", "bpSize", "bpTime", "bpSeed", "bpAspect", "bpShape", "bpPx", "bpTouchMode", "bpClock", "bpKind", "bpPower", "bpRayLen", "bpRayDen"]) this.uniforms[k] = { value: 0 };
         for (const k of ["bpC1", "bpC2", "bpC3", "bpTouch"]) this.uniforms[k] = { value: new THREE.Vector3() };
         this.grabbed = null;
         if (PATTERN_TOUCH.includes(this.data.touch)) { watchFinger(); finger.users.add(this); }
@@ -1216,12 +1272,12 @@ vec4 bpPattern(vec2 uv) {
       // the small picture and the sheets that show it
       build() {
         this.drop();
-        const d = this.data, v = JSON.parse(d.values), smoke = v.bpMode > 18.5, deep = d.depth3d;
+        const d = this.data, v = JSON.parse(d.values), smoke = v.bpMode > 18.5, fire = v.bpMode > 19.5, deep = d.depth3d;
         const a = Math.max(0.05, d.width / d.height), w = Math.round(a >= 1 ? WX_RES : WX_RES * a), h = Math.round(a >= 1 ? WX_RES / a : WX_RES);
         const rt = new THREE.WebGLRenderTarget(Math.max(16, w), Math.max(16, h), { depthBuffer: false, stencilBuffer: false });
         rt.texture.generateMipmaps = false; rt.texture.minFilter = rt.texture.magFilter = THREE.LinearFilter;
         const uniforms = {};
-        for (const k of ["bpMode", "bpSize", "bpTime", "bpSeed", "bpAspect", "bpShape", "bpPx", "bpTouchMode", "bpClock", "bpKind", "bpPower"]) uniforms[k] = { value: 0 };
+        for (const k of ["bpMode", "bpSize", "bpTime", "bpSeed", "bpAspect", "bpShape", "bpPx", "bpTouchMode", "bpClock", "bpKind", "bpPower", "bpRayLen", "bpRayDen"]) uniforms[k] = { value: 0 };
         for (const k of ["bpC1", "bpC2", "bpC3", "bpTouch"]) uniforms[k] = { value: new THREE.Vector3() };
         const mat = new THREE.ShaderMaterial({ uniforms, vertexShader: VERT, fragmentShader: FRAG, depthTest: false, depthWrite: false, toneMapped: false });
         const sc = new THREE.Scene(); const qm = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat); qm.frustumCulled = false; sc.add(qm);
@@ -1237,15 +1293,16 @@ vec4 bpPattern(vec2 uv) {
         };
         this.faces = []; this.yaws = [];
         if (!deep) sheet(new THREE.PlaneGeometry(W, H), 1, false);
-        else if (!smoke) { // the sun: one sheet of light lifted toward the viewer, always facing them
-          const sun = sheet(new THREE.PlaneGeometry(W, H), 1, true); sun.position.z = 0.2 * H;
-          this.faces.push(sun);
+        else if (!smoke) { // the sun: its glow a little behind and bigger, the sun itself lifted toward the viewer, both facing them
+          const glow = sheet(new THREE.PlaneGeometry(W * 1.7, H * 1.7), 0.35, false); glow.position.z = 0.02 * H;
+          const sun = sheet(new THREE.PlaneGeometry(W, H), 1, false); sun.position.z = 0.22 * H;
+          this.faces.push(glow, sun);
         } else { // the smoke: slices that share one base on the artwork and fan out toward the viewer as they rise
           [[0, 0.8], [0.09, 0.5], [0.18, 0.35]].forEach(([dz, op]) => {
             const geo = new THREE.PlaneGeometry(W, H, 1, 4), at = geo.attributes.position;
             for (let i = 0; i < at.count; i++) { const f = at.getY(i) / H + 0.5; at.setZ(i, dz * H * f * f); }
             at.needsUpdate = true;
-            const s = sheet(geo, op, false); s.position.y = 0; this.yaws.push(s);
+            const s = sheet(geo, fire ? Math.min(1, op + 0.15) : op, fire); s.position.y = 0; this.yaws.push(s);
           });
         }
         this.group = g;

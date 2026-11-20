@@ -24,7 +24,7 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
   assert.deepEqual(await p.locator('dialog[open] .add-tile').evaluateAll(n=>n.map(x=>x.dataset.add)),['image','video','text','pattern','weather','particles','model','sound']);
   await p.locator('dialog[open] .add-tile[data-add="weather"]').click();await p.waitForSelector('dialog[open] .part-tile[data-weather="sun"]');
   const ids=await p.locator('dialog[open] .part-tile[data-weather]').evaluateAll(n=>n.map(x=>x.dataset.weather));
-  assert.equal(ids.length,18);assert.deepEqual(ids.slice(0,2),['sun','smoke'],'sun and smoke first');
+  assert.equal(ids.length,19);assert.deepEqual(ids.slice(0,3),['sun','smoke','fire'],'sun, smoke and fire first');
   assert.equal(await p.locator('dialog[open] .dialog-title, dialog[open] h2').first().textContent().then(t=>t.trim()),'איזה מזג אוויר?');
 
   // the sun: on top, with its own controls
@@ -44,10 +44,28 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
   // the tint: a ready swatch sets all three colours
   await ins.locator('.swatches button').nth(3).click();await p.waitForTimeout(200);
   assert.deepEqual(await p.evaluate(()=>App.rec.elements[0].pattern.colors),['#ff7b3a','#ff7b3a','#ff7b3a']);
+  // the rays: length and density on the radiant sun and the lens flare, not on the hazy one
+  await ins.getByText('שמש קורנת',{exact:true}).click();await p.waitForTimeout(300);
+  for(const l of ['אורך הקרניים','צפיפות הקרניים'])assert.ok(await ins.locator('.ctl-label',{hasText:l}).count(),'control '+l);
+  const rl=ins.locator('input.num[aria-label="אורך הקרניים (מספר)"]');await rl.fill('90');await rl.dispatchEvent('change');
+  const rd=ins.locator('input.num[aria-label="צפיפות הקרניים (מספר)"]');await rd.fill('20');await rd.dispatchEvent('change');await p.waitForTimeout(200);
+  assert.deepEqual(await p.evaluate(()=>{const q=App.rec.elements[0].pattern;return [q.rayLen,q.rayDen,Studio.validPattern(App.rec.elements[0])];}),[0.9,0.2,true]);
+  await ins.getByText('שמש באובך',{exact:true}).click();await p.waitForTimeout(300);
+  assert.equal(await ins.locator('.ctl-label',{hasText:'אורך הקרניים'}).count(),0,'no rays on a hazy sun');
+  await ins.getByText('הבזק עדשה',{exact:true}).click();await p.waitForTimeout(300);
   // drawn in the flat view: the pixels at the sun's middle are bright
   const mid=await p.evaluate(()=>{const c=document.querySelector('#preview'),e=App.rec.elements[0],g=c.getContext('2d'),d=g.getImageData(0,0,c.width,c.height).data;let m=0;for(let i=0;i<d.length;i+=4)m=Math.max(m,d[i]+d[i+1]+d[i+2]);return m;});
   assert.ok(mid>700,'a bright sun in the flat view ('+mid+')');
 
+  // fire: four kinds, its own tints, drawn bright in the flat view, valid; then taken away again
+  await layers();await p.locator('#btn-add').click();await p.locator('dialog[open] .add-tile[data-add="weather"]').click();await p.locator('dialog[open] .part-tile[data-weather="fire"]').click();
+  await p.waitForFunction(()=>App.rec.elements.length===2,null,{timeout:20000});await p.waitForTimeout(500);
+  for(const k of ['להבת נר','מדורה','קיר אש','גחלים לוחשות'])assert.ok(await ins.getByText(k,{exact:true}).count(),'kind '+k);
+  assert.ok(await ins.locator('.ctl-label',{hasText:'גובה הלהבה'}).count(),'flame height');
+  for(const kind of ['להבת נר','מדורה']){await ins.getByText(kind,{exact:true}).click();await p.waitForTimeout(500);
+    const f=await p.evaluate(()=>{const e=App.rec.elements[1],g0=Studio.patternFrame(e,120,160,3),c=document.createElement('canvas');c.width=g0.width;c.height=g0.height;c.getContext('2d').drawImage(g0,0,0);const d=c.getContext('2d').getImageData(0,0,c.width,c.height).data;let m=0,n=0;for(let i=0;i<d.length;i+=4){if(d[i+3]>40){n++;m=Math.max(m,d[i]+d[i+1]);}}return {m,n,ok:Studio.validPattern(e),look:e.pattern.look};});
+    assert.ok(f.ok&&f.look==='fire'&&f.m>380&&f.n>50,'a bright '+kind+' '+JSON.stringify(f));}
+  await p.evaluate(async()=>{await App.removeLayer(App.rec.elements[1].id);});await p.waitForFunction(()=>App.rec.elements.length===1);await p.waitForTimeout(300);
   // smoke, and a sticker under "תמונה"
   await layers();await p.locator('#btn-add').click();await p.locator('dialog[open] .add-tile[data-add="weather"]').click();await p.locator('dialog[open] .part-tile[data-weather="smoke"]').click();
   await p.waitForFunction(()=>App.rec.elements.length===2,null,{timeout:20000});await p.waitForTimeout(400);
@@ -65,15 +83,15 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
   // drawn small (at most 320 pixels a side) and shown on one sheet when flat
   let wx=await p.evaluate(()=>[...document.querySelectorAll('#editor-3d-host [studio-weather]')].map(e=>{const c=e.components['studio-weather'];return {sheets:c.group.children.length,rt:c.targets.map(t=>Math.max(t.width,t.height))};}));
   assert.deepEqual(wx.map(w=>w.sheets),[1,1]);assert.ok(wx.every(w=>w.rt.every(n=>n<=320)),'small pictures '+JSON.stringify(wx));
-  // the switch to 3D: the sun lifts off as added light (no dark sheet can show), the smoke stands out in three slices from one base
+  // the switch to 3D: the sun lifts off in front of its glow, the smoke stands out in three slices from one base
   for(const id of [0,1]){await p.evaluate((i)=>App.select(App.rec.elements[i].id),id);await p.waitForTimeout(300);await ins.getByText('תלת־ממד',{exact:true}).last().click();await p.waitForTimeout(400);}
   assert.deepEqual(await p.evaluate(()=>App.rec.elements.slice(0,2).map(e=>[e.pattern.depth3d,Studio.validPattern(e)])),[[true,true],[true,true]]);
-  await p.waitForFunction(()=>{const n=[...document.querySelectorAll('#editor-3d-host [studio-weather]')].map(e=>e.components['studio-weather'].group&&e.components['studio-weather'].group.children.length);return n.join()==='1,3';},null,{timeout:20000});
+  await p.waitForFunction(()=>{const n=[...document.querySelectorAll('#editor-3d-host [studio-weather]')].map(e=>e.components['studio-weather'].group&&e.components['studio-weather'].group.children.length);return n.join()==='2,3';},null,{timeout:20000});
   wx=await p.evaluate(()=>{const [s,k]=[...document.querySelectorAll('#editor-3d-host [studio-weather]')].map(e=>e.components['studio-weather'].group.children);
     const base=k.map(m=>{const a=m.geometry.attributes.position;let lo=[];for(let i=0;i<a.count;i++)if(a.getY(i)<-0.4*m.geometry.parameters.height)lo.push(+(a.getX(i)+m.position.x).toFixed(4)+'/'+(+(a.getZ(i)+m.position.z).toFixed(4)));return lo.join();});
     const top=k.map(m=>{const a=m.geometry.attributes.position;let z=0;for(let i=0;i<a.count;i++)z=Math.max(z,a.getZ(i));return z;});
-    return {sunZ:s[0].position.z,add:s[0].material.blending===THREE.AdditiveBlending,pre:s.concat(k).every(m=>m.material.premultipliedAlpha),base,top};});
-  assert.ok(wx.sunZ>0&&wx.add&&wx.pre,'the sun lifts off as light '+JSON.stringify(wx));
+    return {sunZ:s[1].position.z-s[0].position.z,pre:s.concat(k).every(m=>m.material.premultipliedAlpha&&!m.material.depthTest),base,top};});
+  assert.ok(wx.sunZ>0&&wx.pre,'the sun stands in front of its glow, never cut by the artwork '+JSON.stringify(wx));
   assert.equal(new Set(wx.base).size,1,'the smoke slices share one base '+JSON.stringify(wx.base));assert.ok(wx.top[2]>wx.top[1]&&wx.top[1]>wx.top[0],'and fan out as they rise');
   // a filmed loop and a weather particle layer get the same switch
   await p.locator('#btn-2d').click();await p.waitForTimeout(600);

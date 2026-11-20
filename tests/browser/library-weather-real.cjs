@@ -32,7 +32,7 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
   await p.goto(base+'/index.html#/e/'+id);await p.waitForSelector('#btn-add');await p.waitForTimeout(500);
   if(await p.locator('.tab[data-tab="layers"]').isVisible())await p.locator('.tab[data-tab="layers"]').click();
   await p.locator('#btn-add').click();await p.locator('dialog[open] .add-tile[data-add="weather"]').click();await p.waitForSelector('dialog[open] .part-tile[data-weather="wr-snow"]');
-  assert.equal(await p.locator('dialog[open] .part-tile[data-weather]').count(),18,'the weather sheet: sun, smoke, ten loops and six editable particle styles');
+  assert.equal(await p.locator('dialog[open] .part-tile[data-weather]').count(),19,'the weather sheet: sun, smoke, fire, ten loops and six editable particle styles');
   await p.locator('dialog[open] .part-tile[data-weather="wr-snow"]').click();
   await p.waitForFunction(()=>App.rec&&App.rec.elements.length===1,null,{timeout:30000});await p.waitForTimeout(800);
   const el=await p.evaluate(async(id)=>{const r=await Studio.load(id),e=r.elements[0];return {type:e.type,name:e.name,w:e.w,aspect:e.aspect,loop:e.loop,chroma:e.chroma,mime:r.assets[e.assetId].type,size:r.assets[e.assetId].size};},id);

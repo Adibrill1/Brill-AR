@@ -265,7 +265,7 @@ window.Layers = (() => {
   function addWeather(look) {
     if (App.blocked({ layers: 1 })) return;
     const w = Studio.WEATHER.find((x) => x.id === look), pattern = Studio.patternDefaults(look), sun = look === "sun";
-    const el = { id: Studio.newId(), type: "pattern", name: w.name, pattern, x: sun ? 0.18 : 0, y: sun ? 0.22 : -0.05, w: sun ? 0.6 : 0.7, rot: 0, z: 0, flush: true, seq: null };
+    const el = { id: Studio.newId(), type: "pattern", name: w.name, pattern, x: sun ? 0.18 : 0, y: sun ? 0.22 : look === "fire" ? -0.15 : -0.05, w: sun ? 0.6 : look === "fire" ? 0.5 : 0.7, rot: 0, z: 0, flush: true, seq: null };
     el.aspect = Studio.patternAspect(App.rec, pattern.shape); el.h = (el.w / el.aspect) * artRatio();
     return App.addLayer(el).then(() => App.setTab("style"));
   }
@@ -290,7 +290,7 @@ window.Layers = (() => {
         const end = UI.busy("מוסיפה " + st.name + "…");
         try { const f = await fetchFile(st.file, "image/png"); d.close(); await importAsset("particles", f, { name: st.name, particles: st.particles, w: st.w, h: st.h }); App.setTab("style"); } finally { end(); }
       })));
-    const d = UI.dialog({ title: "איזה מזג אוויר?", sheet: true, body: [h("div.part-grid", tiles), h("p.note", icon("sun", 18), h("span", "בשמש ובעשן אפשר לבחור סוג, גודל, עוצמה וגוון. בשאר אפשר לשנות גודל, שקיפות וכמות."))] });
+    const d = UI.dialog({ title: "איזה מזג אוויר?", sheet: true, body: [h("div.part-grid", tiles), h("p.note", icon("sun", 18), h("span", "בשמש, בעשן ובאש אפשר לבחור סוג, גודל, עוצמה וגוון. בשאר אפשר לשנות גודל, שקיפות וכמות."))] });
   }
   // "תמונה": a picture from the device, or one of the ready stickers.
   function openImages() {
