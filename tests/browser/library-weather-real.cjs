@@ -31,17 +31,14 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
     a.assets.__artwork=await new Promise(r=>c.toBlob(r));a.elements=[];await Studio.save(a);return a.id;});
   await p.goto(base+'/index.html#/e/'+id);await p.waitForSelector('#btn-add');await p.waitForTimeout(500);
   if(await p.locator('.tab[data-tab="layers"]').isVisible())await p.locator('.tab[data-tab="layers"]').click();
-  await p.locator('#btn-add').click();await p.locator('.add-library').click();await p.waitForSelector('#starter-library[open] .library-card');
-  const filter=p.locator('#starter-library .library-filters button[data-group="weather-real"]');
-  assert.equal((await filter.textContent()).trim(),'מזג אוויר ריאליסטי (16)','its own group, after the drawn weather');
-  await filter.click();
-  assert.equal(await p.locator('#starter-library .library-card:not([hidden])').count(),16,'the group shows its ten loops and six editable particle styles');
-  await p.locator('#starter-library .library-card[data-library-id="wr-snow"]').click();
+  await p.locator('#btn-add').click();await p.locator('dialog[open] .add-tile[data-add="weather"]').click();await p.waitForSelector('dialog[open] .part-tile[data-weather="wr-snow"]');
+  assert.equal(await p.locator('dialog[open] .part-tile[data-weather]').count(),18,'the weather sheet: sun, smoke, ten loops and six editable particle styles');
+  await p.locator('dialog[open] .part-tile[data-weather="wr-snow"]').click();
   await p.waitForFunction(()=>App.rec&&App.rec.elements.length===1,null,{timeout:30000});await p.waitForTimeout(800);
   const el=await p.evaluate(async(id)=>{const r=await Studio.load(id),e=r.elements[0];return {type:e.type,name:e.name,w:e.w,aspect:e.aspect,loop:e.loop,chroma:e.chroma,mime:r.assets[e.assetId].type,size:r.assets[e.assetId].size};},id);
   assert.equal(el.type,'video');assert.equal(el.name,'שלג רך');assert.equal(el.w,1,'across the artwork');assert.equal(el.aspect,1);assert.equal(el.loop,true,'it loops');
   assert.deepEqual([el.chroma.enabled,el.chroma.color],[true,'#000000'],'the glow key is on');assert.equal(el.mime,'video/mp4');
-  console.log('PASS editor: the group filter, and one tap adds a looping keyed video layer across the artwork');
+  console.log('PASS editor: the weather sheet, and one tap adds a looping keyed video layer across the artwork');
 
   // the camera-free preview
   const q=watch(await ctx.newPage());await q.goto(base+'/preview.html#'+id);

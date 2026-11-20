@@ -228,6 +228,7 @@ window.Inspector = (() => {
       App.changed(true); sync();
     } }, icon("image", 16), h("span", "מילוי תמונת המקור"));
     const col = (i) => K({ label: "צבע " + (i + 1), get: () => App.sel().pattern.colors[i], set: P((p, v) => { p.colors = p.colors.slice(); p.colors[i] = v; }) });
+    if (Studio.isWeather(App.sel())) return styleWeather(P);
     if (App.sel().pattern.look === "solid") return [
       UI.group("צבע", K({ label: "צבע הרקע", get: () => App.sel().pattern.colors[0], set: P((p, v) => { p.colors = [v, v, v]; }) })),
       UI.group("צורה", L({ label: "צורה", options: Studio.PATTERN_SHAPES, get: () => App.sel().pattern.shape,
@@ -252,6 +253,28 @@ window.Inspector = (() => {
           set: P((p, v, x) => { p.shape = v; x.aspect = Studio.patternAspect(App.rec, v); x.h = (x.w / x.aspect) * artRatio(); }) }),
         fill, opacity()),
       touchGroup
+    ];
+  }
+
+  // The sun and smoke: kind, size (the layer's own width, keeping its proportions), intensity, tint, speed, variation.
+  const WX_TINTS = { sun: ["#ffd27a", "#fff3d6", "#ffb347", "#ff7b3a", "#ffe9a8"], smoke: ["#d9d4cc", "#f4f2ee", "#8f8a84", "#c9b79a", "#a7b4c2"] };
+  function styleWeather(P) {
+    const look = App.sel().pattern.look, w = Studio.WEATHER.find((x) => x.id === look);
+    const kinds = C({ label: "", bare: true, wrap: true, options: w.kinds.map((name, i) => ({ id: String(i), name })), get: () => String(App.sel().pattern.kind || 0), set: P((p, v) => { p.kind = +v; }) });
+    const swatch = (c) => h("span.swatch", h("i", { style: { background: c } }));
+    const tints = C({ label: "גוונים מוכנים", wrap: true, options: WX_TINTS[look].map((c) => ({ id: c, swatch: swatch(c), title: c })), get: () => App.sel().pattern.colors[0], set: P((p, v) => { p.colors = [v, v, v]; }, sync) });
+    tints.node.classList.add("swatches");
+    const size = S(Object.assign({ label: "גודל", min: 0.1, max: 2, step: 0.01, get: () => App.sel().w, set: upd((x, v) => { x.w = round(v, 3); x.h = (x.w / x.aspect) * artRatio(); }) }, pct));
+    return [
+      UI.group("סוג", kinds),
+      UI.group("התאמה",
+        size,
+        S(Object.assign({ label: "עוצמה", min: 0, max: 1, step: 0.01, get: () => (App.sel().pattern.power == null ? 0.6 : App.sel().pattern.power), set: P((p, v) => { p.power = v; }) }, pct)),
+        S(Object.assign({ label: look === "sun" ? "גודל השמש" : "גודל הענן", min: 0, max: 1, step: 0.01, get: () => App.sel().pattern.size, set: P((p, v) => { p.size = v; }) }, pct)),
+        S(Object.assign({ label: "מהירות", min: 0, max: 1, step: 0.01, get: () => App.sel().pattern.speed, set: P((p, v) => { p.speed = v; }) }, pct)),
+        S({ label: "וריאציה", min: 0, max: 999, step: 1, get: () => App.sel().pattern.seed, set: P((p, v) => { p.seed = Math.round(v); }) })),
+      UI.group("גוון צבע", tints, K({ label: "גוון", get: () => App.sel().pattern.colors[0], set: P((p, v) => { p.colors = [v, v, v]; }) })),
+      UI.group("שקיפות", opacity())
     ];
   }
 

@@ -10,10 +10,11 @@ window.Layers = (() => {
     model: { name: "מודל 3D", icon: "cube", tint: "#b497ff" }, particles: { name: "חלקיקים", icon: "sparkle", tint: "#ff9ecb" },
     pattern: { name: "רקע מונפש", icon: "pattern", tint: "#7fe0e0" }, timecube: { name: "קוביית זמן", icon: "hourglass", tint: "#c4d86a" },
     group: { name: "קבוצה", icon: "layers", tint: "#9a97a6" }, scatter: { name: "פיזור על נתיב", icon: "path", tint: "#f2a65a" },
-    fan: { name: "מניפה", icon: "fan", tint: "#f2a65a" }
+    fan: { name: "מניפה", icon: "fan", tint: "#f2a65a" }, weather: { name: "מזג אוויר", icon: "sun", tint: "#ffc061" }
   };
   // A scatter laid out as a fan shows as a fan.
-  const typeOf = (e) => (e && e.type === "scatter" && e.scatter && e.scatter.layout === "fan" ? TYPES.fan : TYPES[e && e.type] || TYPES.group);
+  // A sun or smoke drawn by the pattern shader shows as weather.
+  const typeOf = (e) => (e && e.type === "scatter" && e.scatter && e.scatter.layout === "fan" ? TYPES.fan : Studio.isWeather(e) ? TYPES.weather : TYPES[e && e.type] || TYPES.group);
   const ACCEPT = {
     video: "video/mp4,video/webm,video/quicktime,.mov", image: "image/png,image/jpeg,image/gif",
     sound: "audio/mpeg,audio/mp4,audio/wav,audio/x-m4a,audio/ogg", model: ".glb,.gltf,.zip,.obj,.fbx",
@@ -159,7 +160,6 @@ window.Layers = (() => {
   async function importAsset(kind, f, options) {
     const o = options || {}, rec = App.rec;
     if (!rec || !rec.target) throw fail("קודם מעלים את תמונת היצירה");
-    if (kind === "scene") return importScene(f.parts || []);
     if (!TYPES[kind] || ["text", "pattern", "group"].includes(kind)) throw fail("סוג הקובץ הזה לא נתמך");
     if (f.size > Studio.LIMITS.maxEntryBytes) throw fail("הקובץ גדול מדי (עד " + UI.fmtBytes(Studio.LIMITS.maxEntryBytes) + ")");
     guard({ layers: 1, bytes: f.size });
@@ -214,37 +214,6 @@ window.Layers = (() => {
     return el;
   }
 
-  // A ready scene from the library: several layers that arrive together (and leave together with one undo).
-  async function importScene(parts) {
-    const rec = App.rec;
-    if (!parts.length) throw fail("הסצנה ריקה");
-    guard({ layers: parts.length, bytes: parts.reduce((n, p) => n + (p.blob ? p.blob.size : 0), 0) });
-    const r = artRatio(), made = [];
-    for (const pt of parts) {
-      const assetId = Studio.newId(), blob = await Studio.ownBlob(pt.blob);
-      const el = { id: Studio.newId(), name: pt.name, x: pt.x || 0, y: pt.y || 0, z: pt.z || 0, w: pt.w || 0.3, rot: pt.rot || 0, flush: true, seq: null };
-      if (pt.rotX) el.rotX = pt.rotX;
-      if (pt.rotY) el.rotY = pt.rotY;
-      if (pt.timeline) el.timeline = JSON.parse(JSON.stringify(pt.timeline));
-      if (pt.type === "model") {
-        Object.assign(el, { type: "model", assetId, aspect: 1, h: null, seat: "plane" });
-        try {
-          const clips = await Studio.modelClipInfo(blob);
-          el.clipDurations = clips.map((c) => c.duration);
-          if (pt.clip) { const i = clips.findIndex((c) => c.name === pt.clip); if (i >= 0) el.modelClip = i; }
-        } catch (e) {}
-      } else if (pt.type === "particles") {
-        Object.assign(el, { type: "particles", h: pt.h || el.w, particles: Object.assign({}, pt.particles, { preset: "custom", spriteAssetId: assetId }) });
-      } else Object.assign(el, { type: "image", assetId, aspect: 1, h: el.w * r });
-      made.push([el, assetId, blob]);
-    }
-    made.forEach(([el, id, blob]) => { rec.assets[id] = blob; rec.elements.push(Studio.normEl(el)); });
-    await App.hydrate();
-    App.select(null);
-    App.emit("structure");
-    await App.save();
-  }
-
   // Layers that need no file.
   function addText() {
     if (App.blocked({ layers: 1 })) return;
@@ -290,6 +259,52 @@ window.Layers = (() => {
     if (App.blocked({ layers: 1 })) return;
     const el = { id: Studio.newId(), type: "particles", name: nextName("particles"), x: 0, y: 0, w: 0.6, h: 0.6, rot: 0, z: 0, flush: true, seq: null, particles: { preset: "sparkle", count: 120, color: "#ffd94d" } };
     return App.addLayer(el).then(() => App.setTab("style"));
+  }
+
+  // A sun or smoke: drawn by the pattern shader on a transparent layer above the others (not behind, like a background).
+  function addWeather(look) {
+    if (App.blocked({ layers: 1 })) return;
+    const w = Studio.WEATHER.find((x) => x.id === look), pattern = Studio.patternDefaults(look), sun = look === "sun";
+    const el = { id: Studio.newId(), type: "pattern", name: w.name, pattern, x: sun ? 0.18 : 0, y: sun ? 0.22 : -0.05, w: sun ? 0.6 : 0.7, rot: 0, z: 0, flush: true, seq: null };
+    el.aspect = Studio.patternAspect(App.rec, pattern.shape); el.h = (el.w / el.aspect) * artRatio();
+    return App.addLayer(el).then(() => App.setTab("style"));
+  }
+  // "מזג אוויר": the sun and smoke (with their own controls), the filmed weather loops and the weather particles.
+  function openWeather() {
+    const L = window.StarterLibrary || {}, vids = L.weather || [], parts = L.weatherParticles || [];
+    let busy = false;
+    const run = (fn) => async () => {
+      if (busy) return; busy = true;
+      try { await fn(); } catch (e) { if (e.say == null) console.warn(e); toast(e.say || "לא נוסף. אפשר לנסות שוב.", { kind: "error" }); } finally { busy = false; }
+    };
+    const fetchFile = async (file, type) => { const r = await fetch("library/" + file); if (!r.ok) throw new Error("download"); return new File([await r.blob()], file.split("/").pop(), { type }); };
+    const pic = (src) => h("img", { src, alt: "", loading: "lazy", draggable: false });
+    const drawn = (look) => { try { return pic(Studio.patternFrame({ type: "pattern", pattern: Studio.patternDefaults(look) }, 96, 96, 4).toDataURL()); } catch (e) { return icon("sun", 28); } };
+    const tile = (id, name, p, fn) => h("button.part-tile", { type: "button", data: { weather: id }, onclick: run(fn) }, h("span.part-pic.wx-pic", p), h("span.part-name", name));
+    const tiles = Studio.WEATHER.map((w) => tile(w.id, w.name, drawn(w.id), async () => { d.close(); await addWeather(w.id); }))
+      .concat(vids.map((v) => tile(v.id, v.name, pic("library/" + v.thumb), async () => {
+        const end = UI.busy("מוסיפה " + v.name + "…");
+        try { const f = await fetchFile(v.file, "video/mp4"); d.close(); await importAsset("video", f, { name: v.name, w: v.w, loop: true, chroma: v.chroma }); App.setTab("style"); } finally { end(); }
+      })))
+      .concat(parts.map((st) => tile(st.id, st.name, pic("library/" + st.thumb), async () => {
+        const end = UI.busy("מוסיפה " + st.name + "…");
+        try { const f = await fetchFile(st.file, "image/png"); d.close(); await importAsset("particles", f, { name: st.name, particles: st.particles, w: st.w, h: st.h }); App.setTab("style"); } finally { end(); }
+      })));
+    const d = UI.dialog({ title: "איזה מזג אוויר?", sheet: true, body: [h("div.part-grid", tiles), h("p.note", icon("sun", 18), h("span", "בשמש ובעשן אפשר לבחור סוג, גודל, עוצמה וגוון. בשאר אפשר לשנות גודל, שקיפות וכמות."))] });
+  }
+  // "תמונה": a picture from the device, or one of the ready stickers.
+  function openImages() {
+    const stickers = (window.StarterLibrary && window.StarterLibrary.stickers) || [];
+    if (!stickers.length) return UI.pickFile(ACCEPT.image).then((f) => f && addFile("image", f));
+    let busy = false;
+    const own = h("button.part-tile", { type: "button", data: { image: "own" }, onclick: async () => { d.close(); const f = await UI.pickFile(ACCEPT.image); if (f) addFile("image", f); } },
+      h("span.part-pic", icon("upload", 28)), h("span.part-name", "מהמכשיר"));
+    const tiles = stickers.map((st) => h("button.part-tile", { type: "button", data: { image: st.id }, onclick: async () => {
+      if (busy) return; busy = true;
+      try { const r = await fetch("library/" + st.file); if (!r.ok) throw new Error("download"); const f = new File([await r.blob()], st.file.split("/").pop(), { type: "image/png" }); d.close(); await addFile("image", f); }
+      catch (e) { toast("המדבקה לא נוספה. אפשר לנסות שוב.", { kind: "error" }); } finally { busy = false; }
+    } }, h("span.part-pic", h("img", { src: "library/" + st.thumb, alt: "", loading: "lazy", draggable: false })), h("span.part-name", st.name)));
+    const d = UI.dialog({ title: "איזו תמונה?", sheet: true, body: [h("div.part-grid", own, tiles)] });
   }
 
   // The ready particle styles: every tile shows the particles as they will look on the artwork.
@@ -350,9 +365,9 @@ window.Layers = (() => {
 
   // ---------- the "add" sheet ----------
   const ADD = [
-    ["image", "תמונה", "PNG, JPG או GIF"], ["video", "סרטון", "MP4 או MOV"], ["text", "טקסט", "כותרת או ברכה"],
-    ["pattern", "רקעים", "צבע אחיד, תנועה או טבע"], ["particles", "חלקיקים", "גשם, שלג, לבבות ועוד"], ["model", "תלת־ממד", "מודלים מוכנים, או ייבוא משלך"],
-    ["sound", "צליל", "MP3, M4A, WAV"]
+    ["image", "תמונה", "מהמכשיר, או מדבקה מוכנה"], ["video", "סרטון", "MP4 או MOV"], ["text", "טקסט", "כותרת או ברכה"],
+    ["pattern", "רקעים", "צבע אחיד, תנועה או טבע"], ["weather", "מזג אוויר", "שמש, עשן, גשם, ערפל ועוד"], ["particles", "חלקיקים", "גשם, שלג, לבבות ועוד"],
+    ["model", "תלת־ממד", "מודלים מוכנים, או ייבוא משלך"], ["sound", "צליל", "MP3, M4A, WAV"]
   ];
   function openAdd() {
     if (!App.rec) return;
@@ -362,15 +377,15 @@ window.Layers = (() => {
       if (kind === "text") return addText();
       if (kind === "pattern") return openBackgrounds();
       if (kind === "particles") return openParticles();
+      if (kind === "weather") return openWeather();
+      if (kind === "image") return openImages();
       if (kind === "model") return open3d();
       const f = await UI.pickFile(ACCEPT[kind]);
       if (f) addFile(kind, f);
     };
     const tiles = ADD.map(([kind, name, hint]) => h("button.add-tile", { type: "button", data: { add: kind }, onclick: pick(kind), style: { "--tint": TYPES[kind].tint } },
       h("span.add-ic", icon(TYPES[kind].icon, 24)), h("span.add-name", name), h("span.add-hint", hint)));
-    const lib = h("button.add-library", { type: "button", onclick: () => { d.close(); openLibrary(); } },
-      h("span.add-ic", icon("library", 24)), h("span", h("span.add-name", "מהספרייה"), h("span.add-hint", "דמויות, אפקטים, צלילים וסצנות מוכנות")), icon("back", 18));
-    const d = UI.dialog({ title: "מה מוסיפים?", sheet: true, body: [lib, h("div.add-grid", tiles)] });
+    const d = UI.dialog({ title: "מה מוסיפים?", sheet: true, body: [h("div.add-grid", tiles)] });
   }
 
   // ---------- the list ----------

@@ -18,6 +18,7 @@ for(const phone of [true,false]){
     const tileBtn=p.locator('.add-tile',{has:p.locator('.add-name',{hasText:tile})});
     // a model of one's own goes through the library's 3D shelf and its import button
     if(await tileBtn.getAttribute('data-add')==='model'){await tileBtn.click();await p.waitForSelector('#starter-library .library-import');const [fc]=await Promise.all([p.waitForEvent('filechooser'),p.locator('#starter-library .library-import').click()]);await fc.setFiles(fx(file));}
+    else if(await tileBtn.getAttribute('data-add')==='image'){await tileBtn.click();await p.waitForSelector('dialog[open] .part-tile[data-image="own"]');const [fc]=await Promise.all([p.waitForEvent('filechooser'),p.locator('dialog[open] .part-tile[data-image="own"]').click()]);await fc.setFiles(fx(file));}
     else{const [fc]=await Promise.all([p.waitForEvent('filechooser'),tileBtn.click()]);await fc.setFiles(fx(file));}
     await p.waitForFunction((w)=>App.rec.elements.length===w&&!document.querySelector('.busy'),want,{timeout:60000});await p.waitForTimeout(500);
   };

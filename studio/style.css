@@ -427,3 +427,4 @@ dialog::backdrop { background: rgba(6,5,10,.66); backdrop-filter: blur(3px); }
 .group.folded > .group-title { margin-bottom: 0; }
 .group.folded .group-fold svg { transform: rotate(90deg); }
 .bg-swatch { display: block; width: 100%; height: 100%; border-radius: inherit; }
+.wx-pic { background: linear-gradient(180deg, #4f74a3, #b9c6d6 60%, #8c7a5a); }

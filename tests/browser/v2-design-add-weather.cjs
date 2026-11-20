@@ -37,7 +37,8 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
 
   // 2. a picture: no effect group; an effect left on a layer can be taken off
   await p.locator('.tab[data-tab="add"]').click();await p.waitForSelector('dialog[open] .add-grid');
-  {const [fc]=await Promise.all([p.waitForEvent('filechooser'),p.locator('dialog[open] .add-tile[data-add="image"]').click()]);await fc.setFiles(art);}
+  await p.locator('dialog[open] .add-tile[data-add="image"]').click();await p.waitForSelector('dialog[open] .part-tile[data-image="own"]');
+  {const [fc]=await Promise.all([p.waitForEvent('filechooser'),p.locator('dialog[open] .part-tile[data-image="own"]').click()]);await fc.setFiles(art);}
   await p.waitForFunction(()=>App.sel()&&App.sel().type==='image',null,{timeout:20000});await p.waitForTimeout(600);
   t=await titles();assert.ok(!t.includes('אפקט'),'no effect group on a picture: '+t);assert.ok(t.includes('חיתוך ומילוי')&&t.includes('מקום וגודל'));
   assert.equal(await p.locator('#btn-fx-off').count(),0);
@@ -81,12 +82,9 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
   await p.locator('#starter-library .library-filters button[data-group="plant"]').click();
   assert.deepEqual(await p.locator('#starter-library .library-card:not([hidden])').evaluateAll(n=>[...new Set(n.map(x=>x.dataset.group))]),['plant']);
   assert.equal(await p.locator('#starter-library .library-section:not([hidden])').count(),0,'one kind: no headings');assert.ok(await imp.isVisible());await shot('library-3d-plants');
-  // the whole library is still whole, and has no import button
+  // the whole library is gone from the add sheet (every item has its own tile)
   await p.keyboard.press('Escape');await p.waitForFunction(()=>!document.querySelector('#starter-library'));
-  await p.locator('.tab[data-tab="add"]').click();await p.locator('dialog[open] .add-library').click();await p.waitForSelector('#starter-library[open]');
-  assert.equal(await p.locator('#starter-library .library-card').count(),await p.evaluate(()=>StarterLibrary.entries.length));assert.ok(!(await imp.isVisible()),'no import button in the whole library');
-  assert.equal(await p.locator('#starter-library .library-filters button[data-group="model"]').count(),1);
-  await p.keyboard.press('Escape');await p.waitForFunction(()=>!document.querySelector('#starter-library'));
+  await p.locator('.tab[data-tab="add"]').click();await p.waitForSelector('dialog[open] .add-grid');assert.equal(await p.locator('dialog[open] .add-library').count(),0);await p.keyboard.press('Escape');await p.waitForTimeout(300);
   await p.locator('.tab[data-tab="add"]').click();await p.locator('dialog[open] .add-tile[data-add="model"]').click();await p.waitForSelector('#starter-library[open]');
   // the layers page: one "add layer" button, beside the number of layers
   assert.equal((await p.locator('#layers-pane .pane-head #btn-add').textContent()).trim(),'הוספת שכבה');

@@ -51,10 +51,10 @@ for(const phone of [true,false]){
 
   // the library adds a layer
   if(phone)await p.locator('.tab[data-tab="layers"]').click();
-  await p.locator('#btn-add').click();await p.locator('.add-library').click();await p.waitForSelector('#starter-library[open] .library-card');
-  await p.locator('#starter-library .library-card[data-library-id="st-heart"]').click();
+  await p.locator('#btn-add').click();await p.locator('dialog[open] .add-tile[data-add="image"]').click();await p.waitForSelector('dialog[open] .part-tile[data-image="st-heart"]');
+  await p.locator('dialog[open] .part-tile[data-image="st-heart"]').click();
   await p.waitForFunction(()=>App.rec.elements.length===2,null,{timeout:30000});await p.waitForTimeout(800);
-  assert.equal(await p.locator('.layer-row').count(),2,tag+': the library item became a layer');
+  assert.equal(await p.locator('.layer-row').count(),2,tag+': the sticker became a layer');
 
   // see and share
   await p.locator('#btn-share').click();await p.waitForSelector('dialog[open] .share-tile');

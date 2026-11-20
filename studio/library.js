@@ -1,7 +1,7 @@
 /* Starter library. Selection copies an asset into the current local experience, so export/import does not
    depend on a future catalog fetch. Groups: CC0 3D models from Poly Haven (packed to
    GLB at 1K textures), particle styles and stickers drawn in code
-   (tools/make-graphics.cjs), ready scenes, and floating, weather and cosmic effects as 3D models.
+   (tools/make-graphics.cjs), weather video loops, and floating and cosmic effects as 3D models.
    Credits and sources: library/README.md. */
 window.StarterLibrary = (() => {
   // Poly Haven (CC0): [file id, Hebrew name]
@@ -80,41 +80,6 @@ window.StarterLibrary = (() => {
     ['heart','לב'],['sparkle','ניצוץ'],['speech','בועת דיבור'],['arrow','חץ'],['cloud','ענן'],['rainbow','קשת בענן'],
     ['sun','שמש'],['moon','ירח'],['flower','פרח'],['crown','כתר'],['star','כוכב'],['butterfly','פרפר']
   ].map(([id,name]) => ({id:'st-'+id,name,detail:'מדבקה · תמונה שקופה',kind:'image',file:'stickers/'+id+'.png',thumb:'thumbs/st-'+id+'.png',group:'sticker'}));
-  // Ready scenes: several layers in one tap, each with its own looping path (timeline keys) and move. Paths are
-  // sampled from a function of the loop phase f (0..1); x/y in artwork units (0 = centre), z = depth toward the viewer.
-  const path = (dur, n, fn) => ({ loop: true, ease: 'linear', keys: [...Array(n + 1)].map((_, i) => Object.assign({ t: +(dur * i / n).toFixed(3) }, fn(i / n))) });
-  const across = (dur, y, z, dir, wave = 0.03) => path(dur, 12, (f) => ({ x: dir * (-0.62 + 1.24 * f), y: y + wave * Math.sin(f * Math.PI * 4), z, opacity: f < 0.08 || f > 0.92 ? 0 : 1 }));
-  const M = (file, name, clip, o) => Object.assign({ type: 'model', file: 'models/' + file + '.glb', name, clip }, o);
-  const P = (sprite, name, particles, o) => Object.assign({ type: 'particles', file: 'particles/' + sprite + '.png', name, particles }, o);
-  const scenes = [
-    ['aquarium','אקווריום','מים, דגים שוחים ובועות',[
-      M('qc-clownfish','דג ליצן','Fish_Armature|Swimming_Normal',{ w: .2, rotY: 90, timeline: across(8, .18, .05, 1) }),
-      M('qc-bluetang','דג כחול','Fish_Armature|Swimming_Normal',{ w: .18, rotY: 90, timeline: across(11, -.12, .14, 1) }),
-      M('qc-koi','קוי','Fish_Armature|Swimming_Normal',{ w: .24, rotY: -90, timeline: across(10, .36, .09, -1) }),
-      P('bubble','בועות',{ count: 40, size: 24, speed: .5, color: '#bfe9ff', color2: '#ffffff', direction: 0, lifetime: 3, life2: 6, fade: true },{ w: .8, h: .9 })]],
-    ['dragon','דרקון מעופף','דרקון בשמונה באוויר, מתקרב ומתרחק',[
-      M('qu-dragon','דרקון','Fast_Flying',{ w: .45, timeline: path(8, 24, (f) => ({ x: .32 * Math.sin(f * 2 * Math.PI), y: .05 + .18 * Math.sin(f * 4 * Math.PI), z: .18 + .16 * Math.cos(f * 2 * Math.PI), rot: -14 * Math.cos(f * 2 * Math.PI), scale: 1 + .35 * Math.cos(f * 2 * Math.PI) })) }),
-      P('sparkle','אבק זהב',{ count: 90, size: 12, speed: .3, color: '#ffd94d', color2: '#fff3b0', direction: -2, lifetime: 1.5, life2: 3, fade: true, endSize: .3 },{ w: .9, h: .7 })]],
-    ['party','מסיבת מפלצונים','שלושה מפלצונים רוקדים וקונפטי',[
-      ...[['qu-blob_cat','חתול עגול',-.28],['qu-blob_pinkblob','כדור ורוד',0],['qu-blob_dog','כלב עגול',.28]].map(([f,n,x],i) => M(f,n,'Dance',{ w: .24, x, timeline: path(1.2, 6, (ph) => ({ x, y: -.18 + .06 * Math.abs(Math.sin((ph + i / 3) * Math.PI)) })) })),
-      P('confetti','קונפטי',{ count: 150, size: 14, speed: .9, color: '#ff4d6d', color2: '#4dc3ff', direction: 180, lifetime: 3, life2: 5 },{ w: 1, h: .5, y: .25 })]],
-    ['winter','ערב חורף','אייל ואיילה בשלג',[
-      M('q-stag','אייל','Idle',{ w: .42, x: -.16, y: -.18, rotY: 35 }), M('q-deer','איילה','Eating',{ w: .34, x: .2, y: -.24, rotY: -30 }),
-      P('snowflake','שלג',{ count: 120, size: 14, speed: .4, color: '#ffffff', color2: '#cfe8ff', direction: 180, lifetime: 5, life2: 9, fade: true },{ w: 1, h: 1 })]],
-    ['dino-walk','טיול דינוזאורים','טירנוזאורוס חוצה, אפטוזאורוס מביט',[
-      M('qd-trex','טירנוזאורוס','Armature|TRex_Walk',{ w: .4, rotY: 90, timeline: across(12, -.22, .05, 1, .005) }),
-      M('qd-apatosaurus','אפטוזאורוס','Armature|Apatosaurus_Idle',{ w: .5, x: .22, y: -.12, rotY: -40 }),
-      P('leaf','עלים',{ count: 40, size: 22, speed: .5, color: '#3bb36a', color2: '#f6c343', direction: 180, lifetime: 4, life2: 7, fade: true },{ w: 1, h: .6, y: .2 })]],
-    ['shark','כריש מגיע','כריש ששוחה אל הצופה וחוזר',[
-      M('qf-shark','כריש','Armature|Swim',{ w: .45, timeline: path(6, 12, (f) => { const k = .5 - .5 * Math.cos(f * 2 * Math.PI); return { x: .05 * Math.sin(f * 4 * Math.PI), y: -.02, z: .02 + .4 * k, scale: 1 + .5 * k }; }) }),
-      P('bubble','בועות',{ count: 30, size: 22, speed: .5, color: '#bfe9ff', color2: '#ffffff', direction: 0, lifetime: 3, life2: 6, fade: true },{ w: .7, h: .8 })]],
-    ['space','חלל','מערכת שמש, כוכבים ורובוט שמנופף',[
-      M('m-solar','מערכת שמש','Loop',{ w: .75, y: .1, z: .05 }), M('qr-robot','רובוט','RobotArmature|Robot_Wave',{ w: .2, x: .3, y: -.3 }),
-      P('star','כוכבים',{ count: 80, size: 16, speed: .5, color: '#ffffff', color2: '#ffe680', direction: -3, lifetime: 2, life2: 4, fade: true, endSize: .2 },{ w: 1, h: 1 })]],
-    ['birthday','יום הולדת','בלונים עולים וקונפטי',[
-      M('m-balloons','בלונים','Loop',{ w: .7, timeline: path(12, 12, (f) => ({ y: -.7 + 1.4 * f, opacity: f < .06 || f > .94 ? 0 : 1 })) }),
-      P('confetti','קונפטי',{ count: 150, size: 14, speed: .9, color: '#ff4d6d', color2: '#ffd23f', direction: 180, lifetime: 3, life2: 5 },{ w: 1, h: .6, y: .2 })]]
-  ].map(([id,name,detail,parts]) => ({id:'sc-'+id,name,detail:'סצנה בתנועה · '+detail,kind:'scene',parts,thumb:'thumbs/sc-'+id+'.png',group:'scene'}));
   // The floating effects as 3D models (tools/make-real-models.py, outside this repository): glow is unlit colour in
   // translucent shells, one looping clip "Loop" each: [file id, Hebrew name, start width]
   const fx3d = [
@@ -129,7 +94,7 @@ window.StarterLibrary = (() => {
   const wreal = [
     ['rain-light','גשם קל'],['rain-heavy','גשם כבד ברוח'],['storm','ברקים בענני סערה'],['hail','ברד'],['snow','שלג רך'],
     ['blizzard','סופת שלג'],['fog','ערפל נמוך'],['clouds','עננים נודדים'],['rays','קרני שמש באובך'],['dust','אבק זהוב ברוח']
-  ].map(([id,name]) => ({id:'wr-'+id,name,detail:'מזג אוויר ריאליסטי · סרטון בלולאה',kind:'video',file:'weather/'+id+'.mp4',thumb:'thumbs/wr-'+id+'.png',w:1,chroma:glowKey,group:'weather-real'}));
+  ].map(([id,name]) => ({id:'wr-'+id,name,detail:'מזג אוויר · סרטון בלולאה',kind:'video',file:'weather/'+id+'.mp4',thumb:'thumbs/wr-'+id+'.png',w:1,chroma:glowKey,group:'weather-real'}));
   const k3d = [
     ['k-tornado','מערבולת חלקיקים',.5],['k-saturn','שבתאי מחלקיקים',.65],['k-blackhole','חור שחור ודיסקת אור',.6],['k-globe','גלובוס נקודות',.45],
     ['k-galaxy','גלקסיה ספירלית',.7],['k-dna','סליל DNA',.3],['k-gyro','טבעות מסתובבות',.5],['k-sphere','כדור חלקיקים נושם',.45],
@@ -141,8 +106,8 @@ window.StarterLibrary = (() => {
     ['stars','שמי לילה עם כוכבים'],['sea','ים פתוח'],['field','שדה חיטה ברוח'],['sunset','שקיעה מעל הים'],
     ['clouds','עננים נודדים'],['aurora','זוהר צפוני'],['underwater','מתחת למים']
   ].map(([id,name]) => ({id:'bg-'+id,name,detail:'רקע מהטבע · סרטון בלולאה',kind:'video',file:'backdrops/'+id+'.mp4',thumb:'thumbs/bg-'+id+'.png',w:1,fill:true,group:'backdrop'}));
-  const entries = [...backdrops, ...scenes, ...fx3d, ...weatherParticles, ...wreal, ...k3d, ...models, ...flowers, ...scans, ...stickers];
-  const groups = [['all','הכול'],['backdrop','רקעים מהטבע'],['scene','סצנות בתנועה'],['fx','אפקטים מרחפים'],['weather-real','מזג אוויר ריאליסטי'],['cosmic','חלל וחלקיקים'],['model','תלת־ממד'],['animal','חיות בתנועה'],['sticker','מדבקות']];
+  const entries = [...backdrops, ...fx3d, ...weatherParticles, ...wreal, ...k3d, ...models, ...flowers, ...scans, ...stickers];
+  const groups = [['all','הכול'],['backdrop','רקעים מהטבע'],['fx','אפקטים מרחפים'],['weather-real','מזג אוויר'],['cosmic','חלל וחלקיקים'],['model','תלת־ממד'],['animal','חיות בתנועה'],['sticker','מדבקות']];
   // The 3D shelf (opened from the add sheet's "תלת־ממד"): only the models, by kind. The 'model' group is split here by
   // file id (without the 'ph-' prefix); an id in none of the lists lands in 'home'. A new plant or flower: add its id to plant.
   const CAT3D = {
@@ -190,10 +155,6 @@ window.StarterLibrary = (() => {
       add.onclick=async()=>{
         if(busy)return;busy=true;grid.querySelectorAll('button').forEach(b=>b.disabled=true);status.textContent='טוען את הפריט…';
         try{
-          if(item.kind==='scene'){
-            const parts=await Promise.all(item.parts.map(async(pt)=>{const r=await fetch('library/'+pt.file);if(!r.ok)throw Error('download');const b=await r.blob(),base=pt.file.split('/').pop();return Object.assign({},pt,{blob:new File([b],base,{type:MIME[base.split('.').pop()]||b.type})});}));
-            await importAsset('scene',{parts},{name:item.name});dialog.close();return;
-          }
           const response=await fetch('library/'+item.file);if(!response.ok)throw Error('download');
           const blob=await response.blob(),base=item.file.split('/').pop(),type=MIME[base.split('.').pop()]||blob.type;
           await importAsset(item.kind,new File([blob],base,{type}),{name:item.name,loop:item.kind!=='sound',clip:item.clip,w:item.w,h:item.h,particles:item.particles,fill:item.fill,chroma:item.chroma,timecube:item.timecube});
@@ -209,5 +170,5 @@ window.StarterLibrary = (() => {
     show('all');
     dialog.addEventListener('close',()=>dialog.remove(),{once:true});document.body.append(dialog);dialog.showModal();close.focus();
   }
-  return {open,entries,particleStyles,backdrops,cat3d,cats3d};
+  return {open,entries,particleStyles,backdrops,cat3d,cats3d,weather:wreal,weatherParticles,stickers};
 })();

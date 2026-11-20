@@ -852,7 +852,14 @@ vec4 baFilter(vec2 uv) {
     ["hearts", "לבבות", ["#ffe5ec", "#ff4d6d", "#c9184a"], 0], ["terrazzo", "טרצו", ["#f2ece4", "#e07a5f", "#3d405b"], 0],
     ["solid", "צבע אחיד", ["#7b5cff", "#7b5cff", "#7b5cff"], 0] // one flat colour (the first); always the last look
   ];
-  const PATTERN_IDS = PATTERNS.map((p) => p[0]);
+  // Weather drawn by the same shader, on a transparent layer above the others: a sun and smoke, each in four kinds,
+  // with their own intensity (power) and one colour tint (the first colour). [id, Hebrew name, colours, start speed, kinds]
+  const WEATHER = [
+    ["sun", "שמש", ["#ffd27a", "#ffd27a", "#ffd27a"], 0.35, ["שמש קורנת", "שמש באובך", "הבזק עדשה", "שמש שוקעת"]],
+    ["smoke", "עשן", ["#d9d4cc", "#d9d4cc", "#d9d4cc"], 0.4, ["עשן עולה", "עשן סמיך", "אדים", "עשן נודד"]]
+  ];
+  const PATTERN_IDS = PATTERNS.concat(WEATHER).map((p) => p[0]);
+  const isWeather = (el) => !!(el && el.type === "pattern" && el.pattern && WEATHER.some((w) => w[0] === el.pattern.look));
   // Ready colour sets for any look: [Hebrew name, colours]
   const PATTERN_PALETTES = [
     ["שקיעה", ["#ff6b6b", "#ffd166", "#6a4c93"]], ["ים", ["#0b3d91", "#2fa4d8", "#bfeaf5"]], ["פסטל", ["#ffd6e0", "#c1e7e3", "#fff1b6"]],
@@ -864,6 +871,7 @@ vec4 baFilter(vec2 uv) {
   const PATTERN_GLSL = `
 uniform float bpMode; uniform vec3 bpC1; uniform vec3 bpC2; uniform vec3 bpC3; uniform float bpSize; uniform float bpTime;
 uniform float bpSeed; uniform float bpAspect; uniform float bpShape; uniform float bpPx;
+uniform float bpKind; uniform float bpPower; // weather: which kind, and how strong
 uniform vec3 bpTouch; uniform float bpTouchMode; uniform float bpClock; // the finger: x, y on the layer (0..1) and how strongly (0 = none)
 vec2 bpWarp(vec2 uv) { // the picture bends around the finger: 1 ripples, 2 a lens that pulls it in, 3 a whirl
   if (bpTouch.z < 0.001 || bpTouchMode < 0.5) return uv;
@@ -891,9 +899,78 @@ float bpHeart(vec2 p) { // a square turned on its corner with a circle on each u
   vec2 q = mat2(0.7071, 0.7071, -0.7071, 0.7071) * (p - vec2(0.0, -0.1));
   return min(max(abs(q.x), abs(q.y)) - 0.25, length(p - vec2(0.177, 0.077)) - 0.25);
 }
+// ---- weather: light and smoke as straight colour with their own alpha, fading out before the layer's edges ----
+vec4 bpSun(vec2 p, vec2 uv) {
+  float t = bpTime, k = bpKind, R = mix(0.035, 0.11, clamp(bpSize, 0.0, 1.0));
+  vec2 q = p; if (k > 2.5) q.y *= 1.12; // the setting sun is a little flattened by the air
+  float r = length(q), a = atan(q.y, q.x);
+  vec2 dir = vec2(cos(a), sin(a));
+  float disc = smoothstep(R, R * 0.92, r) * (0.92 + 0.08 * smoothstep(R, 0.0, r)); // a hot disc, darker at its rim
+  float corona = exp(-(r * r) / (R * R * 3.2)), halo = exp(-r / (R * 3.2)), wide = 0.22 / (1.0 + r * r / (R * R * 2.0));
+  float light;
+  if (k < 0.5) { // radiant: soft rays that slowly breathe around the disc
+    float rays = bpNoise(dir * 3.2 + vec2(t * 0.11, bpSeed)) * bpNoise(dir * 9.0 - vec2(0.0, t * 0.07)) * 2.2;
+    rays = pow(clamp(rays, 0.0, 1.4), 2.0) * exp(-r / (R * 3.6)) * smoothstep(R * 0.8, R * 1.6, r);
+    light = disc + corona * 0.85 + halo * 0.55 + wide + rays * 0.6;
+  } else if (k < 1.5) { // in haze: a softer, wider disc in a shimmering cloud of light
+    float haze = bpFbm(p * 3.0 + vec2(t * 0.06, -t * 0.03)) - 0.5;
+    light = smoothstep(R * 1.25, R * 0.6, r) * 0.9 + exp(-r * r / (R * R * 9.0)) * 0.75 + (halo * 0.6 + wide * 1.4) * (1.0 + haze * 0.9);
+  } else if (k < 2.5) { // lens flare: a star of thin spikes, a long sideways streak and ghosts across the lens
+    float spikes = pow(abs(cos(a * 3.0 + t * 0.03)), 160.0) + 0.6 * pow(abs(cos(a * 3.0 + 0.52 - t * 0.02)), 260.0);
+    float streak = exp(-abs(p.y) / (R * 0.18)) * exp(-abs(p.x) / (R * 9.0));
+    light = disc + corona * 0.9 + halo * 0.45 + wide * 0.8 + spikes * exp(-r / (R * 3.5)) * 0.8 + streak * 0.9;
+    vec2 axis = normalize(vec2(-0.75, -0.55));
+    for (int i = 0; i < 5; i++) { // ghosts: discs and rings along a line through the sun, each a little coloured
+      float fi = float(i), d = 0.09 + fi * 0.075 + 0.02 * sin(fi * 2.3), s = R * (0.35 + 0.45 * fract(fi * 0.618 + 0.3));
+      float g = length(p - axis * d);
+      light += (mod(fi, 2.0) < 0.5 ? smoothstep(s, s * 0.7, g) * 0.16 : exp(-pow((g - s) / (s * 0.18), 2.0)) * 0.22);
+    }
+  } else { // setting: a big low sun, its glow spread sideways in bands of warm air
+    float bands = 0.75 + 0.25 * bpNoise(vec2(p.x * 1.5 + t * 0.05, p.y * 14.0));
+    float flat2 = exp(-abs(p.y) / (R * 1.4)) * exp(-abs(p.x) / (R * 7.0));
+    light = disc * bands + corona * 0.7 + halo * 0.5 + wide * 0.9 + flat2 * 0.55 * bands;
+  }
+  vec2 e = abs(uv - 0.5) * 2.0; light *= smoothstep(1.0, 0.72, max(e.x, e.y)); // nothing reaches the layer's edges
+  light *= mix(0.35, 1.6, clamp(bpPower, 0.0, 1.0));
+  vec3 tint = bpC1 * (k > 2.5 ? vec3(1.0, 0.72, 0.46) : vec3(1.0));
+  vec3 col = mix(tint, vec3(1.0, 0.99, 0.95), smoothstep(0.75, 1.6, light)); // the brightest light runs to white
+  return vec4(col, clamp(light, 0.0, 1.0));
+}
+vec4 bpSmoke(vec2 p, vec2 uv) {
+  float t = bpTime * 1.6, k = bpKind, z = mix(1.5, 0.65, clamp(bpSize, 0.0, 1.0)); // size: bigger billows
+  float thick = k > 0.5 && k < 1.5 ? 1.0 : 0.0, steam = k > 1.5 && k < 2.5 ? 1.0 : 0.0;
+  float dens, n, nl, d2;
+  if (k > 2.5) { // drifting: soft banks of smoke moving sideways over the whole layer
+    vec2 q = vec2(p.x * 1.6 - t * 0.28, p.y * 2.4) * z;
+    float w = bpFbm(q * 0.5 + vec2(t * 0.04, 2.0));
+    n = bpFbm(q + vec2(w * 0.9, w * 0.5)); nl = bpFbm(q + vec2(w * 0.9, w * 0.5) + vec2(-0.07, 0.1));
+    d2 = bpFbm(q * 3.2 + vec2(-t * 0.5, 1.0));
+    float bank = bpNoise(vec2(p.x * 0.8 - t * 0.12, 3.0)) * 0.6 + 0.4;
+    dens = smoothstep(0.42, 0.78, n * (0.75 + 0.5 * bank) + (d2 - 0.5) * 0.3);
+  } else { // a column that rises from the bottom, wanders, and opens into ever bigger billows
+    float y = uv.y, rise = t * mix(0.5, 0.8, steam);
+    float cx = (bpNoise(vec2(y * 1.3 - rise * 0.35, bpSeed * 0.1)) - 0.5) * (0.12 + 0.3 * y) * bpAspect;
+    float width = mix(0.02, 0.38, pow(y, 0.9)) * mix(1.0, 1.45, thick) * mix(1.0, 0.6, steam) * bpAspect;
+    float xr = (p.x - cx) / max(width, 0.02);
+    vec2 q = vec2(xr * mix(0.55, 0.4, thick), (y - rise) * mix(3.2, 2.3, thick) * mix(1.0, 1.6, steam)) * z;
+    float w = bpFbm(q * 0.7 + vec2(3.1, -t * 0.05));
+    n = bpFbm(q + vec2(w - 0.5, w - 0.5) * 0.9); nl = bpFbm(q + vec2(w - 0.5, w - 0.5) * 0.9 + vec2(-0.07, 0.1));
+    d2 = bpFbm(q * 3.4 + vec2(0.0, -t * 0.4));
+    float prof = exp(-xr * xr * 0.9);
+    float life = smoothstep(0.0, 0.08, y) * (1.0 - smoothstep(mix(0.64, 0.38, steam), 1.0, y));
+    dens = smoothstep(0.3, 0.7, n * 0.75 + prof * 0.45 + (d2 - 0.5) * 0.4) * prof * life;
+    if (steam > 0.5) dens *= smoothstep(0.35, 0.7, bpNoise(q * 1.8 + 5.0)) * 0.8;
+  }
+  vec2 e = abs(uv - 0.5) * 2.0; dens *= smoothstep(1.0, k > 2.5 ? 0.5 : 0.8, e.x) * smoothstep(1.0, k > 2.5 ? 0.6 : 0.85, e.y);
+  dens *= mix(0.3, 1.25, clamp(bpPower, 0.0, 1.0)) * mix(1.0, 1.25, thick);
+  vec3 tint = bpC1 * mix(1.0, 0.38, thick) * mix(1.0, 1.08, steam); // thick smoke is dark, steam a little brighter
+  vec3 col = tint * (0.7 + 0.3 * smoothstep(0.35, 0.8, n) + clamp((n - nl) * 3.5, -0.18, 0.22) + (d2 - 0.5) * 0.12); // billows lit from the upper left
+  return vec4(clamp(col, 0.0, 1.0), clamp(dens, 0.0, 1.0));
+}
 vec4 bpLinear(vec4 c) { return vec4(mix(c.rgb / 12.92, pow((c.rgb + 0.055) / 1.055, vec3(2.4)), step(0.04045, c.rgb)), c.a); }
 vec4 bpPattern(vec2 uv) {
   vec2 p = (uv - 0.5) * vec2(bpAspect, 1.0);
+  if (bpMode > 17.5) return bpMode < 18.5 ? bpSun(p, uv) : bpSmoke(p, uv);
   float t = bpTime, z = clamp(bpSize, 0.0, 1.0);
   vec3 col = bpC1;
   if (bpMode < 1.5) { // liquid gradient: the three colours folded into each other by slow, warped noise
@@ -1002,20 +1079,24 @@ vec4 bpPattern(vec2 uv) {
 }
 `;
   const hexRgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16) / 255);
-  function patternDefaults(look) { const d = PATTERNS.find((p) => p[0] === look) || PATTERNS[0]; return { look: d[0], colors: d[2].slice(), size: 0.5, speed: d[3], seed: 0, shape: "art" }; }
+  function patternDefaults(look) {
+    const w = WEATHER.find((p) => p[0] === look); if (w) return { look: w[0], colors: w[2].slice(), size: 0.5, speed: w[3], seed: 0, shape: look === "sun" ? "square" : "art", kind: 0, power: 0.6 };
+    const d = PATTERNS.find((p) => p[0] === look) || PATTERNS[0]; return { look: d[0], colors: d[2].slice(), size: 0.5, speed: d[3], seed: 0, shape: "art" };
+  }
   function patternAspect(rec, shape) { const s = PATTERN_SHAPES.find((x) => x[0] === shape); if (s && s[2]) return s[2]; const g = geom(rec); return g.artW / g.artH; }
   function validPattern(el) {
     const p = el.pattern;
     if (el.type !== "pattern") return p == null;
     return !!p && PATTERN_IDS.includes(p.look) && Array.isArray(p.colors) && p.colors.length === 3 && p.colors.every((c) => /^#[0-9a-f]{6}$/i.test(c))
       && [p.size, p.speed].every((v) => Number.isFinite(v) && v >= 0 && v <= 1) && Number.isInteger(p.seed) && p.seed >= 0 && p.seed < 1000 && PATTERN_SHAPES.some((s) => s[0] === p.shape)
-      && (p.touch == null || p.touch === "none" || PATTERN_TOUCH.includes(p.touch)) && (p.touchPower == null || (Number.isFinite(p.touchPower) && p.touchPower >= 0.1 && p.touchPower <= 1));
+      && (p.touch == null || p.touch === "none" || PATTERN_TOUCH.includes(p.touch)) && (p.touchPower == null || (Number.isFinite(p.touchPower) && p.touchPower >= 0.1 && p.touchPower <= 1))
+      && (p.kind == null || (Number.isInteger(p.kind) && p.kind >= 0 && p.kind < 4)) && (p.power == null || (Number.isFinite(p.power) && p.power >= 0 && p.power <= 1));
   }
   // Uniform values for a layer of the given proportions (width / height); px: one pixel in square units
   function patternValues(el, aspect, px) {
     const p = el.pattern || patternDefaults(), s = PATTERN_SHAPES.find((x) => x[0] === p.shape);
     return { bpMode: PATTERN_IDS.indexOf(p.look) + 1 || 1, bpC1: hexRgb(p.colors[0]), bpC2: hexRgb(p.colors[1]), bpC3: hexRgb(p.colors[2]),
-      bpSize: p.size, bpSeed: p.seed, bpAspect: aspect, bpShape: s ? s[3] : 0, bpPx: px };
+      bpSize: p.size, bpSeed: p.seed, bpAspect: aspect, bpShape: s ? s[3] : 0, bpPx: px, bpKind: p.kind || 0, bpPower: p.power == null ? 0.6 : p.power };
   }
   function patchPatternMaterial(mat, uniforms) {
     if (!mat || mat._studioPattern === uniforms || mat.isShaderMaterial) return;
@@ -1049,7 +1130,7 @@ vec4 bpPattern(vec2 uv) {
       init() {
         this.t = 0;
         this.uniforms = {};
-        for (const k of ["bpMode", "bpSize", "bpTime", "bpSeed", "bpAspect", "bpShape", "bpPx", "bpTouchMode", "bpClock"]) this.uniforms[k] = { value: 0 };
+        for (const k of ["bpMode", "bpSize", "bpTime", "bpSeed", "bpAspect", "bpShape", "bpPx", "bpTouchMode", "bpClock", "bpKind", "bpPower"]) this.uniforms[k] = { value: 0 };
         for (const k of ["bpC1", "bpC2", "bpC3", "bpTouch"]) this.uniforms[k] = { value: new THREE.Vector3() };
         this.grabbed = null;
         if (PATTERN_TOUCH.includes(this.data.touch)) { watchFinger(); finger.users.add(this); }
@@ -3353,7 +3434,7 @@ vec4 bpPattern(vec2 uv) {
 
   return { TARGET_W, TARGET_H, newId, inspectVideo, validateModelBlob, prepareModelBlob, modelCompressionKinds, DECODER_DRACO_PATH, DECODER_MESHOPT_PATH, modelClipNames, modelClipInfo, loadImage, loadImageBlob, loadFailed, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON, steadyTarget,
            audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, blobURL, releaseBlobURL, blobURLs, historyState, restoreHistory, duplicateLayer, exportJSON, exportObject, exportedAssetIds, importPublished, missingAssets, importJSON, exportZIP, importZIP, zipToJSON, fetchPublished, ownBlob, assetHealth, fileHealth, seedDemo, normEl, ANIMS, drawTextCanvas, loadTextFonts, lineDir, visualOrder, ENTER_EXIT: ENTER_EXIT.map(([id, enter, exit, , text]) => ({ id, enter, exit, text: !!text })), enterExitFor, validEnterExit, hasEnterExit, enterExitDur, fxLook, fxTimes, drawEnterExitText, animSpeed, FX: FX.map(([id, name]) => ({ id, name, moving: FX_MOVING.has(id) })), fxFrame,
-           PATTERNS: PATTERNS.map(([id, name, colors, speed]) => ({ id, name, colors: colors.slice(), speed })), PATTERN_PALETTES: PATTERN_PALETTES.map(([name, colors]) => ({ name, colors: colors.slice() })),
+           WEATHER: WEATHER.map(([id, name, colors, speed, kinds]) => ({ id, name, kinds: kinds.slice() })), isWeather, PATTERNS: PATTERNS.map(([id, name, colors, speed]) => ({ id, name, colors: colors.slice(), speed })), PATTERN_PALETTES: PATTERN_PALETTES.map(([name, colors]) => ({ name, colors: colors.slice() })),
            fingerGrab: () => finger.grab, TOUCH_MODES, PATTERN_TOUCH, validPattern, textFxOf, TEXT_FX: TEXT_FX.map(([id, name, color, amount]) => ({ id, name, color, amount })), validTextFx,
            PATTERN_SHAPES: PATTERN_SHAPES.map(([id, name]) => ({ id, name })), patternDefaults, patternAspect, patternFrame, validPattern, validFx, validChroma, keyValues, pixelAt, CHROMA_DEFAULT, SCATTER_TYPES, SCATTER_MAX, mediaType, isStill, stillAt, setStill, scatterItem, scatterLimit, scatterPath, scatterCopies, scatterCopyEl, scatterBounds, refreshScatter, makeScatter, makeFan, scaleScatter, breakScatter, validScatter, FONTS: FONTS.map(([id, name]) => ({ id, name })), buildElementEntity, groupOf, fitGroup, makeGroup, breakGroup, leaveGroup, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, videoHasPicture, ensureTimeCubeComponent, bakeTimeCube, validTimeCube, TIMECUBE_DIRS, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, artworkFingerprint, fingerprintDistance, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, turnImageBlob, turnLayers, trackList, makeTrackRunner,
            load: id=>settledRead(id), all: ()=>settledRead(), del: delExperience, LIMITS, mediaBytes, pushBack, addBlocker, publishBlocker, restoreBlocker, exportWarning, exportJSONSize,

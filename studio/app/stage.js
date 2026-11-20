@@ -120,7 +120,7 @@ window.Stage = (() => {
     const still = !(el.pattern && el.pattern.speed > 0);
     const key = still && JSON.stringify([el.pattern, Math.round(w), Math.round(hh)]), hit = patternCache[el.id];
     if (still && hit && hit.key === key) return hit.canvas;
-    const out = Studio.patternFrame(el, w, hh, performance.now() / 1000);
+    const out = Studio.patternFrame(el, w, hh, App.clock()); // the editor's clock: a paused creation holds still
     if (!out || !still) return out;
     const copy = document.createElement("canvas");
     copy.width = out.width; copy.height = out.height; copy.getContext("2d").drawImage(out, 0, 0);
