@@ -971,57 +971,84 @@ vec4 bpSmoke(vec2 p, vec2 uv) {
   vec3 col = tint * (0.7 + 0.3 * smoothstep(0.35, 0.8, n) + clamp((n - nl) * 3.5, -0.18, 0.22) + (d2 - 0.5) * 0.12); // billows lit from the upper left
   return vec4(clamp(col, 0.0, 1.0), clamp(dens, 0.0, 1.0));
 }
+float bpFbm6(vec2 p) { float s = 0.0, a = 0.5; for (int i = 0; i < 6; i++) { s += a * bpNoise(p); p = mat2(1.6, 1.2, -1.2, 1.6) * p + vec2(3.1, 1.7); a *= 0.5; } return s / 0.984; }
+vec3 bpFireRamp(float h) { // the flame's colour by its heat: deep red at the thin edges, the tint, then yellow, then near white
+  vec3 c1 = bpC1 * vec3(0.9, 0.38, 0.16), c2 = bpC1, c3 = mix(clamp(bpC1 * vec3(1.0, 1.45, 1.6), 0.0, 1.0), vec3(1.0), 0.25), c4 = vec3(1.0, 0.97, 0.9);
+  vec3 c = mix(c1 * 0.55, c1, smoothstep(0.0, 0.22, h));
+  c = mix(c, c2, smoothstep(0.18, 0.48, h)); c = mix(c, c3, smoothstep(0.45, 0.78, h)); return mix(c, c4, smoothstep(0.78, 1.08, h));
+}
 vec4 bpFire(vec2 p, vec2 uv) {
-  float t = bpTime * 2.2, k = bpKind, z = clamp(bpSize, 0.0, 1.0), pw = clamp(bpPower, 0.0, 1.0);
-  float heat, glow = 0.0, y = uv.y;
-  if (k < 0.5) { // a candle flame: a calm teardrop that sways and flickers, blue at its root, a white core
-    float h = mix(0.3, 0.6, z) * (0.93 + 0.07 * bpNoise(vec2(t * 2.3, 1.0))), b = 0.14;
-    float yy = clamp((y - b) / h, 0.0, 1.0);
-    float sway = (bpNoise(vec2(t * 0.9, 4.0)) - 0.5) * 0.12 * h * yy * yy;
-    float wdt = h * 0.5 * pow(yy, 0.42) * pow(1.0 - yy, 0.95) * (0.97 + 0.06 * bpNoise(vec2(y * 8.0 - t * 2.0, 3.0))) + 0.002;
-    float dx = (p.x - sway) / wdt, dy = (y - b) / h;
-    float f = (dy > 0.0 && dy < 1.0) ? 1.0 - smoothstep(0.55, 1.0, abs(dx)) : 0.0;
-    f *= smoothstep(0.0, 0.05, dy) * (1.0 - smoothstep(0.82, 1.0, dy));
-    float core = (1.0 - smoothstep(0.0, 0.55, abs(dx) * 1.7)) * smoothstep(0.08, 0.2, dy) * (1.0 - smoothstep(0.35, 0.7, dy));
-    heat = f * (0.55 + 0.25 * (1.0 - dy)) + core * 0.6;
-    float r = length(vec2(p.x - sway * 0.5, (y - b - h * 0.35) * 0.8));
-    glow = exp(-r * r / (0.03 * mix(0.6, 1.4, z))) * 0.35 * (0.9 + 0.1 * bpNoise(vec2(t * 3.0, 7.0)));
-    vec3 col = mix(vec3(0.25, 0.45, 1.0), bpC1, smoothstep(0.04, 0.14, dy)); // blue root, then the flame's colour
-    col = mix(col, vec3(1.0, 0.93, 0.72), smoothstep(0.55, 0.95, heat)); col = mix(col, vec3(1.0), smoothstep(0.95, 1.15, heat));
-    float a = clamp(max(f * 0.95, smoothstep(0.0, 1.0, glow)), 0.0, 1.0);
-    vec3 gc = bpC1 * vec3(1.0, 0.75, 0.5);
-    col = mix(gc, col, clamp(f * 1.5, 0.0, 1.0));
-    vec2 e = abs(uv - 0.5) * 2.0; a *= 1.0 - smoothstep(0.8, 1.0, max(e.x, e.y));
-    return vec4(clamp(col, 0.0, 1.0), a * mix(0.55, 1.15, pw));
+  float t = bpTime * 2.0, k = bpKind, z = clamp(bpSize, 0.0, 1.0), pw = clamp(bpPower, 0.0, 1.0), y = uv.y;
+  vec2 e = abs(uv - 0.5) * 2.0;
+  if (k < 0.5) { // a candle flame: a long teardrop that sways and flickers, a blue root, a dim cone over the wick, a bright body, a soft orange tip
+    float gust = bpNoise(vec2(t * 0.35, 9.0)), flick = bpNoise(vec2(t * 3.1, 2.0)) * 0.6 + bpNoise(vec2(t * 7.3, 5.0)) * 0.4;
+    float h = mix(0.3, 0.6, z) * (0.9 + 0.12 * flick + 0.06 * gust), b = 0.16;
+    float v = (y - b) / h; // 0 at the wick, 1 at the tip
+    float sway = ((gust - 0.5) * 0.16 + (bpNoise(vec2(t * 1.7, 4.0)) - 0.5) * 0.05) * h * max(v, 0.0) * max(v, 0.0);
+    float vc = clamp(v, 0.0, 1.0), wdt = h * 0.36 * pow(vc, 0.45) * pow(1.0 - vc, 0.85) * (1.0 + 0.04 * (bpNoise(vec2(y * 14.0 - t * 4.0, 3.0)) - 0.5)) + 0.0015;
+    float u = (p.x - sway) / wdt, r2 = u * u;
+    float inside = (v > -0.04 && v < 1.05) ? exp(-r2 * 1.1) * (1.0 - smoothstep(1.3, 2.2, r2)) : 0.0; // a soft luminous edge, no hard line
+    float tip = 1.0 - smoothstep(0.6, 1.02, v + (bpNoise(vec2(p.x * 40.0, y * 20.0 - t * 5.0)) - 0.5) * 0.08);
+    inside *= smoothstep(-0.04, 0.06, v) * tip;
+    float body = inside * smoothstep(0.08, 0.3, v) * (1.0 - smoothstep(0.55, 0.95, v));
+    float core = exp(-r2 * 3.0) * smoothstep(0.12, 0.3, v) * (1.0 - smoothstep(0.4, 0.75, v));
+    float wickCone = exp(-r2 * 6.0) * smoothstep(0.0, 0.05, v) * (1.0 - smoothstep(0.1, 0.24, v)); // the darker cone of unburnt vapour
+    float heat = inside * 0.4 + body * 0.3 + core * 0.55 - wickCone * 0.3;
+    vec3 col = bpFireRamp(heat * 1.05);
+    float blue = inside * (1.0 - smoothstep(0.0, 0.16, v)) * smoothstep(0.1, 0.9, abs(u));
+    col = mix(col, vec3(0.22, 0.42, 1.0), clamp(blue * 1.4, 0.0, 1.0));
+    float a = clamp(inside * mix(0.55, 1.0, smoothstep(0.1, 0.6, heat)) + blue * 0.5, 0.0, 1.0);
+    // the wick: a thin dark thread with a glowing end, and the warm light around the flame
+    float wick = (1.0 - smoothstep(0.0012, 0.0035, abs(p.x))) * smoothstep(b - 0.05, b - 0.045, y) * (1.0 - smoothstep(b + 0.015, b + 0.03, y));
+    float ember = exp(-(p.x * p.x + (y - b - 0.012) * (y - b - 0.012)) / 0.00002);
+    col = mix(col, vec3(0.08, 0.05, 0.04), wick * (1.0 - a) ); col += vec3(1.0, 0.35, 0.1) * ember * 0.8;
+    a = max(a, max(wick * 0.9, ember));
+    float gr = length(vec2(p.x - sway * 0.4, (y - b - h * 0.4) * 0.75)), glow = exp(-gr * gr / (0.035 * mix(0.6, 1.4, z))) * 0.22 * (0.85 + 0.15 * flick);
+    col = mix(bpC1 * vec3(1.0, 0.7, 0.45), col, clamp(a / max(a + glow, 0.001), 0.0, 1.0));
+    a = clamp(a + glow * (1.0 - a), 0.0, 1.0);
+    a *= 1.0 - smoothstep(0.8, 1.0, max(e.x, e.y));
+    return vec4(clamp(col, 0.0, 1.0), clamp(a * mix(0.55, 1.1, pw) + (bpHash(uv * 731.0) - 0.5) / 128.0, 0.0, 1.0));
   }
-  // the others: tongues of flame from noise, lifted and torn as they rise, with sparks
-  float wide = k > 1.5 && k < 2.5 ? 1.0 : 0.0, embers = k > 2.5 ? 1.0 : 0.0;
-  float top = mix(0.45, 0.95, z) * mix(1.0, 0.75, wide) * mix(1.0, 0.35, embers) * mix(0.75, 1.1, pw);
-  float base = 0.06;
-  vec2 q = vec2(p.x * mix(4.0, 6.0, wide), (y - base) * 3.0 - t * 1.3);
-  float n = bpFbm(q + vec2(bpFbm(q * 0.8 + vec2(0.0, -t * 0.4)) * 1.4, 0.0));
-  float n2 = bpNoise(vec2(p.x * 9.0, y * 6.0 - t * 2.4));
-  float xs = wide > 0.5 ? 1.0 - smoothstep(0.12, 0.48, abs(p.x) / bpAspect) : exp(-pow(p.x / (mix(0.16, 0.24, z) * min(bpAspect, 1.6) * (1.0 - 0.55 * clamp((y - base) / top, 0.0, 1.0))), 2.0));
-  float yy = (y - base) / top;
-  heat = (n * 1.15 + n2 * 0.25) * xs - yy * 0.95 + 0.15;
-  heat *= smoothstep(0.0, 0.1, y);
-  if (embers > 0.5) { // a bed of glowing coals along the bottom, breathing
-    float by = (y - 0.08) / 0.05, bed = exp(-by * by) * (1.0 - smoothstep(0.2, 0.46, abs(p.x) / bpAspect));
-    float coal = bpFbm(vec2(p.x * 10.0, y * 14.0)) * (0.75 + 0.25 * bpNoise(vec2(p.x * 4.0 + t * 0.25, t * 0.4)));
-    heat = max(heat * 0.8, bed * (0.35 + 0.65 * smoothstep(0.35, 0.7, coal)) * 0.8);
+  // the others: thin tongues of flame from warped noise, torn into wisps as they rise, with a fine flicker and sparks
+  float wide = k > 1.5 && k < 2.5 ? 1.0 : 0.0, embers = k > 2.5 ? 1.0 : 0.0, base = mix(0.06, 0.1, embers);
+  float top = mix(0.45, 0.92, z) * mix(1.0, 0.72, wide) * mix(1.0, 0.32, embers) * mix(0.8, 1.1, pw);
+  float yy = (y - base) / top, yc = clamp(yy, 0.0, 1.5);
+  vec2 q = vec2(p.x * mix(3.2, 4.2, wide) / max(top, 0.2), (y - base) * 2.6 / max(top, 0.2) - t * 1.25);
+  vec2 w = vec2(bpFbm6(q * 0.55 + vec2(0.0, -t * 0.22)), bpFbm6(q * 0.55 + vec2(5.2, -t * 0.27))) - 0.5;
+  float n = bpFbm6(q + w * (0.8 + 1.6 * yc));                                   // the big shapes of the tongues
+  float f = bpFbm6(vec2(p.x * 11.0, (y - base) * 6.5 - t * 3.0) + w * 2.4);   // the fine flicker along their edges
+  float prof;
+  if (wide > 0.5) prof = (1.0 - smoothstep(0.1, 0.47, abs(p.x) / bpAspect)) * (0.85 + 0.3 * bpNoise(vec2(p.x * 3.0, t * 0.2)));
+  else { // a fire with a heart: narrower as it rises, its middle leaning a little with the air
+    float lean = (bpNoise(vec2(t * 0.3, yc * 1.5)) - 0.5) * 0.08 * yc;
+    float sw = mix(0.15, 0.24, z) * min(bpAspect, 1.4) * mix(1.0, 1.6, embers) * (1.0 - 0.6 * smoothstep(0.0, 1.0, yc));
+    float xr = (p.x - lean) / max(sw, 0.01); prof = exp(-xr * xr);
   }
-  // sparks: tiny bright points that rise and drift, each in its own cell
-  vec2 sc = vec2(p.x * 14.0, y * 9.0 - t * 1.1); vec2 ci = floor(sc), cf = fract(sc);
+  float env = wide > 0.5 ? prof : exp(-pow(p.x / (mix(0.24, 0.36, z) * min(bpAspect, 1.4) * mix(1.0, 1.5, embers)), 2.0));
+  float heat = prof * (0.98 - yy * 0.9) + (n - 0.5) * 1.3 * (0.55 + 0.6 * yc) + (f - 0.5) * 0.5 * (0.35 + yc);
+  heat = smoothstep(0.0, 1.0, heat) * smoothstep(0.0, 0.35, env) * smoothstep(0.0, 0.1, y - base * 0.3 - 0.05 * bpNoise(vec2(p.x * 9.0, t * 0.4))) * (1.0 - smoothstep(0.65, 1.05, yy));
+  if (embers > 0.5) { // a bed of coals along the bottom: dark crust with hot cracks that breathe
+    float by = (y - base * 0.85) / 0.055, bed = exp(-by * by) * (1.0 - smoothstep(0.16, 0.44, abs(p.x) / bpAspect));
+    float cr = bpFbm6(vec2(p.x * 16.0, y * 22.0)), crack = 1.0 - smoothstep(0.02, 0.09, abs(cr - 0.5));
+    float breathe = 0.7 + 0.3 * bpNoise(vec2(p.x * 5.0 + t * 0.2, t * 0.35));
+    heat = max(heat * 0.85, bed * (0.16 + 0.62 * crack + 0.22 * smoothstep(0.62, 0.8, cr)) * breathe * 0.95);
+  }
+  // sparks: small bright streaks that rise, drift and fade, each in its own cell
+  float col0 = floor(p.x * 16.0), rate = 0.7 + 0.6 * bpHash(vec2(col0, 3.0)); // each column of sparks rises at its own pace and phase
+  vec2 sc = vec2(p.x * 16.0 + sin(y * 6.0 + t + col0) * 0.4, y * 6.0 - t * rate + bpHash(vec2(col0, 9.0)) * 7.0), ci = floor(sc), cf = fract(sc);
   vec2 rp = bpHash2(ci); float sp = 0.0;
-  if (rp.x > 0.72) { vec2 d = cf - vec2(0.2 + 0.6 * rp.y, 0.5 + 0.3 * sin(t + rp.x * 9.0)); sp = exp(-dot(d, d) * 260.0) * (1.0 - smoothstep(0.3, 1.0, yy * 0.8)) * smoothstep(0.0, 0.2, y - base) * (wide > 0.5 ? 1.0 : smoothstep(0.5, 0.0, abs(p.x) / bpAspect)); }
-  heat = clamp(heat, 0.0, 1.3);
-  vec3 deep = bpC1 * vec3(0.75, 0.28, 0.12);
-  vec3 col = mix(deep, bpC1, smoothstep(0.08, 0.4, heat));
-  col = mix(col, vec3(1.0, 0.88, 0.55), smoothstep(0.45, 0.85, heat)); col = mix(col, vec3(1.0, 0.98, 0.9), smoothstep(0.85, 1.2, heat));
-  col = mix(col, vec3(1.0, 0.85, 0.5), clamp(sp * 1.5, 0.0, 1.0));
-  float a = clamp(smoothstep(0.02, 0.3, heat) + sp, 0.0, 1.0);
-  vec2 e = abs(uv - 0.5) * 2.0; a *= (1.0 - smoothstep(wide > 0.5 ? 0.85 : 0.75, 1.0, e.x)) * (1.0 - smoothstep(0.85, 1.0, e.y));
-  return vec4(clamp(col, 0.0, 1.0), a * mix(0.6, 1.1, pw));
+  if (rp.x > mix(0.82, 0.72, embers)) {
+    vec2 d = (cf - vec2(0.25 + 0.5 * rp.y, 0.2 + 0.6 * fract(rp.x * 13.7))) * vec2(1.0, 0.4);
+    sp = exp(-dot(d, d) * 1400.0) * (0.5 + 0.5 * sin(t * 6.0 + rp.y * 30.0)) * smoothstep(0.15, 0.5, yy) * (1.0 - smoothstep(0.9, 1.8, yy)) * (wide > 0.5 ? 1.0 : exp(-p.x * p.x / 0.03));
+  }
+  vec3 col = bpFireRamp(heat);
+  float a = clamp(smoothstep(0.02, 0.5, heat) * mix(0.6, 1.0, smoothstep(0.3, 0.8, heat)), 0.0, 1.0);
+  col = mix(col, vec3(1.0, 0.8, 0.45), clamp(sp, 0.0, 1.0)); a = max(a, sp * 0.95);
+  // the warm light the fire throws around its base
+  float gl = exp(-pow(p.x / (wide > 0.5 ? 0.45 * bpAspect : 0.28 * min(bpAspect, 1.4)), 2.0)) * exp(-max(yy, 0.0) * 2.5) * smoothstep(0.0, 0.08, y) * 0.16;
+  col = mix(bpC1 * vec3(1.0, 0.6, 0.3), col, clamp(a / max(a + gl, 0.001), 0.0, 1.0)); a = clamp(a + gl * (1.0 - a), 0.0, 1.0);
+  a *= (1.0 - smoothstep(wide > 0.5 ? 0.85 : 0.75, 1.0, e.x)) * (1.0 - smoothstep(0.85, 1.0, e.y));
+  return vec4(clamp(col, 0.0, 1.0), clamp(a * mix(0.6, 1.1, pw) + (bpHash(uv * 731.0) - 0.5) / 160.0, 0.0, 1.0));
 }
 vec4 bpLinear(vec4 c) { return vec4(mix(c.rgb / 12.92, pow((c.rgb + 0.055) / 1.055, vec3(2.4)), step(0.04045, c.rgb)), c.a); }
 vec4 bpPattern(vec2 uv) {
