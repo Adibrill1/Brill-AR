@@ -106,6 +106,8 @@ window.Inspector = (() => {
     cropKids.push(h("div.btn-row", UI.button("מילוי כל היצירה", () => fillArt(0), { icon: "fit" }), UI.button("מילוי בסיבוב", () => fillArt(next == null ? 90 : next), { icon: "refresh" })));
     out.push(UI.group("חיתוך ומילוי", cropKids));
 
+    if (e.type === "video" && e.chroma) out.unshift(viewGroup(() => App.sel().depth3d === true, upd((x, v) => { if (v === "3d") x.depth3d = true; else delete x.depth3d; }),
+      "בתלת־ממד הסרטון ממלא גם את המרחב שלפני היצירה, בכמה שכבות שיוצאות אל הצופה. רואים את זה במבט תלת־ממד ובמצלמה."));
     out.push(chromaGroup(e));
     if (e.type === "video") out.push(UI.group("קול", sound()));
     out.push(UI.group("שקיפות", opacity()));
@@ -256,6 +258,10 @@ window.Inspector = (() => {
     ];
   }
 
+  // "תצוגה": flat on the artwork, or out into the space in front of it
+  function viewGroup(get, set, text) {
+    return UI.group("תצוגה", C({ label: "", bare: true, options: [{ id: "flat", name: "שטוח" }, { id: "3d", name: "תלת־ממד" }], get: () => (get() ? "3d" : "flat"), set }), note(text, "cube"));
+  }
   // The sun and smoke: kind, size (the layer's own width, keeping its proportions), intensity, tint, speed, variation.
   const WX_TINTS = { sun: ["#ffd27a", "#fff3d6", "#ffb347", "#ff7b3a", "#ffe9a8"], smoke: ["#d9d4cc", "#f4f2ee", "#8f8a84", "#c9b79a", "#a7b4c2"] };
   function styleWeather(P) {
@@ -265,10 +271,9 @@ window.Inspector = (() => {
     const tints = C({ label: "גוונים מוכנים", wrap: true, options: WX_TINTS[look].map((c) => ({ id: c, swatch: swatch(c), title: c })), get: () => App.sel().pattern.colors[0], set: P((p, v) => { p.colors = [v, v, v]; }, sync) });
     tints.node.classList.add("swatches");
     const size = S(Object.assign({ label: "גודל", min: 0.1, max: 2, step: 0.01, get: () => App.sel().w, set: upd((x, v) => { x.w = round(v, 3); x.h = (x.w / x.aspect) * artRatio(); }) }, pct));
-    const view = C({ label: "", bare: true, options: [{ id: "flat", name: "שטוח" }, { id: "3d", name: "תלת־ממד" }], get: () => (App.sel().pattern.depth3d ? "3d" : "flat"),
-      set: P((p, v) => { if (v === "3d") p.depth3d = true; else delete p.depth3d; }) });
     return [
-      UI.group("תצוגה", view, note(look === "sun" ? "בתלת־ממד השמש מתרוממת מהיצירה ופונה תמיד אל הצופה. רואים את זה במבט תלת־ממד ובמצלמה." : "בתלת־ממד העשן יוצא מהיצירה אל הצופה בכמה שכבות. רואים את זה במבט תלת־ממד ובמצלמה.", "cube")),
+      viewGroup(() => App.sel().pattern.depth3d === true, P((p, v) => { if (v === "3d") p.depth3d = true; else delete p.depth3d; }),
+        look === "sun" ? "בתלת־ממד השמש מתרוממת מהיצירה ופונה תמיד אל הצופה. רואים את זה במבט תלת־ממד ובמצלמה." : "בתלת־ממד העשן עולה מנקודה אחת על היצירה ונפתח אל הצופה. רואים את זה במבט תלת־ממד ובמצלמה."),
       UI.group("סוג", kinds),
       UI.group("התאמה",
         size,
@@ -307,6 +312,8 @@ window.Inspector = (() => {
       touch !== "none" ? T({ label: "חוזרים למקום", hint: "כשמרימים את האצבע", get: () => pc().touchBack !== false, set: P((p, v) => { p.touchBack = v; }) }) : null,
       touch !== "none" ? note(touch === "follow" ? "בתצוגה ובמצלמה: מניחים אצבע על החלקיקים וגוררים, והם באים אחריה." : "בתצוגה ובמצלמה: נוגעים במסך או גוררים אצבע ליד החלקיקים.") : null);
     return [
+      viewGroup(() => pc().depth3d === true, P((p, v) => { if (v === "3d") p.depth3d = true; else delete p.depth3d; }),
+        "בתלת־ממד החלקיקים מתפזרים גם במרחב שלפני היצירה, קרוב ורחוק. רואים את זה במבט תלת־ממד ובמצלמה."),
       UI.group("סוג", preset, pc().preset === "custom" ? UI.button("החלפת התמונה", ownSprite, { kind: "ghost", small: true, icon: "image" }) : null),
       UI.group("כמות ותנועה",
         S({ label: "כמות", min: 10, max: 500, step: 10, get: () => pc().count || 120, set: P((p, v) => { p.count = Math.round(v); }) }),

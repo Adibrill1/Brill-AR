@@ -65,14 +65,38 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
   // drawn small (at most 320 pixels a side) and shown on one sheet when flat
   let wx=await p.evaluate(()=>[...document.querySelectorAll('#editor-3d-host [studio-weather]')].map(e=>{const c=e.components['studio-weather'];return {sheets:c.group.children.length,rt:c.targets.map(t=>Math.max(t.width,t.height))};}));
   assert.deepEqual(wx.map(w=>w.sheets),[1,1]);assert.ok(wx.every(w=>w.rt.every(n=>n<=320)),'small pictures '+JSON.stringify(wx));
-  // the switch to 3D: the sun gets its glow and lifts off, the smoke stands out in three slices
+  // the switch to 3D: the sun lifts off as added light (no dark sheet can show), the smoke stands out in three slices from one base
   for(const id of [0,1]){await p.evaluate((i)=>App.select(App.rec.elements[i].id),id);await p.waitForTimeout(300);await ins.getByText('תלת־ממד',{exact:true}).last().click();await p.waitForTimeout(400);}
   assert.deepEqual(await p.evaluate(()=>App.rec.elements.slice(0,2).map(e=>[e.pattern.depth3d,Studio.validPattern(e)])),[[true,true],[true,true]]);
-  await p.waitForFunction(()=>{const n=[...document.querySelectorAll('#editor-3d-host [studio-weather]')].map(e=>e.components['studio-weather'].group&&e.components['studio-weather'].group.children.length);return n.join()==='2,3';},null,{timeout:20000});
-  wx=await p.evaluate(()=>{const e=document.querySelector('#editor-3d-host [studio-weather]').components['studio-weather'];return e.group.children.map(m=>+m.position.z.toFixed(3));});
-  assert.ok(wx[1]>wx[0],'the sun stands in front of its glow '+wx);
+  await p.waitForFunction(()=>{const n=[...document.querySelectorAll('#editor-3d-host [studio-weather]')].map(e=>e.components['studio-weather'].group&&e.components['studio-weather'].group.children.length);return n.join()==='1,3';},null,{timeout:20000});
+  wx=await p.evaluate(()=>{const [s,k]=[...document.querySelectorAll('#editor-3d-host [studio-weather]')].map(e=>e.components['studio-weather'].group.children);
+    const base=k.map(m=>{const a=m.geometry.attributes.position;let lo=[];for(let i=0;i<a.count;i++)if(a.getY(i)<-0.4*m.geometry.parameters.height)lo.push(+(a.getX(i)+m.position.x).toFixed(4)+'/'+(+(a.getZ(i)+m.position.z).toFixed(4)));return lo.join();});
+    const top=k.map(m=>{const a=m.geometry.attributes.position;let z=0;for(let i=0;i<a.count;i++)z=Math.max(z,a.getZ(i));return z;});
+    return {sunZ:s[0].position.z,add:s[0].material.blending===THREE.AdditiveBlending,pre:s.concat(k).every(m=>m.material.premultipliedAlpha),base,top};});
+  assert.ok(wx.sunZ>0&&wx.add&&wx.pre,'the sun lifts off as light '+JSON.stringify(wx));
+  assert.equal(new Set(wx.base).size,1,'the smoke slices share one base '+JSON.stringify(wx.base));assert.ok(wx.top[2]>wx.top[1]&&wx.top[1]>wx.top[0],'and fan out as they rise');
+  // a filmed loop and a weather particle layer get the same switch
+  await p.locator('#btn-2d').click();await p.waitForTimeout(600);
+  for(const [tile,type] of [['wr-rain-light','video'],['pw-snow','particles']]){
+    await layers();await p.locator('#btn-add').click();await p.locator('dialog[open] .add-tile[data-add="weather"]').click();
+    const n=await p.evaluate(()=>App.rec.elements.length);const t=p.locator('dialog[open] .part-tile[data-weather="'+tile+'"]');
+    if(!await t.count()){const all=await p.locator('dialog[open] .part-tile[data-weather]').evaluateAll(x=>x.map(y=>y.dataset.weather));throw new Error('no tile '+tile+' in '+all);}
+    await t.click();await p.waitForFunction((k)=>App.rec.elements.length===k+1,n,{timeout:30000});await p.waitForTimeout(500);
+    assert.equal(await p.evaluate(()=>App.sel().type),type);
+    await ins.getByText('תלת־ממד',{exact:true}).first().click();await p.waitForTimeout(300);
+  }
+  const deep=await p.evaluate(()=>{const v=App.rec.elements[3],q=App.rec.elements[4];return [v.depth3d,q.particles.depth3d];});
+  assert.deepEqual(deep,[true,true],'both are set to 3D');
+  await p.locator('#btn-3d').click();await p.waitForFunction(()=>document.querySelector('#stage').classList.contains('is-3d'),null,{timeout:20000});
+  await p.waitForFunction(()=>{const v=document.querySelector('#editor-3d-host [studio-depth-copies]');return v&&v.components['studio-depth-copies'].copies.length===2;},null,{timeout:20000});
+  const dz=await p.evaluate(()=>{const v=document.querySelector('#editor-3d-host [studio-depth-copies]'),c=v.components['studio-depth-copies'].copies,src=v.getObject3D('mesh');
+    const pt=document.querySelector('#editor-3d-host [particles]'),a=pt.components.particles.data.depth;
+    return {z:c.map(m=>m.position.z),same:c.every(m=>m.material===src.material),pd:a};});
+  assert.ok(dz.z[0]>0&&dz.z[1]>dz.z[0]&&dz.same,'the loop stands out in copies that share its colour removal '+JSON.stringify(dz));
+  assert.ok(dz.pd>0,'the particles spread in depth');
+  assert.equal(await p.evaluate(()=>{try{Studio.validateExportObject?0:0;return Studio.validParticles?Studio.validParticles(App.rec.elements[4]):true;}catch(e){return String(e);}}),true);
   const q=await ctx.newPage();q.on('pageerror',e=>errs.push('preview: '+e));await q.goto(base+'/preview.html#'+id);
-  await q.waitForFunction(()=>document.querySelectorAll('a-scene [studio-weather]').length===2,null,{timeout:30000});await q.waitForTimeout(1500);
+  await q.waitForFunction(()=>document.querySelectorAll('a-scene [studio-weather]').length===2&&document.querySelector('a-scene [studio-depth-copies]'),null,{timeout:30000});await q.waitForTimeout(1500);
   const prog=await q.evaluate(()=>{const r=document.querySelector('a-scene').renderer;return [...document.querySelectorAll('a-scene [studio-weather]')].map(e=>{const c=e.components['studio-weather'],pr=r.properties.get(c.quads[0].mesh.material).currentProgram;return !!pr&&(pr.diagnostics?pr.diagnostics.runnable:true)&&c.t>0;});});
   assert.deepEqual(prog,[true,true],'the shader compiles in the preview and runs');
   assert.equal(errs.filter(e=>!/favicon|404/.test(e)).length,0,'no page errors: '+errs.join(' | '));

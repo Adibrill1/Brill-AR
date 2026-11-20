@@ -467,13 +467,13 @@ const Studio = (() => {
   function ensureParticlesComponent() {
     if (!window.AFRAME || AFRAME.components["particles"]) return;
     AFRAME.registerComponent("particles", {
-      schema: { preset: { default: "sparkle" }, count: { default: 120 }, color: { default: "#ffd94d" }, width: { default: 0.5 }, height: { default: 0.5 }, size: { default: 12 }, speed: { default: 1 }, sprite: { default: "" }, direction: { default: -1 },lifetime:{default:0},life2:{default:0},emitter:{default:"box"},endColor:{default:"#ffffff"},endSize:{default:1},fade:{default:false},spread:{default:1},color2:{default:""},touch:{default:"none"},touchPower:{default:0.6},touchRange:{default:0.6},touchBack:{default:true},turn:{default:false},flap:{default:0} }, // direction: degrees (0=up,90=right,180=down,270=left); -1 = preset's fixed direction; -2 = random per particle; -3 = outward from center. spread: emission-area scale (documented Artivive control)
+      schema: { depth: { default: 0 }, preset: { default: "sparkle" }, count: { default: 120 }, color: { default: "#ffd94d" }, width: { default: 0.5 }, height: { default: 0.5 }, size: { default: 12 }, speed: { default: 1 }, sprite: { default: "" }, direction: { default: -1 },lifetime:{default:0},life2:{default:0},emitter:{default:"box"},endColor:{default:"#ffffff"},endSize:{default:1},fade:{default:false},spread:{default:1},color2:{default:""},touch:{default:"none"},touchPower:{default:0.6},touchRange:{default:0.6},touchBack:{default:true},turn:{default:false},flap:{default:0} }, // direction: degrees (0=up,90=right,180=down,270=left); -1 = preset's fixed direction; -2 = random per particle; -3 = outward from center. spread: emission-area scale (documented Artivive control)
       init() {
         const n = Math.min(500, Math.max(10, this.data.count | 0));
         const pos = new Float32Array(n * 3);
         this.vel = new Float32Array(n * 3);
         this.ages=new Float32Array(n);this.sizes=new Float32Array(n);this.alphas=new Float32Array(n);const colors=new Float32Array(n*3);
-        this.spawn=(i)=>{const d=this.data,sp=d.spread>0?Math.min(2,d.spread):1;if(d.emitter==='disc'||d.emitter==='sphere'){const angle=Math.random()*Math.PI*2,r=Math.sqrt(Math.random());pos[i*3]=Math.cos(angle)*r*d.width*sp/2;pos[i*3+1]=Math.sin(angle)*r*d.height*sp/2;pos[i*3+2]=d.emitter==='sphere'?(Math.random()-.5)*Math.sqrt(Math.max(0,1-r*r))*Math.min(d.width,d.height)*sp:0;}else{pos[i*3]=(Math.random()-.5)*d.width*sp;pos[i*3+1]=(Math.random()-.5)*d.height*sp;pos[i*3+2]=(Math.random()-.5)*.05;}};
+        this.spawn=(i)=>{const d=this.data,sp=d.spread>0?Math.min(2,d.spread):1;if(d.emitter==='disc'||d.emitter==='sphere'){const angle=Math.random()*Math.PI*2,r=Math.sqrt(Math.random());pos[i*3]=Math.cos(angle)*r*d.width*sp/2;pos[i*3+1]=Math.sin(angle)*r*d.height*sp/2;pos[i*3+2]=d.emitter==='sphere'?(Math.random()-.5)*Math.sqrt(Math.max(0,1-r*r))*Math.min(d.width,d.height)*sp:0;}else{pos[i*3]=(Math.random()-.5)*d.width*sp;pos[i*3+1]=(Math.random()-.5)*d.height*sp;pos[i*3+2]=d.depth>0?0.02+Math.random()*d.depth:(Math.random()-.5)*.05;}};
         this.setVelocity=(i)=>{const d=this.data,sp=d.speed>0?d.speed:1,m=(0.05+Math.random()*0.12)*sp;
           if(d.direction===-2){const a=Math.random()*Math.PI*2;this.vel[i*3]=Math.sin(a)*m;this.vel[i*3+1]=Math.cos(a)*m;}
           else if(d.direction===-3){const a=Math.atan2(pos[i*3],pos[i*3+1]);this.vel[i*3]=Math.sin(a)*m;this.vel[i*3+1]=Math.cos(a)*m;}
@@ -486,7 +486,7 @@ const Studio = (() => {
         for (let i = 0; i < n; i++) {
           pos[i * 3] = (Math.random() - 0.5) * this.data.width;
           pos[i * 3 + 1] = (Math.random() - 0.5) * this.data.height;
-          pos[i * 3 + 2] = (Math.random() - 0.5) * 0.05;
+          pos[i * 3 + 2] = this.data.depth > 0 ? 0.02 + Math.random() * this.data.depth : (Math.random() - 0.5) * 0.05;
           this.spawn(i);this.lives[i]=lifeHi>0?lifeLo+Math.random()*(lifeHi-lifeLo):(d0.lifetime>0?d0.lifetime:0);this.ages[i]=this.lives[i]>0?Math.random()*this.lives[i]:0;this.sizes[i]=1;this.alphas[i]=1;
           if(this.color2){this.ageColor=this.ageColor||new THREE.Color();this.ageColor.copy(this.startColor).lerp(this.color2,Math.random()).toArray(this.startColors,i*3);}else this.startColor.toArray(this.startColors,i*3);
           colors.set(this.startColors.subarray(i*3,i*3+3),i*3);
@@ -930,7 +930,7 @@ vec4 bpSun(vec2 p, vec2 uv) {
     float flat2 = exp(-abs(p.y) / (R * 1.4)) * exp(-abs(p.x) / (R * 7.0));
     light = disc * bands + corona * 0.7 + halo * 0.5 + wide * 0.9 + flat2 * 0.55 * bands;
   }
-  vec2 e = abs(uv - 0.5) * 2.0; light *= (1.0 - smoothstep(0.72, 1.0, max(e.x, e.y))); // nothing reaches the layer's edges
+  vec2 e = abs(uv - 0.5) * 2.0; light *= 1.0 - smoothstep(0.45, 0.98, length(e)); // a round fade: nothing reaches the layer's edges, no square outline
   light *= mix(0.35, 1.6, clamp(bpPower, 0.0, 1.0));
   vec3 tint = bpC1 * (k > 2.5 ? vec3(1.0, 0.72, 0.46) : vec3(1.0));
   vec3 col = mix(tint, vec3(1.0, 0.99, 0.95), smoothstep(0.75, 1.6, light)); // the brightest light runs to white
@@ -1173,6 +1173,28 @@ vec4 bpPattern(vec2 uv) {
   // its glow behind it, the smoke as slices standing out from the artwork toward the viewer. A full-size shader on a
   // phone's screen, over the camera and a video, left whole squares of the picture undrawn.
   const WX_RES = 320;
+  // A filmed loop in 3D (rain, snow, fog…): two more copies of its picture stand out toward the viewer, a little
+  // to the sides, so the weather fills the space in front of the artwork. They share the video's own material, so
+  // colour removal, opacity and fades act on all of them.
+  function ensureDepthCopiesComponent() {
+    if (!window.AFRAME || AFRAME.components["studio-depth-copies"]) return;
+    AFRAME.registerComponent("studio-depth-copies", {
+      schema: { width: { default: 1 }, height: { default: 1 } },
+      init() { this.copies = []; },
+      remove() { for (const c of this.copies) c.parent && c.parent.remove(c); this.copies = []; },
+      tick() {
+        const src = this.el.getObject3D("mesh"); if (!src || !src.isMesh) return;
+        const W = this.data.width, H = this.data.height;
+        if (!this.copies.length) {
+          for (const [dx, dy, dz] of [[-0.14, 0.04, 0.32], [0.12, -0.03, 0.62]]) {
+            const c = new THREE.Mesh(src.geometry, src.material); c.position.set(dx * W, dy * H, dz * H); c.userData.studioCopy = true;
+            this.el.object3D.add(c); this.copies.push(c);
+          }
+        }
+        for (const c of this.copies) { c.geometry = src.geometry; c.material = src.material; c.renderOrder = src.renderOrder; c.visible = src.visible; }
+      }
+    });
+  }
   function ensureWeatherComponent() {
     if (!window.AFRAME || AFRAME.components["studio-weather"]) return;
     const VERT = "varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy * 2.0, 0.0, 1.0); }";
@@ -1191,41 +1213,40 @@ vec4 bpPattern(vec2 uv) {
         if (this.group) this.group.traverse((n) => { if (n.isMesh) { n.geometry.dispose(); n.material.dispose(); } });
         this.targets = []; this.quads = []; this.group = null;
       },
-      // the small pictures (two for 3D smoke, so its slices do not all move alike) and the sheets that show them
+      // the small picture and the sheets that show it
       build() {
         this.drop();
-        const d = this.data, v = JSON.parse(d.values), smoke = v.bpMode > 18.5, deep = d.depth3d, n = deep && smoke ? 2 : 1;
+        const d = this.data, v = JSON.parse(d.values), smoke = v.bpMode > 18.5, deep = d.depth3d;
         const a = Math.max(0.05, d.width / d.height), w = Math.round(a >= 1 ? WX_RES : WX_RES * a), h = Math.round(a >= 1 ? WX_RES / a : WX_RES);
-        for (let i = 0; i < n; i++) {
-          const rt = new THREE.WebGLRenderTarget(Math.max(16, w), Math.max(16, h), { depthBuffer: false, stencilBuffer: false });
-          rt.texture.generateMipmaps = false; rt.texture.minFilter = rt.texture.magFilter = THREE.LinearFilter;
-          const uniforms = {};
-          for (const k of ["bpMode", "bpSize", "bpTime", "bpSeed", "bpAspect", "bpShape", "bpPx", "bpTouchMode", "bpClock", "bpKind", "bpPower"]) uniforms[k] = { value: 0 };
-          for (const k of ["bpC1", "bpC2", "bpC3", "bpTouch"]) uniforms[k] = { value: new THREE.Vector3() };
-          const mat = new THREE.ShaderMaterial({ uniforms, vertexShader: VERT, fragmentShader: FRAG, depthTest: false, depthWrite: false, toneMapped: false });
-          const sc = new THREE.Scene(); const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat); mesh.frustumCulled = false; sc.add(mesh);
-          this.targets.push(rt); this.quads.push({ scene: sc, mesh, uniforms, seed: i * 37 });
-        }
+        const rt = new THREE.WebGLRenderTarget(Math.max(16, w), Math.max(16, h), { depthBuffer: false, stencilBuffer: false });
+        rt.texture.generateMipmaps = false; rt.texture.minFilter = rt.texture.magFilter = THREE.LinearFilter;
+        const uniforms = {};
+        for (const k of ["bpMode", "bpSize", "bpTime", "bpSeed", "bpAspect", "bpShape", "bpPx", "bpTouchMode", "bpClock", "bpKind", "bpPower"]) uniforms[k] = { value: 0 };
+        for (const k of ["bpC1", "bpC2", "bpC3", "bpTouch"]) uniforms[k] = { value: new THREE.Vector3() };
+        const mat = new THREE.ShaderMaterial({ uniforms, vertexShader: VERT, fragmentShader: FRAG, depthTest: false, depthWrite: false, toneMapped: false });
+        const sc = new THREE.Scene(); const qm = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat); qm.frustumCulled = false; sc.add(qm);
+        this.targets.push(rt); this.quads.push({ scene: sc, mesh: qm, uniforms, seed: 0 });
         this.setValues(v);
-        const g = new THREE.Group(), W = d.width, H = d.height;
-        const sheet = (tex, sw, sh, op) => {
-          const m = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, opacity: op, toneMapped: false });
-          const mesh = new THREE.Mesh(new THREE.PlaneGeometry(sw, sh), m); g.add(mesh); return mesh;
+        const g = new THREE.Group(), W = d.width, H = d.height, tex = rt.texture;
+        // premultiplied: the sheet's see-through parts can never turn dark; the 3D sun is pure added light
+        const sheet = (geo, op, add) => {
+          const m = new THREE.MeshBasicMaterial({ map: tex, transparent: true, premultipliedAlpha: true, depthWrite: false, opacity: op, toneMapped: false });
+          if (add) m.blending = THREE.AdditiveBlending;
+          if (deep) m.depthTest = false; // a turned sheet must not be cut in a straight line where it dips behind the artwork
+          const mesh = new THREE.Mesh(geo, m); g.add(mesh); return mesh;
         };
         this.faces = []; this.yaws = [];
-        if (!deep) sheet(this.targets[0].texture, W, H, 1);
-        else if (!smoke) { // the sun: its glow a little behind and bigger, the sun itself lifted toward the viewer
-          const glow = sheet(this.targets[0].texture, W * 1.7, H * 1.7, 0.35); glow.position.z = 0.02 * H;
-          const sun = sheet(this.targets[0].texture, W, H, 1); sun.position.z = 0.22 * H;
-          this.faces.push(glow, sun);
-        } else { // the smoke: slices from the artwork out toward the viewer, each turned to face them around the layer's up
-          const N = 3;
-          for (let i = 0; i < N; i++) {
-            const f = i / (N - 1), s = sheet(this.targets[i % 2].texture, W * (1 - 0.08 * f), H * (1 - 0.06 * f), [0.85, 0.6, 0.45][i]);
-            s.position.set(W * 0.04 * (i - 1), H * 0.02 * f, H * 0.16 * f);
-            if (i === 1) s.scale.x = -1;
-            this.yaws.push(s);
-          }
+        if (!deep) sheet(new THREE.PlaneGeometry(W, H), 1, false);
+        else if (!smoke) { // the sun: one sheet of light lifted toward the viewer, always facing them
+          const sun = sheet(new THREE.PlaneGeometry(W, H), 1, true); sun.position.z = 0.2 * H;
+          this.faces.push(sun);
+        } else { // the smoke: slices that share one base on the artwork and fan out toward the viewer as they rise
+          [[0, 0.8], [0.09, 0.5], [0.18, 0.35]].forEach(([dz, op]) => {
+            const geo = new THREE.PlaneGeometry(W, H, 1, 4), at = geo.attributes.position;
+            for (let i = 0; i < at.count; i++) { const f = at.getY(i) / H + 0.5; at.setZ(i, dz * H * f * f); }
+            at.needsUpdate = true;
+            const s = sheet(geo, op, false); s.position.y = 0; this.yaws.push(s);
+          });
         }
         this.group = g;
         this.el.setObject3D("mesh", g);
@@ -1526,7 +1547,7 @@ vec4 bpPattern(vec2 uv) {
       remove() { this.el.removeObject3D("mesh"); this.mesh.geometry.dispose(); if (this.mat.uniforms.atlas.value) this.mat.uniforms.atlas.value.dispose(); this.mat.dispose(); }
     });
   }
-  function validParticles(el){const p=el.particles;if(!p)return true;if(typeof p!=='object'||Array.isArray(p))return false;for(const [k,min,max]of [['lifetime',0,60],['endSize',0,5],['count',10,500],['size',2,200],['speed',.2,10]])if(p[k]!=null&&(!Number.isFinite(p[k])||p[k]<min||p[k]>max))return false;if(p.emitter!=null&&!['box','disc','sphere'].includes(p.emitter))return false;if(p.direction!=null&&(!Number.isInteger(p.direction)||p.direction<-3||p.direction>359))return false;if(p.spread!=null&&(!Number.isFinite(p.spread)||p.spread<.1||p.spread>2))return false;if(p.endColor!=null&&!/^#[0-9a-f]{6}$/i.test(p.endColor))return false;if(p.life2!=null&&(!Number.isFinite(p.life2)||p.life2<0||p.life2>60))return false;if(p.color2!=null&&p.color2!==''&&!/^#[0-9a-f]{6}$/i.test(p.color2))return false;if(p.fade!=null&&typeof p.fade!=='boolean')return false;if(p.turn!=null&&typeof p.turn!=='boolean')return false;if(p.flap!=null&&(!Number.isFinite(p.flap)||p.flap<0||p.flap>12))return false;if(p.touch!=null&&p.touch!=='none'&&!TOUCH_MODES.includes(p.touch))return false;if(p.touchPower!=null&&(!Number.isFinite(p.touchPower)||p.touchPower<.1||p.touchPower>1))return false;if(p.touchRange!=null&&(!Number.isFinite(p.touchRange)||p.touchRange<.1||p.touchRange>1.5))return false;if(p.touchBack!=null&&typeof p.touchBack!=='boolean')return false;return true;}
+  function validParticles(el){const p=el.particles;if(!p)return true;if(typeof p!=='object'||Array.isArray(p))return false;for(const [k,min,max]of [['lifetime',0,60],['endSize',0,5],['count',10,500],['size',2,200],['speed',.2,10]])if(p[k]!=null&&(!Number.isFinite(p[k])||p[k]<min||p[k]>max))return false;if(p.emitter!=null&&!['box','disc','sphere'].includes(p.emitter))return false;if(p.direction!=null&&(!Number.isInteger(p.direction)||p.direction<-3||p.direction>359))return false;if(p.spread!=null&&(!Number.isFinite(p.spread)||p.spread<.1||p.spread>2))return false;if(p.endColor!=null&&!/^#[0-9a-f]{6}$/i.test(p.endColor))return false;if(p.life2!=null&&(!Number.isFinite(p.life2)||p.life2<0||p.life2>60))return false;if(p.color2!=null&&p.color2!==''&&!/^#[0-9a-f]{6}$/i.test(p.color2))return false;if(p.fade!=null&&typeof p.fade!=='boolean')return false;if(p.turn!=null&&typeof p.turn!=='boolean')return false;if(p.depth3d!=null&&typeof p.depth3d!=='boolean')return false;if(p.flap!=null&&(!Number.isFinite(p.flap)||p.flap<0||p.flap>12))return false;if(p.touch!=null&&p.touch!=='none'&&!TOUCH_MODES.includes(p.touch))return false;if(p.touchPower!=null&&(!Number.isFinite(p.touchPower)||p.touchPower<.1||p.touchPower>1))return false;if(p.touchRange!=null&&(!Number.isFinite(p.touchRange)||p.touchRange<.1||p.touchRange>1.5))return false;if(p.touchBack!=null&&typeof p.touchBack!=='boolean')return false;return true;}
   function validCrop(el){const c=el.crop;return !c||['image','video'].includes(el.type)&&['x','y','w','h'].every(k=>Number.isFinite(c[k]))&&c.x>=0&&c.y>=0&&c.w>=.01&&c.h>=.01&&c.x+c.w<=1.000001&&c.y+c.h<=1.000001;}
   function setImageCrop(rec,el,crop){
     const old=el.crop||{x:0,y:0,w:1,h:1};const sourceAspect=(el.aspect||1)/(old.w/old.h);
@@ -2331,6 +2352,7 @@ vec4 bpPattern(vec2 uv) {
         e.setAttribute("src", mediaRef(el));
         e.setAttribute("width", ts.w); e.setAttribute("height", ts.h);
       }
+      if (el.depth3d === true && e.tagName === "A-VIDEO") { ensureDepthCopiesComponent(); e.setAttribute("studio-depth-copies", { width: ts.w, height: ts.h }); }
     } else if (el.type === "image") {
       e = document.createElement("a-image");
       e.setAttribute("src", mediaRef(el));
@@ -2344,7 +2366,7 @@ vec4 bpPattern(vec2 uv) {
       e = document.createElement("a-entity");
       let spriteAttr = "";
       if (pc.preset === "custom" && pc.spriteAssetId && rec.assets && rec.assets[pc.spriteAssetId]) spriteAttr = `; sprite: ${blobURL(rec.assets[pc.spriteAssetId])}`;
-      e.setAttribute("particles", `preset: ${pc.preset || "sparkle"}; count: ${pc.count || 120}; color: ${pc.color || "#ffd94d"}; size: ${pc.size || 12}; speed: ${pc.speed || 1}; width: ${ts.w}; height: ${ts.h}; lifetime: ${pc.lifetime||0}; emitter: ${pc.emitter||"box"}; endColor: ${pc.endColor||pc.color||"#ffd94d"}; endSize: ${pc.endSize==null?1:pc.endSize}; fade: ${!!pc.fade}; spread: ${pc.spread>0?Math.min(2,pc.spread):1}${pc.life2>0?"; life2: "+pc.life2:""}${pc.color2?"; color2: "+pc.color2:""}${spriteAttr}${pc.direction != null ? "; direction: " + (pc.direction | 0) : ""}${pc.turn ? "; turn: true" : ""}${pc.flap > 0 ? "; flap: " + pc.flap : ""}${TOUCH_MODES.includes(pc.touch) ? `; touch: ${pc.touch}; touchPower: ${pc.touchPower > 0 ? pc.touchPower : 0.6}; touchRange: ${pc.touchRange > 0 ? pc.touchRange : 0.6}; touchBack: ${pc.touchBack !== false}` : ""}`);
+      e.setAttribute("particles", `preset: ${pc.preset || "sparkle"}; count: ${pc.count || 120}; color: ${pc.color || "#ffd94d"}; size: ${pc.size || 12}; speed: ${pc.speed || 1}; width: ${ts.w}; height: ${ts.h}; lifetime: ${pc.lifetime||0}; emitter: ${pc.emitter||"box"}; endColor: ${pc.endColor||pc.color||"#ffd94d"}; endSize: ${pc.endSize==null?1:pc.endSize}; fade: ${!!pc.fade}; spread: ${pc.spread>0?Math.min(2,pc.spread):1}${pc.life2>0?"; life2: "+pc.life2:""}${pc.color2?"; color2: "+pc.color2:""}${spriteAttr}${pc.direction != null ? "; direction: " + (pc.direction | 0) : ""}${pc.turn ? "; turn: true" : ""}${pc.depth3d ? "; depth: " + (0.7 * Math.min(ts.w, ts.h)).toFixed(4) : ""}${pc.flap > 0 ? "; flap: " + pc.flap : ""}${TOUCH_MODES.includes(pc.touch) ? `; touch: ${pc.touch}; touchPower: ${pc.touchPower > 0 ? pc.touchPower : 0.6}; touchRange: ${pc.touchRange > 0 ? pc.touchRange : 0.6}; touchBack: ${pc.touchBack !== false}` : ""}`);
     } else if (el.type === "model") {
       // glTF/GLB: wrapper carries placement (timeline/tap target); inner child carries the
       // normalized model scale so timeline scale keys don't fight the fit-to-size normalization.
@@ -3193,6 +3215,7 @@ vec4 bpPattern(vec2 uv) {
       ids.add(el.id);
       for (const key of ["x","y","z","w","h","rot","rotX","rotY","opacity","aspect","volume","stillAt"]) if (el[key] != null && (typeof el[key] !== "number" || !Number.isFinite(el[key]))) throw new Error("bad numeric field");
       if(!validParticles(el))throw new Error('bad particles');
+      if (el.depth3d != null && typeof el.depth3d !== "boolean") throw new Error("bad depth");
       if(!validTextFx(el))throw new Error('bad text effect');
       if(!validTimeCube(el))throw new Error('bad time cube');
       // bindTap may navigate to el.tapUrl on tap - refuse script-executing schemes
