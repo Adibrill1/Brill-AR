@@ -111,7 +111,7 @@ window.Editor3D = (() => {
   let mountedAt = 0, remounts = 0, healthN = 0;
   // The pause button: the parts that move by themselves (model clips, particles, effects, time cubes) get one held
   // moment and no time passing; everything else (gizmo, orbit, layers following the parked playhead) runs as usual.
-  const MOVES = new Set(["model-clips", "particles", "studio-fx", "time-cube", "studio-pattern"]);
+  const MOVES = new Set(["model-clips", "particles", "studio-fx", "time-cube", "studio-pattern", "studio-weather"]);
   let held = false, heldAt = null;
   function hold(on) {
     held = !!on; if (!held) heldAt = null;

@@ -265,7 +265,10 @@ window.Inspector = (() => {
     const tints = C({ label: "גוונים מוכנים", wrap: true, options: WX_TINTS[look].map((c) => ({ id: c, swatch: swatch(c), title: c })), get: () => App.sel().pattern.colors[0], set: P((p, v) => { p.colors = [v, v, v]; }, sync) });
     tints.node.classList.add("swatches");
     const size = S(Object.assign({ label: "גודל", min: 0.1, max: 2, step: 0.01, get: () => App.sel().w, set: upd((x, v) => { x.w = round(v, 3); x.h = (x.w / x.aspect) * artRatio(); }) }, pct));
+    const view = C({ label: "", bare: true, options: [{ id: "flat", name: "שטוח" }, { id: "3d", name: "תלת־ממד" }], get: () => (App.sel().pattern.depth3d ? "3d" : "flat"),
+      set: P((p, v) => { if (v === "3d") p.depth3d = true; else delete p.depth3d; }) });
     return [
+      UI.group("תצוגה", view, note(look === "sun" ? "בתלת־ממד השמש מתרוממת מהיצירה ופונה תמיד אל הצופה. רואים את זה במבט תלת־ממד ובמצלמה." : "בתלת־ממד העשן יוצא מהיצירה אל הצופה בכמה שכבות. רואים את זה במבט תלת־ממד ובמצלמה.", "cube")),
       UI.group("סוג", kinds),
       UI.group("התאמה",
         size,

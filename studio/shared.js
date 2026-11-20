@@ -903,9 +903,9 @@ float bpHeart(vec2 p) { // a square turned on its corner with a circle on each u
 vec4 bpSun(vec2 p, vec2 uv) {
   float t = bpTime, k = bpKind, R = mix(0.035, 0.11, clamp(bpSize, 0.0, 1.0));
   vec2 q = p; if (k > 2.5) q.y *= 1.12; // the setting sun is a little flattened by the air
-  float r = length(q), a = atan(q.y, q.x);
+  float r = length(q), a = atan(q.y, q.x + 1e-5);
   vec2 dir = vec2(cos(a), sin(a));
-  float disc = smoothstep(R, R * 0.92, r) * (0.92 + 0.08 * smoothstep(R, 0.0, r)); // a hot disc, darker at its rim
+  float disc = (1.0 - smoothstep(R * 0.92, R, r)) * (0.92 + 0.08 * (1.0 - smoothstep(0.0, R, r))); // a hot disc, darker at its rim
   float corona = exp(-(r * r) / (R * R * 3.2)), halo = exp(-r / (R * 3.2)), wide = 0.22 / (1.0 + r * r / (R * R * 2.0));
   float light;
   if (k < 0.5) { // radiant: soft rays that slowly breathe around the disc
@@ -914,7 +914,7 @@ vec4 bpSun(vec2 p, vec2 uv) {
     light = disc + corona * 0.85 + halo * 0.55 + wide + rays * 0.6;
   } else if (k < 1.5) { // in haze: a softer, wider disc in a shimmering cloud of light
     float haze = bpFbm(p * 3.0 + vec2(t * 0.06, -t * 0.03)) - 0.5;
-    light = smoothstep(R * 1.25, R * 0.6, r) * 0.9 + exp(-r * r / (R * R * 9.0)) * 0.75 + (halo * 0.6 + wide * 1.4) * (1.0 + haze * 0.9);
+    light = (1.0 - smoothstep(R * 0.6, R * 1.25, r)) * 0.9 + exp(-r * r / (R * R * 9.0)) * 0.75 + (halo * 0.6 + wide * 1.4) * (1.0 + haze * 0.9);
   } else if (k < 2.5) { // lens flare: a star of thin spikes, a long sideways streak and ghosts across the lens
     float spikes = pow(abs(cos(a * 3.0 + t * 0.03)), 160.0) + 0.6 * pow(abs(cos(a * 3.0 + 0.52 - t * 0.02)), 260.0);
     float streak = exp(-abs(p.y) / (R * 0.18)) * exp(-abs(p.x) / (R * 9.0));
@@ -923,14 +923,14 @@ vec4 bpSun(vec2 p, vec2 uv) {
     for (int i = 0; i < 5; i++) { // ghosts: discs and rings along a line through the sun, each a little coloured
       float fi = float(i), d = 0.09 + fi * 0.075 + 0.02 * sin(fi * 2.3), s = R * (0.35 + 0.45 * fract(fi * 0.618 + 0.3));
       float g = length(p - axis * d);
-      light += (mod(fi, 2.0) < 0.5 ? smoothstep(s, s * 0.7, g) * 0.16 : exp(-pow((g - s) / (s * 0.18), 2.0)) * 0.22);
+      light += (mod(fi, 2.0) < 0.5 ? smoothstep(s, s * 0.7, g) * 0.16 : exp(-((g - s) * (g - s)) / (s * s * 0.0324)) * 0.22);
     }
   } else { // setting: a big low sun, its glow spread sideways in bands of warm air
     float bands = 0.75 + 0.25 * bpNoise(vec2(p.x * 1.5 + t * 0.05, p.y * 14.0));
     float flat2 = exp(-abs(p.y) / (R * 1.4)) * exp(-abs(p.x) / (R * 7.0));
     light = disc * bands + corona * 0.7 + halo * 0.5 + wide * 0.9 + flat2 * 0.55 * bands;
   }
-  vec2 e = abs(uv - 0.5) * 2.0; light *= smoothstep(1.0, 0.72, max(e.x, e.y)); // nothing reaches the layer's edges
+  vec2 e = abs(uv - 0.5) * 2.0; light *= (1.0 - smoothstep(0.72, 1.0, max(e.x, e.y))); // nothing reaches the layer's edges
   light *= mix(0.35, 1.6, clamp(bpPower, 0.0, 1.0));
   vec3 tint = bpC1 * (k > 2.5 ? vec3(1.0, 0.72, 0.46) : vec3(1.0));
   vec3 col = mix(tint, vec3(1.0, 0.99, 0.95), smoothstep(0.75, 1.6, light)); // the brightest light runs to white
@@ -950,7 +950,7 @@ vec4 bpSmoke(vec2 p, vec2 uv) {
   } else { // a column that rises from the bottom, wanders, and opens into ever bigger billows
     float y = uv.y, rise = t * mix(0.5, 0.8, steam);
     float cx = (bpNoise(vec2(y * 1.3 - rise * 0.35, bpSeed * 0.1)) - 0.5) * (0.12 + 0.3 * y) * bpAspect;
-    float width = mix(0.02, 0.38, pow(y, 0.9)) * mix(1.0, 1.45, thick) * mix(1.0, 0.6, steam) * bpAspect;
+    float width = mix(0.02, 0.38, pow(max(y, 0.0), 0.9)) * mix(1.0, 1.45, thick) * mix(1.0, 0.6, steam) * bpAspect;
     float xr = (p.x - cx) / max(width, 0.02);
     vec2 q = vec2(xr * mix(0.55, 0.4, thick), (y - rise) * mix(3.2, 2.3, thick) * mix(1.0, 1.6, steam)) * z;
     float w = bpFbm(q * 0.7 + vec2(3.1, -t * 0.05));
@@ -961,7 +961,7 @@ vec4 bpSmoke(vec2 p, vec2 uv) {
     dens = smoothstep(0.3, 0.7, n * 0.75 + prof * 0.45 + (d2 - 0.5) * 0.4) * prof * life;
     if (steam > 0.5) dens *= smoothstep(0.35, 0.7, bpNoise(q * 1.8 + 5.0)) * 0.8;
   }
-  vec2 e = abs(uv - 0.5) * 2.0; dens *= smoothstep(1.0, k > 2.5 ? 0.5 : 0.8, e.x) * smoothstep(1.0, k > 2.5 ? 0.6 : 0.85, e.y);
+  vec2 e = abs(uv - 0.5) * 2.0; dens *= (1.0 - smoothstep(k > 2.5 ? 0.5 : 0.8, 1.0, e.x)) * (1.0 - smoothstep(k > 2.5 ? 0.6 : 0.85, 1.0, e.y));
   dens *= mix(0.3, 1.25, clamp(bpPower, 0.0, 1.0)) * mix(1.0, 1.25, thick);
   vec3 tint = bpC1 * mix(1.0, 0.38, thick) * mix(1.0, 1.08, steam); // thick smoke is dark, steam a little brighter
   vec3 col = tint * (0.7 + 0.3 * smoothstep(0.35, 0.8, n) + clamp((n - nl) * 3.5, -0.18, 0.22) + (d2 - 0.5) * 0.12); // billows lit from the upper left
@@ -1090,7 +1090,8 @@ vec4 bpPattern(vec2 uv) {
     return !!p && PATTERN_IDS.includes(p.look) && Array.isArray(p.colors) && p.colors.length === 3 && p.colors.every((c) => /^#[0-9a-f]{6}$/i.test(c))
       && [p.size, p.speed].every((v) => Number.isFinite(v) && v >= 0 && v <= 1) && Number.isInteger(p.seed) && p.seed >= 0 && p.seed < 1000 && PATTERN_SHAPES.some((s) => s[0] === p.shape)
       && (p.touch == null || p.touch === "none" || PATTERN_TOUCH.includes(p.touch)) && (p.touchPower == null || (Number.isFinite(p.touchPower) && p.touchPower >= 0.1 && p.touchPower <= 1))
-      && (p.kind == null || (Number.isInteger(p.kind) && p.kind >= 0 && p.kind < 4)) && (p.power == null || (Number.isFinite(p.power) && p.power >= 0 && p.power <= 1));
+      && (p.kind == null || (Number.isInteger(p.kind) && p.kind >= 0 && p.kind < 4)) && (p.power == null || (Number.isFinite(p.power) && p.power >= 0 && p.power <= 1))
+      && (p.depth3d == null || typeof p.depth3d === "boolean");
   }
   // Uniform values for a layer of the given proportions (width / height); px: one pixel in square units
   function patternValues(el, aspect, px) {
@@ -1163,6 +1164,108 @@ vec4 bpPattern(vec2 uv) {
         this.uniforms.bpTime.value = this.t;
         this.touchStep(Math.min(dt || 0, 100) / 1000);
         this.el.object3D.traverse((n) => { if (n.isMesh) patchPatternMaterial(n.material, this.uniforms); });
+      }
+    });
+  }
+  // The sun and smoke in the 3D view, the preview and the camera. The shader is costly, so it is drawn each frame into a
+  // small picture of its own (at most 320 pixels a side; the light and smoke are soft) and that picture is shown on the
+  // layer: one sheet when flat, and in 3D several sheets that turn to face the viewer - the sun lifted off the artwork with
+  // its glow behind it, the smoke as slices standing out from the artwork toward the viewer. A full-size shader on a
+  // phone's screen, over the camera and a video, left whole squares of the picture undrawn.
+  const WX_RES = 320;
+  function ensureWeatherComponent() {
+    if (!window.AFRAME || AFRAME.components["studio-weather"]) return;
+    const VERT = "varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy * 2.0, 0.0, 1.0); }";
+    const FRAG = "varying vec2 vUv;\n" + PATTERN_GLSL + "\nvoid main() { vec4 c = bpPattern(vUv); if (!(c.a >= 0.0 && c.a <= 1.0)) c = vec4(0.0); gl_FragColor = bpLinear(clamp(c, 0.0, 1.0)); }";
+    AFRAME.registerComponent("studio-weather", {
+      schema: { values: { default: "{}" }, speed: { default: 0 }, width: { default: 1 }, height: { default: 1 }, depth3d: { default: false } },
+      init() {
+        this.t = 0; this.seeds = []; this.targets = []; this.quads = [];
+        this.cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+        this.tmpQ = new THREE.Quaternion(); this.tmpV = new THREE.Vector3();
+      },
+      remove() { this.drop(); },
+      drop() {
+        for (const t of this.targets) t.dispose();
+        for (const q of this.quads) { q.mesh.geometry.dispose(); q.mesh.material.dispose(); }
+        if (this.group) this.group.traverse((n) => { if (n.isMesh) { n.geometry.dispose(); n.material.dispose(); } });
+        this.targets = []; this.quads = []; this.group = null;
+      },
+      // the small pictures (two for 3D smoke, so its slices do not all move alike) and the sheets that show them
+      build() {
+        this.drop();
+        const d = this.data, v = JSON.parse(d.values), smoke = v.bpMode > 18.5, deep = d.depth3d, n = deep && smoke ? 2 : 1;
+        const a = Math.max(0.05, d.width / d.height), w = Math.round(a >= 1 ? WX_RES : WX_RES * a), h = Math.round(a >= 1 ? WX_RES / a : WX_RES);
+        for (let i = 0; i < n; i++) {
+          const rt = new THREE.WebGLRenderTarget(Math.max(16, w), Math.max(16, h), { depthBuffer: false, stencilBuffer: false });
+          rt.texture.generateMipmaps = false; rt.texture.minFilter = rt.texture.magFilter = THREE.LinearFilter;
+          const uniforms = {};
+          for (const k of ["bpMode", "bpSize", "bpTime", "bpSeed", "bpAspect", "bpShape", "bpPx", "bpTouchMode", "bpClock", "bpKind", "bpPower"]) uniforms[k] = { value: 0 };
+          for (const k of ["bpC1", "bpC2", "bpC3", "bpTouch"]) uniforms[k] = { value: new THREE.Vector3() };
+          const mat = new THREE.ShaderMaterial({ uniforms, vertexShader: VERT, fragmentShader: FRAG, depthTest: false, depthWrite: false, toneMapped: false });
+          const sc = new THREE.Scene(); const mesh = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), mat); mesh.frustumCulled = false; sc.add(mesh);
+          this.targets.push(rt); this.quads.push({ scene: sc, mesh, uniforms, seed: i * 37 });
+        }
+        this.setValues(v);
+        const g = new THREE.Group(), W = d.width, H = d.height;
+        const sheet = (tex, sw, sh, op) => {
+          const m = new THREE.MeshBasicMaterial({ map: tex, transparent: true, depthWrite: false, opacity: op, toneMapped: false });
+          const mesh = new THREE.Mesh(new THREE.PlaneGeometry(sw, sh), m); g.add(mesh); return mesh;
+        };
+        this.faces = []; this.yaws = [];
+        if (!deep) sheet(this.targets[0].texture, W, H, 1);
+        else if (!smoke) { // the sun: its glow a little behind and bigger, the sun itself lifted toward the viewer
+          const glow = sheet(this.targets[0].texture, W * 1.7, H * 1.7, 0.35); glow.position.z = 0.02 * H;
+          const sun = sheet(this.targets[0].texture, W, H, 1); sun.position.z = 0.22 * H;
+          this.faces.push(glow, sun);
+        } else { // the smoke: slices from the artwork out toward the viewer, each turned to face them around the layer's up
+          const N = 3;
+          for (let i = 0; i < N; i++) {
+            const f = i / (N - 1), s = sheet(this.targets[i % 2].texture, W * (1 - 0.08 * f), H * (1 - 0.06 * f), [0.85, 0.6, 0.45][i]);
+            s.position.set(W * 0.04 * (i - 1), H * 0.02 * f, H * 0.16 * f);
+            if (i === 1) s.scale.x = -1;
+            this.yaws.push(s);
+          }
+        }
+        this.group = g;
+        this.el.setObject3D("mesh", g);
+      },
+      setValues(v) {
+        this.quads.forEach((q) => {
+          for (const [k, x] of Object.entries(v)) { if (!q.uniforms[k]) continue; if (Array.isArray(x)) q.uniforms[k].value.fromArray(x); else q.uniforms[k].value = x; }
+          q.uniforms.bpSeed.value = (v.bpSeed || 0) + q.seed; q.uniforms.bpAspect.value = this.data.width / this.data.height;
+        });
+      },
+      update(old) {
+        const d = this.data;
+        if (!this.group || !old || old.width !== d.width || old.height !== d.height || old.depth3d !== d.depth3d || (JSON.parse(old.values || "{}").bpMode !== JSON.parse(d.values).bpMode)) this.build();
+        else this.setValues(JSON.parse(d.values));
+      },
+      shown() { for (let o = this.el.object3D; o; o = o.parent) if (!o.visible) return false; return true; },
+      tick(time, dt) {
+        this.t += Math.min(dt || 0, 100) / 1000 * this.data.speed;
+        const r = this.el.sceneEl.renderer; if (!r || !this.group || !this.shown()) return;
+        const prev = r.getRenderTarget(), clear = r.autoClear, xr = r.xr && r.xr.enabled, cc = r.getClearColor(new THREE.Color()), ca = r.getClearAlpha();
+        if (r.xr) r.xr.enabled = false;
+        r.autoClear = true; r.setClearColor(0x000000, 0);
+        this.quads.forEach((q, i) => { q.uniforms.bpTime.value = this.t + i * 7.3; r.setRenderTarget(this.targets[i]); r.render(q.scene, this.cam); });
+        r.setRenderTarget(prev); r.autoClear = clear; r.setClearColor(cc, ca); if (r.xr) r.xr.enabled = xr;
+        this.face();
+      },
+      // the 3D sheets turn to the camera: the sun all the way, the smoke slices only around the layer's own up
+      face() {
+        if (!this.faces.length && !this.yaws.length) return;
+        const cam = this.el.sceneEl.camera; if (!cam) return;
+        const root = this.group; root.updateWorldMatrix(true, false);
+        if (this.faces.length) {
+          root.getWorldQuaternion(this.tmpQ).invert();
+          const q = cam.getWorldQuaternion(new THREE.Quaternion()).premultiply(this.tmpQ);
+          for (const m of this.faces) m.quaternion.copy(q);
+        }
+        if (this.yaws.length) {
+          const c = root.worldToLocal(cam.getWorldPosition(this.tmpV));
+          for (const m of this.yaws) m.rotation.set(0, Math.atan2(c.x - m.position.x, c.z - m.position.z), 0);
+        }
       }
     });
   }
@@ -2288,6 +2391,10 @@ vec4 bpPattern(vec2 uv) {
       };
       paint();
       loadTextFonts(el).then((fresh) => { if (fresh) paint(); }); // the first look may use the device font until the layer's fonts arrive
+    } else if (isWeather(el)) {
+      ensureWeatherComponent();
+      e = document.createElement("a-entity");
+      e.setAttribute("studio-weather", { values: JSON.stringify(patternValues(el, ts.w / ts.h, 1 / 600)), speed: el.pattern.speed || 0, width: ts.w, height: ts.h, depth3d: el.pattern.depth3d === true });
     } else if (el.type === "pattern") {
       ensurePatternComponent();
       e = document.createElement("a-plane");

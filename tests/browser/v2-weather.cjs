@@ -61,11 +61,20 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
 
   // the 3D view and the preview draw them without errors
   await p.locator('#btn-3d').click();await p.waitForFunction(()=>document.querySelector('#stage').classList.contains('is-3d'),null,{timeout:20000});
-  await p.waitForFunction(()=>document.querySelectorAll('#editor-3d-host [studio-pattern]').length===2,null,{timeout:20000});await p.waitForTimeout(1500);
+  await p.waitForFunction(()=>document.querySelectorAll('#editor-3d-host [studio-weather]').length===2,null,{timeout:20000});await p.waitForTimeout(1500);
+  // drawn small (at most 320 pixels a side) and shown on one sheet when flat
+  let wx=await p.evaluate(()=>[...document.querySelectorAll('#editor-3d-host [studio-weather]')].map(e=>{const c=e.components['studio-weather'];return {sheets:c.group.children.length,rt:c.targets.map(t=>Math.max(t.width,t.height))};}));
+  assert.deepEqual(wx.map(w=>w.sheets),[1,1]);assert.ok(wx.every(w=>w.rt.every(n=>n<=320)),'small pictures '+JSON.stringify(wx));
+  // the switch to 3D: the sun gets its glow and lifts off, the smoke stands out in three slices
+  for(const id of [0,1]){await p.evaluate((i)=>App.select(App.rec.elements[i].id),id);await p.waitForTimeout(300);await ins.getByText('תלת־ממד',{exact:true}).last().click();await p.waitForTimeout(400);}
+  assert.deepEqual(await p.evaluate(()=>App.rec.elements.slice(0,2).map(e=>[e.pattern.depth3d,Studio.validPattern(e)])),[[true,true],[true,true]]);
+  await p.waitForFunction(()=>{const n=[...document.querySelectorAll('#editor-3d-host [studio-weather]')].map(e=>e.components['studio-weather'].group&&e.components['studio-weather'].group.children.length);return n.join()==='2,3';},null,{timeout:20000});
+  wx=await p.evaluate(()=>{const e=document.querySelector('#editor-3d-host [studio-weather]').components['studio-weather'];return e.group.children.map(m=>+m.position.z.toFixed(3));});
+  assert.ok(wx[1]>wx[0],'the sun stands in front of its glow '+wx);
   const q=await ctx.newPage();q.on('pageerror',e=>errs.push('preview: '+e));await q.goto(base+'/preview.html#'+id);
-  await q.waitForFunction(()=>document.querySelectorAll('a-scene [studio-pattern]').length===2,null,{timeout:30000});await q.waitForTimeout(1500);
-  const prog=await q.evaluate(()=>{const r=document.querySelector('a-scene').renderer;return [...document.querySelectorAll('a-scene [studio-pattern]')].map(e=>{const m=e.getObject3D('mesh'),pr=r.properties.get(m.material).currentProgram;return !!pr&&(pr.diagnostics?pr.diagnostics.runnable:true);});});
-  assert.deepEqual(prog,[true,true],'the shader compiles in the preview');
+  await q.waitForFunction(()=>document.querySelectorAll('a-scene [studio-weather]').length===2,null,{timeout:30000});await q.waitForTimeout(1500);
+  const prog=await q.evaluate(()=>{const r=document.querySelector('a-scene').renderer;return [...document.querySelectorAll('a-scene [studio-weather]')].map(e=>{const c=e.components['studio-weather'],pr=r.properties.get(c.quads[0].mesh.material).currentProgram;return !!pr&&(pr.diagnostics?pr.diagnostics.runnable:true)&&c.t>0;});});
+  assert.deepEqual(prog,[true,true],'the shader compiles in the preview and runs');
   assert.equal(errs.filter(e=>!/favicon|404/.test(e)).length,0,'no page errors: '+errs.join(' | '));
   console.log('weather sheet: all checks pass');
  }finally{await b.close();server.close();}

@@ -48,6 +48,7 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
   assert.ok(await btn.isVisible(),'the button stays in 3D');
   await p.waitForFunction(()=>{const n=document.querySelector('#editor-3d-host [model-clips]');return n&&n.components['model-clips'].mixer;},null,{timeout:20000});
   const mix=()=>p.evaluate(()=>document.querySelector('#editor-3d-host [model-clips]').components['model-clips'].mixer.time);
+  await p.waitForTimeout(2500); // the 3D view may build the model once more while it settles
   let m1=await mix();await p.waitForTimeout(800);let m2=await mix();assert.ok(Math.abs(m2-m1)<0.01,'the model clip holds '+[m1,m2]);
 
   // play: goes on from the same moment
