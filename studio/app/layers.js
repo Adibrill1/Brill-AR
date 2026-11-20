@@ -8,7 +8,7 @@ window.Layers = (() => {
     image: { name: "תמונה", icon: "image", tint: "#5fb4ff" }, video: { name: "סרטון", icon: "video", tint: "#ff8f6b" },
     text: { name: "טקסט", icon: "text", tint: "#ffd166" }, sound: { name: "צליל", icon: "sound", tint: "#4cd4a0" },
     model: { name: "מודל 3D", icon: "cube", tint: "#b497ff" }, particles: { name: "חלקיקים", icon: "sparkle", tint: "#ff9ecb" },
-    pattern: { name: "רקע מונפש", icon: "pattern", tint: "#7fe0e0" }, timecube: { name: "קוביית זמן", icon: "hourglass", tint: "#c4d86a" },
+    pattern: { name: "רקע מונפש", icon: "pattern", tint: "#7fe0e0" }, split: { name: "פירוק לשכבות", icon: "layers", tint: "#9ad0ff" }, timecube: { name: "קוביית זמן", icon: "hourglass", tint: "#c4d86a" },
     group: { name: "קבוצה", icon: "layers", tint: "#9a97a6" }, scatter: { name: "פיזור על נתיב", icon: "path", tint: "#f2a65a" },
     fan: { name: "מניפה", icon: "fan", tint: "#f2a65a" }, weather: { name: "מזג אוויר", icon: "sun", tint: "#ffc061" }
   };
@@ -367,7 +367,8 @@ window.Layers = (() => {
   const ADD = [
     ["image", "תמונה", "מהמכשיר, או מדבקה מוכנה"], ["video", "סרטון", "MP4 או MOV"], ["text", "טקסט", "כותרת או ברכה"],
     ["pattern", "רקעים", "צבע אחיד, תנועה או טבע"], ["weather", "מזג אוויר", "שמש, עשן, גשם, ערפל ועוד"], ["particles", "חלקיקים", "גשם, שלג, לבבות ועוד"],
-    ["model", "תלת־ממד", "מודלים מוכנים, או ייבוא משלך"], ["sound", "צליל", "MP3, M4A, WAV"]
+    ["model", "תלת־ממד", "מודלים מוכנים, או ייבוא משלך"], ["sound", "צליל", "MP3, M4A, WAV"],
+    ["split", "פירוק לשכבות", "תמונה שמתפרקת לשכבות בעומק"]
   ];
   function openAdd() {
     if (!App.rec) return;
@@ -380,6 +381,7 @@ window.Layers = (() => {
       if (kind === "weather") return openWeather();
       if (kind === "image") return openImages();
       if (kind === "model") return open3d();
+      if (kind === "split") return SplitSheet.open();
       const f = await UI.pickFile(ACCEPT[kind]);
       if (f) addFile(kind, f);
     };

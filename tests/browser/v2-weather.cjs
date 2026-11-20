@@ -21,7 +21,7 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
 
   await layers();await p.locator('#btn-add').click();await p.waitForSelector('dialog[open] .add-tile');
   assert.equal(await p.locator('dialog[open] .add-library').count(),0,'no "from the library" button');
-  assert.deepEqual(await p.locator('dialog[open] .add-tile').evaluateAll(n=>n.map(x=>x.dataset.add)),['image','video','text','pattern','weather','particles','model','sound']);
+  assert.deepEqual(await p.locator('dialog[open] .add-tile').evaluateAll(n=>n.map(x=>x.dataset.add)),['image','video','text','pattern','weather','particles','model','sound','split']);
   await p.locator('dialog[open] .add-tile[data-add="weather"]').click();await p.waitForSelector('dialog[open] .part-tile[data-weather="sun"]');
   const ids=await p.locator('dialog[open] .part-tile[data-weather]').evaluateAll(n=>n.map(x=>x.dataset.weather));
   assert.equal(ids.length,19);assert.deepEqual(ids.slice(0,3),['sun','smoke','fire'],'sun, smoke and fire first');
