@@ -12,7 +12,7 @@ window.Reveal = (() => {
     { id: "drop", name: "נוחתות מלמעלה" },
     { id: "slide", name: "נכנסות מהצדדים" },
     { id: "popup", name: "ספר פופ־אפ" },
-    { id: "bloom", name: "נפתחת כמו פרח" },
+    { id: "bloom", name: "כמו פרח" },
     { id: "breathe", name: "נושמות" }
   ];
   const HINTS = {
@@ -22,7 +22,7 @@ window.Reveal = (() => {
     drop: "כל שכבה נוחתת למקום שלה מלמעלה, מהרחוקה לקרובה.",
     slide: "השכבות נכנסות לסירוגין מימין ומשמאל.",
     popup: "כמו בספר פופ־אפ: הרקע נשאר במקום, ושאר השכבות מתרוממות על ציר, אחת אחרי השנייה, עד שהן עומדות בעומק שלהן.",
-    bloom: "כמו פרח שנפתח: השכבה הפנימית (הקרובה) נפתחת ראשונה מהמרכז, ואחריה כל שכבה החוצה לצדדים, בסיבוב קל, עד הרקע.",
+    bloom: "כמו קופסת קרטון שנפתחת: הרקע נשאר במקום, ושאר השכבות מתהפכות על ציר בצד, ישר החוצה לצדדים (פעם ימינה ופעם שמאלה), מהקרובה אל הרחוקה, עד שהן עומדות בעומק שלהן.",
     breathe: "השכבות מתקרבות ומתרחקות לאט, כל הזמן."
   };
   const r4 = (v) => Math.round(v * 10000) / 10000, r2 = (v) => Math.round(v * 100) / 100;
@@ -52,11 +52,16 @@ window.Reveal = (() => {
         k(0, a); k(d, a); k(d + 1, i ? { x: r4(x), opacity: 1 } : { opacity: 1 });
       }
       else if (style === "bloom") {
-        // a flower opening: the inner (nearest) layer opens first from the middle, then each layer further out, each one
-        // growing from the centre to the sides with a slight turn (left and right in turn), like petals unfolding
-        const j = n - 1 - i, d = 0.3 + j * 0.4, r = c.rot || 0, tw = j % 2 ? -35 : 35;
-        const a = { z: r4(zmax), scale: 0.15, rot: r + tw, opacity: 0 };
-        k(0, a); k(d, a); k(d + 0.75, { z: r4(z + (zmax - z) * 0.15), scale: 1.06, rot: r - tw * 0.1, opacity: 1 }); k(d + 1.2, { z: r4(z), scale: 1, rot: r, opacity: 1 });
+        // a cardboard box opening: the background (the bottom of the box) stays, and the other layers, nearest first,
+        // swing open on a straight side hinge, out to the sides in turn. Each starts standing edge-on toward the viewer
+        // at its hinge (its left or right edge, kept at its own depth) and folds down flat to face the viewer.
+        if (i === 0) return;
+        const j = n - 1 - i, d = 0.3 + j * 0.4, side = j % 2 ? -1 : 1; // 1: hinge on the left edge, opens to the right
+        const ww = c.w || 1, xh = x - side * ww / 2;
+        const at = (f) => { const e = 1 - (1 - f) * (1 - f) * (1 - f), th = 90 * (1 - e) * Math.PI / 180;
+          return { x: r4(xh + side * (ww / 2) * Math.cos(th)), z: r4(z + (ww / 2) * G.artW * Math.sin(th)), rotY: Math.round(-side * 90 * (1 - e) * 10) / 10 }; };
+        k(0, at(0)); for (let s = 0; s <= 8; s++) k(d + (s / 8) * 1.2, at(s / 8));
+        ease = "linear";
       }
       else if (style === "breathe") { k(0, { z: r4(z) }); k(1.8, { z: r4(zmin + (z - zmin) * 0.35) }); k(3.6, { z: r4(z) }); ease = "easeInOut"; loop = true; }
       else if (style === "popup") {

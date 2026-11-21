@@ -35,7 +35,11 @@ window.Stage = (() => {
   function boxOf(el, s) {
     const cx = view.mx + (s.x + 0.5) * view.W, cy = view.my + (0.5 - s.y) * view.H;
     if (el.type === "sound") return { cx, cy, w: 46 / zoom, h: 46 / zoom, rot: 0 };
-    return { cx, cy, w: el.w * view.W * s.scale, h: (el.h != null ? el.h * view.H : el.w * view.W / (el.aspect || 1)) * s.scale, rot: -s.rot * Math.PI / 180 };
+    // a layer whose path folds it on a hinge (tilt / side turn) is seen from the front narrower, as in the 3D view
+    const keys = el.timeline && Array.isArray(el.timeline.keys) ? el.timeline.keys : null;
+    const fx = keys && keys.some((k) => k.rotY != null) ? Math.abs(Math.cos((s.rotY || 0) * Math.PI / 180)) : 1;
+    const fy = keys && keys.some((k) => k.rotX != null) ? Math.abs(Math.cos((s.rotX || 0) * Math.PI / 180)) : 1;
+    return { cx, cy, w: el.w * view.W * s.scale * fx, h: (el.h != null ? el.h * view.H : el.w * view.W / (el.aspect || 1)) * s.scale * fy, rot: -s.rot * Math.PI / 180 };
   }
   const inside = (b, p, pad) => { const q = local(b, p), m = pad || 0; return Math.abs(q.x) <= Math.max(b.w / 2, 14 / zoom) + m && Math.abs(q.y) <= Math.max(b.h / 2, 14 / zoom) + m; };
   // Layers under a point, top first. A member of a group answers for its group, unless the selected layer is another

@@ -2816,7 +2816,7 @@ vec4 bpPattern(vec2 uv) {
   // Pure sampler: el.timeline.keys [{t, x?, y?, z?, rot?, opacity?, scale?}] at time tSec.
   // Missing props hold their last keyed value; before the first key they hold base props.
   function sampleTimeline(el, tSec) {
-    const base = { x: el.x || 0, y: el.y || 0, z: el.z || 0, rot: el.rot || 0, rotX: el.rotX || 0, opacity: el.opacity == null ? 1 : el.opacity, scale: 1, tap: el.onTap || "none", visible: true };
+    const base = { x: el.x || 0, y: el.y || 0, z: el.z || 0, rot: el.rot || 0, rotX: el.rotX || 0, rotY: el.rotY || 0, opacity: el.opacity == null ? 1 : el.opacity, scale: 1, tap: el.onTap || "none", visible: true };
     const tl = el.timeline;
     if (!tl || !Array.isArray(tl.keys) || !tl.keys.length) return base;
     const map = tl.xyMap;
@@ -2852,7 +2852,7 @@ vec4 bpPattern(vec2 uv) {
     };
     let x = pick("x"), y = pick("y");
     if (map) { const [a,b,c,d,tx,ty] = map.matrix; const ox=x; x=a*x+b*y+tx; y=c*ox+d*y+ty; }
-    return { x, y, z: pick("z"), rot: pick("rot"), rotX: pick("rotX"), opacity: pick("opacity"), scale: pick("scale"), tap: pickDiscrete("tap"), visible: pickDiscrete("visible") };
+    return { x, y, z: pick("z"), rot: pick("rot"), rotX: pick("rotX"), rotY: pick("rotY"), opacity: pick("opacity"), scale: pick("scale"), tap: pickDiscrete("tap"), visible: pickDiscrete("visible") };
   }
   // Editor records visible-world coordinates; convert XY back to the curve frame.
   function addTimelineKey(el, key) {
@@ -2910,7 +2910,7 @@ vec4 bpPattern(vec2 uv) {
 
   // One layer's sampled pose put on its node (the AR/preview driver and the 3D editor share it). A layer inside a group
   // sits in the group's frame (_studioFrame); a top-level one keeps the offsets it was built with (off). The forward
-  // tilt (rotX) is taken from the path only when the path keys it, so a layer's own tilt stays as built otherwise.
+  // tilt (rotX) and side turn (rotY) are taken from the path only when the path keys them, so a layer's own tilt stays as built otherwise.
   function applyTimelinePose(rec, node, el, s, off) {
     const D2R = Math.PI / 180, o = node.object3D; if (!o) return;
     const ts = toTargetSpace(rec, Object.assign({}, el, { x: s.x, y: s.y, z: s.z }), el.aspect || 1);
@@ -2921,6 +2921,7 @@ vec4 bpPattern(vec2 uv) {
     } else o.position.set(ts.x + ((off && off.xOff) || 0), ts.y + ((off && off.yOff) || 0), (ts.z || 0) + ((off && off.zOff) || 0));
     o.rotation.z = (s.rot - (f ? f.baseRotation : 0)) * D2R;
     if (el.timeline && el.timeline.keys.some((k) => k.rotX != null)) o.rotation.x = (s.rotX || 0) * D2R;
+    if (el.timeline && el.timeline.keys.some((k) => k.rotY != null)) o.rotation.y = (s.rotY || 0) * D2R; // a turn on a side hinge (the box-flap reveal)
     o.scale.set(s.scale, s.scale, 1);
     applyOpacity(node, s.opacity);
   }

@@ -50,14 +50,23 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
   assert.ok(Math.abs(rx0-90)<0.5,'and lying at the start '+rx0);
   await p.tap('#btn-3d');await p.evaluate(()=>App.freeze(null));
 
-  // a flower opening: the inner (nearest) layer opens first, from small and turned at the middle, out to its full size
-  await pick('נפתחת כמו פרח');s=await at(0);assert.ok(s.every(v=>v.opacity===0&&v.scale<0.2),'closed at the start '+s.map(v=>v.scale));
-  s=await at(1.0);assert.ok(s[3].opacity>0.5&&s[0].opacity===0,'the inner layer opens first '+s.map(v=>v.opacity));
-  s=await at(9);assert.ok(s.every((v,i)=>v.opacity===1&&v.scale===1&&Math.abs(v.rot)<1e-3&&Math.abs(v.z-z0[i])<1e-3),'all open in place at the end '+JSON.stringify(s.map(v=>[v.scale,v.rot])));
+  // like a flower (a cardboard box opening): the background stays; the others, nearest first, swing open on a straight side
+  // hinge (no slant), to the right and left in turn, folding down flat at their own depth
+  await pick('כמו פרח');k=await kids();assert.equal(k[0].tl,null,'background stays');
+  s=await at(0);assert.ok(s.slice(1).every(v=>Math.abs(Math.abs(v.rotY)-90)<0.01&&Math.abs(v.rot)<1e-6),'edge-on at the start, no slant '+s.map(v=>v.rotY));
+  assert.ok(Math.sign(s[3].rotY)!==Math.sign(s[2].rotY),'opens to both sides in turn');
+  s=await at(1.0);assert.ok(Math.abs(s[3].rotY)<Math.abs(s[1].rotY),'the nearest opens first '+s.map(v=>v.rotY));
+  s=await at(9);assert.ok(s.slice(1).every((v,i)=>Math.abs(v.rotY)<0.01&&Math.abs(v.z-z0[i+1])<1e-3&&Math.abs(v.x)<1e-3),'flat in place at the end '+JSON.stringify(s.map(v=>[v.x,v.rotY])));
+  const hinge=await p.evaluate(({ids,t})=>{const G=Studio.geom(App.rec);return ids.slice(1).map(id=>{const e=App.rec.elements.find(x=>x.id===id),v=Studio.sampleTimeline(e,t),th=v.rotY*Math.PI/180,side=v.rotY<0?1:-1;return {xEdge:v.x-side*0.5*Math.cos(th),zEdge:v.z-0.5*G.artW*Math.abs(Math.sin(th))};});},{ids:ids.kids,t:1.2});
+  assert.ok(hinge.every((h,i)=>Math.abs(Math.abs(h.xEdge)-0.5)<0.01&&Math.abs(h.zEdge-z0[i+1])<0.01),'the hinge edge stays put '+JSON.stringify(hinge));
+  await p.tap('#btn-3d');await p.waitForFunction(()=>Editor3D.isActive());await p.evaluate(()=>App.freeze(0));await p.waitForTimeout(600);
+  const ry=await p.evaluate(({g,kid})=>{const n=Editor3D._test.node(g).querySelector('[data-el-id="'+kid+'"]');return Math.abs(n.object3D.rotation.y*180/Math.PI);},{g:ids.g,kid:ids.kids[3]});
+  assert.ok(Math.abs(ry-90)<0.5,'the 3D view turns it on its side hinge '+ry);
+  await p.tap('#btn-3d');await p.evaluate(()=>App.freeze(null));
 
   // again and again: all the layers share one length, with a rest at the end
   await p.locator('label:has-text("לחזור שוב ושוב") input, [role=switch]:near(:text("לחזור שוב ושוב"))').first().click();await p.waitForTimeout(250);
-  k=await kids();const durs=k.filter(x=>x.tl).map(x=>x.tl.dur);assert.ok(durs.length===4&&durs.every(d=>d===durs[0]&&d>0)&&k.filter(x=>x.tl).every(x=>x.tl.loop),'one shared loop '+durs);
+  k=await kids();const durs=k.filter(x=>x.tl).map(x=>x.tl.dur);assert.ok(durs.length===3&&durs.every(d=>d===durs[0]&&d>0)&&k.filter(x=>x.tl).every(x=>x.tl.loop),'one shared loop '+durs);
 
   // the depth slider rewrites the paths for the new depths
   await pick('נפתחת לעומק');
