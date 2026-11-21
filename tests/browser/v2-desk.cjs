@@ -6,7 +6,7 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
 (async()=>{await new Promise(r=>server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+server.address().port,b=await chromium.launch({executablePath:'/usr/bin/google-chrome',headless:true,args:['--no-sandbox']});
  const {publicKey,privateKey}=crypto.generateKeyPairSync('rsa',{modulusLength:2048});
  // a tiny GitHub: one branch, files by path
- const files=new Map(),blobs=new Map(),trees=new Map(),commits=new Map();let head=null,n=0;
+ const answers=new Map(),blobs=new Map(),trees=new Map(),commits=new Map();let head=null,n=0;
  const sha=()=>crypto.createHash('sha1').update('x'+(n++)).digest('hex');
  const cors={'access-control-allow-origin':'*','access-control-allow-headers':'*','access-control-allow-methods':'GET,POST,PATCH'};
  async function gh(route){const req=route.request(),url=new URL(req.url()),m=req.method(),p=url.pathname.replace('/repos/Adibrill1/Brill-AR','');
@@ -20,8 +20,8 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
   if(p==='/git/commits'){const s=sha();commits.set(s,{tree:body.tree});return js(201,{sha:s});}
   if(p==='/git/refs'&&m==='POST'){head=body.sha;return js(201,{});}
   if(p==='/git/refs/heads/layer-requests'&&m==='PATCH'){head=body.sha;return js(200,{});}
-  if(p.startsWith('/contents/')){const path=decodeURIComponent(p.slice(10)),t=head?trees.get(commits.get(head).tree):new Map(),s=t.get(path);
-   return s?route.fulfill({status:200,contentType:'application/octet-stream',headers:cors,body:files.get(path)||blobs.get(s)}):js(404,{message:'Not Found'});}
+  if(p.startsWith('/contents/')){const path=decodeURIComponent(p.slice(10)),ref=url.searchParams.get('ref'),t=ref==='claude/layer-answers'?answers:ref==='layer-requests'&&head?trees.get(commits.get(head).tree):new Map(),s=t.get(path);
+   return s?route.fulfill({status:200,contentType:'application/octet-stream',headers:cors,body:blobs.get(s)}):js(404,{message:'Not Found'});}
   return js(500,{message:'unexpected '+m+' '+p});}
  const tree=()=>head?trees.get(commits.get(head).tree):new Map(),read=(path)=>blobs.get(tree().get(path));
  const unlock=(raw,buf)=>{const d=crypto.createDecipheriv('aes-256-gcm',raw,buf.subarray(0,12));d.setAuthTag(buf.subarray(buf.length-16));return Buffer.concat([d.update(buf.subarray(12,buf.length-16)),d.final()]);};
@@ -49,7 +49,8 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
   assert.ok(!read('r/'+rid+'/req.bin').includes(Buffer.from('לוויתן')),'nothing readable on the branch');
   // the answer: three layers
   const pngs=await p.evaluate(async()=>{const out=[];for(const col of ['#204070','#30a0d0','#ffffff']){const c=document.createElement('canvas');c.width=300;c.height=400;const g=c.getContext('2d');g.fillStyle=col;g.fillRect(col==='#204070'?0:100,100,100,100);out.push((await new Promise(r=>c.toBlob(r,'image/png'))).arrayBuffer().then(a=>Array.from(new Uint8Array(a))));}return Promise.all(out);});
-  const t=tree();const put=(path,buf)=>{const s=sha();blobs.set(s,buf);t.set(path,s);};
+  const t=answers;const put=(path,buf)=>{const s=sha();blobs.set(s,buf);t.set(path,s);};
+  assert.equal(await p.evaluate(()=>Desk.check()),0,'an answer on the requests branch is not looked for');
   ['רקע','לוויתן','טקסט'].forEach((nm,i)=>put('r/'+rid+'/L'+i+'.bin',lock(raw,Buffer.from(pngs[i]))));
   put('r/'+rid+'/done.bin',lock(raw,Buffer.from(JSON.stringify({layers:['רקע','לוויתן','טקסט'].map((nm,i)=>({name:nm,file:'L'+i+'.bin'})),spread:0.3,note:'הלוויתנים בשכבה אחת'}))));
   await p.keyboard.press('Escape');

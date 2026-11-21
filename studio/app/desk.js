@@ -10,11 +10,11 @@
      r/<id>/key.bin   the request's key, locked for Claude
      r/<id>/req.bin   what she asked: {id, name, words, type, at}
      r/<id>/pic.bin   the picture
-     r/<id>/done.bin  Claude's answer: {layers: [{name, file}], spread, note}, far to near
+     r/<id>/done.bin  (on branch "claude/layer-answers", so an answer never wakes Claude again) Claude's answer: {layers: [{name, file}], spread, note}, far to near
      r/<id>/<file>    each layer, a picture the size of the whole picture */
 window.Desk = (() => {
   let PUB = {"kty":"RSA","n":"92nOX4Qnump89mjtcFdYpUYJB_vfk3h4pv2ghYPaA16RoUTisV7nwGX-i14zlzy-qH0Y529VfJEbHKI3X2XGV8uU54ezezWDMVGXu-edX6C8KyqvEd_2fV56IYwpR4q8pQXW8XzjKc17F2Jpd3yHtm2cf67-4KTi5-tP182ACgFkm6tSrQ8FHY8M_Yv7qROTjZIZoS0670l6tGzn1JVG4ph1L8ADeYehZNRyHxN635urrvWIurddXWbDhmgXMDvyhvWgN3q9QoOZpRpPLRsAdkHkFkHLY4SVLEtT1XcnCMGLx3y0-JQTv-VbenNd7EbyOGVhL8cprkybtNMw2vocljjSSkM4NRr7vDGAtHawZNQIW_HKfrLXzMJ0d5yoyuKU60S_CbuERD2L62p0BW6nWeq-lX84SHZUcmCCXQFnHZFLNGetR_g5195w124EoleXZKzfalshgBDz7lVVzIx3Qnz_qXj9kRmYwSJOjyGS94LDjHE2v0d9EIFveSdZBjLN","e":"AQAB"};
-  const BRANCH = "layer-requests", LS = "brill-desk-requests", EVERY = 60000;
+  const BRANCH = "layer-requests", ANSWERS = "claude/layer-answers", LS = "brill-desk-requests", EVERY = 60000;
   const list = () => { try { const a = JSON.parse(localStorage.getItem(LS) || "[]"); return Array.isArray(a) ? a : []; } catch (e) { return []; } };
   const keep = (a) => { try { localStorage.setItem(LS, JSON.stringify(a)); } catch (e) {} };
   const b64 = (u8) => { let s = ""; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); return btoa(s); };
@@ -43,12 +43,12 @@ window.Desk = (() => {
   // the answer of one request, put into its creation
   async function fetchDone(r) {
     const t = token(); if (!t) return null;
-    const done = await Portal.readRaw(t, BRANCH, "r/" + r.id + "/done.bin"); if (!done) return null;
+    const done = await Portal.readRaw(t, ANSWERS, "r/" + r.id + "/done.bin"); if (!done) return null;
     const raw = unb64(r.k), ans = JSON.parse(await (await unlock(raw, done)).text());
     const layers = [];
     for (const L of ans.layers || []) {
       if (!/^[A-Za-z0-9_.-]{1,64}$/.test(L.file || "")) continue;
-      const b = await Portal.readRaw(t, BRANCH, "r/" + r.id + "/" + L.file); if (!b) continue;
+      const b = await Portal.readRaw(t, ANSWERS, "r/" + r.id + "/" + L.file); if (!b) continue;
       layers.push({ name: String(L.name || "שכבה").slice(0, 60), blob: new Blob([await unlock(raw, b)], { type: "image/png" }) });
     }
     return { layers, spread: Math.min(0.6, Math.max(0.02, +ans.spread || 0.2)), note: String(ans.note || "").slice(0, 300) };
@@ -96,5 +96,5 @@ window.Desk = (() => {
   window.addEventListener("load", () => { setTimeout(check, 3000); soon(); });
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") check(); });
 
-  return { send, check, pending, list, BRANCH, testKey: (jwk) => { PUB = jwk; } };
+  return { send, check, pending, list, BRANCH, ANSWERS, testKey: (jwk) => { PUB = jwk; } };
 })();
