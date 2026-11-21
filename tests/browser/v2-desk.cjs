@@ -60,6 +60,15 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
   assert.equal(r.g,'שכבות מ־Claude');assert.equal(r.spread,0.3);assert.equal(r.pending,0,'nothing left waiting');assert.ok(r.assets);
   await p.reload();await p.waitForSelector('#btn-add');assert.equal(await p.evaluate(()=>App.rec.elements.filter(e=>e.type==='image').length),3,'saved');
   assert.equal(errs.filter(e=>!/favicon|404|Failed to load resource/.test(e)).length,0,'no page errors: '+errs.join(' | '));
+  // "Claude יזהה לבד": nothing written, the request says so and Claude chooses the parts himself
+  await p.evaluate((jwk)=>Desk.testKey(jwk),publicKey.export({format:'jwk'}));
+  await p.locator('#btn-add').click();await p.locator('dialog[open] .add-tile[data-add="split"]').click();await p.locator('dialog[open] .add-tile[data-split="art"]').click();
+  await p.locator('#split-claude-auto').click();
+  await p.waitForFunction(()=>/אצל Claude/.test(document.querySelector('#split-claude-msg').textContent),null,{timeout:20000});
+  const rid2=[...tree().keys()].filter(k=>k.endsWith('/req.bin')).map(k=>k.split('/')[1]).find(x=>x!==rid);
+  const raw2=crypto.privateDecrypt({key:privateKey,padding:crypto.constants.RSA_PKCS1_OAEP_PADDING,oaepHash:'sha256'},read('r/'+rid2+'/key.bin'));
+  const req2=JSON.parse(unlock(raw2,read('r/'+rid2+'/req.bin')));assert.equal(req2.auto,true);assert.equal(req2.words,'');
+  assert.equal(errs.filter(e=>!/favicon|404|Failed to load resource/.test(e)).length,0,'no page errors: '+errs.join(' | '));
   console.log('layers by Claude: all checks pass');
  }finally{await b.close();server.close();}
 })().catch(e=>{console.error(e);process.exit(1);});

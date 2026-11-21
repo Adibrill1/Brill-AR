@@ -25,7 +25,7 @@ window.Desk = (() => {
   const token = () => (window.Portal ? Portal.getToken() : "");
   const pending = (creationId) => list().filter((r) => !creationId || r.creationId === creationId);
 
-  // send: {blob (the picture), words, creationId, name, isArt, aspect}
+  // send: {blob (the picture), words, auto (Claude finds the parts himself), creationId, name, isArt, aspect}
   async function send(o) {
     const t = token(); if (!t) throw Object.assign(new Error("no token"), { noToken: true });
     if (o.blob.size > 20 * 1048576) throw new Error("big");
@@ -33,7 +33,7 @@ window.Desk = (() => {
     const raw = crypto.getRandomValues(new Uint8Array(32));
     const pub = await crypto.subtle.importKey("jwk", PUB, { name: "RSA-OAEP", hash: "SHA-256" }, false, ["encrypt"]);
     const key = new Blob([await crypto.subtle.encrypt({ name: "RSA-OAEP" }, pub, raw)]);
-    const req = new Blob([JSON.stringify({ id, name: o.name || "", words: o.words || "", type: o.blob.type || "image/png", at: Date.now() })], { type: "application/json" });
+    const req = new Blob([JSON.stringify({ id, name: o.name || "", words: o.words || "", auto: !!o.auto, type: o.blob.type || "image/png", at: Date.now() })], { type: "application/json" });
     await Portal.putFiles(t, BRANCH, [{ path: "r/" + id + "/key.bin", blob: key }, { path: "r/" + id + "/req.bin", blob: await lock(raw, req) }, { path: "r/" + id + "/pic.bin", blob: await lock(raw, o.blob) }], "request " + id);
     keep(list().concat([{ id, k: b64(raw), creationId: o.creationId, name: o.name || "", words: o.words || "", isArt: !!o.isArt, aspect: o.aspect || 1, at: Date.now() }]));
     soon();
