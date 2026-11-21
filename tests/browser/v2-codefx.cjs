@@ -1,5 +1,5 @@
 const {chromium}=require('playwright-core'),assert=require('node:assert/strict');const server=require('../../server/server');
-// Live code animations ("אנימציות קוד"): the add sheet offers five looks drawn in code and the holographic foil.
+// Live code animations ("אנימציות קוד"): the add sheet offers thirteen looks drawn in code and the holographic foil.
 // Each one lands as a layer that the flat editor (through the 3D layer above the canvas), the 3D view and the
 // preview draw; its controls change colours, speed and amount; a record holding them passes the import check.
 const SHOTS=process.env.SHOTS||'';
@@ -14,7 +14,7 @@ const SHOTS=process.env.SHOTS||'';
     a.assets.__artwork=await new Promise(r=>c.toBlob(r,'image/png'));a.elements=[];await Studio.save(a);return a.id;});
   await p.goto(base+'/index.html#/e/'+id);await p.waitForSelector('#btn-add');await p.waitForTimeout(600);
   const shot=async(name)=>{if(SHOTS)await p.screenshot({path:SHOTS+'/'+name+'.png'});};
-  const looks=await p.evaluate(()=>Studio.CODEFX.map(c=>c.id));assert.deepEqual(looks,['dissolve','dust','portal','swarm','ivy']);
+  const looks=await p.evaluate(()=>Studio.CODEFX.map(c=>c.id));assert.deepEqual(looks,['dissolve','dust','portal','swarm','ivy','burn','fireflies','jelly','tree','spiral','bubbles','liquid','lanterns']);
   for(const look of looks){
     await p.evaluate(()=>Layers.openAdd());await p.locator('button.add-tile[data-add="codefx"]').tap();
     await p.locator('button.part-tile[data-codefx="'+look+'"]').tap();
@@ -22,7 +22,7 @@ const SHOTS=process.env.SHOTS||'';
     const elId=await p.evaluate(()=>App.selId);
     // drawn by the 3D layer over the flat canvas
     await p.waitForFunction(id=>Editor3D.drawsIn2d(id),elId,{timeout:8000});
-    await p.waitForTimeout(look==='dissolve'?3800:look==='ivy'?6000:2500);
+    await p.waitForTimeout({dissolve:3800,ivy:6000,tree:7000,burn:3400,spiral:3000}[look]||2500);
     await p.evaluate(()=>App.select(null));await p.waitForTimeout(100);await shot('flat-'+look);
     await p.evaluate(id=>App.select(id),elId);
     // its controls: the colours, the speed and the amount
@@ -35,7 +35,7 @@ const SHOTS=process.env.SHOTS||'';
   }
   // every look in one record, and the import check takes it
   await p.evaluate(async()=>{for(const l of Studio.CODEFX.map(c=>c.id)){const e={id:Studio.newId(),type:'codefx',name:l,codefx:Studio.codeFxDefaults(l),x:0,y:0,w:0.5,h:0.5,aspect:0.75,rot:0,z:0,flush:true,seq:null};await App.addLayer(e);}});
-  const okImport=await p.evaluate(async()=>{try{const r=await Studio.importJSON(await Studio.exportJSON(App.rec),{save:false});return r.elements.filter(e=>e.type==='codefx').length;}catch(e){return e.message;}});assert.equal(okImport,5);
+  const okImport=await p.evaluate(async()=>{try{const r=await Studio.importJSON(await Studio.exportJSON(App.rec),{save:false});return r.elements.filter(e=>e.type==='codefx').length;}catch(e){return e.message;}});assert.equal(okImport,looks.length);
   const bad=await p.evaluate(async()=>{const o=JSON.parse(await Studio.exportJSON(App.rec));o.elements.find(e=>e.type==='codefx').codefx.colors=['red'];try{await Studio.importJSON(JSON.stringify(o),{save:false});return false;}catch(e){return e.message;}});assert.match(String(bad),/code animation/);
   // the foil on a text: the 3D layer patches the text's own material
   const tid=await p.evaluate(async()=>{const e={id:Studio.newId(),type:'text',name:'ט',text:'שלום',color:'#ffffff',bold:true,x:0,y:0.3,w:0.6,h:null,rot:0,z:0,flush:true,seq:null};Stage.fitText(e);await App.addLayer(e);App.sel().fx='holo';App.changed(true);return e.id;});
@@ -52,7 +52,7 @@ const SHOTS=process.env.SHOTS||'';
   await p.evaluate(()=>App.flush&&App.flush());await p.waitForTimeout(400);
   const recId=await p.evaluate(()=>App.rec.id);
   await p.goto(base+'/preview.html#'+recId);
-  await p.waitForFunction(()=>{const n=[...document.querySelectorAll('[studio-codefx]')];return n.length===5&&n.every(x=>x.getObject3D('codefx')&&x.getObject3D('codefx').children.length>0);},null,{timeout:15000});
+  await p.waitForFunction(()=>{const n=[...document.querySelectorAll('[studio-codefx]')];return n.length===13&&n.every(x=>x.getObject3D('codefx')&&x.getObject3D('codefx').children.length>0);},null,{timeout:15000});
   await p.waitForTimeout(1500);await shot('preview');
   console.log(JSON.stringify(errs.slice(0,8)));assert.deepEqual(errs.filter(e=>!/favicon|Failed to load resource/.test(e)),[]);
   console.log('v2-codefx ok');

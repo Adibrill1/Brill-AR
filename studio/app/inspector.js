@@ -219,22 +219,34 @@ window.Inspector = (() => {
   }
   // ---------- live code animations ----------
   const CODEFX_TEXT = {
-    colors: { dissolve: ["הרקע שמאחור", "ניצוץ", "ניצוץ שני"], dust: ["זהב בהיר", "זהב", "זהב כהה"], portal: ["העולם", "הזוהר", "האור"], swarm: ["צבע", "צבע שני", "ברק"], ivy: ["עלים", "פרחים", "לב הפרח"] },
-    amount: { dissolve: "צפיפות החלקיקים", dust: "כמות האבק", portal: "עומק", swarm: "כמה", ivy: "כמות עלים ופרחים" },
-    size: { dissolve: "גודל החלקיקים", dust: "גודל הנצנוצים", swarm: "גודל", ivy: "גודל העלים" }
+    colors: { dissolve: ["הרקע שמאחור", "ניצוץ", "ניצוץ שני"], dust: ["זהב בהיר", "זהב", "זהב כהה"], portal: ["העולם", "הזוהר", "האור"], swarm: ["צבע", "צבע שני", "ברק"], ivy: ["עלים", "פרחים", "לב הפרח"],
+      burn: ["הרקע שמאחור", "להבה", "ניצוצות"], fireflies: ["אור", "אור שני", "הילה"], jelly: ["גוף", "זוהר", "זרועות"], tree: ["גזע", "עלים או פרחים", "גוון שני"],
+      spiral: ["מרכז", "אמצע", "שוליים"], bubbles: ["גוון", "גוון שני", "גוון שלישי"], liquid: ["כהה", "אמצע", "ברק"], lanterns: ["נייר", "להבה", "זוהר"] },
+    amount: { dissolve: "צפיפות החלקיקים", dust: "כמות האבק", portal: "עומק", swarm: "כמה", ivy: "כמות עלים ופרחים",
+      burn: "רוחב הלהבה", fireflies: "כמה", jelly: "כמה", tree: "כמות עלים", spiral: "כמה זרעים", bubbles: "כמה", liquid: "כמה טיפות", lanterns: "כמה" },
+    size: { dissolve: "גודל החלקיקים", dust: "גודל הנצנוצים", swarm: "גודל", ivy: "גודל העלים",
+      burn: "גודל הכתמים", fireflies: "גודל", jelly: "גודל", tree: "גודל העלים", spiral: "גודל הזרעים", bubbles: "גודל", liquid: "גודל", lanterns: "גודל" },
+    touch: { swarm: "נגיעה מבריחה אותם", burn: "נגיעה מציתה את התמונה", fireflies: "הן מתקרבות לאצבע", jelly: "נגיעה דוחפת אותן", bubbles: "נגיעה מפוצצת בועה",
+      liquid: "טיפה אחת נמשכת אחרי האצבע", lanterns: "נגיעה מזיזה אותם הצידה" },
+    note: { portal: "העומק נראה הכי טוב במצלמה: כשזזים מול היצירה, רואים את העולם שמאחורי החלון מזוויות אחרות.", swarm: "בתלת־ממד ובמצלמה הם שוחים גם במרחב שלפני היצירה.",
+      liquid: "במצלמה ההשתקפויות במתכת זזות כשמזיזים את הטלפון.", bubbles: "הצבעים בבועה משתנים לפי הזווית, כמו בבועת סבון אמיתית.", burn: "התמונה נשרפת, נעלמת לרגע וחוזרת. בלי ״רקע מאחור״ רואים דרכה את מה שמתחת.",
+      fireflies: "במצב ״מסתנכרנות״ הן מהבהבות כל אחת בקצב שלה, ולאט לאט מתחילות להבהב יחד.", tree: "העץ צומח, עומד ברוח ונעלם, ושוב מההתחלה. ״וריאציה״ נותנת עץ בצורה אחרת." }
   };
   function styleCodeFx() {
     const cur = () => App.sel().codefx, look = cur().look, d = Studio.CODEFX.find((c) => c.id === look);
     const X = (fn, then) => upd((x, v) => { x.codefx = Object.assign({}, x.codefx); fn(x.codefx, v, x); }, then);
     const swatch = (colors) => h("span.swatch", colors.map((c) => h("i", { style: { background: c } })));
-    const sets = [{ name: "המקורי", colors: d.colors }].concat(look === "dissolve" ? [] : Studio.PATTERN_PALETTES);
+    // a school's (tree's, spiral's, metal's) colours follow its kind while they are still that kind's own (orange fish, dark birds, bright butterflies)
+    const KIND_COLORS = { swarm: [d.colors, ["#2b2d42", "#5c6378", "#d9dde8"], ["#ff9ecb", "#ffd166", "#9ad0ff"]],
+      tree: [d.colors, ["#4a3426", "#ffc0d9", "#ff7eb3"], ["#4a3020", "#e8772e", "#f5c542"]],
+      spiral: [d.colors, ["#fff6d5", "#9b7bff", "#2de2e6"], ["#ffd166", "#ff6fa5", "#7b2cbf"]],
+      liquid: [d.colors, ["#3a2205", "#d4a017", "#fff4c2"], ["#2b0a3d", "#ff4d6d", "#ffb703"]] };
+    const sets = (KIND_COLORS[look] || [d.colors]).map((colors, i) => ({ name: i ? d.kinds[i] : "המקורי", colors })).concat(look === "dissolve" ? [] : Studio.PATTERN_PALETTES); // each kind's own colours first
     const pals = C({ label: "ערכות צבע", wrap: true, options: sets.map((p, i) => ({ id: String(i), swatch: swatch(p.colors), title: p.name })),
       get: () => String(sets.findIndex((p) => p.colors.join() === cur().colors.join())), set: X((c, v) => { c.colors = sets[+v].colors.slice(); }, sync) });
     pals.node.classList.add("swatches");
     const col = (i) => K({ label: CODEFX_TEXT.colors[look][i], get: () => cur().colors[i], set: X((c, v) => { c.colors = c.colors.slice(); c.colors[i] = v; }) });
     const fitWords = (c, x) => { if (!window.StudioCodeFx) return; x.aspect = StudioCodeFx.wordsAspect(c.text, c.font || "heebo"); x.h = (x.w / x.aspect) * artRatio(); };
-    // a school's colours follow its kind while they are still that kind's own (orange fish, dark birds, bright butterflies)
-    const KIND_COLORS = { swarm: [d.colors, ["#2b2d42", "#5c6378", "#d9dde8"], ["#ff9ecb", "#ffd166", "#9ad0ff"]] };
     const kindSet = X((c, v) => { const k = KIND_COLORS[look]; if (k && k[c.kind || 0] && k[c.kind || 0].join() === c.colors.join()) c.colors = k[+v].slice(); c.kind = +v; }, sync);
     const out = [UI.group("סוג", C({ label: "", bare: true, wrap: true, options: d.kinds.map((name, i) => ({ id: String(i), name })), get: () => String(cur().kind || 0), set: kindSet }))];
     if (look === "dust") {
@@ -254,10 +266,10 @@ window.Inspector = (() => {
       look === "portal" ? L({ label: "צורת החלון", options: [{ id: "rect", name: "מלבן" }, { id: "circle", name: "עיגול" }, { id: "arch", name: "קשת" }], get: () => cur().shape || "rect",
         set: X((c, v, x) => { c.shape = v; x.aspect = v === "circle" ? 1 : v === "arch" ? 0.75 : artRatio(); x.h = (x.w / x.aspect) * artRatio(); }) }) : null,
       look !== "portal" ? S({ label: "וריאציה", min: 0, max: 999, step: 1, get: () => cur().seed || 0, set: X((c, v) => { c.seed = Math.round(v); }) }) : null,
-      look === "dissolve" ? T({ label: "רקע מאחור", hint: "מסתיר את התמונה המודפסת כשהחלקיקים עפים", get: () => cur().cover !== false, set: X((c, v) => { c.cover = v; }) }) : null,
-      ["dissolve", "dust", "swarm"].includes(look) ? T({ label: "מגיב למגע", hint: look === "swarm" ? "נגיעה מבריחה אותם" : "נגיעה מפזרת את החלקיקים", get: () => cur().touch !== false, set: X((c, v) => { c.touch = v; }) }) : null,
+      Studio.CODEFX_PICTURE.includes(look) ? T({ label: "רקע מאחור", hint: look === "burn" ? "מסתיר את התמונה המודפסת כשהיא נשרפת" : "מסתיר את התמונה המודפסת כשהחלקיקים עפים", get: () => cur().cover !== false, set: X((c, v) => { c.cover = v; }) }) : null,
+      !["portal", "ivy", "tree"].includes(look) ? T({ label: "מגיב למגע", hint: CODEFX_TEXT.touch[look] || "נגיעה מפזרת את החלקיקים", get: () => cur().touch !== false, set: X((c, v) => { c.touch = v; }) }) : null,
       opacity()));
-    out.push(h("section.group", note(look === "portal" ? "העומק נראה הכי טוב במצלמה: כשזזים מול היצירה, רואים את העולם שמאחורי החלון מזוויות אחרות." : look === "swarm" ? "בתלת־ממד ובמצלמה הם שוחים גם במרחב שלפני היצירה." : "האנימציה רצה כאן, בתצוגה המקדימה ובמצלמה.", "cube")));
+    out.push(h("section.group", note(CODEFX_TEXT.note[look] || "האנימציה רצה כאן, בתצוגה המקדימה ובמצלמה.", "cube")));
     return out;
   }
   // a small still of each pattern look, drawn once

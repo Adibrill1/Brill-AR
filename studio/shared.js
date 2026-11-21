@@ -878,20 +878,31 @@ vec4 baFilter(vec2 uv) {
   const PATTERN_IDS = PATTERNS.concat(WEATHER).map((p) => p[0]);
   // Live code animations, drawn by codefx.js: [id, Hebrew name, colours, kinds]. What each colour paints:
   // dissolve: the cover behind the picture, two glow colours; dust: three golds; portal: the world, the glow, the light;
-  // swarm: two body colours and a highlight; ivy: leaves, petals, flower middles.
+  // swarm: two body colours and a highlight; ivy: leaves, petals, flower middles; burn: the cover, the flame, the sparks;
+  // fireflies: two lights and the glow; jelly: bell, rim glow, tentacles; tree: bark, two leaf colours (or petals and middles);
+  // spiral: middle to edge; bubbles: the film's three colours; liquid: dark, middle, bright; lanterns: paper, flame, glow.
   const CODEFX = [
     ["dissolve", "תמונה שמתפרקת", ["#14121a", "#ffd27a", "#ff7ab6"], ["רוח", "פיצוץ", "מערבולת"]],
     ["dust", "ברכה מאבק זהב", ["#fff3c4", "#f5c542", "#c98a1e"], ["אבק מסתחרר", "גשם נוצץ"]],
     ["portal", "פורטל", ["#120458", "#ff00a0", "#00f0ff"], ["מנהרת אור", "חלל עמוק", "חדר משבצות"]],
     ["swarm", "להקה", ["#ff8a3d", "#ffd166", "#ffffff"], ["דגים", "ציפורים", "פרפרים"]],
-    ["ivy", "קיסוס פורח", ["#3f8f4a", "#ff8fb1", "#ffd166"], ["מסביב למסגרת", "בפינות", "מלמטה למעלה"]]
+    ["ivy", "קיסוס פורח", ["#3f8f4a", "#ff8fb1", "#ffd166"], ["מסביב למסגרת", "בפינות", "מלמטה למעלה"]],
+    ["burn", "התפוגגות בוערת", ["#14121a", "#ff6a1a", "#ffe08a"], ["מהשוליים", "מלמטה למעלה", "כתמים בוערים"]],
+    ["fireflies", "גחליליות", ["#d8ff6a", "#ffe14d", "#9cff3a"], ["מסתנכרנות", "חופשיות", "גל אור"]],
+    ["jelly", "מדוזות", ["#7ad7ff", "#ff7ae0", "#c9f2ff"], ["זוהרות", "מדוזת ירח", "זרועות ארוכות"]],
+    ["tree", "עץ שצומח", ["#5b3a29", "#4caf50", "#a5d65a"], ["עץ ירוק", "פריחת דובדבן", "שלכת"]],
+    ["spiral", "ספירלת זרעים", ["#3b2414", "#c98a1e", "#ffd54a"], ["חמנייה", "גלקסיה", "פרח"]],
+    ["bubbles", "בועות סבון", ["#ff7ad9", "#7afcff", "#fff27a"], ["עולות", "מרחפות", "זרם בועות"]],
+    ["liquid", "כסף נוזלי", ["#1c1f26", "#9aa3b5", "#ffffff"], ["כרום", "זהב נוזלי", "מנורת לבה"]],
+    ["lanterns", "פנסים מעופפים", ["#ff9f43", "#fff1a8", "#ff6b2c"], ["עולים לשמיים", "מרחפים", "משוחררים אחד אחד"]]
   ];
+  const CODEFX_PICTURE = ["dissolve", "burn"]; // the looks made from a picture
   const CODEFX_IDS = CODEFX.map((c) => c[0]), CODEFX_SHAPES = ["rect", "circle", "arch"];
   function codeFxDefaults(look) {
     const d = CODEFX.find((c) => c[0] === look) || CODEFX[1];
     const o = { look: d[0], colors: d[2].slice(), speed: 0.5, amount: 0.5, size: 0.5, kind: 0, seed: 0, touch: true };
     if (d[0] === "dust") o.text = "מזל טוב";
-    if (d[0] === "dissolve") { o.cover = true; o.picture = "__artwork"; }
+    if (CODEFX_PICTURE.includes(d[0])) { o.cover = true; o.picture = "__artwork"; }
     if (d[0] === "portal") o.shape = "rect";
     return o;
   }
@@ -2547,7 +2558,7 @@ vec4 bpPattern(vec2 uv) {
     } else if (el.type === "codefx") {
       // drawn by codefx.js (without it the layer stays empty)
       e = document.createElement("a-entity");
-      const c = el.codefx || codeFxDefaults(), blob = c.look === "dissolve" && rec.assets && rec.assets[c.picture || "__artwork"];
+      const c = el.codefx || codeFxDefaults(), blob = CODEFX_PICTURE.includes(c.look) && rec.assets && rec.assets[c.picture || "__artwork"];
       e.setAttribute("studio-codefx", { cfg: JSON.stringify(c), width: ts.w, height: ts.h, src: blob ? blobURL(blob) : "" });
     } else if (isWeather(el)) {
       ensureWeatherComponent();
@@ -3712,7 +3723,7 @@ vec4 bpPattern(vec2 uv) {
            audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, blobURL, releaseBlobURL, blobURLs, historyState, restoreHistory, duplicateLayer, exportJSON, exportObject, exportedAssetIds, importPublished, missingAssets, importJSON, exportZIP, importZIP, zipToJSON, fetchPublished, ownBlob, assetHealth, fileHealth, seedDemo, normEl, ANIMS, drawTextCanvas, loadTextFonts, lineDir, visualOrder, ENTER_EXIT: ENTER_EXIT.map(([id, enter, exit, , text]) => ({ id, enter, exit, text: !!text })), enterExitFor, validEnterExit, hasEnterExit, enterExitDur, fxLook, fxTimes, drawEnterExitText, animSpeed, FX: FX.map(([id, name]) => ({ id, name, moving: FX_MOVING.has(id) })), fxFrame,
            WEATHER: WEATHER.map(([id, name, colors, speed, kinds]) => ({ id, name, kinds: kinds.slice() })), isWeather, PATTERNS: PATTERNS.map(([id, name, colors, speed]) => ({ id, name, colors: colors.slice(), speed })), PATTERN_PALETTES: PATTERN_PALETTES.map(([name, colors]) => ({ name, colors: colors.slice() })),
            fingerGrab: () => finger.grab, fingerTools: { watch: watchFinger, state: finger, onPlane: fingerOnPlane },
-           CODEFX: CODEFX.map(([id, name, colors, kinds]) => ({ id, name, colors, kinds })), CODEFX_SHAPES, codeFxDefaults, validCodeFx, TOUCH_MODES, PATTERN_TOUCH, validPattern, textFxOf, TEXT_FX: TEXT_FX.map(([id, name, color, amount]) => ({ id, name, color, amount })), validTextFx,
+           CODEFX: CODEFX.map(([id, name, colors, kinds]) => ({ id, name, colors, kinds })), CODEFX_SHAPES, CODEFX_PICTURE, codeFxDefaults, validCodeFx, TOUCH_MODES, PATTERN_TOUCH, validPattern, textFxOf, TEXT_FX: TEXT_FX.map(([id, name, color, amount]) => ({ id, name, color, amount })), validTextFx,
            PATTERN_SHAPES: PATTERN_SHAPES.map(([id, name]) => ({ id, name })), patternDefaults, patternAspect, patternFrame, validPattern, validFx, validChroma, keyValues, pixelAt, CHROMA_DEFAULT, SCATTER_TYPES, SCATTER_MAX, mediaType, isStill, stillAt, setStill, scatterItem, scatterLimit, scatterPath, scatterCopies, scatterCopyEl, scatterBounds, refreshScatter, makeScatter, makeFan, scaleScatter, breakScatter, validScatter, FONTS: FONTS.map(([id, name]) => ({ id, name })), buildElementEntity, groupOf, fitGroup, makeGroup, breakGroup, leaveGroup, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, videoHasPicture, ensureTimeCubeComponent, bakeTimeCube, validTimeCube, TIMECUBE_DIRS, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, artworkFingerprint, fingerprintDistance, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, applyTimelinePose, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, turnImageBlob, turnLayers, trackList, makeTrackRunner,
            load: id=>settledRead(id), all: ()=>settledRead(), del: delExperience, LIMITS, mediaBytes, pushBack, addBlocker, publishBlocker, restoreBlocker, exportWarning, exportJSONSize,
            onSaveState, installSaveGuard, saveState, soundOnTouch, snapAngle, syncMedia,

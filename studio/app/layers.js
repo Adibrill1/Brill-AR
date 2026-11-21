@@ -293,25 +293,26 @@ window.Layers = (() => {
       })));
     const d = UI.dialog({ title: "איזה מזג אוויר?", sheet: true, body: [h("div.part-grid", tiles), h("p.note", icon("sun", 18), h("span", "בשמש, בעשן ובאש אפשר לבחור סוג, גודל, עוצמה וגוון. בשאר אפשר לשנות גודל, שקיפות וכמות."))] });
   }
-  // "אנימציות קוד": five live animations drawn in code (codefx.js), and the holographic foil for a picture or a text.
+  // "אנימציות קוד": live animations drawn in code (codefx.js), and the holographic foil for a picture or a text.
   async function addCodeFx(look) {
     if (App.blocked({ layers: 1 })) return;
     const fx = Studio.codeFxDefaults(look), d = Studio.CODEFX.find((c) => c.id === look), A = artRatio(), rec = App.rec;
     const el = { id: Studio.newId(), type: "codefx", name: d.name, codefx: fx, x: 0, y: 0, w: 1, rot: 0, z: 0, flush: true, seq: null };
     let replace = null;
-    if (look === "dissolve") {
-      // the selected picture falls apart in its own place (it is replaced; the artwork itself is the default)
+    if (Studio.CODEFX_PICTURE.includes(look)) {
+      // the selected picture falls apart (or burns) in its own place (it is replaced; the artwork itself is the default)
       const s = App.sel();
       if (s && s.type === "image" && s.assetId && rec.assets[s.assetId] && !Studio.groupOf(rec, s.id) && !App.keyed(s)) {
         replace = s; fx.picture = s.assetId; fx.cover = false;
-        Object.assign(el, { name: "פירוק " + (s.name || "תמונה"), x: s.x, y: s.y, w: s.w, rot: s.rot || 0, z: s.z || 0, aspect: s.crop ? (s.aspect || 1) * s.crop.h / s.crop.w : s.aspect || 1 });
+        Object.assign(el, { name: (look === "burn" ? "שריפה " : "פירוק ") + (s.name || "תמונה"), x: s.x, y: s.y, w: s.w, rot: s.rot || 0, z: s.z || 0, aspect: s.crop ? (s.aspect || 1) * s.crop.h / s.crop.w : s.aspect || 1 });
       } else el.aspect = A;
     } else if (look === "dust") Object.assign(el, { aspect: window.StudioCodeFx ? StudioCodeFx.wordsAspect(fx.text, "heebo") : 2.6, w: 0.8, y: 0.05 });
     else if (look === "portal") Object.assign(el, { aspect: A, w: 0.7 });
+    else if (look === "spiral") Object.assign(el, { aspect: 1, w: Math.min(0.7, 0.7 * A) });
     else el.aspect = A; // a school or vines: around the whole artwork
     el.h = (el.w / el.aspect) * A;
     await App.addLayer(el, replace ? { after: replace.id } : undefined);
-    if (replace) { await App.removeLayer(replace.id); App.select(el.id); toast("התמונה הפכה לאנימציה שמתפרקת. אפשר לבטל בחץ אחורה."); }
+    if (replace) { await App.removeLayer(replace.id); App.select(el.id); toast(look === "burn" ? "התמונה הפכה לאנימציה בוערת. אפשר לבטל בחץ אחורה." : "התמונה הפכה לאנימציה שמתפרקת. אפשר לבטל בחץ אחורה."); }
     App.setTab("style");
   }
   function addFoil() {
@@ -331,7 +332,7 @@ window.Layers = (() => {
     const tiles = Studio.CODEFX.map((c) => tile(c.id, c.name, grad(c.colors), () => addCodeFx(c.id)))
       .concat(tile("holo", "ברק הולוגרפי", "linear-gradient(120deg,#ff9ad5,#9ad0ff,#b8ffcf,#fff3a8,#ff9ad5)", async () => addFoil()));
     const d = UI.dialog({ title: "איזו אנימציה?", sheet: true, body: [h("div.part-grid", tiles),
-      h("p.note", icon("sparkle", 18), h("span", "אנימציות שנכתבו בקוד ורצות חי. אפשר לשנות צבעים, מהירות וכמות. ״תמונה שמתפרקת״ מפרקת את התמונה שבחרת, ובלי בחירה את תמונת היצירה. ״ברק הולוגרפי״ מתווסף לתמונה או לטקסט שבחרת."))] });
+      h("p.note", icon("sparkle", 18), h("span", "אנימציות שנכתבו בקוד ורצות חי. אפשר לשנות צבעים, מהירות וכמות. ״תמונה שמתפרקת״ ו״התפוגגות בוערת״ פועלות על התמונה שבחרת, ובלי בחירה על תמונת היצירה. ״ברק הולוגרפי״ מתווסף לתמונה או לטקסט שבחרת."))] });
   }
   // "תמונה": a picture from the device, or one of the ready stickers.
   function openImages() {
