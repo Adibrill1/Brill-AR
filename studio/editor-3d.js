@@ -1302,6 +1302,12 @@ window.Editor3D = (() => {
     if (rec && sampleEl) {
       if (beginFrame) beginFrame();
       Studio.topLevelElements(rec).forEach((el, idx) => applySampled(rec, el, elNode(el.id), idx));
+      // a group's members that move on their own path (the layer reveals of a split picture) move here too, in the
+      // group's frame, exactly as the AR driver moves them
+      if (clockFor) rec.elements.forEach((g) => { if (g.type !== "group") return; for (const id of g.children || []) {
+        const c = rec.elements.find((x) => x.id === id); if (!c || !hasKeys(c)) continue;
+        const gn = elNode(g.id), n = gn && gn.querySelector('[data-el-id="' + id + '"]'); if (n && n._studioFrame) Studio.applyTimelinePose(rec, n, c, Studio.sampleTimeline(c, clockFor(c)));
+      } });
       const selId = getSelected && getSelected();
       if (gizmo && selId && !gizmoDrag) {
         const el = rec.elements.find((x) => x.id === selId);

@@ -2816,7 +2816,7 @@ vec4 bpPattern(vec2 uv) {
   // Pure sampler: el.timeline.keys [{t, x?, y?, z?, rot?, opacity?, scale?}] at time tSec.
   // Missing props hold their last keyed value; before the first key they hold base props.
   function sampleTimeline(el, tSec) {
-    const base = { x: el.x || 0, y: el.y || 0, z: el.z || 0, rot: el.rot || 0, opacity: el.opacity == null ? 1 : el.opacity, scale: 1, tap: el.onTap || "none", visible: true };
+    const base = { x: el.x || 0, y: el.y || 0, z: el.z || 0, rot: el.rot || 0, rotX: el.rotX || 0, opacity: el.opacity == null ? 1 : el.opacity, scale: 1, tap: el.onTap || "none", visible: true };
     const tl = el.timeline;
     if (!tl || !Array.isArray(tl.keys) || !tl.keys.length) return base;
     const map = tl.xyMap;
@@ -2852,7 +2852,7 @@ vec4 bpPattern(vec2 uv) {
     };
     let x = pick("x"), y = pick("y");
     if (map) { const [a,b,c,d,tx,ty] = map.matrix; const ox=x; x=a*x+b*y+tx; y=c*ox+d*y+ty; }
-    return { x, y, z: pick("z"), rot: pick("rot"), opacity: pick("opacity"), scale: pick("scale"), tap: pickDiscrete("tap"), visible: pickDiscrete("visible") };
+    return { x, y, z: pick("z"), rot: pick("rot"), rotX: pick("rotX"), opacity: pick("opacity"), scale: pick("scale"), tap: pickDiscrete("tap"), visible: pickDiscrete("visible") };
   }
   // Editor records visible-world coordinates; convert XY back to the curve frame.
   function addTimelineKey(el, key) {
@@ -2908,6 +2908,22 @@ vec4 bpPattern(vec2 uv) {
     return (tl.dur > 0 ? tl.dur : Math.max(...tl.keys.map((k) => k.t)));
   }
 
+  // One layer's sampled pose put on its node (the AR/preview driver and the 3D editor share it). A layer inside a group
+  // sits in the group's frame (_studioFrame); a top-level one keeps the offsets it was built with (off). The forward
+  // tilt (rotX) is taken from the path only when the path keys it, so a layer's own tilt stays as built otherwise.
+  function applyTimelinePose(rec, node, el, s, off) {
+    const D2R = Math.PI / 180, o = node.object3D; if (!o) return;
+    const ts = toTargetSpace(rec, Object.assign({}, el, { x: s.x, y: s.y, z: s.z }), el.aspect || 1);
+    const f = node._studioFrame;
+    if (f) {
+      const dx = ts.x - f.ox, dy = ts.y - f.oy;
+      o.position.set(dx * Math.cos(f.angle) - dy * Math.sin(f.angle), dx * Math.sin(f.angle) + dy * Math.cos(f.angle), (ts.z || 0) + f.zTie - f.oz);
+    } else o.position.set(ts.x + ((off && off.xOff) || 0), ts.y + ((off && off.yOff) || 0), (ts.z || 0) + ((off && off.zOff) || 0));
+    o.rotation.z = (s.rot - (f ? f.baseRotation : 0)) * D2R;
+    if (el.timeline && el.timeline.keys.some((k) => k.rotX != null)) o.rotation.x = (s.rotX || 0) * D2R;
+    o.scale.set(s.scale, s.scale, 1);
+    applyOpacity(node, s.opacity);
+  }
   // Controllable driver: play/pause/reset so the AR player can start motion at target-found
   // and freeze it when tracking is lost. Returns null when no element has keyframes.
   function startTimelineDriver(rec, entities, opts) {
@@ -2941,15 +2957,7 @@ vec4 bpPattern(vec2 uv) {
         for (const tr of tracks) {
           tr.e._tlTime = (now - tr.startedAt) / 1000; // where its path is (an exit ends right at a step that hides it)
           const s = sampleTimeline(tr.el, tr.e._tlTime);
-          const ts = toTargetSpace(rec, Object.assign({}, tr.el, { x: s.x, y: s.y, z: s.z }), tr.el.aspect || 1);
-          const f = tr.e._studioFrame;
-          if (f) {
-            const dx = ts.x - f.ox, dy = ts.y - f.oy;
-            tr.e.object3D.position.set(dx * Math.cos(f.angle) - dy * Math.sin(f.angle), dx * Math.sin(f.angle) + dy * Math.cos(f.angle), (ts.z || 0) + f.zTie - f.oz);
-          } else tr.e.object3D.position.set(ts.x + tr.xOff, ts.y + tr.yOff, (ts.z || 0) + tr.zOff);
-          tr.e.object3D.rotation.z = (s.rot - (f ? f.baseRotation : 0)) * D2R;
-          tr.e.object3D.scale.set(s.scale, s.scale, 1);
-          applyOpacity(tr.e, s.opacity);
+          applyTimelinePose(rec, tr.e, tr.el, s, tr);
           tr.e._timelineVisible = s.visible !== false;
           tr.e.object3D.visible = tr.e._sequenceVisible !== false && tr.e._timelineVisible;
           if (s.tap !== tr.appliedTap) { // Change Interaction over time
@@ -3650,7 +3658,7 @@ vec4 bpPattern(vec2 uv) {
            audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, blobURL, releaseBlobURL, blobURLs, historyState, restoreHistory, duplicateLayer, exportJSON, exportObject, exportedAssetIds, importPublished, missingAssets, importJSON, exportZIP, importZIP, zipToJSON, fetchPublished, ownBlob, assetHealth, fileHealth, seedDemo, normEl, ANIMS, drawTextCanvas, loadTextFonts, lineDir, visualOrder, ENTER_EXIT: ENTER_EXIT.map(([id, enter, exit, , text]) => ({ id, enter, exit, text: !!text })), enterExitFor, validEnterExit, hasEnterExit, enterExitDur, fxLook, fxTimes, drawEnterExitText, animSpeed, FX: FX.map(([id, name]) => ({ id, name, moving: FX_MOVING.has(id) })), fxFrame,
            WEATHER: WEATHER.map(([id, name, colors, speed, kinds]) => ({ id, name, kinds: kinds.slice() })), isWeather, PATTERNS: PATTERNS.map(([id, name, colors, speed]) => ({ id, name, colors: colors.slice(), speed })), PATTERN_PALETTES: PATTERN_PALETTES.map(([name, colors]) => ({ name, colors: colors.slice() })),
            fingerGrab: () => finger.grab, TOUCH_MODES, PATTERN_TOUCH, validPattern, textFxOf, TEXT_FX: TEXT_FX.map(([id, name, color, amount]) => ({ id, name, color, amount })), validTextFx,
-           PATTERN_SHAPES: PATTERN_SHAPES.map(([id, name]) => ({ id, name })), patternDefaults, patternAspect, patternFrame, validPattern, validFx, validChroma, keyValues, pixelAt, CHROMA_DEFAULT, SCATTER_TYPES, SCATTER_MAX, mediaType, isStill, stillAt, setStill, scatterItem, scatterLimit, scatterPath, scatterCopies, scatterCopyEl, scatterBounds, refreshScatter, makeScatter, makeFan, scaleScatter, breakScatter, validScatter, FONTS: FONTS.map(([id, name]) => ({ id, name })), buildElementEntity, groupOf, fitGroup, makeGroup, breakGroup, leaveGroup, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, videoHasPicture, ensureTimeCubeComponent, bakeTimeCube, validTimeCube, TIMECUBE_DIRS, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, artworkFingerprint, fingerprintDistance, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, turnImageBlob, turnLayers, trackList, makeTrackRunner,
+           PATTERN_SHAPES: PATTERN_SHAPES.map(([id, name]) => ({ id, name })), patternDefaults, patternAspect, patternFrame, validPattern, validFx, validChroma, keyValues, pixelAt, CHROMA_DEFAULT, SCATTER_TYPES, SCATTER_MAX, mediaType, isStill, stillAt, setStill, scatterItem, scatterLimit, scatterPath, scatterCopies, scatterCopyEl, scatterBounds, refreshScatter, makeScatter, makeFan, scaleScatter, breakScatter, validScatter, FONTS: FONTS.map(([id, name]) => ({ id, name })), buildElementEntity, groupOf, fitGroup, makeGroup, breakGroup, leaveGroup, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, videoHasPicture, ensureTimeCubeComponent, bakeTimeCube, validTimeCube, TIMECUBE_DIRS, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, artworkFingerprint, fingerprintDistance, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, applyTimelinePose, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, turnImageBlob, turnLayers, trackList, makeTrackRunner,
            load: id=>settledRead(id), all: ()=>settledRead(), del: delExperience, LIMITS, mediaBytes, pushBack, addBlocker, publishBlocker, restoreBlocker, exportWarning, exportJSONSize,
            onSaveState, installSaveGuard, saveState, soundOnTouch, snapAngle, syncMedia,
            _testHoldSave:p=>{saveHold=p;}, _testFailSave:m=>{failSave=m;}, _testFailPut:o=>{failPut=o?{...o}:null;} };
