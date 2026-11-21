@@ -50,9 +50,14 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
   assert.ok(Math.abs(rx0-90)<0.5,'and lying at the start '+rx0);
   await p.tap('#btn-3d');await p.evaluate(()=>App.freeze(null));
 
+  // a flower opening: the inner (nearest) layer opens first, from small and turned at the middle, out to its full size
+  await pick('נפתחת כמו פרח');s=await at(0);assert.ok(s.every(v=>v.opacity===0&&v.scale<0.2),'closed at the start '+s.map(v=>v.scale));
+  s=await at(1.0);assert.ok(s[3].opacity>0.5&&s[0].opacity===0,'the inner layer opens first '+s.map(v=>v.opacity));
+  s=await at(9);assert.ok(s.every((v,i)=>v.opacity===1&&v.scale===1&&Math.abs(v.rot)<1e-3&&Math.abs(v.z-z0[i])<1e-3),'all open in place at the end '+JSON.stringify(s.map(v=>[v.scale,v.rot])));
+
   // again and again: all the layers share one length, with a rest at the end
   await p.locator('label:has-text("לחזור שוב ושוב") input, [role=switch]:near(:text("לחזור שוב ושוב"))').first().click();await p.waitForTimeout(250);
-  k=await kids();const durs=k.filter(x=>x.tl).map(x=>x.tl.dur);assert.ok(durs.length===3&&durs.every(d=>d===durs[0]&&d>0)&&k.filter(x=>x.tl).every(x=>x.tl.loop),'one shared loop '+durs);
+  k=await kids();const durs=k.filter(x=>x.tl).map(x=>x.tl.dur);assert.ok(durs.length===4&&durs.every(d=>d===durs[0]&&d>0)&&k.filter(x=>x.tl).every(x=>x.tl.loop),'one shared loop '+durs);
 
   // the depth slider rewrites the paths for the new depths
   await pick('נפתחת לעומק');

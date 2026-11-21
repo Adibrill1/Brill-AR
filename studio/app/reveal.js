@@ -12,6 +12,7 @@ window.Reveal = (() => {
     { id: "drop", name: "נוחתות מלמעלה" },
     { id: "slide", name: "נכנסות מהצדדים" },
     { id: "popup", name: "ספר פופ־אפ" },
+    { id: "bloom", name: "נפתחת כמו פרח" },
     { id: "breathe", name: "נושמות" }
   ];
   const HINTS = {
@@ -21,6 +22,7 @@ window.Reveal = (() => {
     drop: "כל שכבה נוחתת למקום שלה מלמעלה, מהרחוקה לקרובה.",
     slide: "השכבות נכנסות לסירוגין מימין ומשמאל.",
     popup: "כמו בספר פופ־אפ: הרקע נשאר במקום, ושאר השכבות מתרוממות על ציר, אחת אחרי השנייה, עד שהן עומדות בעומק שלהן.",
+    bloom: "כמו פרח שנפתח: השכבה הפנימית (הקרובה) נפתחת ראשונה מהמרכז, ואחריה כל שכבה החוצה לצדדים, בסיבוב קל, עד הרקע.",
     breathe: "השכבות מתקרבות ומתרחקות לאט, כל הזמן."
   };
   const r4 = (v) => Math.round(v * 10000) / 10000, r2 = (v) => Math.round(v * 100) / 100;
@@ -48,6 +50,13 @@ window.Reveal = (() => {
       else if (style === "slide") {
         const d = 0.3 + i * 0.4, a = i ? { x: r4(x + (i % 2 ? 0.75 : -0.75)), opacity: 0 } : { opacity: 0 };
         k(0, a); k(d, a); k(d + 1, i ? { x: r4(x), opacity: 1 } : { opacity: 1 });
+      }
+      else if (style === "bloom") {
+        // a flower opening: the inner (nearest) layer opens first from the middle, then each layer further out, each one
+        // growing from the centre to the sides with a slight turn (left and right in turn), like petals unfolding
+        const j = n - 1 - i, d = 0.3 + j * 0.4, r = c.rot || 0, tw = j % 2 ? -35 : 35;
+        const a = { z: r4(zmax), scale: 0.15, rot: r + tw, opacity: 0 };
+        k(0, a); k(d, a); k(d + 0.75, { z: r4(z + (zmax - z) * 0.15), scale: 1.06, rot: r - tw * 0.1, opacity: 1 }); k(d + 1.2, { z: r4(z), scale: 1, rot: r, opacity: 1 });
       }
       else if (style === "breathe") { k(0, { z: r4(z) }); k(1.8, { z: r4(zmin + (z - zmin) * 0.35) }); k(3.6, { z: r4(z) }); ease = "easeInOut"; loop = true; }
       else if (style === "popup") {
