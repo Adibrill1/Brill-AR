@@ -302,6 +302,39 @@ window.Portal = (() => {
     }
     throw fail("הפורטל השתנה בזמן הפרסום כמה פעמים ברצף. אפשר לנסות שוב בעוד רגע.", 409);
   }
+  // ---------- other branches (the layer requests to Claude: app/desk.js) ----------
+  // One file of a branch as it is right now (through the API, not the 5-minute raw cache); null when it is not there.
+  async function readRaw(token, branch, path) {
+    let r;
+    try { r = await fetch(api() + "/contents/" + path.split("/").map(encodeURIComponent).join("/") + "?ref=" + encodeURIComponent(branch), { cache: "no-store", headers: { Authorization: "Bearer " + token, Accept: "application/vnd.github.raw", "X-GitHub-Api-Version": "2022-11-28" } }); }
+    catch (e) { throw fail("אין חיבור לרשת כרגע.", 0); }
+    if (r.status === 404) return null;
+    if (!r.ok) throw fail("GitHub לא קיבל את הבקשה (" + r.status + ").", r.status);
+    return r.blob();
+  }
+  // Adds files to a branch in one commit (the branch is made when it is not there yet); no force, read again if it moved.
+  async function putFiles(token, branch, files, message) {
+    const sent = new Map();
+    for (let attempt = 0; attempt < 4; attempt++) {
+      let head = null, tree = null;
+      try { const ref = await gh(token, "GET", "/git/ref/heads/" + branch); head = ref.object.sha; tree = (await gh(token, "GET", "/git/commits/" + head)).tree.sha; }
+      catch (e) { if (e.status !== 404) throw e; }
+      const entries = [];
+      for (const f of files) {
+        if (!sent.has(f.path)) sent.set(f.path, (await gh(token, "POST", "/git/blobs", await blobBody(f.blob))).sha);
+        entries.push({ path: f.path, mode: "100644", type: "blob", sha: sent.get(f.path) });
+      }
+      const t = await gh(token, "POST", "/git/trees", tree ? { base_tree: tree, tree: entries } : { tree: entries });
+      const c = await gh(token, "POST", "/git/commits", { message, tree: t.sha, parents: head ? [head] : [] });
+      try {
+        if (head) await gh(token, "PATCH", "/git/refs/heads/" + branch, { sha: c.sha, force: false });
+        else await gh(token, "POST", "/git/refs", { ref: "refs/heads/" + branch, sha: c.sha });
+        return c.sha;
+      } catch (e) { if (e.status !== 422 && e.status !== 409) throw e; }
+    }
+    throw fail("GitHub השתנה בזמן השליחה כמה פעמים ברצף. אפשר לנסות שוב בעוד רגע.", 409);
+  }
+
   // Files no remaining entry needs (after an entry is removed or replaced)
   function orphans(oldItems, keepItems) {
     const keep = new Set(); for (const it of keepItems) { keep.add(it.scene); it.files.forEach((f) => keep.add(f)); if (it.thumb) keep.add(it.thumb); }
@@ -485,5 +518,5 @@ window.Portal = (() => {
   function remembered() { try { const o = JSON.parse(localStorage.getItem(SEEN_KEY) || "null"); return o && Array.isArray(o.items) ? o : null; } catch (e) { return null; } }
 
   return { CFG, LIM, ID, KEY, viewURL, parseLink, openSealed, privateLinks, keepPrivateLink, forgetPrivateLink, publishSealed, unpublishSealed, seal, unseal, readCatalogue, cleanCatalogue, loadCreation, getFile, trigger, phash, sameTrigger, sameArtwork, getToken, setToken, looksLikeToken, checkToken,
-    myCatalogue, publish, unpublish, setRoom, rooms, cleanRoom, warm, pruneBox, inBox, blocker, weight, room, gitSha, remember, remembered, emptyCatalogue, raw, api };
+    myCatalogue, publish, unpublish, setRoom, rooms, cleanRoom, warm, pruneBox, inBox, blocker, weight, room, gitSha, remember, remembered, emptyCatalogue, raw, api, readRaw, putFiles };
 })();

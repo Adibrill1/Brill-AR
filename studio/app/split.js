@@ -100,12 +100,32 @@ window.SplitSheet = (() => {
       paint();
     });
 
+    // the exact way: Claude splits it by her words and the layers come back into this creation by themselves
+    const words = h("textarea.field", { rows: 2, dir: "auto", id: "split-claude-words", "aria-label": "אילו שכבות", placeholder: "למשל: רקע, אלמוגים אחוריים, לוויתן גדול, לוויתן קטן, אלמוגים קדמיים, טקסט" });
+    const claudeMsg = h("p.split-status", { id: "split-claude-msg", role: "status" });
+    const waiting = () => { const n = Desk.pending(App.rec.id).length; claudeMsg.textContent = n ? (n === 1 ? "בקשה אחת" : n + " בקשות") + " אצל Claude. השכבות יתווספו ליצירה הזו לבד כשהן מוכנות, גם אם הסטודיו נסגר בינתיים." : ""; };
+    const sendBtn = UI.button("לשלוח ל־Claude", async () => {
+      const text = words.value.trim();
+      if (!text) return toast("כותבים אילו שכבות רוצים", { kind: "warn" });
+      if (!Portal.getToken()) return toast("קודם מחברים את GitHub בהגדרות הפרסום (״לראות ולשתף״), כמו לפרסום יצירה", { kind: "warn", ms: 7000 });
+      sendBtn.disabled = true; const end = UI.busy("שולחת ל־Claude…");
+      try {
+        await Desk.send({ blob, words: text, creationId: App.rec.id, name: App.rec.name, isArt, aspect: img.naturalWidth / img.naturalHeight });
+        words.value = ""; waiting();
+        toast("נשלח ל־Claude. כדאי לכתוב לו בצ׳אט שיש בקשה חדשה. השכבות יתווספו ליצירה הזו לבד.", { ms: 8000 });
+      } catch (e) { console.warn(e); toast(e.message === "big" ? "התמונה גדולה מ־20MB" : "השליחה לא הצליחה. אפשר לנסות שוב.", { kind: "error" }); }
+      finally { end(); sendBtn.disabled = false; }
+    }, { kind: "primary", icon: "share" });
+    sendBtn.id = "split-claude-send";
+    waiting();
+
     const make = UI.button("יצירת השכבות", () => create(), { kind: "primary", icon: "check" });
     make.disabled = true;
     const d = UI.dialog({
       title: "פירוק לשכבות", sheet: true, wide: true, onClose: () => { st.closed = true; },
       body: [h("div.split-view", view), status,
         UI.group("שכבות לפי עומק", count, depthS, showT),
+        UI.group("פירוק מדויק עם Claude", h("p.note", "Claude מפרק את התמונה בכלים מתקדמים, וממלא את הרקע מאחורי מה שהוא מוציא. כותבים אילו שכבות רוצים, מהרחוקה לקרובה."), UI.field("אילו שכבות", words), sendBtn, claudeMsg),
         UI.group("אלמנט משלו", h("p.note", "אלמנט שנגזר עומד לפני השכבה שלו, ואפשר להזיז ולהנפיש אותו לבד."), cutBtn, cutTools, cutList),
         h("p.note", icon("cube", 18), h("span", "הפירוק נעשה במכשיר עצמו. בפעם הראשונה מורידים את כלי הפירוק (בערך 30MB), ואחר כך זה מהיר יותר."))],
       foot: [make]
