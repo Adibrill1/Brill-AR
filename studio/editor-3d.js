@@ -24,7 +24,7 @@ window.Editor3D = (() => {
   // canvas cannot (3D models, particles, time cubes, tilted layers). The canvas keeps every touch and draws the rest.
   let mode = "3d", ortho = null, getView2d = null, getArt = null, getCropId = null, rigRot3d = null, frontBtn = null;
   // a layer tilted on the other axes (rotX/rotY) is one too: the flat canvas can only turn it in its own plane
-  function overlayType(el) { return !!el && (el.type === "model" || el.type === "particles" || el.type === "timecube" || (el.type !== "sound" && el.type !== "group" && !!(el.rotX || el.rotY))
+  function overlayType(el) { return !!el && (el.type === "model" || el.type === "particles" || el.type === "timecube" || el.type === "codefx" || (el.type !== "sound" && el.type !== "group" && !!(el.rotX || el.rotY))
     || (el.type === "scatter" && !!el.scatter && (Studio.mediaType(el) === "model" || !!(el.scatter.item.rotX || el.scatter.item.rotY)))); } // a scatter of models or tilted copies too
 
   // The flat view: this layer sits above the canvas, so whatever it draws covers every canvas layer. To keep the order
@@ -111,7 +111,7 @@ window.Editor3D = (() => {
   let mountedAt = 0, remounts = 0, healthN = 0;
   // The pause button: the parts that move by themselves (model clips, particles, effects, time cubes) get one held
   // moment and no time passing; everything else (gizmo, orbit, layers following the parked playhead) runs as usual.
-  const MOVES = new Set(["model-clips", "particles", "studio-fx", "time-cube", "studio-pattern", "studio-weather"]);
+  const MOVES = new Set(["model-clips", "particles", "studio-fx", "time-cube", "studio-pattern", "studio-weather", "studio-codefx"]);
   let held = false, heldAt = null;
   function hold(on) {
     held = !!on; if (!held) heldAt = null;

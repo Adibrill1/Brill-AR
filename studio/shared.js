@@ -597,11 +597,11 @@ const Studio = (() => {
   // so crop, opacity, fades and chroma keying keep working) and in the 2D editor (fxFrame draws through the same code
   // with plain WebGL). baScale turns texture coordinates into square units where the visible height is 1, so dots,
   // letters and ribs stay round and even whatever the layer's shape or crop. Our own versions of the classic looks.
-  const FX = [["halftone", "נקודות דפוס"], ["letters", "אותיות"], ["vhs", "VHS"], ["kaleido", "קליידוסקופ"], ["papercut", "נייר גזור"], ["glass", "זכוכית מחורצת"]];
-  const FX_IDS = FX.map((f) => f[0]), FX_MOVING = new Set(["vhs", "kaleido", "glass"]);
+  const FX = [["halftone", "נקודות דפוס"], ["letters", "אותיות"], ["vhs", "VHS"], ["kaleido", "קליידוסקופ"], ["papercut", "נייר גזור"], ["glass", "זכוכית מחורצת"], ["holo", "הולוגרמה"]];
+  const FX_IDS = FX.map((f) => f[0]), FX_MOVING = new Set(["vhs", "kaleido", "glass", "holo"]);
   const FX_GLSL = `
 #if defined(USE_MAP) || defined(BA_FX_SHADER)
-uniform float baMode; uniform float baAmount; uniform float baTime; uniform vec2 baScale; uniform vec2 baTexel; uniform sampler2D baGlyphs;
+uniform float baMode; uniform float baAmount; uniform float baTime; uniform vec2 baScale; uniform vec2 baTexel; uniform sampler2D baGlyphs; uniform vec2 baView;
 uniform float baKey; uniform vec3 baKeyColor; uniform float baKeyThresh; uniform float baKeySoft; uniform float baKeyEdge; uniform float baLinear;
 float baLum(vec3 c) { return dot(c, vec3(0.299, 0.587, 0.114)); }
 float baHash(vec2 p) { return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453); }
@@ -685,6 +685,17 @@ vec4 baFilter(vec2 uv) {
     vec3 col = min(c.rgb * (l + 0.5 / n) / max(baLum(c.rgb), 0.04), 1.0) * (0.94 + 0.06 * baHash(floor(p * 400.0)));
     return vec4(col * (above > l + 0.001 ? 0.72 : 1.0), src.a);
   }
+  if (baMode > 6.5) { // holographic foil: a rainbow that slides as the viewing angle changes (baView), a bright sweep and glints
+    vec2 v = baView;
+    float band = dot(p, vec2(0.8, 0.6)) * (1.5 + a * 4.0) + v.x * 1.8 + v.y * 1.2 + baTime * 0.03;
+    vec3 rainbow = 0.5 + 0.5 * cos(6.28318 * (band + vec3(0.0, 0.33, 0.67)));
+    float sw = fract(dot(p, vec2(0.6, -0.8)) * 0.7 + v.x * 0.8 - v.y * 0.5);
+    float sheen = pow(max(0.0, 1.0 - abs(sw - 0.5) * 5.0), 3.0);
+    float hh = baHash(floor(p * 160.0));
+    float glint = step(0.986, hh) * pow(max(0.0, sin(baTime * 2.0 + hh * 60.0 + (v.x + v.y) * 12.0)), 6.0);
+    vec3 col = mix(src.rgb, src.rgb * 0.55 + rainbow * 0.75, 0.3 + a * 0.55) + sheen * 0.4 + glint;
+    return vec4(min(col, 1.0), src.a);
+  }
   // fluted glass: each rib flips and magnifies what is behind it, softly, with a sheen at its edges
   float w = 1.0 / floor(mix(8.0, 40.0, a) + 0.5), k = p.x / w, local = fract(k) - 0.5;
   vec2 u = baUv(vec2((floor(k) + 0.5 - local * 0.8) * w, p.y + sin(p.y * 6.0 + baTime * 0.4) * 0.004));
@@ -693,10 +704,11 @@ vec4 baFilter(vec2 uv) {
 }
 #endif
 `;
-  function fxMode(el) { const i = FX_IDS.indexOf(el.fx); return ["image", "video"].includes(el.type) && i >= 0 ? i + 1 : 0; }
+  const fxTyped = (el) => ["image", "video"].includes(el.type) || (el.type === "text" && el.fx === "holo"); // a text takes only the foil
+  function fxMode(el) { const i = FX_IDS.indexOf(el.fx); return fxTyped(el) && i >= 0 ? i + 1 : 0; }
   function fxAmount(el) { return Number.isFinite(el.fxAmount) ? Math.max(0, Math.min(1, el.fxAmount)) : 0.5; }
   function fxScale(el, w, h) { const c = el.crop || { w: 1, h: 1 }; return [(w / h) / c.w, 1 / c.h]; }
-  function validFx(el) { return (el.fx == null || ["image", "video"].includes(el.type) && FX_IDS.includes(el.fx)) && (el.fxAmount == null || Number.isFinite(el.fxAmount) && el.fxAmount >= 0 && el.fxAmount <= 1); }
+  function validFx(el) { return (el.fx == null || fxTyped(el) && FX_IDS.includes(el.fx)) && (el.fxAmount == null || Number.isFinite(el.fxAmount) && el.fxAmount >= 0 && el.fxAmount <= 1); }
   // ---------- colour removal ("הסרת צבע") ----------
   // el.chroma = {enabled, color, threshold, soft} on a picture (also an animated GIF) or a video: texels within threshold
   // of the colour vanish, soft (0 = the hard cut every older creation had) feathers the edge, and edge (0-1, 0.5 when
@@ -758,7 +770,7 @@ vec4 baFilter(vec2 uv) {
       Object.assign(shader.uniforms, uniforms);
       const fs = shader.fragmentShader.replace(/void main\(\)\s*\{/, FX_GLSL + "\nvoid main() {");
       shader.fragmentShader = mat.isShaderMaterial ? fs.replace("texture2D(map, vUv)", "baFilter(vUv)")
-        : fs.replace("#include <map_fragment>", THREE.ShaderChunk.map_fragment.replace(/texture2D\(\s*map,\s*(vMapUv|vUv)\s*\)/, "baFilter( $1 )") + "\nif (baKey > 0.5 && diffuseColor.a < 0.002) discard;");
+        : fs.replace("#include <map_fragment>", THREE.ShaderChunk.map_fragment.replace(/texture2D\(\s*map,\s*(vMapUv|vUv)\s*\)/, "baFilter( $1 )") + "\n#if defined(USE_MAP)\nif (baKey > 0.5 && diffuseColor.a < 0.002) discard;\n#endif"); // a material patched before its picture arrived has no map yet
     };
     mat.customProgramCacheKey = () => "studio-fx";
     mat.needsUpdate = true;
@@ -770,7 +782,7 @@ vec4 baFilter(vec2 uv) {
       init() {
         if (!fxGlyphTexture) { fxGlyphTexture = new THREE.CanvasTexture(fxGlyphs()); fxGlyphTexture.generateMipmaps = false; fxGlyphTexture.minFilter = THREE.LinearFilter; }
         this.uniforms = { baMode: { value: 0 }, baAmount: { value: 0.5 }, baTime: { value: 0 }, baScale: { value: new THREE.Vector2(1, 1) }, baTexel: { value: new THREE.Vector2(1 / 512, 1 / 512) }, baGlyphs: { value: fxGlyphTexture },
-          baKey: { value: 0 }, baKeyColor: { value: new THREE.Vector3(0, 1, 0) }, baKeyThresh: { value: 0.35 }, baKeySoft: { value: 0 }, baKeyEdge: { value: 0.5 }, baLinear: { value: 0 } };
+          baKey: { value: 0 }, baKeyColor: { value: new THREE.Vector3(0, 1, 0) }, baKeyThresh: { value: 0.35 }, baKeySoft: { value: 0 }, baKeyEdge: { value: 0.5 }, baLinear: { value: 0 }, baView: { value: new THREE.Vector2() } };
       },
       update() {
         const u = this.uniforms, d = this.data; u.baMode.value = d.mode; u.baAmount.value = d.amount; u.baScale.value.set(d.sx, d.sy);
@@ -778,6 +790,10 @@ vec4 baFilter(vec2 uv) {
       },
       tick(time) { // the material can arrive late or be rebuilt (texture load, chroma mount), so it is checked every frame
         this.uniforms.baTime.value = time / 1000;
+        // where the viewer looks from, seen from the layer (the foil's rainbow follows it); the flat view sways on its own
+        const cam = this.el.sceneEl && this.el.sceneEl.camera, view = this.uniforms.baView.value;
+        if (cam && !cam.isOrthographicCamera) { const at = (this.viewTmp || (this.viewTmp = new THREE.Vector3())).setFromMatrixPosition(cam.matrixWorld); this.el.object3D.worldToLocal(at); at.normalize(); view.set(at.x, at.y); }
+        else view.set(Math.sin(time / 1000 * 0.6) * 0.6, Math.cos(time / 1000 * 0.45) * 0.4);
         this.el.object3D.traverse((n) => {
           if (!n.isMesh) return;
           patchFxMaterial(n.material, this.uniforms);
@@ -815,7 +831,7 @@ vec4 baFilter(vec2 uv) {
         texture(1, fxGlyphs()); texture(0, null);
         const u = (n) => gl.getUniformLocation(prog, n);
         gl.uniform1i(u("map"), 0); gl.uniform1i(u("baGlyphs"), 1);
-        fxGL = { c, gl, u: { crop: u("crop"), mode: u("baMode"), amount: u("baAmount"), time: u("baTime"), scale: u("baScale"), texel: u("baTexel"), key: u("baKey"), kc: u("baKeyColor"), thresh: u("baKeyThresh"), soft: u("baKeySoft"), edge: u("baKeyEdge"), lin: u("baLinear") } };
+        fxGL = { c, gl, u: { view: u("baView"), crop: u("crop"), mode: u("baMode"), amount: u("baAmount"), time: u("baTime"), scale: u("baScale"), texel: u("baTexel"), key: u("baKey"), kc: u("baKeyColor"), thresh: u("baKeyThresh"), soft: u("baKeySoft"), edge: u("baKeyEdge"), lin: u("baLinear") } };
       } catch (e) { console.warn("filter preview unavailable", e); }
     }
     if (!fxGL) return null;
@@ -828,7 +844,7 @@ vec4 baFilter(vec2 uv) {
     gl.activeTexture(gl.TEXTURE0); gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
     try { gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, media); } catch (e) { return null; }
     const s = fxScale(el, wpx, hpx);
-    gl.uniform4f(u.crop, cr.x, 1 - cr.y - cr.h, cr.w, cr.h); gl.uniform1f(u.mode, mode); gl.uniform1f(u.amount, fxAmount(el)); gl.uniform1f(u.time, timeSec || 0);
+    gl.uniform4f(u.crop, cr.x, 1 - cr.y - cr.h, cr.w, cr.h); gl.uniform1f(u.mode, mode); gl.uniform1f(u.amount, fxAmount(el)); gl.uniform1f(u.time, timeSec || 0); gl.uniform2f(u.view, Math.sin((timeSec || 0) * 0.6) * 0.6, Math.cos((timeSec || 0) * 0.45) * 0.4);
     gl.uniform2f(u.scale, s[0], s[1]); gl.uniform2f(u.texel, 1 / iw, 1 / ih);
     gl.uniform1f(u.key, key ? key.mode : 0); gl.uniform3fv(u.kc, key ? key.rgb : [0, 1, 0]); gl.uniform1f(u.thresh, key ? key.thresh : 0.35); gl.uniform1f(u.soft, key ? key.soft : 0); gl.uniform1f(u.edge, key ? key.edge : 0); gl.uniform1f(u.lin, 0);
     gl.clearColor(0, 0, 0, 0); gl.clear(gl.COLOR_BUFFER_BIT); gl.drawArrays(gl.TRIANGLE_STRIP, 0, 4);
@@ -860,6 +876,36 @@ vec4 baFilter(vec2 uv) {
     ["fire", "אש", ["#ff8a2a", "#ff8a2a", "#ff8a2a"], 0.5, ["להבת נר", "מדורה", "קיר אש", "גחלים לוחשות"]]
   ];
   const PATTERN_IDS = PATTERNS.concat(WEATHER).map((p) => p[0]);
+  // Live code animations, drawn by codefx.js: [id, Hebrew name, colours, kinds]. What each colour paints:
+  // dissolve: the cover behind the picture, two glow colours; dust: three golds; portal: the world, the glow, the light;
+  // swarm: two body colours and a highlight; ivy: leaves, petals, flower middles.
+  const CODEFX = [
+    ["dissolve", "תמונה שמתפרקת", ["#14121a", "#ffd27a", "#ff7ab6"], ["רוח", "פיצוץ", "מערבולת"]],
+    ["dust", "ברכה מאבק זהב", ["#fff3c4", "#f5c542", "#c98a1e"], ["אבק מסתחרר", "גשם נוצץ"]],
+    ["portal", "פורטל", ["#120458", "#ff00a0", "#00f0ff"], ["מנהרת אור", "חלל עמוק", "חדר משבצות"]],
+    ["swarm", "להקה", ["#ff8a3d", "#ffd166", "#ffffff"], ["דגים", "ציפורים", "פרפרים"]],
+    ["ivy", "קיסוס פורח", ["#3f8f4a", "#ff8fb1", "#ffd166"], ["מסביב למסגרת", "בפינות", "מלמטה למעלה"]]
+  ];
+  const CODEFX_IDS = CODEFX.map((c) => c[0]), CODEFX_SHAPES = ["rect", "circle", "arch"];
+  function codeFxDefaults(look) {
+    const d = CODEFX.find((c) => c[0] === look) || CODEFX[1];
+    const o = { look: d[0], colors: d[2].slice(), speed: 0.5, amount: 0.5, size: 0.5, kind: 0, seed: 0, touch: true };
+    if (d[0] === "dust") o.text = "מזל טוב";
+    if (d[0] === "dissolve") { o.cover = true; o.picture = "__artwork"; }
+    if (d[0] === "portal") o.shape = "rect";
+    return o;
+  }
+  function validCodeFx(el) {
+    const c = el.codefx; if (c == null) return el.type !== "codefx";
+    if (el.type !== "codefx" || typeof c !== "object" || Array.isArray(c) || !CODEFX_IDS.includes(c.look)) return false;
+    if (!Array.isArray(c.colors) || c.colors.length !== 3 || !c.colors.every((x) => typeof x === "string" && /^#[0-9a-f]{6}$/i.test(x))) return false;
+    if (!["speed", "amount", "size"].every((k) => c[k] == null || Number.isFinite(c[k]) && c[k] >= 0 && c[k] <= 1)) return false;
+    if (c.kind != null && !(Number.isInteger(c.kind) && c.kind >= 0 && c.kind <= 3) || c.seed != null && !(Number.isInteger(c.seed) && c.seed >= 0 && c.seed <= 999)) return false;
+    if (c.text != null && (typeof c.text !== "string" || c.text.length > 60) || c.font != null && !(typeof c.font === "string" && /^[a-z0-9-]{1,32}$/.test(c.font))) return false;
+    if (c.picture != null && !(typeof c.picture === "string" && /^[a-zA-Z0-9_-]{1,128}$/.test(c.picture))) return false;
+    if (c.shape != null && !CODEFX_SHAPES.includes(c.shape)) return false;
+    return ["touch", "cover"].every((k) => c[k] == null || typeof c[k] === "boolean");
+  }
   const isWeather = (el) => !!(el && el.type === "pattern" && el.pattern && WEATHER.some((w) => w[0] === el.pattern.look));
   // Ready colour sets for any look: [Hebrew name, colours]
   const PATTERN_PALETTES = [
@@ -1654,6 +1700,7 @@ vec4 bpPattern(vec2 uv) {
       if (el.bold == null) el.bold = true;
     }
     if (el.type === "pattern" && !el.pattern) el.pattern = patternDefaults();
+    if (el.type === "codefx" && !el.codefx) el.codefx = codeFxDefaults();
     return el;
   }
   const ANIMS = ["none", "spin", "float", "pulse"];
@@ -2497,6 +2544,11 @@ vec4 bpPattern(vec2 uv) {
       };
       paint();
       loadTextFonts(el).then((fresh) => { if (fresh) paint(); }); // the first look may use the device font until the layer's fonts arrive
+    } else if (el.type === "codefx") {
+      // drawn by codefx.js (without it the layer stays empty)
+      e = document.createElement("a-entity");
+      const c = el.codefx || codeFxDefaults(), blob = c.look === "dissolve" && rec.assets && rec.assets[c.picture || "__artwork"];
+      e.setAttribute("studio-codefx", { cfg: JSON.stringify(c), width: ts.w, height: ts.h, src: blob ? blobURL(blob) : "" });
     } else if (isWeather(el)) {
       ensureWeatherComponent();
       e = document.createElement("a-entity");
@@ -2517,7 +2569,7 @@ vec4 bpPattern(vec2 uv) {
       return null; // sound: no visual node
     }
     const key = keyValues(el);
-    if ((fxMode(el) || key) && e.tagName !== "A-PLANE") { // a filter or colour removal on the layer's own material (not on the grey stand-in for a video that cannot play)
+    if ((fxMode(el) || key) && (e.tagName !== "A-PLANE" || el.type === "text")) { // a filter or colour removal on the layer's own material (not on the grey stand-in for a video that cannot play)
       ensureFxComponent();
       const s = fxScale(el, ts.w, ts.h);
       e.setAttribute("studio-fx", { mode: fxMode(el), amount: fxAmount(el), sx: s[0], sy: s[1], key: key ? key.mode : 0, kc: key ? el.chroma.color : "#00ff00", thresh: key ? key.thresh : 0.35, soft: key ? key.soft : 0, edge: key ? key.edge : 0.5 });
@@ -3076,7 +3128,7 @@ vec4 bpPattern(vec2 uv) {
   const MB=1024*1024,mb=n=>Math.round(n/MB)+'MB';
   const LIMITS={maxLayers:60,maxEntryBytes:50*MB,maxMediaBytes:100*MB,maxPublishBytes:40*MB,maxAssets:121};
   // Same set exportJSON/exportZIP write: assets referenced by a layer/particle sprite, plus the artwork.
-  function exportedAssetIds(rec){const ids=new Set();for(const el of rec.elements||[])for(const id of [el.assetId,el.particles&&el.particles.spriteAssetId])if(id&&rec.assets&&rec.assets[id])ids.add(id);if(rec.assets&&rec.assets.__artwork)ids.add('__artwork');return [...ids];}
+  function exportedAssetIds(rec){const ids=new Set();for(const el of rec.elements||[])for(const id of [el.assetId,el.particles&&el.particles.spriteAssetId,el.codefx&&el.codefx.picture])if(id&&rec.assets&&rec.assets[id])ids.add(id);if(rec.assets&&rec.assets.__artwork)ids.add('__artwork');return [...ids];}
   function mediaBytes(rec){let n=0;for(const id of exportedAssetIds(rec))n+=rec.assets[id].size||0;return n;}
   // Why this record's backup could not be restored by this version (null = restorable).
   function restoreBlocker(rec){
@@ -3185,7 +3237,7 @@ vec4 bpPattern(vec2 uv) {
   function missingAssets(rec) {
     const out = [];
     for (const el of (rec && rec.elements) || []) {
-      for (const id of [el.assetId, el.particles && el.particles.spriteAssetId]) {
+      for (const id of [el.assetId, el.particles && el.particles.spriteAssetId, el.codefx && el.codefx.picture]) {
         if (id && !(rec.assets && rec.assets[id] && typeof rec.assets[id].slice === "function")) out.push({ id, name: el.name || el.type || id });
       }
     }
@@ -3196,7 +3248,7 @@ vec4 bpPattern(vec2 uv) {
   async function exportJSON(rec) {
     const out = exportObject(rec);
     for (const el of rec.elements) {
-      for (const id of [el.assetId, el.particles && el.particles.spriteAssetId]) {
+      for (const id of [el.assetId, el.particles && el.particles.spriteAssetId, el.codefx && el.codefx.picture]) {
         if (id && rec.assets[id]) out.assets[id] = await blobToDataURL(rec.assets[id]);
       }
     }
@@ -3216,7 +3268,7 @@ vec4 bpPattern(vec2 uv) {
     const slim = { format: "ar-studio/1", id: rec.id, name: rec.name, createdAt: rec.createdAt, target: rec.target, elements: (rec.elements || []).map((e) => ({ ...e })), sequences: (rec.sequences || []).map((q) => ({ ...q })), tracks: (rec.tracks || []).map((t) => ({ ...t })), actionSequences: JSON.parse(JSON.stringify(rec.actionSequences || [])) };
     slim.assets = {};
     const wanted = new Set();
-    for (const el of rec.elements) for (const id of [el.assetId, el.particles && el.particles.spriteAssetId]) if (id && rec.assets[id]) wanted.add(id);
+    for (const el of rec.elements) for (const id of [el.assetId, el.particles && el.particles.spriteAssetId, el.codefx && el.codefx.picture]) if (id && rec.assets[id]) wanted.add(id);
     if (rec.assets.__artwork) wanted.add("__artwork");
     if (rec.assets.__artworkOrig) wanted.add("__artworkOrig"); // the picture as uploaded, while the artwork is turned (layers.js rotateArtwork)
     if (rec.assets.__cover && typeof rec.assets.__cover.arrayBuffer === "function") wanted.add("__cover"); // the gallery picture rides the backup (not the published JSON)
@@ -3303,7 +3355,7 @@ vec4 bpPattern(vec2 uv) {
     if (!Array.isArray(o.elements) || o.elements.length > LIM.layers) throw new Error("bad elements (maximum" + LIM.layers + ")");
     const ids = new Set();
     for (const el of o.elements) {
-      if (!el || !["video","image","sound","text","model","particles","group","timecube","pattern","scatter"].includes(el.type)) throw new Error("bad element type");
+      if (!el || !["video","image","sound","text","model","particles","group","timecube","pattern","scatter","codefx"].includes(el.type)) throw new Error("bad element type");
       if (typeof el.id !== "string" || !/^[a-zA-Z0-9_-]{1,128}$/.test(el.id) || ids.has(el.id)) throw new Error("bad or duplicate element id");
       ids.add(el.id);
       for (const key of ["x","y","z","w","h","rot","rotX","rotY","opacity","aspect","volume","stillAt"]) if (el[key] != null && (typeof el[key] !== "number" || !Number.isFinite(el[key]))) throw new Error("bad numeric field");
@@ -3322,6 +3374,7 @@ vec4 bpPattern(vec2 uv) {
       if(!validChroma(el))throw new Error('bad colour removal');
       if(!validScatter(el))throw new Error('bad scatter');
       if(!validPattern(el))throw new Error('bad pattern');
+      if(!validCodeFx(el))throw new Error('bad code animation');
       if(!validEnterExit(el))throw new Error('bad entrance or exit');
       if (el.timeline != null) {
         const tl = el.timeline;
@@ -3658,7 +3711,8 @@ vec4 bpPattern(vec2 uv) {
   return { TARGET_W, TARGET_H, newId, inspectVideo, validateModelBlob, prepareModelBlob, modelCompressionKinds, DECODER_DRACO_PATH, DECODER_MESHOPT_PATH, modelClipNames, modelClipInfo, loadImage, loadImageBlob, loadFailed, blobToDataURL, dataURLtoBlob, makeTarget, targetDataJSON, steadyTarget,
            audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, blobURL, releaseBlobURL, blobURLs, historyState, restoreHistory, duplicateLayer, exportJSON, exportObject, exportedAssetIds, importPublished, missingAssets, importJSON, exportZIP, importZIP, zipToJSON, fetchPublished, ownBlob, assetHealth, fileHealth, seedDemo, normEl, ANIMS, drawTextCanvas, loadTextFonts, lineDir, visualOrder, ENTER_EXIT: ENTER_EXIT.map(([id, enter, exit, , text]) => ({ id, enter, exit, text: !!text })), enterExitFor, validEnterExit, hasEnterExit, enterExitDur, fxLook, fxTimes, drawEnterExitText, animSpeed, FX: FX.map(([id, name]) => ({ id, name, moving: FX_MOVING.has(id) })), fxFrame,
            WEATHER: WEATHER.map(([id, name, colors, speed, kinds]) => ({ id, name, kinds: kinds.slice() })), isWeather, PATTERNS: PATTERNS.map(([id, name, colors, speed]) => ({ id, name, colors: colors.slice(), speed })), PATTERN_PALETTES: PATTERN_PALETTES.map(([name, colors]) => ({ name, colors: colors.slice() })),
-           fingerGrab: () => finger.grab, TOUCH_MODES, PATTERN_TOUCH, validPattern, textFxOf, TEXT_FX: TEXT_FX.map(([id, name, color, amount]) => ({ id, name, color, amount })), validTextFx,
+           fingerGrab: () => finger.grab, fingerTools: { watch: watchFinger, state: finger, onPlane: fingerOnPlane },
+           CODEFX: CODEFX.map(([id, name, colors, kinds]) => ({ id, name, colors, kinds })), CODEFX_SHAPES, codeFxDefaults, validCodeFx, TOUCH_MODES, PATTERN_TOUCH, validPattern, textFxOf, TEXT_FX: TEXT_FX.map(([id, name, color, amount]) => ({ id, name, color, amount })), validTextFx,
            PATTERN_SHAPES: PATTERN_SHAPES.map(([id, name]) => ({ id, name })), patternDefaults, patternAspect, patternFrame, validPattern, validFx, validChroma, keyValues, pixelAt, CHROMA_DEFAULT, SCATTER_TYPES, SCATTER_MAX, mediaType, isStill, stillAt, setStill, scatterItem, scatterLimit, scatterPath, scatterCopies, scatterCopyEl, scatterBounds, refreshScatter, makeScatter, makeFan, scaleScatter, breakScatter, validScatter, FONTS: FONTS.map(([id, name]) => ({ id, name })), buildElementEntity, groupOf, fitGroup, makeGroup, breakGroup, leaveGroup, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, videoHasPicture, ensureTimeCubeComponent, bakeTimeCube, validTimeCube, TIMECUBE_DIRS, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, artworkFingerprint, fingerprintDistance, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, applyTimelinePose, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, turnImageBlob, turnLayers, trackList, makeTrackRunner,
            load: id=>settledRead(id), all: ()=>settledRead(), del: delExperience, LIMITS, mediaBytes, pushBack, addBlocker, publishBlocker, restoreBlocker, exportWarning, exportJSONSize,
            onSaveState, installSaveGuard, saveState, soundOnTouch, snapAngle, syncMedia,

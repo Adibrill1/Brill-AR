@@ -10,7 +10,8 @@ window.Layers = (() => {
     model: { name: "מודל 3D", icon: "cube", tint: "#b497ff" }, particles: { name: "חלקיקים", icon: "sparkle", tint: "#ff9ecb" },
     pattern: { name: "רקע מונפש", icon: "pattern", tint: "#7fe0e0" }, split: { name: "פירוק לשכבות", icon: "layers", tint: "#9ad0ff" }, timecube: { name: "קוביית זמן", icon: "hourglass", tint: "#c4d86a" },
     group: { name: "קבוצה", icon: "layers", tint: "#9a97a6" }, scatter: { name: "פיזור על נתיב", icon: "path", tint: "#f2a65a" },
-    fan: { name: "מניפה", icon: "fan", tint: "#f2a65a" }, weather: { name: "מזג אוויר", icon: "sun", tint: "#ffc061" }
+    fan: { name: "מניפה", icon: "fan", tint: "#f2a65a" }, weather: { name: "מזג אוויר", icon: "sun", tint: "#ffc061" },
+    codefx: { name: "אנימציית קוד", icon: "sparkle", tint: "#c58bff" }
   };
   // A scatter laid out as a fan shows as a fan.
   // A sun or smoke drawn by the pattern shader shows as weather.
@@ -292,6 +293,46 @@ window.Layers = (() => {
       })));
     const d = UI.dialog({ title: "איזה מזג אוויר?", sheet: true, body: [h("div.part-grid", tiles), h("p.note", icon("sun", 18), h("span", "בשמש, בעשן ובאש אפשר לבחור סוג, גודל, עוצמה וגוון. בשאר אפשר לשנות גודל, שקיפות וכמות."))] });
   }
+  // "אנימציות קוד": five live animations drawn in code (codefx.js), and the holographic foil for a picture or a text.
+  async function addCodeFx(look) {
+    if (App.blocked({ layers: 1 })) return;
+    const fx = Studio.codeFxDefaults(look), d = Studio.CODEFX.find((c) => c.id === look), A = artRatio(), rec = App.rec;
+    const el = { id: Studio.newId(), type: "codefx", name: d.name, codefx: fx, x: 0, y: 0, w: 1, rot: 0, z: 0, flush: true, seq: null };
+    let replace = null;
+    if (look === "dissolve") {
+      // the selected picture falls apart in its own place (it is replaced; the artwork itself is the default)
+      const s = App.sel();
+      if (s && s.type === "image" && s.assetId && rec.assets[s.assetId] && !Studio.groupOf(rec, s.id) && !App.keyed(s)) {
+        replace = s; fx.picture = s.assetId; fx.cover = false;
+        Object.assign(el, { name: "פירוק " + (s.name || "תמונה"), x: s.x, y: s.y, w: s.w, rot: s.rot || 0, z: s.z || 0, aspect: s.crop ? (s.aspect || 1) * s.crop.h / s.crop.w : s.aspect || 1 });
+      } else el.aspect = A;
+    } else if (look === "dust") Object.assign(el, { aspect: window.StudioCodeFx ? StudioCodeFx.wordsAspect(fx.text, "heebo") : 2.6, w: 0.8, y: 0.05 });
+    else if (look === "portal") Object.assign(el, { aspect: A, w: 0.7 });
+    else el.aspect = A; // a school or vines: around the whole artwork
+    el.h = (el.w / el.aspect) * A;
+    await App.addLayer(el, replace ? { after: replace.id } : undefined);
+    if (replace) { await App.removeLayer(replace.id); App.select(el.id); toast("התמונה הפכה לאנימציה שמתפרקת. אפשר לבטל בחץ אחורה."); }
+    App.setTab("style");
+  }
+  function addFoil() {
+    const s = App.sel();
+    if (!s || !["image", "text"].includes(s.type)) return toast("בוחרים קודם תמונה, מדבקה או טקסט, ואז מוסיפים לה ברק הולוגרפי.", { kind: "warn" });
+    s.fx = "holo"; if (s.fxAmount == null) s.fxAmount = 0.5;
+    App.changed(true); App.setTab("style");
+    toast("נוסף ברק הולוגרפי. במצלמה הקשת זזה כשמזיזים את הטלפון.");
+  }
+  function openCodeFx() {
+    let busy = false;
+    const tile = (id, name, css, run) => h("button.part-tile", { type: "button", data: { codefx: id }, onclick: async () => {
+      if (busy) return; busy = true;
+      try { d.close(); await run(); } catch (e) { if (e.say == null) console.warn(e); toast(e.say || "לא נוסף. אפשר לנסות שוב.", { kind: "error" }); } finally { busy = false; }
+    } }, h("span.part-pic", h("span.bg-swatch", { style: { background: css } })), h("span.part-name", name));
+    const grad = (c) => "radial-gradient(circle at 35% 35%," + c[2] + "," + c[1] + " 45%," + c[0] + ")";
+    const tiles = Studio.CODEFX.map((c) => tile(c.id, c.name, grad(c.colors), () => addCodeFx(c.id)))
+      .concat(tile("holo", "ברק הולוגרפי", "linear-gradient(120deg,#ff9ad5,#9ad0ff,#b8ffcf,#fff3a8,#ff9ad5)", async () => addFoil()));
+    const d = UI.dialog({ title: "איזו אנימציה?", sheet: true, body: [h("div.part-grid", tiles),
+      h("p.note", icon("sparkle", 18), h("span", "אנימציות שנכתבו בקוד ורצות חי. אפשר לשנות צבעים, מהירות וכמות. ״תמונה שמתפרקת״ מפרקת את התמונה שבחרת, ובלי בחירה את תמונת היצירה. ״ברק הולוגרפי״ מתווסף לתמונה או לטקסט שבחרת."))] });
+  }
   // "תמונה": a picture from the device, or one of the ready stickers.
   function openImages() {
     const stickers = (window.StarterLibrary && window.StarterLibrary.stickers) || [];
@@ -366,7 +407,7 @@ window.Layers = (() => {
   // ---------- the "add" sheet ----------
   const ADD = [
     ["image", "תמונה", "מהמכשיר, או מדבקה מוכנה"], ["video", "סרטון", "MP4 או MOV"], ["text", "טקסט", "כותרת או ברכה"],
-    ["pattern", "רקעים", "צבע אחיד, תנועה או טבע"], ["weather", "מזג אוויר", "שמש, עשן, גשם, ערפל ועוד"], ["particles", "חלקיקים", "גשם, שלג, לבבות ועוד"],
+    ["pattern", "רקעים", "צבע אחיד, תנועה או טבע"], ["weather", "מזג אוויר", "שמש, עשן, גשם, ערפל ועוד"], ["particles", "חלקיקים", "גשם, שלג, לבבות ועוד"], ["codefx", "אנימציות קוד", "פורטל, להקה, קיסוס ועוד"],
     ["model", "תלת־ממד", "מודלים מוכנים, או ייבוא משלך"], ["sound", "צליל", "MP3, M4A, WAV"],
     ["split", "פירוק לשכבות", "תמונה שמתפרקת לשכבות בעומק"]
   ];
@@ -379,6 +420,7 @@ window.Layers = (() => {
       if (kind === "pattern") return openBackgrounds();
       if (kind === "particles") return openParticles();
       if (kind === "weather") return openWeather();
+      if (kind === "codefx") return openCodeFx();
       if (kind === "image") return openImages();
       if (kind === "model") return open3d();
       if (kind === "split") return SplitSheet.open();

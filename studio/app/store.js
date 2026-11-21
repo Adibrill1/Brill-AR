@@ -240,7 +240,7 @@ window.App = (() => {
     await save();
     return e;
   }
-  const assetUsed = (id) => S.rec.elements.some((e) => e.assetId === id || (e.particles && e.particles.spriteAssetId === id));
+  const assetUsed = (id) => S.rec.elements.some((e) => e.assetId === id || (e.particles && e.particles.spriteAssetId === id) || (e.codefx && e.codefx.picture === id));
   function sweepAssets() { Object.keys(S.rec.assets).forEach((id) => { if (id !== "__artwork" && id !== "__artworkOrig" && id !== "__cover" && !assetUsed(id)) delete S.rec.assets[id]; }); }
   async function removeLayer(id) {
     const e = el(id); if (!e) return;

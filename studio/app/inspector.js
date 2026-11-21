@@ -70,6 +70,7 @@ window.Inspector = (() => {
         def && def.amount ? S(Object.assign({ label: "עוצמה", min: 0, max: 1, step: 0.05, get: () => { const f = App.sel().textFx; return f && Number.isFinite(f.amount) ? f.amount : 0.5; }, set: F((x, v) => { x.textFx.amount = v; }) }, pct)) : null,
         def && def.id === "neon" ? note("לניאון הכי יפה: אותיות בהירות (לבן) וצבע זוהר חזק.") : null));
     }
+    out.push(foilGroup());
     out.push(UI.group("שקיפות", opacity()));
     return out;
   }
@@ -89,7 +90,7 @@ window.Inspector = (() => {
   }
   function styleMedia(e) {
     const out = [];
-    if (e.fx) out.push(h("div.btn-row", Object.assign(UI.button("הסרת האפקט מהשכבה", () => { upd((x) => { delete x.fx; delete x.fxAmount; })(null, true); build(); }, { kind: "ghost", small: true, icon: "close" }), { id: "btn-fx-off" })));
+    if (e.fx && e.fx !== "holo") out.push(h("div.btn-row", Object.assign(UI.button("הסרת האפקט מהשכבה", () => { upd((x) => { delete x.fx; delete x.fxAmount; })(null, true); build(); }, { kind: "ghost", small: true, icon: "close" }), { id: "btn-fx-off" })));
 
     const A = artRatio(), shapes = [{ id: "free", name: "חופשי" }, { id: "art", name: "כמו היצירה" }, { id: "1", name: "ריבוע" }, { id: "1.7778", name: "16:9" }, { id: "0.5625", name: "9:16" }];
     const cropKids = [];
@@ -109,6 +110,7 @@ window.Inspector = (() => {
     if (e.type === "video" && e.chroma) out.unshift(viewGroup(() => App.sel().depth3d === true, upd((x, v) => { if (v === "3d") x.depth3d = true; else delete x.depth3d; }),
       "בתלת־ממד הסרטון ממלא גם את המרחב שלפני היצירה, בכמה שכבות שיוצאות אל הצופה. רואים את זה במבט תלת־ממד ובמצלמה."));
     out.push(chromaGroup(e));
+    if (e.type === "image") out.push(foilGroup());
     if (e.type === "video") out.push(UI.group("קול", sound()));
     out.push(UI.group("שקיפות", opacity()));
     return out;
@@ -207,6 +209,57 @@ window.Inspector = (() => {
     T({ label: "חוזר שוב ושוב", get: () => App.sel().loop !== false, set: upd((x, v) => { x.loop = v; }) })
   ];
 
+  // the holographic foil on a picture, a sticker or a text: a rainbow that moves with the viewing angle
+  function foilGroup() {
+    const on = () => App.sel().fx === "holo";
+    return UI.group("ברק הולוגרפי",
+      T({ label: "ברק הולוגרפי", hint: "קשת צבעים שזזה כשמזיזים את הטלפון", get: on,
+        set: (v, f) => { upd((x, val) => { if (val) { x.fx = "holo"; if (x.fxAmount == null) x.fxAmount = 0.5; } else { delete x.fx; delete x.fxAmount; } })(v, f); build(); } }),
+      on() ? S(Object.assign({ label: "עוצמה", min: 0, max: 1, step: 0.01, get: () => (Number.isFinite(App.sel().fxAmount) ? App.sel().fxAmount : 0.5), set: upd((x, v) => { x.fxAmount = v; }) }, pct)) : null);
+  }
+  // ---------- live code animations ----------
+  const CODEFX_TEXT = {
+    colors: { dissolve: ["הרקע שמאחור", "ניצוץ", "ניצוץ שני"], dust: ["זהב בהיר", "זהב", "זהב כהה"], portal: ["העולם", "הזוהר", "האור"], swarm: ["צבע", "צבע שני", "ברק"], ivy: ["עלים", "פרחים", "לב הפרח"] },
+    amount: { dissolve: "צפיפות החלקיקים", dust: "כמות האבק", portal: "עומק", swarm: "כמה", ivy: "כמות עלים ופרחים" },
+    size: { dissolve: "גודל החלקיקים", dust: "גודל הנצנוצים", swarm: "גודל", ivy: "גודל העלים" }
+  };
+  function styleCodeFx() {
+    const cur = () => App.sel().codefx, look = cur().look, d = Studio.CODEFX.find((c) => c.id === look);
+    const X = (fn, then) => upd((x, v) => { x.codefx = Object.assign({}, x.codefx); fn(x.codefx, v, x); }, then);
+    const swatch = (colors) => h("span.swatch", colors.map((c) => h("i", { style: { background: c } })));
+    const sets = [{ name: "המקורי", colors: d.colors }].concat(look === "dissolve" ? [] : Studio.PATTERN_PALETTES);
+    const pals = C({ label: "ערכות צבע", wrap: true, options: sets.map((p, i) => ({ id: String(i), swatch: swatch(p.colors), title: p.name })),
+      get: () => String(sets.findIndex((p) => p.colors.join() === cur().colors.join())), set: X((c, v) => { c.colors = sets[+v].colors.slice(); }, sync) });
+    pals.node.classList.add("swatches");
+    const col = (i) => K({ label: CODEFX_TEXT.colors[look][i], get: () => cur().colors[i], set: X((c, v) => { c.colors = c.colors.slice(); c.colors[i] = v; }) });
+    const fitWords = (c, x) => { if (!window.StudioCodeFx) return; x.aspect = StudioCodeFx.wordsAspect(c.text, c.font || "heebo"); x.h = (x.w / x.aspect) * artRatio(); };
+    // a school's colours follow its kind while they are still that kind's own (orange fish, dark birds, bright butterflies)
+    const KIND_COLORS = { swarm: [d.colors, ["#2b2d42", "#5c6378", "#d9dde8"], ["#ff9ecb", "#ffd166", "#9ad0ff"]] };
+    const kindSet = X((c, v) => { const k = KIND_COLORS[look]; if (k && k[c.kind || 0] && k[c.kind || 0].join() === c.colors.join()) c.colors = k[+v].slice(); c.kind = +v; }, sync);
+    const out = [UI.group("סוג", C({ label: "", bare: true, wrap: true, options: d.kinds.map((name, i) => ({ id: String(i), name })), get: () => String(cur().kind || 0), set: kindSet }))];
+    if (look === "dust") {
+      const ta = h("textarea.field", { rows: 2, dir: "auto", maxlength: 60, "aria-label": "הברכה", id: "in-dust-text", placeholder: "מה כתוב באבק?" });
+      ta.value = cur().text || "";
+      ta.onchange = () => { const x = App.sel(); if (!x || x.type !== "codefx") return; x.codefx = Object.assign({}, x.codefx, { text: ta.value.slice(0, 60) || " " }); fitWords(x.codefx, x); App.changed(true); };
+      ctls.push({ sync: () => { const x = App.sel(); if (x && x.codefx && document.activeElement !== ta && ta.value !== (x.codefx.text || "")) ta.value = x.codefx.text || ""; } });
+      const fonts = C({ label: "גופן", wrap: true, options: Studio.FONTS.map((f) => ({ id: f.id, name: f.name })), get: () => cur().font || "heebo", set: X((c, v, x) => { c.font = v; fitWords(c, x); }) });
+      fonts.node.querySelectorAll(".chip").forEach((b) => { b.style.fontFamily = '"BA ' + b.dataset.id + '", Heebo, sans-serif'; b.classList.add("font-chip"); });
+      out.push(UI.group("הברכה", UI.field("מה כתוב", ta), fonts, note("עד שלוש שורות. השינוי נראה כשיוצאים מהתיבה.")));
+    }
+    out.push(UI.group("צבעים", pals, h("div.color-trio", col(0).node, col(1).node, col(2).node)));
+    out.push(UI.group("התאמה",
+      S(Object.assign({ label: "מהירות", min: 0, max: 1, step: 0.01, get: () => (Number.isFinite(cur().speed) ? cur().speed : 0.5), set: X((c, v) => { c.speed = v; }) }, pct)),
+      S(Object.assign({ label: CODEFX_TEXT.amount[look], min: 0, max: 1, step: 0.01, get: () => (Number.isFinite(cur().amount) ? cur().amount : 0.5), set: X((c, v) => { c.amount = v; }) }, pct)),
+      CODEFX_TEXT.size[look] ? S(Object.assign({ label: CODEFX_TEXT.size[look], min: 0, max: 1, step: 0.01, get: () => (Number.isFinite(cur().size) ? cur().size : 0.5), set: X((c, v) => { c.size = v; }) }, pct)) : null,
+      look === "portal" ? L({ label: "צורת החלון", options: [{ id: "rect", name: "מלבן" }, { id: "circle", name: "עיגול" }, { id: "arch", name: "קשת" }], get: () => cur().shape || "rect",
+        set: X((c, v, x) => { c.shape = v; x.aspect = v === "circle" ? 1 : v === "arch" ? 0.75 : artRatio(); x.h = (x.w / x.aspect) * artRatio(); }) }) : null,
+      look !== "portal" ? S({ label: "וריאציה", min: 0, max: 999, step: 1, get: () => cur().seed || 0, set: X((c, v) => { c.seed = Math.round(v); }) }) : null,
+      look === "dissolve" ? T({ label: "רקע מאחור", hint: "מסתיר את התמונה המודפסת כשהחלקיקים עפים", get: () => cur().cover !== false, set: X((c, v) => { c.cover = v; }) }) : null,
+      ["dissolve", "dust", "swarm"].includes(look) ? T({ label: "מגיב למגע", hint: look === "swarm" ? "נגיעה מבריחה אותם" : "נגיעה מפזרת את החלקיקים", get: () => cur().touch !== false, set: X((c, v) => { c.touch = v; }) }) : null,
+      opacity()));
+    out.push(h("section.group", note(look === "portal" ? "העומק נראה הכי טוב במצלמה: כשזזים מול היצירה, רואים את העולם שמאחורי החלון מזוויות אחרות." : look === "swarm" ? "בתלת־ממד ובמצלמה הם שוחים גם במרחב שלפני היצירה." : "האנימציה רצה כאן, בתצוגה המקדימה ובמצלמה.", "cube")));
+    return out;
+  }
   // a small still of each pattern look, drawn once
   const lookPics = {};
   function lookPic(id) {
@@ -379,6 +432,7 @@ window.Inspector = (() => {
     if (e.type === "text") return styleText(e);
     if (e.type === "image" || e.type === "video") return styleMedia(e);
     if (e.type === "pattern") return stylePattern(e);
+    if (e.type === "codefx") return styleCodeFx(e);
     if (e.type === "particles") return styleParticles(e);
     if (e.type === "model") return styleModel(e);
     if (e.type === "timecube") return styleCube(e);

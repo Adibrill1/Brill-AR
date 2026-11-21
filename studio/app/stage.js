@@ -134,7 +134,7 @@ window.Stage = (() => {
   const mediaSize = (m) => m ? { w: m.videoWidth || m.naturalWidth || m.width || 0, h: m.videoHeight || m.naturalHeight || m.height || 0 } : { w: 0, h: 0 };
   const mediaReady = (m) => !!m && (m.tagName === "VIDEO" ? m.readyState >= 2 : m.tagName === "IMG" ? m.complete && m.naturalWidth > 0 : true);
 
-  const STAND_INS = { model: ["תלת־ממד", "#6d4bd8"], particles: ["חלקיקים", "#c8961e"], timecube: ["קוביית זמן", "#1f7f9c"], video: ["סרטון", "#3a3846"], image: ["תמונה", "#3a3846"] };
+  const STAND_INS = { model: ["תלת־ממד", "#6d4bd8"], particles: ["חלקיקים", "#c8961e"], codefx: ["אנימציה", "#7a4bd8"], timecube: ["קוביית זמן", "#1f7f9c"], video: ["סרטון", "#3a3846"], image: ["תמונה", "#3a3846"] };
   function standIn(el, w, hh) {
     const [label, col] = STAND_INS[el.type] || ["", "#3a3846"], r = Math.min(14, Math.min(w, hh) / 5);
     ctx.beginPath(); ctx.roundRect(-w / 2, -hh / 2, w, hh, r);
@@ -158,7 +158,8 @@ window.Stage = (() => {
       if (fx) ctx.drawImage(fx, -w / 2, -hh / 2, w, hh);
       else { const c = el.crop || { x: 0, y: 0, w: 1, h: 1 }, s = mediaSize(m); ctx.drawImage(m, c.x * s.w, c.y * s.h, c.w * s.w, c.h * s.h, -w / 2, -hh / 2, w, hh); }
     } else if (el.type === "text") {
-      ctx.drawImage(textNow(el, look), -w / 2, -hh / 2, w, hh);
+      const pic = textNow(el, look), foil = el.fx === "holo" ? Studio.fxFrame(pic, el, w, hh, performance.now() / 1000) : null; // the holographic foil
+      ctx.drawImage(foil || pic, -w / 2, -hh / 2, w, hh);
     } else if (el.type === "pattern") {
       const pic = patternDrawable(el, w, hh);
       if (pic) ctx.drawImage(pic, -w / 2, -hh / 2, w, hh); else { ctx.fillStyle = el.pattern.colors[0]; ctx.fillRect(-w / 2, -hh / 2, w, hh); }
