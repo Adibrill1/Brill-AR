@@ -33,7 +33,7 @@ window.SplitSheet = (() => {
     // the picture with its layers coloured over it
     const view = h("canvas.split-canvas", { "aria-label": "התמונה והשכבות שלה" });
     const shown = Splitter.canvasOf(img, 720); view.width = shown.width; view.height = shown.height;
-    const status = h("p.split-status", { role: "status" }, "מכינה את הפירוק…");
+    const status = h("p.split-status", { role: "status" }, "בוחרים: לשלוח ל־Claude לפירוק מדויק, או לפרק כאן במכשיר לפי עומק.");
     function paint() {
       const g = view.getContext("2d"), W = view.width, H = view.height;
       g.clearRect(0, 0, W, H); g.drawImage(shown, 0, 0);
@@ -112,34 +112,46 @@ window.SplitSheet = (() => {
       try {
         await Desk.send({ blob, words: text, creationId: App.rec.id, name: App.rec.name, isArt, aspect: img.naturalWidth / img.naturalHeight });
         words.value = ""; waiting();
-        toast("נשלח ל־Claude. כדאי לכתוב לו בצ׳אט שיש בקשה חדשה. השכבות יתווספו ליצירה הזו לבד.", { ms: 8000 });
+        toast("נשלח ל־Claude. בעוד כמה דקות השכבות יתווספו ליצירה הזו לבד.", { ms: 8000 });
       } catch (e) { console.warn(e); toast(e.message === "big" ? "התמונה גדולה מ־20MB" : "השליחה לא הצליחה. אפשר לנסות שוב.", { kind: "error" }); }
       finally { end(); sendBtn.disabled = false; }
     }, { kind: "primary", icon: "share" });
     sendBtn.id = "split-claude-send";
     waiting();
 
+    // the on-device way is heavy (a depth model in the page): it starts only when asked, so a phone that only sends to
+    // Claude never loads it (on an iPhone it could take the page down)
+    const depthTools = h("div.split-depth-tools", { hidden: true }, count.node, depthS.node, showT.node);
+    const startBtn = UI.button("לפרק כאן במכשיר", () => runDepth(), { icon: "cube" });
+    startBtn.id = "split-depth-start";
+    const cutGroup = UI.group("אלמנט משלו", h("p.note", "אלמנט שנגזר עומד לפני השכבה שלו, ואפשר להזיז ולהנפיש אותו לבד."), cutBtn, cutTools, cutList);
+    cutGroup.hidden = true;
     const make = UI.button("יצירת השכבות", () => create(), { kind: "primary", icon: "check" });
     make.disabled = true;
     const d = UI.dialog({
       title: "פירוק לשכבות", sheet: true, wide: true, onClose: () => { st.closed = true; },
       body: [h("div.split-view", view), status,
-        UI.group("שכבות לפי עומק", count, depthS, showT),
         UI.group("פירוק מדויק עם Claude", h("p.note", "Claude מפרק את התמונה בכלים מתקדמים, וממלא את הרקע מאחורי מה שהוא מוציא. כותבים אילו שכבות רוצים, מהרחוקה לקרובה."), UI.field("אילו שכבות", words), sendBtn, claudeMsg),
-        UI.group("אלמנט משלו", h("p.note", "אלמנט שנגזר עומד לפני השכבה שלו, ואפשר להזיז ולהנפיש אותו לבד."), cutBtn, cutTools, cutList),
-        h("p.note", icon("cube", 18), h("span", "הפירוק נעשה במכשיר עצמו. בפעם הראשונה מורידים את כלי הפירוק (בערך 30MB), ואחר כך זה מהיר יותר."))],
+        UI.group("שכבות לפי עומק, כאן במכשיר", startBtn, depthTools),
+        cutGroup,
+        h("p.note", icon("cube", 18), h("span", "הפירוק כאן במכשיר מוריד בפעם הראשונה כלי של בערך 30MB, ובטלפון הוא כבד. בטלפון עדיף לשלוח ל־Claude."))],
       foot: [make]
     });
     syncCuts(); paint();
     const ready = () => "מוכן: " + st.n + " שכבות לפי עומק" + (st.cuts.length ? " ועוד " + st.cuts.length + " גזירות" : "") + ". רואים את העומק במבט תלת־ממד ובמצלמה.";
 
-    try {
-      st.depth = await Splitter.depth(img, (p) => { status.textContent = "מורידה את כלי הפירוק… " + Math.round(p * 100) + "%"; if (p >= 1) status.textContent = "מנתחת את העומק בתמונה…"; });
-    } catch (e) {
-      console.warn(e); status.textContent = "כלי הפירוק לא נטען. כדאי לבדוק את החיבור לאינטרנט ולנסות שוב."; return;
+    async function runDepth() {
+      if (st.depth || st.depthBusy) return;
+      st.depthBusy = true; startBtn.disabled = true; status.textContent = "מכינה את הפירוק…";
+      try {
+        st.depth = await Splitter.depth(img, (p) => { status.textContent = "מורידה את כלי הפירוק… " + Math.round(p * 100) + "%"; if (p >= 1) status.textContent = "מנתחת את העומק בתמונה…"; });
+      } catch (e) {
+        console.warn(e); st.depthBusy = false; startBtn.disabled = false; status.textContent = "כלי הפירוק לא נטען. כדאי לבדוק את החיבור לאינטרנט ולנסות שוב."; return;
+      }
+      st.depthBusy = false; if (st.closed) return;
+      startBtn.hidden = true; depthTools.hidden = false; cutGroup.hidden = false;
+      status.textContent = ready(); make.disabled = false; paint();
     }
-    if (st.closed) return;
-    status.textContent = ready(); make.disabled = false; paint();
 
     async function create() {
       if (App.blocked({ layers: st.n + st.cuts.length + 1 })) return;

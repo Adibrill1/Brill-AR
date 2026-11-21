@@ -18,6 +18,8 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
   if(await p.locator('.tab[data-tab="layers"]').isVisible())await p.locator('.tab[data-tab="layers"]').click();
   await p.locator('#btn-add').click();await p.locator('dialog[open] .add-tile[data-add="split"]').click();
   await p.locator('dialog[open] .add-tile[data-split="art"]').click();
+  await p.waitForTimeout(400);assert.equal(await p.evaluate(()=>!!document.querySelector('.split-status')&&/מוכן/.test(document.querySelector('.split-status').textContent)),false,'nothing heavy starts by itself');
+  await p.locator('#split-depth-start').click();
   await p.waitForFunction(()=>/מוכן/.test(document.querySelector('.split-status')?.textContent||''));
   assert.ok(!(await p.locator('dialog[open] button:has-text("יצירת השכבות")').isDisabled()),'ready to build');
   // two depths in this picture: two layers
