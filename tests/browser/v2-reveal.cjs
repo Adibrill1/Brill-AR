@@ -50,6 +50,31 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
   assert.ok(Math.abs(rx0-90)<0.5,'and lying at the start '+rx0);
   await p.tap('#btn-3d');await p.evaluate(()=>App.freeze(null));
 
+  // the six newer ones: each ends (or starts over) with every layer at its own place, flat, facing the viewer
+  const home=(v,i)=>Math.abs(v.z-z0[i])<1e-3&&Math.abs(v.x)<1e-3&&Math.abs(v.y)<1e-3&&Math.abs(v.rot)<1e-3&&Math.abs(v.rotX)<1e-3&&Math.abs(v.rotY)<1e-3&&v.opacity===1&&Math.abs(v.scale-1)<1e-3;
+  for(const [name,looping] of [['התקרבות קולנועית',true],['הרכבה מחלקים',false],['ריחוף',true],['גל',true],['מנהרה',false],['דפדוף',false]]){
+    await pick(name);k=await kids();assert.ok(k.some(x=>x.tl&&x.tl.reveal),name+': paths written');
+    assert.ok(k.filter(x=>x.tl).every(x=>!!x.tl.loop===looping),name+': loops '+looping);
+    s=await at(looping?0:12);assert.ok(s.every(home),name+': at home '+JSON.stringify(s));
+  }
+  // cinematic approach: the near layer comes closest, the background hardly moves
+  await pick('התקרבות קולנועית');s=await at(4);assert.ok(s[3].z-z0[3]>(s[0].z-z0[0])*3,'near moves most '+s.map(v=>v.z));
+  // assembling: scattered and turned at first
+  await pick('הרכבה מחלקים');s=await at(0);assert.ok(s.slice(1).every((v,i)=>v.opacity===0&&(Math.abs(v.x)>0.2||Math.abs(v.y)>0.2)&&Math.abs(v.rotY)>10),'scattered '+JSON.stringify(s));
+  // floating: the background stays, the others move up and down
+  await pick('ריחוף');k=await kids();assert.equal(k[0].tl,null,'background still');s=await at(1.6);assert.ok(s.slice(1).every(v=>v.y>0.005),'floating up');
+  // wave: the far layer moves forward before the near one
+  await pick('גל');s=await at(0.45);assert.ok(s[0].z>z0[0]+1e-3&&Math.abs(s[3].z-z0[3])<1e-3,'the wave starts far '+s.map(v=>v.z));
+  // tunnel: from far in front (behind the viewer); the background first, and the order of the layers never flips on the way
+  await pick('מנהרה');s=await at(0);assert.ok(s.every((v,i)=>v.z>z0[3]+0.1&&v.opacity===0),'far in front at first');
+  for(const t of [0.5,0.9,1.3,1.7,2.1,2.5]){s=await at(t);assert.ok(s.every((v,i)=>i===0||v.z>=s[i-1].z-1e-4),'order kept at '+t+' '+s.map(v=>v.z));}
+  s=await at(1.2);assert.ok(s[3].z-z0[3]>s[0].z-z0[0],'background leads');
+  // pages: each turns over on its left edge; unseen while its back faces the viewer
+  await pick('דפדוף');k=await kids();assert.equal(k[0].tl,null,'background stays');
+  s=await at(0);assert.ok(s.slice(1).every(v=>Math.abs(v.rotY+180)<0.01&&v.opacity===0),'turned over at first');
+  s=await at(0.85);const pg=await p.evaluate(({id,t})=>{const e=App.rec.elements.find(x=>x.id===id),v=Studio.sampleTimeline(e,t),th=-v.rotY*Math.PI/180;return v.x-0.5*Math.cos(th);},{id:ids.kids[1],t:0.85});
+  assert.ok(Math.abs(pg+0.5)<0.01,'turns on its left edge '+pg);
+
   // again and again: all the layers share one length, with a rest at the end
   await p.locator('label:has-text("לחזור שוב ושוב") input, [role=switch]:near(:text("לחזור שוב ושוב"))').first().click();await p.waitForTimeout(250);
   k=await kids();const durs=k.filter(x=>x.tl).map(x=>x.tl.dur);assert.ok(durs.length===3&&durs.every(d=>d===durs[0]&&d>0)&&k.filter(x=>x.tl).every(x=>x.tl.loop),'one shared loop '+durs);
