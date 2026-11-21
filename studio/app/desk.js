@@ -77,7 +77,13 @@ window.Desk = (() => {
   // what happened on the last look, per request: {state: "ready" (Claude is done, the layers are coming in) | "error", say}
   const status = new Map(), shown = new Set();
   const tell = () => { try { window.dispatchEvent(new Event("brill-desk")); } catch (e) {} };
-  const say = (e) => (e && e.message && /[\u0590-\u05ff]/.test(e.message) ? e.message : "משהו השתבש בהורדה.");
+  // her words when the error has them; otherwise the technical reason in brackets, so a screenshot tells what went wrong
+  const say = (e) => {
+    if (e && e.message && /[\u0590-\u05ff]/.test(e.message)) return e.message;
+    const why = e ? String((e.name || "") + (e.message ? ": " + e.message : "")).slice(0, 120) : "";
+    if (e && e.name === "OperationError") return "התשובה לא נפתחת עם המפתח של הבקשה (" + why + ").";
+    return "משהו השתבש בהורדה" + (why ? " (" + why + ")" : "") + ".";
+  };
   // a look that is still running blocks the next one, but only for a while: on a phone a look started just before the
   // screen locked can stay frozen, and it must never stop the looks for good
   let busy = 0;
