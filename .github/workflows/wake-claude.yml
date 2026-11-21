@@ -1,6 +1,7 @@
 # Lives only on the branch "layer-requests". Every new request the site pushes here wakes Claude's routine
 # ("פירוק מדויק עם Claude"), which splits the picture with Canva and sends the layers to claude/layer-answers.
-# Needs one repository secret, ROUTINE_TOKEN (the routine's API token). Without it, nothing happens.
+# Needs two repository secrets: ROUTINE_TOKEN (the routine's API token) and DESK_KEY (the private key that opens
+# requests; handed to the routine in the private wake-up message, never written anywhere). Without them, nothing happens.
 name: wake Claude for a layer request
 on:
   push:
@@ -15,11 +16,13 @@ jobs:
       - name: fire the routine
         env:
           TOKEN: ${{ secrets.ROUTINE_TOKEN }}
+          DESK_KEY: ${{ secrets.DESK_KEY }}
         run: |
-          if [ -z "$TOKEN" ]; then echo "ROUTINE_TOKEN is not set"; exit 0; fi
+          if [ -z "$TOKEN" ] || [ -z "$DESK_KEY" ]; then echo "ROUTINE_TOKEN or DESK_KEY is not set"; exit 0; fi
+          jq -n --arg k "$DESK_KEY" '{text: ("new layer request\n-----KEY-START-----\n" + $k + "\n-----KEY-END-----")}' > body.json
           curl -fsS -X POST https://api.anthropic.com/v1/claude_code/routines/trig_01Pn3ngwT2n1SVweSzwALn1s/fire \
             -H "Authorization: Bearer $TOKEN" \
             -H "anthropic-beta: experimental-cc-routine-2026-04-01" \
             -H "anthropic-version: 2023-06-01" \
             -H "Content-Type: application/json" \
-            -d '{"text": "new layer request"}' -o /dev/null -w "fired: %{http_code}\n"
+            --data-binary @body.json -o /dev/null -w "fired: %{http_code}\n"
