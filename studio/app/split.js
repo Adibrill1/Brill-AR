@@ -38,7 +38,7 @@ window.SplitSheet = (() => {
       const g = view.getContext("2d"), W = view.width, H = view.height;
       g.clearRect(0, 0, W, H); g.drawImage(shown, 0, 0);
       if (!st.depth) return;
-      const id = g.getImageData(0, 0, W, H), dm = st.depth, ts = Splitter.thresholds(dm, st.n);
+      const id = g.getImageData(0, 0, W, H), lab = Splitter.labels(st.depth, st.n);
       const tint = TINTS.map(hex), cuts = st.cuts.map((c) => c.mask), cand = st.masks && st.masks[st.pick];
       for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
         const i = (y * W + x) * 4;
@@ -46,7 +46,7 @@ window.SplitSheet = (() => {
         let c = null, a = 0;
         if (cand && at(cand) > 127) { c = [255, 255, 255]; a = 0.55; }
         else if (cuts.some((m) => at(m) > 127)) { c = hex(CUT_TINT); a = st.show ? 0.35 : 0; }
-        else if (st.show) { const d = at(dm); let b = 0; while (b < ts.length && d >= ts[b]) b++; c = tint[b % tint.length]; a = 0.32; }
+        else if (st.show) { c = tint[at(lab) % tint.length]; a = 0.32; }
         if (c && a) { id.data[i] += (c[0] - id.data[i]) * a; id.data[i + 1] += (c[1] - id.data[i + 1]) * a; id.data[i + 2] += (c[2] - id.data[i + 2]) * a; }
       }
       g.putImageData(id, 0, 0);
@@ -139,7 +139,7 @@ window.SplitSheet = (() => {
           await App.addLayer(el); ids.push(el.id);
         }
         const grp = ids.length > 1 ? await App.groupLayers(ids) : null;
-        if (grp) { grp.name = "פירוק לשכבות"; App.changed(true); }
+        if (grp) { grp.name = "פירוק לשכבות"; grp.split = { spread: st.spread }; App.changed(true); } // the spread stays adjustable on the group
         d.close();
         toast(ids.length + " שכבות בעומק. במבט תלת־ממד רואים איך הן עומדות זו לפני זו.", { ms: 6000 });
         if (!App.mode3d && App.setMode3d) App.setMode3d(true);

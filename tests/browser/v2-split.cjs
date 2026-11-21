@@ -45,6 +45,19 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
   assert.ok(r.cutIn>250&&r.cutOut<5,'the cut holds only the square');
   assert.ok(r.nearR>250&&r.nearL<5&&r.nearHole<5,'the near band holds the right half without the cut');
   assert.ok(r.flush,'over the whole artwork');assert.ok(r.mode3d,'switched to the 3D view');
+  // the group keeps a control for the distance between the layers
+  await p.evaluate(()=>{const g=App.rec.elements.find(e=>e.name==='פירוק לשכבות');App.select(g.id);});
+  await p.evaluate(()=>App.setTab('style'));
+  const sl=p.locator('input.range[aria-label="מרחק בין השכבות"]');await sl.waitFor();
+  const z0=await p.evaluate(()=>App.rec.elements.filter(e=>e.type==='image').map(e=>e.z));
+  await sl.evaluate(n=>{n.value=0.45;n.dispatchEvent(new Event('input',{bubbles:true}));n.dispatchEvent(new Event('change',{bubbles:true}));});
+  const z1=await p.evaluate(()=>App.rec.elements.filter(e=>e.type==='image').map(e=>e.z));
+  assert.equal(z1[0],z0[0],'the back stays');z0.forEach((z,i)=>{if(i)assert.ok(Math.abs(z1[i]-z*3)<0.002,'three times as far '+z+' → '+z1[i]);});
+  assert.equal(await p.evaluate(()=>App.rec.elements.find(e=>e.name==='פירוק לשכבות').split.spread),0.45,'the spread is kept on the group');
+  // one piece of the picture never lands in two layers: a near square on a far ground, its depth falling off at the rim
+  const two=await p.evaluate(()=>{const w=120,h=120,d=new Uint8Array(w*h);for(let y=0;y<h;y++)for(let x=0;x<w;x++){const r=Math.max(Math.abs(x-60),Math.abs(y-60));d[y*w+x]=r<25?200-r*2:r<32?200-(r-25)*20:20+y*0.3;}
+    const L=Splitter.labels({w,h,data:d},4),inside=new Set();for(let y=40;y<80;y++)for(let x=40;x<80;x++)inside.add(L.data[y*w+x]);return [...inside];});
+  assert.equal(two.length,1,'the square is whole in one layer '+two);
   assert.equal(errs.filter(e=>!/favicon|404/.test(e)).length,0,'no page errors: '+errs.join(' | '));
   console.log('split into layers: all checks pass');
  }finally{await b.close();server.close();}

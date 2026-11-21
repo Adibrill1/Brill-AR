@@ -386,8 +386,24 @@ window.Inspector = (() => {
     if (e.type === "sound") return [UI.group("צליל", sound(), note("הצליל מתנגן כשהמצלמה מזהה את היצירה. בטלפון הוא מתחיל אחרי נגיעה ראשונה במסך."))];
     if (e.type === "group") return [UI.group("קבוצה",
       note((e.children || []).length + " שכבות שזזות, גדלות ומסתובבות יחד. נגיעה נוספת על הקנבס בוחרת שכבה אחת בתוכה, וגם ברשימת השכבות אפשר לבחור אחת.", "layers"),
-      h("div.btn-row", UI.button("לפרק קבוצה", () => App.ungroup(App.selId), { kind: "ghost", icon: "ungroup" }))), UI.group("שקיפות", opacity())];
+      h("div.btn-row", UI.button("לפרק קבוצה", () => App.ungroup(App.selId), { kind: "ghost", icon: "ungroup" }))),
+      e.split ? UI.group("פירוק לשכבות", S(Object.assign({ label: "מרחק בין השכבות", min: 0.02, max: 0.6, step: 0.01, get: () => (App.sel().split || {}).spread || 0.15, set: upd((x, v) => splitSpread(x, v)) }, pct)),
+        note("כמה רחוקות השכבות זו מזו בעומק. רואים את זה במבט תלת־ממד ובמצלמה.", "cube")) : null,
+      UI.group("שקיפות", opacity())].filter(Boolean);
     return [h("section.group", note("לשכבה הזו אין הגדרות עיצוב."))];
+  }
+
+  // the layers of a split picture move apart or together in depth, each keeping its share of the depth (a layer she
+  // moved by hand keeps its own place in that share); the farthest one stays where it is
+  function splitSpread(g, v) {
+    const old = (g.split && g.split.spread) || 0.15, k = v / old, kids = Studio.groupChildren(App.rec, g);
+    if (!kids.length || !isFinite(k)) return;
+    const base = Math.min(...kids.map((c) => c.z || 0)), r4 = (z) => Math.round(z * 10000) / 10000;
+    for (const c of kids) {
+      c.z = r4(base + ((c.z || 0) - base) * k);
+      if (c.timeline && c.timeline.keys) c.timeline.keys.forEach((q) => { if (q.z != null) q.z = r4(base + (q.z - base) * k); });
+    }
+    g.split = Object.assign({}, g.split, { spread: v });
   }
 
   // ---------- place ----------

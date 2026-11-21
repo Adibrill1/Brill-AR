@@ -151,66 +151,116 @@
   }
   const coverage = (m) => { let s = 0; for (let i = 0; i < m.length; i++) s += m[i]; return s / m.length; };
 
-  // The layers, farthest first. Layer 0 is the whole picture (so nothing behind a lifted part is ever empty); then the
-  // depth bands from far to near; then each cut element, in front of the band it came from. z: 0..1 of the depth.
   // largest value within r pixels (rows, then columns)
-  function nearGrow(a, w, h, r) {
+  function grow(a, w, h, r) {
     const t = new Float32Array(a.length);
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { let m = 0; for (let k = Math.max(0, x - r); k <= Math.min(w - 1, x + r); k++) m = Math.max(m, a[y * w + k]); t[y * w + x] = m; }
     for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) { let m = 0; for (let k = Math.max(0, y - r); k <= Math.min(h - 1, y + r); k++) m = Math.max(m, t[k * w + x]); a[y * w + x] = m; }
     return a;
   }
 
+  // Which layer each pixel goes to, so that one thing is never torn between two layers. The picture is first cut into
+  // pieces along the places where the depth jumps (the edge of a paper layer, of an animal, of a cloud); each piece then
+  // goes whole to the layer of its typical depth. The jump lines themselves go with the nearer piece beside them. Only a
+  // very large piece that runs a long way in depth (a floor, a sky, a slope) is split along its depth.
+  const labelCache = new WeakMap();
+  function labels(dm0, n) {
+    const memo = labelCache.get(dm0) || {}; if (memo[n]) return memo[n];
+    const w = dm0.w, h = dm0.h, N = w * h;
+    const d = new Float32Array(N); for (let i = 0; i < N; i++) d[i] = dm0.data[i];
+    blur(d, w, h, 2);
+    const ts = thresholds({ w, h, data: Uint8Array.from(d, (v) => Math.round(v)) }, n);
+    const bandOf = (v) => { let b = 0; while (b < ts.length && v >= ts[b]) b++; return b; };
+    const at = (x, y) => d[Math.min(h - 1, Math.max(0, y)) * w + Math.min(w - 1, Math.max(0, x))];
+    const edge = new Uint8Array(N);
+    for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+      const gx = Math.abs(at(x + 2, y) - at(x - 2, y)) / 4, gy = Math.abs(at(x, y + 2) - at(x, y - 2)) / 4;
+      if (Math.max(gx, gy) > 0.9) edge[y * w + x] = 1;
+    }
+    const band = new Int16Array(N).fill(-1), comp = new Int32Array(N).fill(-1), queue = new Int32Array(N);
+    const small = Math.max(40, Math.round(N * 0.0003)), bandW = 256 / n;
+    let id = 0;
+    for (let s0 = 0; s0 < N; s0++) {
+      if (edge[s0] || comp[s0] >= 0) continue;
+      let qh = 0, qt = 0; queue[qt++] = s0; comp[s0] = id;
+      const hist = new Uint32Array(256);
+      while (qh < qt) {
+        const p = queue[qh++], x = p % w, y = (p - x) / w; hist[Math.round(d[p])]++;
+        if (x > 0 && !edge[p - 1] && comp[p - 1] < 0) { comp[p - 1] = id; queue[qt++] = p - 1; }
+        if (x < w - 1 && !edge[p + 1] && comp[p + 1] < 0) { comp[p + 1] = id; queue[qt++] = p + 1; }
+        if (y > 0 && !edge[p - w] && comp[p - w] < 0) { comp[p - w] = id; queue[qt++] = p - w; }
+        if (y < h - 1 && !edge[p + w] && comp[p + w] < 0) { comp[p + w] = id; queue[qt++] = p + w; }
+      }
+      id++;
+      if (qt < small) continue; // a crumb: it goes with what is around it
+      const q = (f) => { let c = 0; for (let v = 0; v < 256; v++) { c += hist[v]; if (c >= qt * f) return v; } return 255; };
+      const wide = qt > N * 0.2 && q(0.9) - q(0.1) > 1.5 * bandW;
+      const b = bandOf(q(0.5));
+      for (let k = 0; k < qt; k++) { const p = queue[k]; band[p] = wide ? bandOf(d[p]) : b; }
+    }
+    // the jump lines and crumbs: the nearer layer beside them takes them
+    for (let pass = 0, left = 1; left && pass < 60; pass++) {
+      left = 0; const prev = Int16Array.from(band);
+      for (let p = 0; p < N; p++) {
+        if (prev[p] >= 0) continue;
+        const x = p % w; let m = -1;
+        if (x > 0) m = Math.max(m, prev[p - 1]); if (x < w - 1) m = Math.max(m, prev[p + 1]);
+        if (p >= w) m = Math.max(m, prev[p - w]); if (p < N - w) m = Math.max(m, prev[p + w]);
+        if (m >= 0) band[p] = m; else left++;
+      }
+    }
+    for (let p = 0; p < N; p++) if (band[p] < 0) band[p] = bandOf(d[p]);
+    const out = { w, h, data: Uint8Array.from(band), ts };
+    memo[n] = out; labelCache.set(dm0, memo);
+    return out;
+  }
+
+  // The layers, farthest first: the back (the farthest layer, with everything in front of it filled in from around it,
+  // so turning never shows a hole), then the depth layers from far to near, then each cut element in front of the
+  // layer it came from. z: 0..1 of the depth.
   function build(src, dm0, n, cuts) {
-    // a smoothed depth: small things (letters, thin lines) take the depth around them instead of breaking between layers
-    const sd = new Float32Array(dm0.data.length); for (let i = 0; i < sd.length; i++) sd[i] = dm0.data[i];
-    blur(sd, dm0.w, dm0.h, 3);
-    // the near side wins along every edge: the soft rim around a near thing (in-between depths) goes with the thing, so
-    // no outline of it is left in the layers behind
-    nearGrow(sd, dm0.w, dm0.h, 4);
-    const dm = { w: dm0.w, h: dm0.h, data: Uint8Array.from(sd, (v) => Math.round(v)) };
-    const full = canvasOf(src, OUT_SIDE), w = dm.w, h = dm.h, ts = thresholds(dm, n), soft = 3;
+    const L = labels(dm0, n), lab = L.data, w = L.w, h = L.h, N = w * h, full = canvasOf(src, OUT_SIDE);
     const cutM = cuts.map((c) => blur(resample(c.mask, w, h), w, h, 1));
-    const cutWide = cuts.map((c) => { const m = blur(resample(c.mask, w, h), w, h, 2); for (let i = 0; i < m.length; i++) m[i] = Math.min(1, m[i] * 2.2); return m; });
-    for (let j = 0; j < cutM.length; j++) for (let k = j + 1; k < cutM.length; k++) for (let i = 0; i < w * h; i++) cutM[j][i] *= 1 - cutM[k][i]; // overlapping cuts: the newer one keeps the shared part
-    const sm = (x) => Math.max(0, Math.min(1, x / soft + 0.5));
-    // the back: the farthest band as it is, and everything in front of it filled from around (so nothing shows twice)
-    const hole = new Float32Array(w * h);
-    for (let i = 0; i < w * h; i++) hole[i] = sm(dm.data[i] - ts[0] - 2 * soft); // stays whole under the soft edge of the band in front of it
-    blur(hole, w, h, 2);
-    const cutHole = new Float32Array(w * h); // a cut element's place is taken out sharply (no outline of it left behind)
-    for (const c of cutM) for (let i = 0; i < w * h; i++) cutHole[i] = Math.max(cutHole[i], Math.min(1, c[i] * 1.6));
-    for (let i = 0; i < w * h; i++) hole[i] = Math.max(hole[i], cutHole[i]);
-    const back = document.createElement("canvas"); back.width = full.width; back.height = full.height;
-    const bg = back.getContext("2d"); bg.imageSmoothingQuality = "high"; // fill only from real background: thin gaps and shadows between parts are too dark to spread behind them
-    const known = new Float32Array(w * h); for (let i = 0; i < w * h; i++) known[i] = 1 - hole[i];
+    const cutWide = cuts.map((c) => { const m = blur(resample(c.mask, w, h), w, h, 2); for (let i = 0; i < N; i++) m[i] = Math.min(1, m[i] * 2.2); return m; });
+    for (let j = 0; j < cutM.length; j++) for (let k = j + 1; k < cutM.length; k++) for (let i = 0; i < N; i++) cutM[j][i] *= 1 - cutM[k][i]; // overlapping cuts: the newer one keeps the shared part
+    const cutHole = new Float32Array(N);
+    for (const c of cutM) for (let i = 0; i < N; i++) cutHole[i] = Math.max(cutHole[i], Math.min(1, c[i] * 1.6));
+    // a layer's mask: its own pixels, running a pixel under the nearer layers beside it, so no gap shows from the front
+    const layerMask = (b) => {
+      const own = new Float32Array(N); for (let i = 0; i < N; i++) own[i] = lab[i] === b ? 1 : 0;
+      const under = grow(Float32Array.from(own), w, h, 1);
+      for (let i = 0; i < N; i++) if (lab[i] > b) own[i] = under[i];
+      return blur(own, w, h, 1);
+    };
+    // the back
+    const keep = layerMask(0);
+    for (let i = 0; i < N; i++) keep[i] *= 1 - cutHole[i];
+    const known = new Float32Array(N); for (let i = 0; i < N; i++) known[i] = lab[i] === 0 ? 1 - cutHole[i] : 0;
     blur(known, w, h, 5);
-    const holeFill = new Float32Array(w * h); let seen = 0;
-    for (let i = 0; i < w * h; i++) { holeFill[i] = known[i] > 0.97 ? 0 : 1; if (!holeFill[i]) seen++; }
-    if (seen < w * h * 0.02) for (let i = 0; i < w * h; i++) holeFill[i] = hole[i] > 0.5 ? 1 : 0; // too little clean background: use all of it
+    const holeFill = new Float32Array(N); let seen = 0;
+    for (let i = 0; i < N; i++) { holeFill[i] = known[i] > 0.97 ? 0 : 1; if (!holeFill[i]) seen++; }
+    if (seen < N * 0.02) for (let i = 0; i < N; i++) holeFill[i] = keep[i] > 0.5 ? 0 : 1; // too little clean background: use all of it
+    const back = document.createElement("canvas"); back.width = full.width; back.height = full.height;
+    const bg = back.getContext("2d"); bg.imageSmoothingQuality = "high";
     bg.drawImage(fillHoles(full, holeFill, w, h), 0, 0, back.width, back.height);
-    // the farthest band itself, as it is, over the fill
-    const keep = new Float32Array(w * h); for (let i = 0; i < w * h; i++) keep[i] = 1 - hole[i];
     bg.drawImage(cutOut(full, keep, w, h), 0, 0);
     const out = [{ canvas: back, z: 0, kind: "back" }];
     for (let b = 1; b < n; b++) {
-      const lo = ts[b - 1], hi = b < n - 1 ? ts[b] : 1e9, m = new Float32Array(w * h);
-      for (let i = 0; i < w * h; i++) { const d = dm.data[i]; m[i] = sm(d - lo) * (1 - sm(d - hi - 2 * soft)); } // runs on a little under the next band, so no gap shows between them
-      blur(m, w, h, 1);
-      for (const c of cutWide) for (let i = 0; i < m.length; i++) m[i] *= 1 - c[i]; // no rim of a cut element left in the band
-      if (coverage(m) < 0.004) continue; // nothing left in this band
+      const m = layerMask(b);
+      for (const c of cutWide) for (let i = 0; i < N; i++) m[i] *= 1 - c[i]; // no rim of a cut element left in the layer
+      if (coverage(m) < 0.004) continue; // nothing left in this layer
       out.push({ canvas: cutOut(full, m, w, h), z: b / (n - 1), kind: "band" });
     }
     cuts.forEach((c, j) => {
-      const m = cutM[j]; let s = 0, k = 0;
-      for (let i = 0; i < m.length; i++) if (m[i] > 0.5) { s += dm.data[i]; k++; }
-      const d = k ? s / k : 128; let band = 0; while (band < ts.length && d >= ts[band]) band++;
-      // an element she chose stands out: at least halfway forward, and in front of the band it came from
+      const m = cutM[j], cnt = new Array(n).fill(0);
+      for (let i = 0; i < N; i++) if (m[i] > 0.5) cnt[lab[i]]++;
+      const band = cnt.indexOf(Math.max(...cnt));
+      // an element she chose stands out: at least halfway forward, and in front of the layer it came from
       out.push({ canvas: cutOut(full, m, w, h), z: Math.min(1.15, Math.max(0.55, (band + 0.6) / Math.max(1, n - 1))), kind: "cut" });
     });
     return out.sort((a, b) => a.z - b.z); // drawn far to near: a layer in front is drawn after what stands behind it
   }
 
-  Object.assign(api, { depth, thresholds, segmenter, build, canvasOf, ready: () => !!libP });
+  Object.assign(api, { depth, thresholds, labels, segmenter, build, canvasOf, ready: () => !!libP });
   window.Splitter = api;
 })();
