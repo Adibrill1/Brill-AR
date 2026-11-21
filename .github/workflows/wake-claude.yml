@@ -1,0 +1,25 @@
+# Lives only on the branch "layer-requests". Every new request the site pushes here wakes Claude's routine
+# ("פירוק מדויק עם Claude"), which splits the picture with Canva and sends the layers to claude/layer-answers.
+# Needs one repository secret, ROUTINE_TOKEN (the routine's API token). Without it, nothing happens.
+name: wake Claude for a layer request
+on:
+  push:
+    branches: [layer-requests]
+concurrency: { group: wake-claude, cancel-in-progress: false }
+permissions: {}
+jobs:
+  wake:
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - name: fire the routine
+        env:
+          TOKEN: ${{ secrets.ROUTINE_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then echo "ROUTINE_TOKEN is not set"; exit 0; fi
+          curl -fsS -X POST https://api.anthropic.com/v1/claude_code/routines/trig_01Pn3ngwT2n1SVweSzwALn1s/fire \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "anthropic-beta: experimental-cc-routine-2026-04-01" \
+            -H "anthropic-version: 2023-06-01" \
+            -H "Content-Type: application/json" \
+            -d '{"text": "new layer request"}' -o /dev/null -w "fired: %{http_code}\n"
