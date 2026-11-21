@@ -18,6 +18,7 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
   await p.evaluate(g=>App.select(g),ids.g);await p.waitForTimeout(200);
   if(await p.locator('.tab[data-tab="style"]').isVisible())await p.locator('.tab[data-tab="style"]').click();
   await p.waitForSelector('text=הנפשה אוטומטית');
+  const top=await p.evaluate(()=>{const g=[...document.querySelectorAll('section.group')].find(n=>/הנפשה אוטומטית/.test(n.textContent));return g.getBoundingClientRect().top<innerHeight;});assert.ok(top,'the reveal choices are in sight on a phone');
   const kids=()=>p.evaluate(ids=>ids.map(id=>{const e=App.rec.elements.find(x=>x.id===id);return {z:e.z,tl:e.timeline||null};}),ids.kids);
   const at=(t)=>p.evaluate(({ids,t})=>ids.map(id=>Studio.sampleTimeline(App.rec.elements.find(x=>x.id===id),t)),{ids:ids.kids,t});
   const pick=async(name)=>{await p.locator('dialog[open], body').locator('button.chip',{hasText:name}).first().click();await p.waitForTimeout(250);};
@@ -56,7 +57,7 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
   // the depth slider rewrites the paths for the new depths
   await pick('נפתחת לעומק');
   await p.evaluate(g=>{App.select(g);},ids.g);
-  await p.locator('input[type=range]').first().evaluate(n=>{n.value=0.6;n.dispatchEvent(new Event('input',{bubbles:true}));n.dispatchEvent(new Event('change',{bubbles:true}));});await p.waitForTimeout(250);
+  await p.locator('section.group',{hasText:'מרחק בין השכבות'}).locator('input[type=range]').first().evaluate(n=>{n.value=0.6;n.dispatchEvent(new Event('input',{bubbles:true}));n.dispatchEvent(new Event('change',{bubbles:true}));});await p.waitForTimeout(250);
   const after=await p.evaluate(ids=>ids.map(id=>{const e=App.rec.elements.find(x=>x.id===id);const last=Math.max(...e.timeline.keys.map(q=>q.t));return {z:e.z,end:Studio.sampleTimeline(e,last).z};}),ids.kids);
   assert.ok(after[3].z>z0[3]*1.5&&after.every(v=>Math.abs(v.end-v.z)<1e-3),'paths follow the new depth '+JSON.stringify(after));
 

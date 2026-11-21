@@ -103,7 +103,7 @@ window.SplitSheet = (() => {
     // the exact way: Claude splits it by her words and the layers come back into this creation by themselves
     const words = h("textarea.field", { rows: 2, dir: "auto", id: "split-claude-words", "aria-label": "אילו שכבות", placeholder: "למשל: רקע, אלמוגים אחוריים, לוויתן גדול, לוויתן קטן, אלמוגים קדמיים, טקסט" });
     const claudeMsg = h("p.split-status", { id: "split-claude-msg", role: "status" });
-    const waiting = () => { const n = Desk.pending(App.rec.id).length; claudeMsg.textContent = n ? (n === 1 ? "בקשה אחת" : n + " בקשות") + " אצל Claude. השכבות יתווספו ליצירה הזו לבד כשהן מוכנות, גם אם הסטודיו נסגר בינתיים." : ""; };
+    const waiting = () => { const n = Desk.pending(App.rec.id).length; claudeMsg.textContent = n ? (n === 1 ? "בקשה אחת" : n + " בקשות") + " אצל Claude. אפשר לסגור את החלון: השכבות יתווספו ליצירה הזו לבד כשהן מוכנות, גם אם הסטודיו נסגר בינתיים." : ""; };
     // auto: Claude looks at the picture and decides himself which parts become layers
     async function sendToClaude(auto, btn) {
       const text = words.value.trim();
@@ -113,12 +113,12 @@ window.SplitSheet = (() => {
       try {
         await Desk.send({ blob, words: auto ? "" : text, auto, creationId: App.rec.id, name: App.rec.name, isArt, aspect: img.naturalWidth / img.naturalHeight });
         words.value = ""; waiting();
-        toast(auto ? "נשלח ל־Claude. הוא יזהה מה יש בתמונה, ובעוד כמה דקות השכבות יתווספו ליצירה הזו לבד." : "נשלח ל־Claude. בעוד כמה דקות השכבות יתווספו ליצירה הזו לבד.", { ms: 8000 });
+        toast(auto ? "נשלח ל־Claude. הוא יזהה מה יש בתמונה, ובעוד כמה דקות השכבות יתווספו ליצירה הזו לבד. אפשר לסגור את החלון ואפילו את הסטודיו." : "נשלח ל־Claude. בעוד כמה דקות השכבות יתווספו ליצירה הזו לבד. אפשר לסגור את החלון ואפילו את הסטודיו.", { ms: 10000 });
       } catch (e) { console.warn(e); toast(e.message === "big" ? "התמונה גדולה מ־20MB" : "השליחה לא הצליחה. אפשר לנסות שוב.", { kind: "error" }); }
       finally { end(); btn.disabled = false; }
     }
-    const sendBtn = UI.button("לשלוח ל־Claude", () => sendToClaude(false, sendBtn), { kind: "primary", icon: "share" });
-    const autoBtn = UI.button("Claude יזהה לבד", () => sendToClaude(true, autoBtn), { icon: "layers" });
+    const sendBtn = UI.button("לשלוח ל־Claude", () => sendToClaude(false, sendBtn), { icon: "share" });
+    const autoBtn = UI.button("Claude יזהה לבד", () => sendToClaude(true, autoBtn), { kind: "primary", icon: "layers" });
     autoBtn.id = "split-claude-auto";
     sendBtn.id = "split-claude-send";
     waiting();
@@ -135,7 +135,9 @@ window.SplitSheet = (() => {
     const d = UI.dialog({
       title: "פירוק לשכבות", sheet: true, wide: true, onClose: () => { st.closed = true; },
       body: [h("div.split-view", view), status,
-        UI.group("פירוק מדויק עם Claude", h("p.note", "Claude מפרק את התמונה בכלים מתקדמים, וממלא את הרקע מאחורי מה שהוא מוציא. כותבים אילו שכבות רוצים, מהרחוקה לקרובה."), UI.field("אילו שכבות", words), h("div.btn-row", sendBtn, autoBtn), h("p.note", "״Claude יזהה לבד״: בלי לכתוב כלום. Claude מסתכל על התמונה, מחליט מה להפריד, ומספר בהערה מה יצא."), claudeMsg),
+        UI.group("פירוק מדויק עם Claude", h("p.note", "Claude מפרק את התמונה בכלים מתקדמים, וממלא את הרקע מאחורי מה שהוא מוציא. אחרי השליחה אפשר לסגור את החלון: השכבות יתווספו ליצירה לבד."), claudeMsg,
+          h("div.btn-row", autoBtn), h("p.note", "״Claude יזהה לבד״: בלי לכתוב כלום. Claude מסתכל על התמונה, מחליט מה להפריד, ומספר בהערה מה יצא."),
+          UI.field("או כותבים אילו שכבות רוצים, מהרחוקה לקרובה", words), h("div.btn-row", sendBtn)),
         UI.group("שכבות לפי עומק, כאן במכשיר", startBtn, depthTools),
         cutGroup,
         h("p.note", icon("cube", 18), h("span", "הפירוק כאן במכשיר מוריד בפעם הראשונה כלי של בערך 30MB, ובטלפון הוא כבד. בטלפון עדיף לשלוח ל־Claude."))],

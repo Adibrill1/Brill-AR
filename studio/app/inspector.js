@@ -384,12 +384,14 @@ window.Inspector = (() => {
     if (e.type === "timecube") return styleCube(e);
     if (e.type === "scatter") return e.scatter.layout === "fan" ? styleFan(e) : styleScatter(e);
     if (e.type === "sound") return [UI.group("צליל", sound(), note("הצליל מתנגן כשהמצלמה מזהה את היצירה. בטלפון הוא מתחיל אחרי נגיעה ראשונה במסך."))];
-    if (e.type === "group") return [UI.group("קבוצה",
+    if (e.type === "group") return [
+      // a split picture's own controls come first, so on a phone they are in sight without scrolling
+      e.split ? UI.group("הנפשה אוטומטית", ...Reveal.controls(e, { C, S, T, upd, note })) : null,
+      UI.group("קבוצה",
       note((e.children || []).length + " שכבות שזזות, גדלות ומסתובבות יחד. נגיעה נוספת על הקנבס בוחרת שכבה אחת בתוכה, וגם ברשימת השכבות אפשר לבחור אחת.", "layers"),
       h("div.btn-row", UI.button("לפרק קבוצה", () => App.ungroup(App.selId), { kind: "ghost", icon: "ungroup" }))),
       e.split ? UI.group("פירוק לשכבות", S(Object.assign({ label: "מרחק בין השכבות", min: 0.02, max: 0.6, step: 0.01, get: () => (App.sel().split || {}).spread || 0.15, set: upd((x, v) => splitSpread(x, v)) }, pct)),
         note("כמה רחוקות השכבות זו מזו בעומק. רואים את זה במבט תלת־ממד ובמצלמה.", "cube")) : null,
-      e.split ? UI.group("הנפשה אוטומטית", ...Reveal.controls(e, { C, S, T, upd, note })) : null,
       UI.group("שקיפות", opacity())].filter(Boolean);
     return [h("section.group", note("לשכבה הזו אין הגדרות עיצוב."))];
   }
