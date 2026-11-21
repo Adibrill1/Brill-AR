@@ -6,7 +6,7 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
 (async()=>{await new Promise(r=>server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+server.address().port,b=await chromium.launch({executablePath:'/usr/bin/google-chrome',headless:true,args:['--no-sandbox']});
  const {publicKey,privateKey}=crypto.generateKeyPairSync('rsa',{modulusLength:2048});
  // a tiny GitHub: one branch, files by path
- const answers=new Map(),blobs=new Map(),trees=new Map(),commits=new Map();let head=null,n=0;
+ let failOnce=false;const answers=new Map(),blobs=new Map(),trees=new Map(),commits=new Map();let head=null,n=0;
  const sha=()=>crypto.createHash('sha1').update('x'+(n++)).digest('hex');
  const cors={'access-control-allow-origin':'*','access-control-allow-headers':'*','access-control-allow-methods':'GET,POST,PATCH'};
  async function gh(route){const req=route.request(),url=new URL(req.url()),m=req.method(),p=url.pathname.replace('/repos/Adibrill1/Brill-AR','');
@@ -20,7 +20,7 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
   if(p==='/git/commits'){const s=sha();commits.set(s,{tree:body.tree});return js(201,{sha:s});}
   if(p==='/git/refs'&&m==='POST'){head=body.sha;return js(201,{});}
   if(p==='/git/refs/heads/layer-requests'&&m==='PATCH'){head=body.sha;return js(200,{});}
-  if(p.startsWith('/contents/')){const path=decodeURIComponent(p.slice(10)),ref=url.searchParams.get('ref'),t=ref==='claude/layer-answers'?answers:ref==='layer-requests'&&head?trees.get(commits.get(head).tree):new Map(),s=t.get(path);
+  if(p.startsWith('/contents/')){const path=decodeURIComponent(p.slice(10));if(failOnce&&/\/L1\.bin$/.test(path)){failOnce=false;return js(502,{message:'Bad Gateway'});}const ref=url.searchParams.get('ref'),t=ref==='claude/layer-answers'?answers:ref==='layer-requests'&&head?trees.get(commits.get(head).tree):new Map(),s=t.get(path);
    return s?route.fulfill({status:200,contentType:'application/octet-stream',headers:cors,body:blobs.get(s)}):js(404,{message:'Not Found'});}
   return js(500,{message:'unexpected '+m+' '+p});}
  const tree=()=>head?trees.get(commits.get(head).tree):new Map(),read=(path)=>blobs.get(tree().get(path));
@@ -53,8 +53,14 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
   assert.equal(await p.evaluate(()=>Desk.check()),0,'an answer on the requests branch is not looked for');
   ['רקע','לוויתן','טקסט'].forEach((nm,i)=>put('r/'+rid+'/L'+i+'.bin',lock(raw,Buffer.from(pngs[i]))));
   put('r/'+rid+'/done.bin',lock(raw,Buffer.from(JSON.stringify({layers:['רקע','לוויתן','טקסט'].map((nm,i)=>({name:nm,file:'L'+i+'.bin'})),spread:0.3,note:'הלוויתנים בשכבה אחת'}))));
+  // the download fails once: she sees why, and "לבדוק עכשיו" brings the layers in
+  failOnce=true;assert.equal(await p.evaluate(()=>Desk.check()),0,'nothing comes in when a download fails');
+  await p.waitForFunction(()=>{const n=document.querySelector('#split-claude-err');return n&&!n.hidden&&/ההורדה נכשלה/.test(n.textContent);});
+  assert.ok(await p.locator('#split-claude-check').isVisible(),'a button to look again');
+  await p.locator('#split-claude-check').click();
+  await p.waitForFunction(()=>Desk.list().length===0,null,{timeout:10000});
+  assert.ok(await p.locator('#split-claude-err').isHidden(),'the error goes away');
   await p.keyboard.press('Escape');
-  const got=await p.evaluate(()=>Desk.check());assert.equal(got,1,'one answer picked up');
   const r=await p.evaluate(()=>{const els=App.rec.elements,g=els.find(e=>e.type==='group');return {names:els.filter(e=>e.type==='image').map(e=>e.name),zs:els.filter(e=>e.type==='image').map(e=>e.z),g:g&&g.name,spread:g&&g.split&&g.split.spread,pending:Desk.list().length,assets:els.filter(e=>e.type==='image').every(e=>App.rec.assets[e.assetId] instanceof Blob)};});
   assert.deepEqual(r.names,['רקע','לוויתן','טקסט']);assert.ok(r.zs[0]===0&&r.zs[1]>0&&r.zs[2]>r.zs[1],'far to near '+r.zs);
   assert.equal(r.g,'שכבות מ־Claude');assert.equal(r.spread,0.3);assert.equal(r.pending,0,'nothing left waiting');assert.ok(r.assets);

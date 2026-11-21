@@ -434,5 +434,6 @@ dialog::backdrop { background: rgba(6,5,10,.66); backdrop-filter: blur(3px); }
 .split-canvas { display: block; max-width: 100%; max-height: 46vh; width: auto; height: auto; border-radius: 8px; touch-action: manipulation; cursor: crosshair; }
 @media (max-width: 700px) { .split-canvas { max-height: 26vh; } }
 .split-status { margin: 8px 2px 4px; font-size: 14px; color: var(--muted, #9aa3b2); flex-shrink: 0; }
+.split-claude-err { color: var(--danger, #ff6b6b); }
 .split-cut-tools[hidden], .split-cuts[hidden] { display: none; }
 .split-cut-tools { display: grid; gap: 8px; margin-top: 8px; }

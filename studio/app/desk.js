@@ -74,27 +74,45 @@ window.Desk = (() => {
     await Studio.save(rec);
     return true;
   }
-  let busy = false;
+  // what happened on the last look, per request: {state: "ready" (Claude is done, the layers are coming in) | "error", say}
+  const status = new Map(), shown = new Set();
+  const tell = () => { try { window.dispatchEvent(new Event("brill-desk")); } catch (e) {} };
+  const say = (e) => (e && e.message && /[\u0590-\u05ff]/.test(e.message) ? e.message : "משהו השתבש בהורדה.");
+  // a look that is still running blocks the next one, but only for a while: on a phone a look started just before the
+  // screen locked can stay frozen, and it must never stop the looks for good
+  let busy = 0;
   async function check() {
-    if (busy || !token() || !list().length) return 0;
-    busy = true; let got = 0;
+    if ((busy && Date.now() - busy < 150000) || !token() || !list().length) return 0;
+    const my = busy = Date.now(); let got = 0;
     try {
       for (const r of list()) {
-        let ans = null; try { ans = await fetchDone(r); } catch (e) { console.warn("desk", e); }
-        if (!ans) continue;
-        if (await apply(r, ans)) {
-          got++; keep(list().filter((x) => x.id !== r.id));
+        let ans = null;
+        try { ans = await fetchDone(r); }
+        catch (e) { console.warn("desk", e); status.set(r.id, { state: "error", say: "השכבות מ־Claude מוכנות, אבל ההורדה נכשלה: " + say(e) }); tell(); continue; }
+        if (!ans) { status.delete(r.id); continue; }
+        status.set(r.id, { state: "ready" }); tell();
+        let ok = false;
+        try { ok = await apply(r, ans); } catch (e) { console.warn("desk", e); }
+        if (ok) {
+          got++; keep(list().filter((x) => x.id !== r.id)); status.delete(r.id);
           UI.toast("השכבות מ־Claude הגיעו" + (r.name ? " ליצירה ״" + r.name + "״" : "") + (ans.note ? ". " + ans.note : ""), { ms: 8000 });
           if (window.App && App.emit) App.emit("structure");
-        }
+        } else status.set(r.id, { state: "error", say: ans.layers.length ? "השכבות מ־Claude מוכנות, אבל היצירה שלהן לא נמצאה במכשיר הזה." : "Claude לא הצליח להפריד את התמונה הזו לשכבות." });
+        tell();
       }
-    } finally { busy = false; }
+      // a failure is said once, wherever she is in the studio (the split sheet keeps showing it, with a button to look again)
+      for (const [id, x] of status) if (x.state === "error" && !shown.has(id)) { shown.add(id); UI.toast(x.say, { kind: "error", ms: 9000 }); }
+    } finally { if (busy === my) busy = 0; }
     return got;
   }
   let timer = null;
   function soon() { if (!timer && list().length) timer = setInterval(() => { if (!list().length) { clearInterval(timer); timer = null; return; } check(); }, EVERY); }
   window.addEventListener("load", () => { setTimeout(check, 3000); soon(); });
   document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") check(); });
+  // back to the page from another app, or the network is back
+  window.addEventListener("pageshow", () => check());
+  window.addEventListener("focus", () => check());
+  window.addEventListener("online", () => check());
 
-  return { send, check, pending, list, BRANCH, ANSWERS, testKey: (jwk) => { PUB = jwk; } };
+  return { send, check, pending, list, status: (id) => status.get(id) || null, BRANCH, ANSWERS, testKey: (jwk) => { PUB = jwk; } };
 })();

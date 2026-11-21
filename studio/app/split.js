@@ -103,7 +103,16 @@ window.SplitSheet = (() => {
     // the exact way: Claude splits it by her words and the layers come back into this creation by themselves
     const words = h("textarea.field", { rows: 2, dir: "auto", id: "split-claude-words", "aria-label": "אילו שכבות", placeholder: "למשל: רקע, אלמוגים אחוריים, לוויתן גדול, לוויתן קטן, אלמוגים קדמיים, טקסט" });
     const claudeMsg = h("p.split-status", { id: "split-claude-msg", role: "status" });
-    const waiting = () => { const n = Desk.pending(App.rec.id).length; claudeMsg.textContent = n ? (n === 1 ? "בקשה אחת" : n + " בקשות") + " אצל Claude. אפשר לסגור את החלון: השכבות יתווספו ליצירה הזו לבד כשהן מוכנות, גם אם הסטודיו נסגר בינתיים." : ""; };
+    const claudeErr = h("p.split-status.split-claude-err", { id: "split-claude-err", role: "alert", hidden: true });
+    const checkNow = UI.button("לבדוק עכשיו", async () => { checkNow.disabled = true; try { await Desk.check(); } finally { checkNow.disabled = false; waiting(); } }, { small: true, kind: "ghost", icon: "refresh" });
+    checkNow.id = "split-claude-check"; checkNow.hidden = true;
+    const waiting = () => {
+      const mine = Desk.pending(App.rec.id), n = mine.length, st = mine.map((r) => Desk.status(r.id)).filter(Boolean);
+      const ready = st.some((x) => x.state === "ready"), errs = st.filter((x) => x.state === "error").map((x) => x.say);
+      claudeMsg.textContent = !n ? "" : ready ? "Claude סיים. השכבות נכנסות ליצירה…" : (n === 1 ? "בקשה אחת" : n + " בקשות") + " אצל Claude. אפשר לסגור את החלון: השכבות יתווספו ליצירה הזו לבד כשהן מוכנות, גם אם הסטודיו נסגר בינתיים.";
+      claudeErr.textContent = errs.join(" "); claudeErr.hidden = !errs.length; checkNow.hidden = !n;
+    };
+    window.addEventListener("brill-desk", () => { if (!st.closed) waiting(); });
     // auto: Claude looks at the picture and decides himself which parts become layers
     async function sendToClaude(auto, btn) {
       const text = words.value.trim();
@@ -135,7 +144,7 @@ window.SplitSheet = (() => {
     const d = UI.dialog({
       title: "פירוק לשכבות", sheet: true, wide: true, onClose: () => { st.closed = true; },
       body: [h("div.split-view", view), status,
-        UI.group("פירוק מדויק עם Claude", h("p.note", "Claude מפרק את התמונה בכלים מתקדמים, וממלא את הרקע מאחורי מה שהוא מוציא. אחרי השליחה אפשר לסגור את החלון: השכבות יתווספו ליצירה לבד."), claudeMsg,
+        UI.group("פירוק מדויק עם Claude", h("p.note", "Claude מפרק את התמונה בכלים מתקדמים, וממלא את הרקע מאחורי מה שהוא מוציא. אחרי השליחה אפשר לסגור את החלון: השכבות יתווספו ליצירה לבד."), claudeMsg, claudeErr, checkNow,
           h("div.btn-row", autoBtn), h("p.note", "״Claude יזהה לבד״: בלי לכתוב כלום. Claude מסתכל על התמונה, מחליט מה להפריד, ומספר בהערה מה יצא."),
           UI.field("או כותבים אילו שכבות רוצים, מהרחוקה לקרובה", words), h("div.btn-row", sendBtn)),
         UI.group("שכבות לפי עומק, כאן במכשיר", startBtn, depthTools),

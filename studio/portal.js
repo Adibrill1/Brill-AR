@@ -306,11 +306,16 @@ window.Portal = (() => {
   // One file of a branch as it is right now (through the API, not the 5-minute raw cache); null when it is not there.
   async function readRaw(token, branch, path) {
     let r;
-    try { r = await fetch(api() + "/contents/" + path.split("/").map(encodeURIComponent).join("/") + "?ref=" + encodeURIComponent(branch), { cache: "no-store", headers: { Authorization: "Bearer " + token, Accept: "application/vnd.github.raw", "X-GitHub-Api-Version": "2022-11-28" } }); }
-    catch (e) { throw fail("אין חיבור לרשת כרגע.", 0); }
-    if (r.status === 404) return null;
-    if (!r.ok) throw fail("GitHub לא קיבל את הבקשה (" + r.status + ").", r.status);
-    return r.blob();
+    // a phone can freeze a request while the screen is locked and never settle it: give up after a while instead of
+    // waiting forever (whoever asked can simply ask again)
+    const ctl = typeof AbortController === "function" ? new AbortController() : null, t = ctl && setTimeout(() => ctl.abort(), 90000);
+    try {
+      try { r = await fetch(api() + "/contents/" + path.split("/").map(encodeURIComponent).join("/") + "?ref=" + encodeURIComponent(branch), { cache: "no-store", signal: ctl ? ctl.signal : undefined, headers: { Authorization: "Bearer " + token, Accept: "application/vnd.github.raw", "X-GitHub-Api-Version": "2022-11-28" } }); }
+      catch (e) { throw fail(ctl && ctl.signal.aborted ? "החיבור ל־GitHub לקח יותר מדי זמן." : "אין חיבור לרשת כרגע.", 0); }
+      if (r.status === 404) return null;
+      if (!r.ok) throw fail("GitHub לא קיבל את הבקשה (" + r.status + ").", r.status);
+      return await r.blob();
+    } finally { if (t) clearTimeout(t); }
   }
   // Adds files to a branch in one commit (the branch is made when it is not there yet); no force, read again if it moved.
   async function putFiles(token, branch, files, message) {
