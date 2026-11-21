@@ -305,17 +305,29 @@ window.Portal = (() => {
   // ---------- other branches (the layer requests to Claude: app/desk.js) ----------
   // One file of a branch as it is right now (through the API, not the 5-minute raw cache); null when it is not there.
   async function readRaw(token, branch, path) {
-    let r;
-    // a phone can freeze a request while the screen is locked and never settle it: give up after a while instead of
-    // waiting forever (whoever asked can simply ask again)
-    const ctl = typeof AbortController === "function" ? new AbortController() : null, t = ctl && setTimeout(() => ctl.abort(), 90000);
-    try {
-      try { r = await fetch(api() + "/contents/" + path.split("/").map(encodeURIComponent).join("/") + "?ref=" + encodeURIComponent(branch), { cache: "no-store", signal: ctl ? ctl.signal : undefined, headers: { Authorization: "Bearer " + token, Accept: "application/vnd.github.raw", "X-GitHub-Api-Version": "2022-11-28" } }); }
-      catch (e) { throw fail(ctl && ctl.signal.aborted ? "החיבור ל־GitHub לקח יותר מדי זמן." : "אין חיבור לרשת כרגע.", 0); }
-      if (r.status === 404) return null;
-      if (!r.ok) throw fail("GitHub לא קיבל את הבקשה (" + r.status + ").", r.status);
-      return await r.blob();
-    } finally { if (t) clearTimeout(t); }
+    // The exact bytes of a file on a branch, or null when it is not there. Never through GitHub's "raw" reply: that one
+    // guesses whether a small file is text and sometimes "translates" binary bytes (an encrypted file came back 538
+    // bytes instead of 361), and the base64 in the JSON reply is "translated" the same way. Only the git blob (by the
+    // sha the JSON reply gives) holds the exact bytes. A phone can freeze a request while the screen is locked and never settle it, so each
+    // request gives up after a while instead of waiting forever.
+    const get = async (url) => {
+      const ctl = typeof AbortController === "function" ? new AbortController() : null, t = ctl && setTimeout(() => ctl.abort(), 90000);
+      try {
+        let r;
+        try { r = await fetch(api() + url, { cache: "no-store", signal: ctl ? ctl.signal : undefined, headers: { Authorization: "Bearer " + token, Accept: "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28" } }); }
+        catch (e) { throw fail(ctl && ctl.signal.aborted ? "החיבור ל־GitHub לקח יותר מדי זמן." : "אין חיבור לרשת כרגע.", 0); }
+        if (r.status === 404) return null;
+        if (!r.ok) throw fail("GitHub לא קיבל את הבקשה (" + r.status + ").", r.status);
+        try { return await r.json(); } catch (e) { throw fail("ההורדה מ־GitHub נקטעה באמצע.", 0); }
+      } finally { if (t) clearTimeout(t); }
+    };
+    const bytes = (b64) => { const s = atob(String(b64 || "").replace(/\s/g, "")), u = new Uint8Array(s.length); for (let i = 0; i < s.length; i++) u[i] = s.charCodeAt(i); return new Blob([u]); };
+    const meta = await get("/contents/" + path.split("/").map(encodeURIComponent).join("/") + "?ref=" + encodeURIComponent(branch));
+    if (!meta || Array.isArray(meta) || meta.type !== "file") return null;
+    if (!meta.size) return new Blob([]);
+    const blob = await get("/git/blobs/" + meta.sha);
+    if (!blob || blob.encoding !== "base64") throw fail("GitHub לא החזיר את הקובץ.", 0);
+    return bytes(blob.content);
   }
   // Adds files to a branch in one commit (the branch is made when it is not there yet); no force, read again if it moved.
   async function putFiles(token, branch, files, message) {

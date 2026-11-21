@@ -21,7 +21,9 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
   if(p==='/git/refs'&&m==='POST'){head=body.sha;return js(201,{});}
   if(p==='/git/refs/heads/layer-requests'&&m==='PATCH'){head=body.sha;return js(200,{});}
   if(p.startsWith('/contents/')){const path=decodeURIComponent(p.slice(10));if(failOnce&&/\/L1\.bin$/.test(path)){failOnce=false;return js(502,{message:'Bad Gateway'});}const ref=url.searchParams.get('ref'),t=ref==='claude/layer-answers'?answers:ref==='layer-requests'&&head?trees.get(commits.get(head).tree):new Map(),s=t.get(path);
-   return s?route.fulfill({status:200,contentType:'application/octet-stream',headers:cors,body:blobs.get(s)}):js(404,{message:'Not Found'});}
+   // like the real GitHub: the JSON reply's own base64 can be "translated" (garbage here); only the git blob is exact
+   return s?js(200,{type:'file',path,sha:s,size:blobs.get(s).length,encoding:'base64',content:Buffer.from('garbled '+path).toString('base64')}):js(404,{message:'Not Found'});}
+  if(p.startsWith('/git/blobs/')&&m==='GET'){const b=blobs.get(p.split('/').pop());return b?js(200,{sha:p.split('/').pop(),size:b.length,encoding:'base64',content:b.toString('base64')}):js(404,{message:'Not Found'});}
   return js(500,{message:'unexpected '+m+' '+p});}
  const tree=()=>head?trees.get(commits.get(head).tree):new Map(),read=(path)=>blobs.get(tree().get(path));
  const unlock=(raw,buf)=>{const d=crypto.createDecipheriv('aes-256-gcm',raw,buf.subarray(0,12));d.setAuthTag(buf.subarray(buf.length-16));return Buffer.concat([d.update(buf.subarray(12,buf.length-16)),d.final()]);};
