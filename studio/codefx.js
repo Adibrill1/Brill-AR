@@ -1,5 +1,5 @@
 "use strict";
-/* Live code animations ("אנימציות קוד"): twenty-five looks drawn in three.js, written here, with no files to download.
+/* Live code animations ("אנימציות קוד"): twenty-six looks drawn in three.js, written here, with no files to download.
    el.codefx = { look, colors[3], speed, amount, size (0-1 each), kind, text, touch, cover, seed }:
      dissolve  a picture (el.assetId, the artwork by default) falls apart into coloured dust and gathers back
      dust      a greeting written in gold dust that swirls in, sparkles and blows away
@@ -28,6 +28,7 @@
      tunnel    the picture inside itself again and again, flying in (square, spiral or round)
      lens      the picture hides in the dark, in grey or in fog and shows where the phone comes close
      daysky    the sky at the viewer's own hour: sun, moon, stars and clouds (or a day in a loop)
+     game      a little game: tap the falling stars (rising bubbles, drifting hearts) for 30 seconds; a score and this phone's best
    With cfg.gravity (el.gravity, Studio.gravityFollower) the looks in Studio.GRAVITY_CODEFX keep their motion upright in
    the real world: turn the artwork and sparks, jellyfish, bubbles and lanterns still rise, leaves fall, metal runs low.
    Each look is one A-Frame component, "studio-codefx", built in Studio.buildElementEntity. It is an overlay layer,
@@ -1203,6 +1204,60 @@ void main() {
   gl_FragColor = vec4(col, uOpacity);
 }`;
 
+  // ---------- game: tap the stars (bubbles, hearts) before they get away; 30 seconds, a score and a best ----------
+  const GAME_VS = `
+attribute float aSize; attribute float aPop; attribute float aSpin; attribute float aTone;
+uniform float uVh; uniform vec2 uBox; varying float vPop; varying float vSpin; varying float vTone; varying float vIn;
+void main() {
+  vPop = aPop; vSpin = aSpin; vTone = aTone;
+  vIn = clamp((min(uBox.x * 0.5 - abs(position.x), uBox.y * 0.5 - abs(position.y)) + aSize * 0.15) / max(aSize * 0.4, 1e-5), 0.0, 1.0); // fades in and out at the layer's edges
+  vec4 mv = modelViewMatrix * vec4(position, 1.0);
+  gl_Position = projectionMatrix * mv;
+  float persp = projectionMatrix[2][3] != 0.0 ? -mv.z : 1.0;
+  gl_PointSize = aSize > 0.0 ? clamp(aSize * (1.0 + aPop * 0.9) * uVh * 0.5 * projectionMatrix[1][1] / max(persp, 1e-4), 1.0, 160.0) : 0.0;
+}`;
+  const GAME_FS = `
+uniform float uKind, uOpacity, uTime; uniform vec3 uC1, uC2, uC3; varying float vPop; varying float vSpin; varying float vTone; varying float vIn;
+float starSd(vec2 p, float r, float rf) {
+  const vec2 k1 = vec2(0.809016994375, -0.587785252292), k2 = vec2(-0.809016994375, -0.587785252292);
+  p.x = abs(p.x); p -= 2.0 * max(dot(k1, p), 0.0) * k1; p -= 2.0 * max(dot(k2, p), 0.0) * k2; p.x = abs(p.x); p.y -= r;
+  vec2 ba = rf * vec2(-k1.y, k1.x) - vec2(0.0, 1.0); float h = clamp(dot(p, ba) / dot(ba, ba), 0.0, r);
+  return length(p - ba * h) * sign(p.y * ba.x - p.x * ba.y);
+}
+float heartSd(vec2 p) {
+  p.x = abs(p.x);
+  if (p.y + p.x > 1.0) return length(p - vec2(0.25, 0.75)) - 0.35355;
+  vec2 a = p - vec2(0.0, 1.0), b = p - 0.5 * max(p.x + p.y, 0.0);
+  return sqrt(min(dot(a, a), dot(b, b))) * sign(p.x - p.y);
+}
+void main() {
+  vec2 p = gl_PointCoord * 2.0 - 1.0; p.y = -p.y;
+  float c = cos(vSpin), s = sin(vSpin); p = vec2(c * p.x - s * p.y, s * p.x + c * p.y);
+  vec3 tone = mix(uC1, uC2, vTone), col; float a, g;
+  if (uKind < 0.5) { // a star with a glow
+    float d = starSd(p * 1.3, 0.62, 0.45);
+    a = smoothstep(0.03, -0.03, d); g = exp(-max(d, 0.0) * 8.0) * 0.55;
+    col = mix(tone * 1.1, mix(tone, vec3(1.0), 0.45), smoothstep(0.0, -0.35, d) * a);
+  } else if (uKind < 1.5) { // a soap bubble
+    float r = length(p), ang = atan(p.y, p.x);
+    vec3 film = mix(uC2, uC3, 0.5 + 0.5 * sin(ang * 2.0 + uTime * 1.5 + vTone * 6.0));
+    float ring = smoothstep(0.7, 0.9, r) * smoothstep(1.0, 0.92, r), hl = smoothstep(0.22, 0.1, length(p - vec2(-0.38, 0.38)));
+    a = max(max(ring * 0.9, 0.12 * step(r, 0.93)), hl); g = 0.0;
+    col = mix(film, vec3(1.0), hl);
+  } else { // a heart
+    float d = heartSd(vec2(p.x, p.y + 0.62) * 0.92);
+    a = smoothstep(0.025, -0.025, d); g = exp(-max(d, 0.0) * 10.0) * 0.35;
+    col = mix(tone, vec3(1.0), 0.4 * smoothstep(0.5, 0.0, length(p - vec2(-0.3, 0.25))) * a);
+  }
+  float A = max(a, g);
+  gl_FragColor = vec4(col, A * (1.0 - vPop) * vIn * uOpacity);
+}`;
+  const BURST_FS = `uniform float uOpacity; varying vec3 vCol; varying float vA;
+void main() { float r = length(gl_PointCoord - 0.5); if (r > 0.5) discard; gl_FragColor = vec4(vCol, vA * smoothstep(0.5, 0.0, r) * uOpacity); }`;
+  const BURST_VS = `attribute float aA; attribute vec3 aCol; uniform float uSize, uVh; varying vec3 vCol; varying float vA;
+void main() { vCol = aCol; vA = aA; vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mv;
+  float persp = projectionMatrix[2][3] != 0.0 ? -mv.z : 1.0; gl_PointSize = aA > 0.0 ? clamp(uSize * uVh * 0.5 * projectionMatrix[1][1] / max(persp, 1e-4), 1.0, 40.0) : 0.0; }`;
+
   // ---------- aurora: curtains of northern lights that fold and drift ----------
   const AURORA_FS = `
 uniform float uTime, uKind, uAmount, uSize, uOpacity; uniform vec2 uBox; uniform vec3 uC1, uC2, uC3;
@@ -1236,9 +1291,9 @@ void main() {
   gl_FragColor = vec4(col, clamp(I, 0.0, 1.0) * edge * uOpacity);
 }`;
 
-  const BUILDERS = { burn: "buildBurn", fireflies: "buildFireflies", jelly: "buildJelly", tree: "buildTree", spiral: "buildSpiral", bubbles: "buildBubbles", liquid: "buildLiquid", lanterns: "buildLanterns", ripple: "buildRipple", shatter: "buildShatter", rain: "buildRain", mist: "buildMist", drip: "buildDrip", sketch: "buildSketch", sand: "buildSand", eyes: "buildEyes", tunnel: "buildTunnel", lens: "buildLens", daysky: "buildDaysky", aurora: "buildAurora" };
+  const BUILDERS = { burn: "buildBurn", fireflies: "buildFireflies", jelly: "buildJelly", tree: "buildTree", spiral: "buildSpiral", bubbles: "buildBubbles", liquid: "buildLiquid", lanterns: "buildLanterns", ripple: "buildRipple", shatter: "buildShatter", rain: "buildRain", mist: "buildMist", drip: "buildDrip", sketch: "buildSketch", sand: "buildSand", eyes: "buildEyes", tunnel: "buildTunnel", lens: "buildLens", daysky: "buildDaysky", game: "buildGame", aurora: "buildAurora" };
   // the looks a finger plays with
-  const TOUCHY = new Set(["dissolve", "dust", "swarm", "burn", "fireflies", "jelly", "spiral", "bubbles", "liquid", "lanterns", "ripple", "shatter", "rain", "mist", "drip", "sketch", "sand", "eyes", "tunnel", "lens"]);
+  const TOUCHY = new Set(["dissolve", "dust", "swarm", "burn", "fireflies", "jelly", "spiral", "bubbles", "liquid", "lanterns", "ripple", "shatter", "rain", "mist", "drip", "sketch", "sand", "eyes", "tunnel", "lens", "game"]);
   AFRAME.registerComponent("studio-codefx", {
     schema: { cfg: { default: "{}" }, width: { default: 1 }, height: { default: 1 }, src: { default: "" } },
     init() { this.t = 0; this.mats = []; this.tmp = {}; this.finger = Studio.fingerTools; },
@@ -1704,6 +1759,124 @@ void main() {
       };
       this.step = (dt) => { clock += dt; uHour.value = hour(); };
       this.step(0);
+    },
+    buildGame(cfg, w, h, C) {
+      const kind = Math.min(2, Math.max(0, cfg.kind | 0)), R = rand(5000 + (cfg.seed | 0)), unit = Math.min(w, h), N = 24, B = 180, ROUND = 30;
+      const most = 3 + Math.round(val(cfg.amount, 0.5) * 7), rBase = unit * (0.055 + val(cfg.size, 0.5) * 0.06);
+      const noun = ["כוכבים", "בועות", "לבבות"][kind];
+      // the things to tap
+      const pos = new Float32Array(N * 3), size = new Float32Array(N), pop = new Float32Array(N), spin = new Float32Array(N), tone = new Float32Array(N);
+      const g = new THREE.BufferGeometry();
+      g.setAttribute("position", new THREE.BufferAttribute(pos, 3)); g.setAttribute("aSize", new THREE.BufferAttribute(size, 1)); g.setAttribute("aPop", new THREE.BufferAttribute(pop, 1));
+      g.setAttribute("aSpin", new THREE.BufferAttribute(spin, 1)); g.setAttribute("aTone", new THREE.BufferAttribute(tone, 1));
+      const pts = new THREE.Points(g, this.mat({ vertexShader: GAME_VS, fragmentShader: GAME_FS, uniforms: { uVh: { value: 800 }, uBox: { value: new THREE.Vector2(w, h) }, uKind: { value: kind }, uTime: { value: 0 }, uC1: { value: C[0] }, uC2: { value: C[1] }, uC3: { value: C[2] } } }));
+      pts.frustumCulled = false; pts.position.z = 0.002; this.group.add(pts);
+      // the sparks when one is caught
+      const bp = new Float32Array(B * 3), ba = new Float32Array(B), bc = new Float32Array(B * 3), bv = new Float32Array(B * 2);
+      const bg = new THREE.BufferGeometry();
+      bg.setAttribute("position", new THREE.BufferAttribute(bp, 3)); bg.setAttribute("aA", new THREE.BufferAttribute(ba, 1)); bg.setAttribute("aCol", new THREE.BufferAttribute(bc, 3));
+      const sparks = new THREE.Points(bg, this.mat({ vertexShader: BURST_VS, fragmentShader: BURST_FS, blending: THREE.AdditiveBlending, uniforms: { uSize: { value: unit * 0.018 }, uVh: { value: 800 } } }));
+      sparks.frustumCulled = false; sparks.position.z = 0.003; this.group.add(sparks);
+      // the score at the top, and a card at the end of a round
+      const bar = document.createElement("canvas"); bar.width = 512; bar.height = 96;
+      const barTex = new THREE.CanvasTexture(bar), pw = Math.min(w * 0.92, unit * 1.1), ph = pw * 96 / 512;
+      const barMesh = new THREE.Mesh(new THREE.PlaneGeometry(pw, ph), this.mat({ vertexShader: FLAT_VS, fragmentShader: PIC_FS, uniforms: { map: { value: barTex }, uA: { value: 1 } } }));
+      barMesh.position.set(0, h / 2 - ph / 2 - h * 0.02, 0.004); this.group.add(barMesh);
+      const card = document.createElement("canvas"); card.width = 512; card.height = 320;
+      const cardTex = new THREE.CanvasTexture(card), cw = Math.min(w * 0.8, unit * 0.95), chh = cw * 320 / 512;
+      const cardU = { value: 0 };
+      const cardMesh = new THREE.Mesh(new THREE.PlaneGeometry(cw, chh), this.mat({ vertexShader: FLAT_VS, fragmentShader: PIC_FS, uniforms: { map: { value: cardTex }, uA: cardU } }));
+      cardMesh.position.z = 0.005; this.group.add(cardMesh);
+      const FONT = '"Heebo", "Arial Hebrew", Arial, sans-serif', css = (c) => "#" + c.getHexString();
+      const pill = (x, wd, hh, r) => { x.beginPath(); x.moveTo(r, 0); x.arcTo(wd, 0, wd, hh, r); x.arcTo(wd, hh, 0, hh, r); x.arcTo(0, hh, 0, 0, r); x.arcTo(0, 0, wd, 0, r); x.closePath(); };
+      let shownBar = "";
+      const drawBar = (text) => {
+        if (text === shownBar) return; shownBar = text;
+        const x = bar.getContext("2d"); x.clearRect(0, 0, 512, 96);
+        pill(x, 512, 96, 48); x.fillStyle = "rgba(10,10,24,0.55)"; x.fill();
+        x.fillStyle = "#ffffff"; x.font = "700 46px " + FONT; x.textAlign = "center"; x.textBaseline = "middle"; x.direction = "rtl"; x.fillText(text, 256, 50);
+        barTex.needsUpdate = true;
+      };
+      const drawCard = (score, best, record) => {
+        const x = card.getContext("2d"); x.clearRect(0, 0, 512, 320);
+        pill(x, 512, 320, 40); x.fillStyle = "rgba(10,10,24,0.78)"; x.fill();
+        x.textAlign = "center"; x.textBaseline = "middle"; x.direction = "rtl";
+        x.fillStyle = css(C[0]); x.font = "800 58px " + FONT; x.fillText(record ? "שיא חדש!" : "כל הכבוד!", 256, 70);
+        x.fillStyle = "#ffffff"; x.font = "800 84px " + FONT; x.fillText(String(score), 256, 160);
+        x.font = "500 34px " + FONT; x.fillStyle = "rgba(255,255,255,0.8)"; x.fillText("השיא: " + best, 256, 228);
+        x.font = "600 32px " + FONT; x.fillStyle = css(C[2]); x.fillText("נגיעה למשחק חדש", 256, 282);
+        cardTex.needsUpdate = true;
+      };
+      const KEY = "brill-game-best";
+      let best = 0; try { best = Number(localStorage.getItem(KEY)) || 0; } catch (e) { best = 0; }
+      const things = []; for (let i = 0; i < N; i++) things.push({ live: false });
+      let state = "play", left = ROUND, score = 0, spawnIn = 0.3, endFor = 0, presses = this.finger && this.finger.state ? this.finger.state.presses : 0, clock = 0;
+      const spawn = (heat) => {
+        const o = things.find((t) => !t.live); if (!o) return;
+        const r = rBase * (0.8 + 0.45 * R()), sp = unit * (0.16 + 0.2 * R()) * (1 + heat * 0.9);
+        Object.assign(o, { live: true, pop: 0, r, tone: R(), spin: kind === 0 ? R() * 6.3 : 0, vs: (R() - 0.5) * 1.6, ph: R() * 6.3 });
+        if (kind === 0) Object.assign(o, { x: (R() - 0.5) * (w - r * 2), y: h / 2 + r, vx: 0, vy: -sp });
+        else if (kind === 1) Object.assign(o, { x: (R() - 0.5) * (w - r * 2), y: -h / 2 - r, vx: 0, vy: sp * 0.8 });
+        else { const L = R() < 0.5; Object.assign(o, { x: L ? -w / 2 - r : w / 2 + r, y: (R() - 0.5) * (h * 0.7), vx: (L ? 1 : -1) * sp, vy: 0 }); }
+      };
+      const burst = (o) => {
+        let made = 0;
+        for (let i = 0; i < B && made < 18; i++) {
+          if (ba[i] > 0) continue;
+          const a = R() * 6.283, v = unit * (0.25 + R() * 0.45), col = R() < 0.5 ? C[0] : C[R() < 0.5 ? 1 : 2];
+          bp[i * 3] = o.x; bp[i * 3 + 1] = o.y; bp[i * 3 + 2] = 0; bv[i * 2] = Math.cos(a) * v; bv[i * 2 + 1] = Math.sin(a) * v; ba[i] = 1;
+          bc[i * 3] = col.r; bc[i * 3 + 1] = col.g; bc[i * 3 + 2] = col.b; made++;
+        }
+      };
+      const newRound = () => { state = "play"; left = ROUND; score = 0; spawnIn = 0.4; clock = 0; for (const t of things) t.live = false; };
+      this.step = (dt, d) => {
+        clock += d;
+        const st = this.finger && this.finger.state;
+        let tap = null;
+        if (st && cfg.touch !== false && st.presses !== presses) { // a press since the last frame (even a quick one)
+          presses = st.presses;
+          if (st.users.has(this) && this.shown()) tap = this.finger.onPlane(this.group, this.el.sceneEl, this.tmp);
+        }
+        if (state === "play") {
+          left -= d;
+          const heat = 1 - Math.max(0, left) / ROUND, alive = things.filter((t) => t.live && !t.pop).length;
+          spawnIn -= d;
+          if (spawnIn <= 0 && alive < most) { spawn(heat); spawnIn = (0.95 - val(cfg.amount, 0.5) * 0.5) * (1 - heat * 0.45) * (0.6 + R() * 0.8); }
+          if (tap) { // the nearest one under the finger is caught
+            let hit = null, bestD = Infinity;
+            for (const t of things) if (t.live && !t.pop) { const dd = Math.hypot(t.x - tap.x, t.y - tap.y); if (dd < t.r * 1.4 && dd < bestD) { bestD = dd; hit = t; } }
+            if (hit) { hit.pop = 0.001; score++; burst(hit); }
+          }
+          if (left <= 0) {
+            state = "end"; endFor = 0; const record = score > best && score > 0; if (record) { best = score; try { localStorage.setItem(KEY, String(best)); } catch (e) { /* this phone keeps no best */ } }
+            drawCard(score, best, record);
+          }
+        } else {
+          endFor += d;
+          if ((tap && endFor > 0.8) || endFor > 7) newRound();
+        }
+        cardU.value += ((state === "end" ? 1 : 0) - cardU.value) * (1 - Math.exp(-d * 8));
+        drawBar(state === "play" && clock < 2.5 ? "נגעו ב" + noun + "!" : "נקודות " + score + "   ·   " + Math.max(0, Math.ceil(left)) + " שניות");
+        things.forEach((t, i) => {
+          if (t.live) {
+            if (t.pop) { t.pop += d * 4; if (t.pop >= 1) t.live = false; }
+            else {
+              t.x += t.vx * dt + (kind === 0 ? Math.sin(clock * 1.7 + t.ph) * unit * 0.04 * dt : kind === 1 ? Math.sin(clock * 2.3 + t.ph) * unit * 0.06 * dt : 0);
+              t.y += t.vy * dt + (kind === 2 ? Math.sin(clock * 2.5 + t.ph) * unit * 0.08 * dt : 0);
+              if (kind === 0) t.spin += t.vs * dt; else if (kind === 2) t.spin = Math.sin(clock * 2 + t.ph) * 0.25; // stars turn, hearts rock
+              if (t.y < -h / 2 - t.r * 1.2 || t.y > h / 2 + t.r * 1.2 || t.x < -w / 2 - t.r * 1.2 || t.x > w / 2 + t.r * 1.2) t.live = false; // got away
+            }
+          }
+          pos[i * 3] = t.live ? t.x : 0; pos[i * 3 + 1] = t.live ? t.y : 0; size[i] = t.live ? t.r * 2 : 0; pop[i] = t.live ? t.pop : 0; spin[i] = t.live ? t.spin : 0; tone[i] = t.live ? t.tone : 0;
+        });
+        for (let i = 0; i < B; i++) if (ba[i] > 0) {
+          bv[i * 2 + 1] -= unit * 0.6 * d; bp[i * 3] += bv[i * 2] * d; bp[i * 3 + 1] += bv[i * 2 + 1] * d; ba[i] = Math.max(0, ba[i] - d * 1.6);
+        }
+        for (const k of ["position", "aSize", "aPop", "aSpin", "aTone"]) g.attributes[k].needsUpdate = true;
+        bg.attributes.position.needsUpdate = true; bg.attributes.aA.needsUpdate = true; bg.attributes.aCol.needsUpdate = true;
+      };
+      this.parts = { game: { things, get score() { return score; }, get state() { return state; }, finish() { left = 0; } } }; // for the tests
+      this.step(0, 0);
     },
     buildAurora(cfg, w, h, C) {
       const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), this.mat({ vertexShader: FLAT_VS, fragmentShader: AURORA_FS,

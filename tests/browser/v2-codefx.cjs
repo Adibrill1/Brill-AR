@@ -14,7 +14,7 @@ const SHOTS=process.env.SHOTS||'';
     a.assets.__artwork=await new Promise(r=>c.toBlob(r,'image/png'));a.elements=[];await Studio.save(a);return a.id;});
   await p.goto(base+'/index.html#/e/'+id);await p.waitForSelector('#btn-add');await p.waitForTimeout(600);
   const shot=async(name)=>{if(SHOTS)await p.screenshot({path:SHOTS+'/'+name+'.png'});};
-  const looks=await p.evaluate(()=>Studio.CODEFX.map(c=>c.id));assert.deepEqual(looks,['dissolve','dust','portal','swarm','ivy','burn','fireflies','jelly','tree','spiral','bubbles','liquid','lanterns','ripple','shatter','rain','aurora','mist','drip','sketch','sand','eyes','tunnel','lens','daysky']);
+  const looks=await p.evaluate(()=>Studio.CODEFX.map(c=>c.id));assert.deepEqual(looks,['dissolve','dust','portal','swarm','ivy','burn','fireflies','jelly','tree','spiral','bubbles','liquid','lanterns','ripple','shatter','rain','aurora','mist','drip','sketch','sand','eyes','tunnel','lens','daysky','game']);
   for(const look of looks){
     await p.evaluate(()=>Layers.openAdd());await p.locator('button.add-tile[data-add="codefx"]').tap();
     await p.locator('button.part-tile[data-codefx="'+look+'"]').tap();
@@ -52,7 +52,7 @@ const SHOTS=process.env.SHOTS||'';
   await p.evaluate(()=>App.flush&&App.flush());await p.waitForTimeout(400);
   const recId=await p.evaluate(()=>App.rec.id);
   await p.goto(base+'/preview.html#'+recId);
-  await p.waitForFunction(()=>{const n=[...document.querySelectorAll('[studio-codefx]')];return n.length===25&&n.every(x=>x.getObject3D('codefx')&&x.getObject3D('codefx').children.length>0);},null,{timeout:15000});
+  await p.waitForFunction(()=>{const n=[...document.querySelectorAll('[studio-codefx]')];return n.length===26&&n.every(x=>x.getObject3D('codefx')&&x.getObject3D('codefx').children.length>0);},null,{timeout:15000});
   await p.waitForTimeout(1500);await shot('preview');
   console.log(JSON.stringify(errs.slice(0,8)));assert.deepEqual(errs.filter(e=>!/favicon|Failed to load resource/.test(e)),[]);
   console.log('v2-codefx ok');

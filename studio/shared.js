@@ -448,7 +448,7 @@ const Studio = (() => {
   // A finger on the screen, for layers that answer touch (el.particles.touch). One set of window listeners follows the
   // primary pointer; each touch layer turns it into a point on its own plane (fingerPoint) once a frame. A press that
   // lands on such a layer "grabs" it, and Studio.fingerGrab() tells the preview not to turn the view for that drag.
-  const finger = { x: 0, y: 0, held: false, mouse: false, seen: false, grab: false, bound: false, users: new Set() };
+  const finger = { x: 0, y: 0, held: false, mouse: false, seen: false, grab: false, bound: false, presses: 0, users: new Set() }; // presses: counted, so a quick tap between two frames is not lost
   const TOUCH_MODES = ["follow", "attract", "repel", "swirl"];
   const PATTERN_TOUCH = ["ripple", "lens", "swirl"]; // how an animated background answers the finger
   function watchFinger() {
@@ -456,7 +456,7 @@ const Studio = (() => {
     const at = (e) => { finger.x = e.clientX; finger.y = e.clientY; finger.mouse = e.pointerType === "mouse"; finger.seen = true; };
     window.addEventListener("pointerdown", (e) => {
       if (e.isPrimary === false || (e.target.closest && e.target.closest("button,a,input,select,textarea,[role=button]"))) return;
-      at(e); finger.held = true; finger.grab = false;
+      at(e); finger.held = true; finger.grab = false; finger.presses++;
       for (const c of finger.users) if (c.grab()) finger.grab = true;
     }, true);
     window.addEventListener("pointermove", (e) => { if (e.isPrimary !== false) at(e); }, true);
@@ -1127,7 +1127,8 @@ vec4 baFilter(vec2 uv) {
     ["eyes", "עיניים שעוקבות", ["#3f7fbf", "#f5f1e8", "#b9785a"], ["עין אחת", "זוג עיניים", "הרבה עיניים"]],
     ["tunnel", "מנהרת זמן", ["#f2e6c9", "#05040a", "#9fd8ff"], ["מסגרות", "ספירלה", "עגולה"]],
     ["lens", "גילוי מקרוב", ["#fff1c9", "#0b0a14", "#ffffff"], ["פנס בחושך", "שחור־לבן לצבע", "ערפל שמתפזר"]],
-    ["daysky", "שמיים לפי השעה", ["#3b8fe0", "#ff8a4c", "#060b24"], ["השעה אצל הצופה", "יום ולילה בלולאה", "שקיעה ולילה"]]
+    ["daysky", "שמיים לפי השעה", ["#3b8fe0", "#ff8a4c", "#060b24"], ["השעה אצל הצופה", "יום ולילה בלולאה", "שקיעה ולילה"]],
+    ["game", "משחק קטן", ["#ffd84d", "#ff8fd8", "#7fe0ff"], ["כוכבים נופלים", "בועות שעולות", "לבבות מרחפים"]]
   ];
   const CODEFX_PICTURE = ["dissolve", "burn", "ripple", "shatter", "rain", "mist", "drip", "sketch", "sand", "tunnel", "lens"]; // the looks made from a picture
   const CODEFX_IDS = CODEFX.map((c) => c[0]), CODEFX_SHAPES = ["rect", "circle", "arch"];
