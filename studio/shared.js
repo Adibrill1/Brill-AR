@@ -538,7 +538,7 @@ const Studio = (() => {
     return s;
   }
   // the layers that can follow gravity
-  const GRAVITY_CODEFX = ["dissolve", "dust", "burn", "jelly", "tree", "bubbles", "liquid", "lanterns", "shatter", "rain", "drip"];
+  const GRAVITY_CODEFX = ["dissolve", "dust", "burn", "jelly", "tree", "bubbles", "liquid", "lanterns", "shatter", "rain", "drip", "sand"];
   function gravityFits(el) {
     if (!el) return false;
     if (["image", "video", "text", "particles"].includes(el.type)) return true;
@@ -1122,9 +1122,11 @@ vec4 baFilter(vec2 uv) {
     ["aurora", "זוהר צפוני", ["#3dffa8", "#2bd4ff", "#b06bff"], ["וילונות אור", "שמי לילה וכוכבים", "ריקוד מהיר"]],
     ["mist", "אדים על זכוכית", ["#dfe7ee", "#ffffff", "#8fa3b5"], ["אחיד", "כתמים", "עבה בשוליים"]],
     ["drip", "צבע שנוזל", ["#ff4d6d", "#ffffff", "#3a0ca3"], ["נזילה עדינה", "המסה", "טפטופים"]],
-    ["sketch", "ציור שמצטייר", ["#f4efe6", "#2b2b2b", "#e85d04"], ["עיפרון", "דיו", "גיר על לוח"]]
+    ["sketch", "ציור שמצטייר", ["#f4efe6", "#2b2b2b", "#e85d04"], ["עיפרון", "דיו", "גיר על לוח"]],
+    ["sand", "חול נושב ברוח", ["#e3b878", "#c9955a", "#8a5a2b"], ["רוח מהצד", "סופת חול", "שעון חול"]],
+    ["eyes", "עיניים שעוקבות", ["#3f7fbf", "#f5f1e8", "#b9785a"], ["עין אחת", "זוג עיניים", "הרבה עיניים"]]
   ];
-  const CODEFX_PICTURE = ["dissolve", "burn", "ripple", "shatter", "rain", "mist", "drip", "sketch"]; // the looks made from a picture
+  const CODEFX_PICTURE = ["dissolve", "burn", "ripple", "shatter", "rain", "mist", "drip", "sketch", "sand"]; // the looks made from a picture
   const CODEFX_IDS = CODEFX.map((c) => c[0]), CODEFX_SHAPES = ["rect", "circle", "arch"];
   function codeFxDefaults(look) {
     const d = CODEFX.find((c) => c[0] === look) || CODEFX[1];

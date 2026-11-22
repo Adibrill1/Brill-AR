@@ -1,5 +1,5 @@
 "use strict";
-/* Live code animations ("אנימציות קוד"): twenty looks drawn in three.js, written here, with no files to download.
+/* Live code animations ("אנימציות קוד"): twenty-two looks drawn in three.js, written here, with no files to download.
    el.codefx = { look, colors[3], speed, amount, size (0-1 each), kind, text, touch, cover, seed }:
      dissolve  a picture (el.assetId, the artwork by default) falls apart into coloured dust and gathers back
      dust      a greeting written in gold dust that swirls in, sparkles and blows away
@@ -23,6 +23,8 @@
      mist      only fogged glass in front of the picture (amount = how thick); a finger wipes it
      drip      the picture's paint runs down the real down and hangs off its edge, then flows back
      sketch    the picture draws itself in pencil, ink or chalk, the colour washes in, then back to paper
+     sand      the picture blows away grain by grain in the wind (or a storm, or runs down like an hourglass) and back
+     eyes      one, two or many eyes that follow whoever is looking (the camera), look round and blink
    With cfg.gravity (el.gravity, Studio.gravityFollower) the looks in Studio.GRAVITY_CODEFX keep their motion upright in
    the real world: turn the artwork and sparks, jellyfish, bubbles and lanterns still rise, leaves fall, metal runs low.
    Each look is one A-Frame component, "studio-codefx", built in Studio.buildElementEntity. It is an overlay layer,
@@ -1009,6 +1011,120 @@ void main() {
   gl_FragColor = vec4(mix(sk, painted, wash), pic.a * uOpacity);
 }`;
 
+  // ---------- sand: the picture is blown away grain by grain, or runs down into a heap, and comes back ----------
+  // when each grain lets go (seconds of wind): the picture and its grains work it out the same way, cell by cell
+  const SAND_REL = `
+float sandRel(vec2 hp, vec2 box, vec2 rot, float kind, vec2 grid) {
+  vec2 u = vec2(hp.x * rot.x + hp.y * rot.y, -hp.x * rot.y + hp.y * rot.x); // upright
+  float j = h21(floor((hp / box + 0.5) * grid) + 0.5), n = noise(hp / box.y * 4.0), L = length(box);
+  float s = kind > 1.5 ? 0.5 - u.y / L * 1.2 : 0.5 - u.x / L * 1.2; // the side the wind blows toward goes first; in the hourglass the top
+  return (clamp(s, 0.0, 1.0) * 0.72 + n * 0.2 + j * 0.08) * (kind > 0.5 && kind < 1.5 ? 3.2 : 4.2);
+}`;
+  const SAND_VS = `
+attribute vec3 home; attribute vec3 tint; attribute vec3 rnd;
+uniform float uS, uKind, uSize, uVh; uniform vec2 uBox, uRot, uGrid; uniform vec3 uC1;
+varying vec3 vCol; varying float vA;
+${NOISE}
+${SAND_REL}
+void main() {
+  float W = uBox.x, H = uBox.y, r0 = sandRel(home.xy, uBox, uRot, uKind, uGrid), a = max(0.0, uS - r0), z = 0.0, fade = 1.0;
+  vec2 u = vec2(home.x * uRot.x + home.y * uRot.y, -home.x * uRot.y + home.y * uRot.x), o;
+  if (uKind < 1.5) { // carried off by the wind: skipping low, then lifted and gone
+    float storm = uKind > 0.5 ? 1.0 : 0.0;
+    float x = W * (0.2 + rnd.x * 0.15 + storm * 0.12) * a + W * (0.22 + rnd.y * 0.15 + storm * 0.15) * a * a;
+    float hop = H * (0.02 + rnd.z * 0.05 + storm * 0.07) * abs(sin(a * (3.0 + rnd.x * 3.0) + rnd.y * 6.0)) * (1.0 - exp(-a * 3.0));
+    vec2 turb = vec2(sin(a * 2.1 + rnd.z * 30.0), cos(a * 1.7 + rnd.x * 30.0)) * H * (0.01 + storm * 0.05) * min(a, 1.0);
+    o = vec2(x, hop - H * 0.03 * a * a * (1.0 - storm)) + turb;
+    z = rnd.z * H * 0.15 * min(a, 1.0);
+    fade = 1.0 - smoothstep(W * 0.45, W * 1.1, x);
+  } else { // the hourglass: they fall and heap up at the bottom, the first ones lowest
+    float hb = (abs(uRot.y) * W + abs(uRot.x) * H) * 0.5, wb = (abs(uRot.x) * W + abs(uRot.y) * H) * 0.5;
+    float fx = u.x * 0.6 + (rnd.x - 0.5) * wb * 0.3, shape = max(0.0, 1.0 - abs(fx) / wb);
+    float floorY = -hb + hb * 0.62 * shape * clamp(r0 / 4.2, 0.0, 1.0) + rnd.y * H * 0.012;
+    float y = max(u.y - H * a * a, floorY), k = clamp((u.y - y) / max(u.y - floorY, 1e-4), 0.0, 1.0);
+    o = vec2(mix(u.x, fx, k * k), y) - u;
+  }
+  vec3 p = home + vec3(o.x * uRot.x - o.y * uRot.y, o.x * uRot.y + o.y * uRot.x, z); // back onto the layer
+  vCol = mix(tint, uC1 * (0.75 + 0.5 * rnd.y), smoothstep(0.0, 1.2, a) * (uKind > 1.5 ? 0.55 : 0.6));
+  vA = fade;
+  vec4 mv = modelViewMatrix * vec4(p, 1.0);
+  gl_Position = projectionMatrix * mv;
+  float persp = projectionMatrix[2][3] != 0.0 ? -mv.z : 1.0;
+  gl_PointSize = a > 0.0 ? clamp(uSize * (0.75 + 0.5 * rnd.z) * uVh * 0.5 * projectionMatrix[1][1] / max(persp, 1e-4), 1.0, 24.0) : 0.0; // still part of the picture: drawn there
+}`;
+  const SAND_FS = `uniform float uOpacity; varying vec3 vCol; varying float vA;
+void main() { vec2 d = gl_PointCoord - 0.5; float r = length(d); if (r > 0.5) discard; gl_FragColor = vec4(vCol * (1.05 - r * 0.5 - d.y * 0.3), vA * smoothstep(0.5, 0.32, r) * uOpacity); }`;
+  const SANDPIC_FS = `
+uniform sampler2D map; uniform float uS, uKind, uTime, uOpacity; uniform vec2 uBox, uRot, uGrid; uniform vec3 uC1, uC2;
+varying vec2 vUv; varying vec2 vP;
+${NOISE}
+${SAND_REL}
+void main() {
+  vec4 c = texture2D(map, vUv);
+  vec2 ij = floor(vec2(vUv.x, 1.0 - vUv.y) * uGrid), hp = vec2((ij.x + 0.5) / uGrid.x - 0.5, 0.5 - (ij.y + 0.5) / uGrid.y) * uBox; // its grain's home
+  float left = sandRel(hp, uBox, uRot, uKind, uGrid) - uS, a = c.a * step(0.0, left);
+  vec3 col = mix(c.rgb, uC1, (1.0 - smoothstep(0.0, 0.5, left)) * 0.45 * step(0.01, uS)); // the edge turns to sand just before it goes
+  if (uKind > 0.5 && uKind < 1.5) { // the storm: a haze of sand streaming across
+    vec2 q = vP / uBox.y, qu = vec2(q.x * uRot.x + q.y * uRot.y, -q.x * uRot.y + q.y * uRot.x);
+    float hz = smoothstep(0.2, 1.6, uS) * (0.08 + 0.5 * smoothstep(0.45, 0.8, fbm(vec2(qu.x * 1.5 - uTime * 1.6, qu.y * 7.0)))) * smoothstep(0.0, 0.18, min(min(vUv.x, 1.0 - vUv.x), min(vUv.y, 1.0 - vUv.y))); // soft at the edges
+    col = mix(col, uC2, hz * (0.4 + 0.6 * (1.0 - a)) / max(a + hz * (1.0 - a), 1e-4) * (a > 0.0 ? 0.6 : 1.0));
+    a = max(a, hz * 0.7);
+  }
+  gl_FragColor = vec4(col, a * uOpacity);
+}`;
+
+  // ---------- eyes: they follow whoever is looking (the phone's camera), look round, and blink ----------
+  const EYES_FS = `
+uniform float uN, uOpacity, uTime, uAmount; uniform vec4 uEye[12]; uniform vec3 uGaze[12]; uniform vec3 uC1, uC2, uC3;
+varying vec2 vUv; varying vec2 vP;
+${NOISE}
+vec4 eye(vec2 p, vec3 g, float seed) { // p in the eye's own units (x from -1 to 1); g: where it looks, and how open
+  float lidShape = pow(clamp(1.0 - p.x * p.x, 0.0, 1.0), 0.75), aa = 0.025;
+  float topFull = 0.56 * lidShape + 0.04 * p.x, botFull = -0.42 * lidShape + 0.03 * p.x, yc = mix(botFull, topFull, 0.2);
+  float top = mix(yc, topFull, g.z), bot = mix(yc, botFull, g.z);
+  float side = 1.0 - smoothstep(0.97, 1.0, abs(p.x));
+  float inOpen = smoothstep(-aa, aa, top - p.y) * smoothstep(-aa, aa, p.y - bot) * side;
+  float inFull = smoothstep(-aa, aa, topFull - p.y) * smoothstep(-aa, aa, p.y - botFull) * side;
+  vec2 c = vec2(g.x * 0.46, g.y * 0.3), d = p - c;
+  float gl = length(g.xy); vec2 gd = gl > 1e-3 ? g.xy / gl : vec2(1.0, 0.0);
+  float al = dot(d, gd); d = d - al * gd + gd * al / max(0.6, sqrt(max(0.0, 1.0 - 0.5 * gl * gl))); // turned away, the iris looks narrower
+  float r = length(d), ri = 0.36, rp = 0.11 + uAmount * 0.0 + 0.025 * (0.5 + 0.5 * sin(uTime * 0.4 + seed)), ang = atan(d.y, d.x);
+  vec3 sclera = uC2 * (0.8 + 0.2 * smoothstep(1.0, 0.15, length(p * vec2(1.0, 1.7))));
+  sclera = mix(sclera, sclera * vec3(1.0, 0.72, 0.72), 0.3 * smoothstep(0.55, 1.0, abs(p.x)) * noise(p * 22.0 + seed)); // pink at the corners
+  float fib = noise(vec2(ang * 9.549 + seed, r * 6.0)) * 0.6 + noise(vec2(ang * 19.1, r * 14.0 + seed)) * 0.4;
+  vec3 iris = uC1 * (0.55 + 0.8 * fib) * mix(1.25, 0.75, smoothstep(0.1, ri, r));
+  iris = mix(iris, min(uC1 * 1.7 + 0.12, vec3(1.0)), smoothstep(0.24, 0.15, r) * smoothstep(rp, rp + 0.05, r) * 0.4); // a lighter ring round the pupil
+  iris *= 1.0 - 0.65 * smoothstep(ri - 0.08, ri, r); // the dark rim
+  vec3 col = mix(sclera, iris, smoothstep(ri + 0.012, ri - 0.012, r));
+  col = mix(col, vec3(0.02), smoothstep(rp + 0.012, rp - 0.012, r));
+  vec2 hp = p - c;
+  col += vec3(1.0) * (smoothstep(0.065, 0.045, length(hp - vec2(-0.11, 0.12))) * 0.9 + smoothstep(0.03, 0.018, length(hp - vec2(0.1, -0.08))) * 0.5); // light on the cornea
+  col *= 0.55 + 0.45 * smoothstep(0.0, 0.22, top - p.y); // the upper lid's shadow
+  col *= 0.8 + 0.2 * smoothstep(0.0, 0.1, p.y - bot);
+  vec3 lid = uC3 * (0.7 + 0.4 * smoothstep(botFull, topFull, p.y) - 0.25 * smoothstep(0.06, 0.0, abs(p.y - mix(yc, topFull, 0.8))) * lidShape); // the lid, with its crease
+  col = mix(lid, col, inOpen);
+  vec3 lashC = uC3 * 0.15;
+  float lashT = smoothstep(0.05, 0.0, abs(p.y - top)) * side * (0.6 + 0.4 * lidShape), lashB = smoothstep(0.025, 0.0, abs(p.y - bot)) * side * 0.5;
+  float up = p.y - top, lash = step(0.0, up) * smoothstep(0.13 * lidShape, 0.0, up) * step(fract(p.x * 13.0 + up * 6.0 * p.x), 0.3) * smoothstep(0.15, 0.4, lidShape); // lashes over the top lid
+  float lk = max(max(lashT, lashB), lash);
+  col = mix(col, lashC, lk);
+  float a = max(inFull, lk);
+  float sh = smoothstep(0.22, 0.0, max(p.y - topFull, botFull - p.y)) * smoothstep(1.2, 0.9, abs(p.x)) * 0.28 * (1.0 - a); // a soft shadow round it
+  float at = a + sh;
+  return vec4(col * a / max(at, 1e-4), at);
+}
+void main() {
+  vec4 o = vec4(0.0);
+  for (int i = 0; i < 12; i++) {
+    if (float(i) >= uN) break;
+    vec4 e = uEye[i]; vec2 p = (vP - e.xy) / e.z;
+    if (abs(p.x) > 1.25 || abs(p.y) > 0.9) continue;
+    vec4 c = eye(p, uGaze[i], e.w);
+    if (c.a > o.a) o = c;
+  }
+  gl_FragColor = vec4(o.rgb, o.a * uOpacity);
+}`;
+
   // ---------- aurora: curtains of northern lights that fold and drift ----------
   const AURORA_FS = `
 uniform float uTime, uKind, uAmount, uSize, uOpacity; uniform vec2 uBox; uniform vec3 uC1, uC2, uC3;
@@ -1042,9 +1158,9 @@ void main() {
   gl_FragColor = vec4(col, clamp(I, 0.0, 1.0) * edge * uOpacity);
 }`;
 
-  const BUILDERS = { burn: "buildBurn", fireflies: "buildFireflies", jelly: "buildJelly", tree: "buildTree", spiral: "buildSpiral", bubbles: "buildBubbles", liquid: "buildLiquid", lanterns: "buildLanterns", ripple: "buildRipple", shatter: "buildShatter", rain: "buildRain", mist: "buildMist", drip: "buildDrip", sketch: "buildSketch", aurora: "buildAurora" };
+  const BUILDERS = { burn: "buildBurn", fireflies: "buildFireflies", jelly: "buildJelly", tree: "buildTree", spiral: "buildSpiral", bubbles: "buildBubbles", liquid: "buildLiquid", lanterns: "buildLanterns", ripple: "buildRipple", shatter: "buildShatter", rain: "buildRain", mist: "buildMist", drip: "buildDrip", sketch: "buildSketch", sand: "buildSand", eyes: "buildEyes", aurora: "buildAurora" };
   // the looks a finger plays with
-  const TOUCHY = new Set(["dissolve", "dust", "swarm", "burn", "fireflies", "jelly", "spiral", "bubbles", "liquid", "lanterns", "ripple", "shatter", "rain", "mist", "drip", "sketch"]);
+  const TOUCHY = new Set(["dissolve", "dust", "swarm", "burn", "fireflies", "jelly", "spiral", "bubbles", "liquid", "lanterns", "ripple", "shatter", "rain", "mist", "drip", "sketch", "sand", "eyes"]);
   AFRAME.registerComponent("studio-codefx", {
     schema: { cfg: { default: "{}" }, width: { default: 1 }, height: { default: 1 }, src: { default: "" } },
     init() { this.t = 0; this.mats = []; this.tmp = {}; this.finger = Studio.fingerTools; },
@@ -1368,6 +1484,84 @@ void main() {
           last = { x, y }; painted = true; wipe.needsUpdate = true;
         } else last = null;
       };
+    },
+    buildSand(cfg, w, h, C) {
+      const kind = Math.min(2, Math.max(0, cfg.kind | 0)), R = rand(9000 + (cfg.seed | 0)), uS = { value: 0 }, grid = new THREE.Vector2(1, 1);
+      this.parts = {};
+      this.loadPicture((tex) => {
+        const n = Math.round(8000 + val(cfg.amount, 0.5) * 22000), asp = w / h, gw = Math.max(8, Math.round(Math.sqrt(n * asp))), gh = Math.max(8, Math.round(gw / asp));
+        grid.set(gw, gh); // the same grid pointsFromImage makes
+        const pts = pointsFromImage(tex.image, w, h, n), count = pts.home.length / 3;
+        const common = { uS, uKind: { value: kind }, uBox: { value: new THREE.Vector2(w, h) }, uRot: { value: this.rot }, uGrid: { value: grid }, uC1: { value: C[0] }, uC2: { value: C[1] } };
+        const pic = new THREE.Mesh(new THREE.PlaneGeometry(w, h), this.mat({ vertexShader: FLAT_VS, fragmentShader: SANDPIC_FS, uniforms: Object.assign({ map: { value: tex }, uTime: { value: 0 } }, common) }));
+        pic.position.z = 0.0008; this.group.add(pic);
+        if (!count) return;
+        const rnd = new Float32Array(count * 3); for (let i = 0; i < rnd.length; i++) rnd[i] = R();
+        const g = new THREE.BufferGeometry();
+        g.setAttribute("position", new THREE.Float32BufferAttribute(pts.home, 3)); g.setAttribute("home", new THREE.Float32BufferAttribute(pts.home, 3));
+        g.setAttribute("tint", new THREE.Float32BufferAttribute(pts.tint, 3)); g.setAttribute("rnd", new THREE.BufferAttribute(rnd, 3));
+        const grains = new THREE.Points(g, this.mat({ vertexShader: SAND_VS, fragmentShader: SAND_FS, uniforms: Object.assign({ uSize: { value: pts.cell * (0.75 + val(cfg.size, 0.5) * 1.0) }, uVh: { value: 800 } }, common) }));
+        grains.position.z = 0.001; grains.frustumCulled = false; this.group.add(grains);
+      });
+      // whole, blown away (a finger makes the wind stronger), gone a moment, blown back
+      const WHOLE = 1.2, BLOW = kind === 1 ? 5.5 : kind === 2 ? 5.6 : 6.5, GONE = kind === 2 ? 1.6 : 0.9, BACK = 3, ALL = WHOLE + BLOW + GONE + BACK;
+      let clock = 0;
+      this.step = (dt) => {
+        const f = this.touchPoint();
+        if (f && clock < WHOLE) clock = WHOLE;
+        clock = (clock + dt * (f && clock < WHOLE + BLOW ? 2.2 : 1)) % ALL;
+        uS.value = clock < WHOLE ? 0 : clock < WHOLE + BLOW ? clock - WHOLE : clock < WHOLE + BLOW + GONE ? BLOW : BLOW * (1 - smooth(0, 1, (clock - WHOLE - BLOW - GONE) / BACK));
+      };
+    },
+    buildEyes(cfg, w, h, C) {
+      const kind = Math.min(2, Math.max(0, cfg.kind | 0)), R = rand(7000 + (cfg.seed | 0)), size = val(cfg.size, 0.5), unit = Math.max(w, h), eyes = [];
+      if (kind === 0) eyes.push({ x: 0, y: 0, r: Math.min(w * 0.46, h * 0.85) * (0.6 + 0.4 * size) });
+      else if (kind === 1) { const r = Math.min(w * 0.22, h * 0.8) * (0.6 + 0.4 * size), x = Math.min(w * 0.5 - r * 1.05, r * 1.3); eyes.push({ x: -x, y: 0, r }, { x, y: 0, r }); }
+      else {
+        const n = 3 + Math.round(val(cfg.amount, 0.5) * 9), base = Math.min(w, h) * (0.07 + 0.1 * size);
+        for (let t = 0; t < 400 && eyes.length < n; t++) {
+          const r = base * (0.6 + 0.6 * R()), x = (R() - 0.5) * Math.max(0, w - r * 2.5), y = (R() - 0.5) * Math.max(0, h - r * 1.8);
+          if (eyes.every((e) => Math.abs(e.x - x) > (e.r + r) * 1.2 || Math.abs(e.y - y) > (e.r + r) * 0.75)) eyes.push({ x, y, r });
+        }
+      }
+      const E = [], G = [];
+      for (let i = 0; i < 12; i++) { const e = eyes[i]; E.push(new THREE.Vector4(e ? e.x : 0, e ? e.y : 0, e ? e.r : 1, R() * 50)); G.push(new THREE.Vector3(0, 0, 1)); }
+      eyes.forEach((e) => { e.gx = 0; e.gy = 0; e.blinkIn = 0.8 + R() * 4; e.b = -1; e.hit = false; });
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), this.mat({ vertexShader: FLAT_VS, fragmentShader: EYES_FS,
+        uniforms: { uN: { value: eyes.length }, uEye: { value: E }, uGaze: { value: G }, uTime: { value: 0 }, uAmount: { value: val(cfg.amount, 0.5) }, uC1: { value: C[0] }, uC2: { value: C[1] }, uC3: { value: C[2] } } }));
+      mesh.position.z = 0.0009; this.group.add(mesh);
+      this.parts = {};
+      const cam = new THREE.Vector3(), last = new THREE.Vector3(); let still = 99, wander = { x: 0, y: 0 }, wanderIn = 0, seen = false;
+      const BLINK = 0.22;
+      const startBlink = (e) => { if (e.b < 0) e.b = 0; };
+      this.step = (dt, d) => {
+        const sc = this.el.sceneEl, camera = sc && sc.camera, f = this.touchPoint();
+        let haveCam = false;
+        if (camera && this.group) { camera.getWorldPosition(cam); this.group.worldToLocal(cam); haveCam = cam.z > 1e-4; }
+        if (haveCam) { if (seen && cam.distanceTo(last) / unit > 0.0015) still = 0; last.copy(cam); seen = true; }
+        still += d;
+        wanderIn -= dt; if (wanderIn <= 0) { wander = { x: (R() - 0.5) * 1.3, y: (R() - 0.5) * 0.9 }; wanderIn = 0.9 + R() * 2.4; }
+        const follow = f ? 1 : haveCam ? Math.max(0, 1 - Math.max(0, still - 2.5)) : 0; // follows whoever looks; still for a while, it looks round
+        const together = kind === 1;
+        if (together) { const a = eyes[0]; a.blinkIn -= dt; if (a.blinkIn <= 0) { eyes.forEach(startBlink); a.blinkIn = 2 + R() * 4.5; } }
+        eyes.forEach((e, i) => {
+          let tx = wander.x, ty = wander.y;
+          if (follow > 0) {
+            const px = f ? f.x : cam.x, py = f ? f.y : cam.y, pz = f ? unit * 0.5 : Math.max(cam.z, unit * 0.2);
+            let gx = (px - e.x) / pz * 1.8, gy = (py - e.y) / pz * 1.8; const L = Math.hypot(gx, gy); if (L > 1) { gx /= L; gy /= L; }
+            tx = tx + (gx - tx) * follow; ty = ty + (gy - ty) * follow;
+          }
+          const k = 1 - Math.exp(-dt * 14); e.gx += (tx - e.gx) * k; e.gy += (ty - e.gy) * k;
+          if (!together) { e.blinkIn -= dt; if (e.blinkIn <= 0) { startBlink(e); e.blinkIn = 2 + R() * 5; } }
+          const hit = !!f && Math.abs(f.x - e.x) < e.r && Math.abs(f.y - e.y) < e.r * 0.6; // touched right on the eye: it blinks
+          if (hit && !e.hit) (together ? eyes : [e]).forEach(startBlink);
+          e.hit = hit;
+          let open = 1;
+          if (e.b >= 0) { e.b += dt; open = e.b < BLINK ? 1 - Math.sin(Math.PI * e.b / BLINK) : 1; if (e.b >= BLINK) e.b = -1; }
+          G[i].set(e.gx, e.gy, open);
+        });
+      };
+      this.step(0.016, 0.016);
     },
     buildAurora(cfg, w, h, C) {
       const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), this.mat({ vertexShader: FLAT_VS, fragmentShader: AURORA_FS,
