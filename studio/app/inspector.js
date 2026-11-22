@@ -439,7 +439,20 @@ window.Inspector = (() => {
       T({ label: "להקפיא תנועה", hint: "נעצר על רגע אחד, גם בתצוגה המקדימה ובמצלמה", get: () => Studio.isStill(App.sel()), set: (v) => { App.setStill(App.selId, v); } }),
       still ? S(Object.assign({ label: "הרגע שמוצג", min: 0, max: 1, step: 0.01, get: () => Studio.stillAt(App.sel()), set: (v, f) => App.setStillAt(App.selId, v, f) }, pct)) : null);
   }
-  function styleTab(e) { const g = stillGroup(e), out = styleOf(e); return g ? [g, ...out] : out; }
+  function styleTab(e) { const g = stillGroup(e), out = styleOf(e).concat(gravityGroup(e) || []); return g ? [g, ...out] : out; }
+  // real gravity: what the switch does for each kind of layer
+  const GRAVITY_HINT = { image: "תלויה מהקצה העליון ומתנדנדת לפי הכיוון האמיתי של למטה", video: "תלוי מהקצה העליון ומתנדנד לפי הכיוון האמיתי של למטה",
+    text: "תלוי מהקצה העליון ומתנדנד לפי הכיוון האמיתי של למטה", particles: "החלקיקים זורמים לכיוון האמיתי של למטה", pattern: "העשן והאש עולים תמיד כלפי מעלה",
+    dissolve: "החלקיקים עפים לפי הכיוון האמיתי", dust: "האבק עף לפי הכיוון האמיתי", burn: "הניצוצות עולים כלפי מעלה, ו״מלמטה למעלה״ נשרף מהצד התחתון האמיתי",
+    jelly: "המדוזות עולות תמיד כלפי מעלה", tree: "העלים נושרים כלפי מטה", bubbles: "הבועות עולות כלפי מעלה", liquid: "הטיפות זורמות לצד הנמוך", lanterns: "הפנסים עולים תמיד לשמיים" };
+  function gravityGroup(e) {
+    if (!Studio.gravityFits || !Studio.gravityFits(e)) return null;
+    const hint = GRAVITY_HINT[e.type === "codefx" ? e.codefx.look : e.type];
+    return UI.group("גרביטציה",
+      T({ label: "לפי כוח המשיכה האמיתי", hint, get: () => App.sel().gravity === true,
+        set: upd((x, v) => { if (v) { x.gravity = true; Studio.askTilt(); } else delete x.gravity; }) }),
+      note("במצלמה: כשמסובבים את היצירה ימינה, התנועה זורמת ימינה, כמו בעולם האמיתי. כאן בעורך אפשר לראות את זה כשמסובבים את השכבה, ובטלפון גם כשמטים את הטלפון.", "refresh"));
+  }
   function styleOf(e) {
     if (e.type === "text") return styleText(e);
     if (e.type === "image" || e.type === "video") return styleMedia(e);

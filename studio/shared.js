@@ -463,11 +463,84 @@ const Studio = (() => {
     const up = (e) => { if (e.isPrimary === false) return; finger.held = false; finger.grab = false; if (!finger.mouse) finger.seen = false; for (const c of finger.users) c.grabbed = null; };
     window.addEventListener("pointerup", up, true); window.addEventListener("pointercancel", up, true);
   }
+  // Real gravity (el.gravity): which way is down for a layer, on its own plane. The phone's tilt (deviceorientation,
+  // where the page gets it: Android, or an iPhone that allowed it) gives down on the screen; without it, the bottom of
+  // the screen is down, which is true when the phone is held upright and the artwork turns in front of it. That down is
+  // carried into the scene by the camera and into the layer by the layer's own turn, so a picture turned to the right
+  // sends its particles to the right. Motion is drawn upright, as designed, and turned by the follower's angle.
+  const tilt = { bound: false, at: 0, x: 0, y: -1, z: 0 };
+  function watchTilt() {
+    if (tilt.bound || typeof window === "undefined") return; tilt.bound = true;
+    window.addEventListener("deviceorientation", (e) => {
+      if (e.beta == null || e.gamma == null) return;
+      const b = e.beta * Math.PI / 180, g = e.gamma * Math.PI / 180;
+      const ux = -Math.sin(g) * Math.cos(b), uy = Math.sin(b), uz = Math.cos(g) * Math.cos(b); // up, in the phone's own axes
+      const a = ((screen.orientation && screen.orientation.angle) || window.orientation || 0) * Math.PI / 180; // the screen turned on its side
+      tilt.x = -(ux * Math.cos(a) - uy * Math.sin(a)); tilt.y = -(ux * Math.sin(a) + uy * Math.cos(a)); tilt.z = -uz; tilt.at = performance.now();
+    }, true);
+  }
+  // an iPhone gives the tilt only after it asks; asked from a tap (the editor's gravity switch), never on its own
+  function askTilt() {
+    watchTilt();
+    const E = window.DeviceOrientationEvent;
+    if (E && typeof E.requestPermission === "function") return E.requestPermission().then((r) => r === "granted", () => false);
+    return Promise.resolve(true);
+  }
+  const gT = { q: null, v: null };
+  function gravityIn(obj, sceneEl, out) {
+    watchTilt();
+    if (!gT.q) { gT.q = new THREE.Quaternion(); gT.v = new THREE.Vector3(); }
+    const live = performance.now() - tilt.at < 1500, v = gT.v, cam = sceneEl && sceneEl.camera;
+    if (live) v.set(tilt.x, tilt.y, tilt.z); else v.set(0, -1, 0);
+    if (cam) v.applyQuaternion(cam.getWorldQuaternion(gT.q));
+    if (obj) { obj.updateWorldMatrix(true, false); v.applyQuaternion(obj.getWorldQuaternion(gT.q).invert()); }
+    out.x = v.x; out.y = v.y; out.z = v.z; return out;
+  }
+  // one per layer: down on its plane, smoothed (gx, gy), how upright the layer stands (flat: 1 upright, 0 lying down),
+  // and the angle that turns the upright design so its down points down (cos, sin)
+  function gravityFollower(rate) {
+    const raw = { x: 0, y: -1, z: 0 }, s = { gx: 0, gy: -1, flat: 1, ang: 0, cos: 1, sin: 0, first: true };
+    s.step = (obj, sceneEl, dt) => {
+      gravityIn(obj, sceneEl, raw);
+      const k = s.first ? 1 : 1 - Math.exp(-dt * (rate || 4)); s.first = false;
+      s.gx += (raw.x - s.gx) * k; s.gy += (raw.y - s.gy) * k;
+      const m = Math.hypot(s.gx, s.gy); s.flat = Math.min(1, m);
+      if (m > 0.12) { s.ang = Math.atan2(s.gx, -s.gy); s.cos = Math.cos(s.ang); s.sin = Math.sin(s.ang); } // lying flat: keeps the last way
+      return s;
+    };
+    return s;
+  }
+  // the layers that can follow gravity
+  const GRAVITY_CODEFX = ["dissolve", "dust", "burn", "jelly", "tree", "bubbles", "liquid", "lanterns"];
+  function gravityFits(el) {
+    if (!el) return false;
+    if (["image", "video", "text", "particles"].includes(el.type)) return true;
+    if (el.type === "pattern") return !!(el.pattern && ["smoke", "fire"].includes(el.pattern.look));
+    return el.type === "codefx" && !!el.codefx && GRAVITY_CODEFX.includes(el.codefx.look);
+  }
+  // A picture, a text or a video hung by its top edge: it turns to hang down and swings a little as the artwork turns.
+  function ensureHangComponent() {
+    if (!window.AFRAME || AFRAME.components["studio-hang"]) return;
+    AFRAME.registerComponent("studio-hang", {
+      init() { this.G = gravityFollower(12); this.a = null; this.v = 0; },
+      remove() { const m = this.el.getObject3D("mesh"); if (m) { m.rotation.z = 0; m.position.x = 0; m.position.y = 0; } },
+      tick(time, dt) {
+        const m = this.el.getObject3D("mesh"); if (!m || this.el.closest("[data-studio-editing]")) return;
+        const d = Math.min(0.05, (dt || 16) / 1000), G = this.G.step(this.el.object3D, this.el.sceneEl, d);
+        if (this.a == null) this.a = G.ang;
+        const diff = Math.atan2(Math.sin(G.ang - this.a), Math.cos(G.ang - this.a));
+        const w = 2 * Math.PI * 0.85; // a gentle pendulum, damped so it settles after a few swings
+        this.v += (w * w * Math.sin(diff) * Math.max(0.25, G.flat) - 2 * 0.12 * w * this.v) * d; this.a += this.v * d;
+        const gp = m.geometry && m.geometry.parameters, h = (gp && gp.height || 0) / 2, c = Math.cos(this.a), s = Math.sin(this.a);
+        m.rotation.z = this.a; m.position.x = s * h; m.position.y = h - c * h; // turned around the middle of its top edge
+      }
+    });
+  }
   // Particles: lightweight THREE.Points emitter (sparkle rises, confetti falls).
   function ensureParticlesComponent() {
     if (!window.AFRAME || AFRAME.components["particles"]) return;
     AFRAME.registerComponent("particles", {
-      schema: { depth: { default: 0 }, preset: { default: "sparkle" }, count: { default: 120 }, color: { default: "#ffd94d" }, width: { default: 0.5 }, height: { default: 0.5 }, size: { default: 12 }, speed: { default: 1 }, sprite: { default: "" }, direction: { default: -1 },lifetime:{default:0},life2:{default:0},emitter:{default:"box"},endColor:{default:"#ffffff"},endSize:{default:1},fade:{default:false},spread:{default:1},color2:{default:""},touch:{default:"none"},touchPower:{default:0.6},touchRange:{default:0.6},touchBack:{default:true},turn:{default:false},flap:{default:0} }, // direction: degrees (0=up,90=right,180=down,270=left); -1 = preset's fixed direction; -2 = random per particle; -3 = outward from center. spread: emission-area scale (documented Artivive control)
+      schema: { depth: { default: 0 }, preset: { default: "sparkle" }, count: { default: 120 }, color: { default: "#ffd94d" }, width: { default: 0.5 }, height: { default: 0.5 }, size: { default: 12 }, speed: { default: 1 }, sprite: { default: "" }, direction: { default: -1 },lifetime:{default:0},life2:{default:0},emitter:{default:"box"},endColor:{default:"#ffffff"},endSize:{default:1},fade:{default:false},spread:{default:1},color2:{default:""},touch:{default:"none"},touchPower:{default:0.6},touchRange:{default:0.6},touchBack:{default:true},turn:{default:false},flap:{default:0},gravity:{default:false} }, // direction: degrees (0=up,90=right,180=down,270=left); -1 = preset's fixed direction; -2 = random per particle; -3 = outward from center. spread: emission-area scale (documented Artivive control)
       init() {
         const n = Math.min(500, Math.max(10, this.data.count | 0));
         const pos = new Float32Array(n * 3);
@@ -499,7 +572,7 @@ const Studio = (() => {
         const matOpts = { color: new THREE.Color("#ffffff"),vertexColors:true, size: Math.min(0.2, Math.max(0.002, this.data.size / 1000)), transparent: true, opacity: 0.9, depthWrite: false };
         if (this.data.sprite) { matOpts.map = new THREE.TextureLoader().load(this.data.sprite); matOpts.alphaTest = 0.05;
           // turn: the picture is drawn falling straight down and is turned to the way the particles travel (rain in wind)
-          if (this.data.turn && this.data.direction >= 0) { matOpts.map.center.set(0.5, 0.5); matOpts.map.rotation = (this.data.direction - 180) * Math.PI / 180; } } // custom sprite texture (PNG with alpha)
+          if (this.data.turn && this.data.direction >= 0) { matOpts.map.center.set(0.5, 0.5); matOpts.map.rotation = (this.data.direction - 180) * Math.PI / 180; this.turnBase = matOpts.map.rotation; } } // custom sprite texture (PNG with alpha)
         else { matOpts.map = builtinSprite(this.data.preset); matOpts.alphaTest = 0.02; } // without a map every particle is a plain square
         const material=new THREE.PointsMaterial(matOpts);
         material.onBeforeCompile=shader=>{shader.vertexShader='attribute float particleSize; attribute float particleAlpha; varying float vParticleAlpha;\n'+shader.vertexShader;shader.vertexShader=shader.vertexShader.replace('gl_PointSize = size;', 'gl_PointSize = size * particleSize; vParticleAlpha = particleAlpha;');shader.fragmentShader='varying float vParticleAlpha;\n'+shader.fragmentShader;shader.fragmentShader=shader.fragmentShader.replace('#include <color_fragment>','#include <color_fragment>\ndiffuseColor.a *= vParticleAlpha;');
@@ -573,15 +646,19 @@ const Studio = (() => {
         const arr = this.points.geometry.attributes.position.array;
         const half = this.data.height / 2, off = this.off;
         if (off) for (let i = 0; i < arr.length; i += 3) { arr[i] -= off[i]; arr[i + 1] -= off[i + 1]; }
+        // real gravity: the whole flow turns so that its down is the world's down (the layer turned right: they run right)
+        let gc = 1, gs = 0;
+        if (this.data.gravity) { const G = this.grav || (this.grav = gravityFollower(3)); G.step(this.el.object3D, this.el.sceneEl, dtS); gc = G.cos; gs = G.sin; if (this.turnBase != null && this.points.material.map) this.points.material.map.rotation = this.turnBase - G.ang; }
         for (let i = 0; i < arr.length; i += 3) {
           const index=i/3,d=this.data,life=this.lives?this.lives[index]:d.lifetime;if(d.lifetime>0&&life>0){this.ages[index]+=dtS;if(this.ages[index]>=life){this.ages[index]%=life;this.spawn(index);this.setVelocity(index);}const f=this.ages[index]/life;this.sizes[index]=1+(d.endSize-1)*f;this.alphas[index]=d.fade?Math.sin(Math.PI*f):1;this.ageColor=this.ageColor||new THREE.Color();if(this.color2)this.ageColor.setRGB(this.startColors[i],this.startColors[i+1],this.startColors[i+2]);else this.ageColor.copy(this.startColor);this.ageColor.lerp(this.endColor,f).toArray(this.points.geometry.attributes.color.array,i);}
-          arr[i] += this.vel[i] * dtS;
-          arr[i + 1] += this.vel[i + 1] * dtS;
+          const vx = this.vel[i] * gc - this.vel[i + 1] * gs, vy = this.vel[i] * gs + this.vel[i + 1] * gc;
+          arr[i] += vx * dtS;
+          arr[i + 1] += vy * dtS;
           const halfW = this.data.width / 2 * (this.data.spread>0?Math.min(2,this.data.spread):1);
-          if (this.data.lifetime<=0&&this.vel[i] > 0 && arr[i] > halfW) arr[i] = -halfW;
-          if (this.data.lifetime<=0&&this.vel[i] < 0 && arr[i] < -halfW) arr[i] = halfW;
-          if (this.data.lifetime<=0&&this.vel[i + 1] > 0 && arr[i + 1] > half) arr[i + 1] = -half;
-          if (this.data.lifetime<=0&&this.vel[i + 1] < 0 && arr[i + 1] < -half) arr[i + 1] = half;
+          if (this.data.lifetime<=0&&vx > 0 && arr[i] > halfW) arr[i] = -halfW;
+          if (this.data.lifetime<=0&&vx < 0 && arr[i] < -halfW) arr[i] = halfW;
+          if (this.data.lifetime<=0&&vy > 0 && arr[i + 1] > half) arr[i + 1] = -half;
+          if (this.data.lifetime<=0&&vy < 0 && arr[i + 1] < -half) arr[i + 1] = half;
         }
         if (off) this.touchStep(arr, dtS);
         this.points.geometry.attributes.position.needsUpdate = true;
@@ -1340,7 +1417,7 @@ vec4 bpPattern(vec2 uv) {
     const VERT = "varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy * 2.0, 0.0, 1.0); }";
     const FRAG = "varying vec2 vUv;\n" + PATTERN_GLSL + "\nvoid main() { vec4 c = bpPattern(vUv); if (!(c.a >= 0.0 && c.a <= 1.0)) c = vec4(0.0); gl_FragColor = bpLinear(clamp(c, 0.0, 1.0)); }";
     AFRAME.registerComponent("studio-weather", {
-      schema: { values: { default: "{}" }, speed: { default: 0 }, width: { default: 1 }, height: { default: 1 }, depth3d: { default: false } },
+      schema: { values: { default: "{}" }, speed: { default: 0 }, width: { default: 1 }, height: { default: 1 }, depth3d: { default: false }, gravity: { default: false } },
       init() {
         this.t = 0; this.seeds = []; this.targets = []; this.quads = [];
         this.cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -1412,7 +1489,15 @@ vec4 bpPattern(vec2 uv) {
         r.autoClear = true; r.setClearColor(0x000000, 0);
         this.quads.forEach((q, i) => { q.uniforms.bpTime.value = this.t + i * 7.3; r.setRenderTarget(this.targets[i]); r.render(q.scene, this.cam); });
         r.setRenderTarget(prev); r.autoClear = clear; r.setClearColor(cc, ca); if (r.xr) r.xr.enabled = xr;
+        this.lean(Math.min(dt || 0, 100) / 1000);
         this.face();
+      },
+      // real gravity: smoke and fire lean so they rise up in the world, turned around the middle of their foot
+      lean(d) {
+        const g = this.group; if (!g) return;
+        if (!this.data.gravity) { if (g.rotation.z) { g.rotation.z = 0; g.position.set(0, 0, 0); } return; }
+        const G = this.G || (this.G = gravityFollower(3)), a = G.step(this.el.object3D, this.el.sceneEl, d).ang, h = this.data.height / 2;
+        g.rotation.z = a; g.position.set(-Math.sin(a) * h, -h + Math.cos(a) * h, 0);
       },
       // the 3D sheets turn to the camera: the sun all the way, the smoke slices only around the layer's own up
       face() {
@@ -2508,7 +2593,7 @@ vec4 bpPattern(vec2 uv) {
       e = document.createElement("a-entity");
       let spriteAttr = "";
       if (pc.preset === "custom" && pc.spriteAssetId && rec.assets && rec.assets[pc.spriteAssetId]) spriteAttr = `; sprite: ${blobURL(rec.assets[pc.spriteAssetId])}`;
-      e.setAttribute("particles", `preset: ${pc.preset || "sparkle"}; count: ${pc.count || 120}; color: ${pc.color || "#ffd94d"}; size: ${pc.size || 12}; speed: ${pc.speed || 1}; width: ${ts.w}; height: ${ts.h}; lifetime: ${pc.lifetime||0}; emitter: ${pc.emitter||"box"}; endColor: ${pc.endColor||pc.color||"#ffd94d"}; endSize: ${pc.endSize==null?1:pc.endSize}; fade: ${!!pc.fade}; spread: ${pc.spread>0?Math.min(2,pc.spread):1}${pc.life2>0?"; life2: "+pc.life2:""}${pc.color2?"; color2: "+pc.color2:""}${spriteAttr}${pc.direction != null ? "; direction: " + (pc.direction | 0) : ""}${pc.turn ? "; turn: true" : ""}${pc.depth3d ? "; depth: " + (0.7 * Math.min(ts.w, ts.h)).toFixed(4) : ""}${pc.flap > 0 ? "; flap: " + pc.flap : ""}${TOUCH_MODES.includes(pc.touch) ? `; touch: ${pc.touch}; touchPower: ${pc.touchPower > 0 ? pc.touchPower : 0.6}; touchRange: ${pc.touchRange > 0 ? pc.touchRange : 0.6}; touchBack: ${pc.touchBack !== false}` : ""}`);
+      e.setAttribute("particles", `preset: ${pc.preset || "sparkle"}; count: ${pc.count || 120}; color: ${pc.color || "#ffd94d"}; size: ${pc.size || 12}; speed: ${pc.speed || 1}; width: ${ts.w}; height: ${ts.h}; lifetime: ${pc.lifetime||0}; emitter: ${pc.emitter||"box"}; endColor: ${pc.endColor||pc.color||"#ffd94d"}; endSize: ${pc.endSize==null?1:pc.endSize}; fade: ${!!pc.fade}; spread: ${pc.spread>0?Math.min(2,pc.spread):1}${pc.life2>0?"; life2: "+pc.life2:""}${pc.color2?"; color2: "+pc.color2:""}${spriteAttr}${pc.direction != null ? "; direction: " + (pc.direction | 0) : ""}${pc.turn ? "; turn: true" : ""}${pc.depth3d ? "; depth: " + (0.7 * Math.min(ts.w, ts.h)).toFixed(4) : ""}${pc.flap > 0 ? "; flap: " + pc.flap : ""}${el.gravity === true ? "; gravity: true" : ""}${TOUCH_MODES.includes(pc.touch) ? `; touch: ${pc.touch}; touchPower: ${pc.touchPower > 0 ? pc.touchPower : 0.6}; touchRange: ${pc.touchRange > 0 ? pc.touchRange : 0.6}; touchBack: ${pc.touchBack !== false}` : ""}`);
     } else if (el.type === "model") {
       // glTF/GLB: wrapper carries placement (timeline/tap target); inner child carries the
       // normalized model scale so timeline scale keys don't fight the fit-to-size normalization.
@@ -2559,11 +2644,11 @@ vec4 bpPattern(vec2 uv) {
       // drawn by codefx.js (without it the layer stays empty)
       e = document.createElement("a-entity");
       const c = el.codefx || codeFxDefaults(), blob = CODEFX_PICTURE.includes(c.look) && rec.assets && rec.assets[c.picture || "__artwork"];
-      e.setAttribute("studio-codefx", { cfg: JSON.stringify(c), width: ts.w, height: ts.h, src: blob ? blobURL(blob) : "" });
+      e.setAttribute("studio-codefx", { cfg: JSON.stringify(el.gravity === true ? Object.assign({}, c, { gravity: true }) : c), width: ts.w, height: ts.h, src: blob ? blobURL(blob) : "" });
     } else if (isWeather(el)) {
       ensureWeatherComponent();
       e = document.createElement("a-entity");
-      e.setAttribute("studio-weather", { values: JSON.stringify(patternValues(el, ts.w / ts.h, 1 / 600)), speed: el.pattern.speed || 0, width: ts.w, height: ts.h, depth3d: el.pattern.depth3d === true });
+      e.setAttribute("studio-weather", { values: JSON.stringify(patternValues(el, ts.w / ts.h, 1 / 600)), speed: el.pattern.speed || 0, width: ts.w, height: ts.h, depth3d: el.pattern.depth3d === true, gravity: el.gravity === true && gravityFits(el) });
     } else if (el.type === "pattern") {
       ensurePatternComponent();
       e = document.createElement("a-plane");
@@ -2595,6 +2680,7 @@ vec4 bpPattern(vec2 uv) {
 
     e.setAttribute("position", pos);
     e.setAttribute("rotation", rot);
+    if (el.gravity === true && ["image", "video", "text"].includes(el.type)) { ensureHangComponent(); e.setAttribute("studio-hang", ""); } // hangs from its top edge
     e.dataset.elId = el.id;
     if (hasEnterExit(el)) watchEnterExit(e, el, rec);
     // a scatter's copies carry their own order (farthest first), a group's members their own
@@ -3372,6 +3458,7 @@ vec4 bpPattern(vec2 uv) {
       for (const key of ["x","y","z","w","h","rot","rotX","rotY","opacity","aspect","volume","stillAt"]) if (el[key] != null && (typeof el[key] !== "number" || !Number.isFinite(el[key]))) throw new Error("bad numeric field");
       if(!validParticles(el))throw new Error('bad particles');
       if (el.depth3d != null && typeof el.depth3d !== "boolean") throw new Error("bad depth");
+      if (el.gravity != null && typeof el.gravity !== "boolean") throw new Error("bad gravity");
       if(!validTextFx(el))throw new Error('bad text effect');
       if(!validTimeCube(el))throw new Error('bad time cube');
       // bindTap may navigate to el.tapUrl on tap - refuse script-executing schemes
@@ -3483,6 +3570,12 @@ vec4 bpPattern(vec2 uv) {
   // headless browsers), show a clear tap-to-play button instead of a silently frozen frame.
   // Rotation dragged by hand (3D gizmo, rotation slider) snaps to the nearest multiple of 90° within tol degrees.
   // Typed numbers stay exact.
+  // a size close to the artwork's own (its full width or its full height) snaps onto it: the factor that gets it there
+  function snapFull(w, h, tol = 0.035) {
+    if (Number.isFinite(w) && w > 0 && Math.abs(w - 1) < tol) return 1 / w;
+    if (Number.isFinite(h) && h > 0 && Math.abs(h - 1) < tol) return 1 / h;
+    return 1;
+  }
   function snapAngle(deg, tol = 6) { const t = Math.round(deg / 90) * 90; return Math.abs(deg - t) <= tol ? (t || 0) : deg; }
   // Phones only allow sound after a touch, so videos start muted. Every touch (until sound is on) unmutes every video,
   // starts sound elements and resumes the audio context. A video that is paused at that moment (its state is hidden or
@@ -3723,9 +3816,10 @@ vec4 bpPattern(vec2 uv) {
            audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, blobURL, releaseBlobURL, blobURLs, historyState, restoreHistory, duplicateLayer, exportJSON, exportObject, exportedAssetIds, importPublished, missingAssets, importJSON, exportZIP, importZIP, zipToJSON, fetchPublished, ownBlob, assetHealth, fileHealth, seedDemo, normEl, ANIMS, drawTextCanvas, loadTextFonts, lineDir, visualOrder, ENTER_EXIT: ENTER_EXIT.map(([id, enter, exit, , text]) => ({ id, enter, exit, text: !!text })), enterExitFor, validEnterExit, hasEnterExit, enterExitDur, fxLook, fxTimes, drawEnterExitText, animSpeed, FX: FX.map(([id, name]) => ({ id, name, moving: FX_MOVING.has(id) })), fxFrame,
            WEATHER: WEATHER.map(([id, name, colors, speed, kinds]) => ({ id, name, kinds: kinds.slice() })), isWeather, PATTERNS: PATTERNS.map(([id, name, colors, speed]) => ({ id, name, colors: colors.slice(), speed })), PATTERN_PALETTES: PATTERN_PALETTES.map(([name, colors]) => ({ name, colors: colors.slice() })),
            fingerGrab: () => finger.grab, fingerTools: { watch: watchFinger, state: finger, onPlane: fingerOnPlane },
+           gravityFollower, gravityFits, askTilt, GRAVITY_CODEFX,
            CODEFX: CODEFX.map(([id, name, colors, kinds]) => ({ id, name, colors, kinds })), CODEFX_SHAPES, CODEFX_PICTURE, codeFxDefaults, validCodeFx, TOUCH_MODES, PATTERN_TOUCH, validPattern, textFxOf, TEXT_FX: TEXT_FX.map(([id, name, color, amount]) => ({ id, name, color, amount })), validTextFx,
            PATTERN_SHAPES: PATTERN_SHAPES.map(([id, name]) => ({ id, name })), patternDefaults, patternAspect, patternFrame, validPattern, validFx, validChroma, keyValues, pixelAt, CHROMA_DEFAULT, SCATTER_TYPES, SCATTER_MAX, mediaType, isStill, stillAt, setStill, scatterItem, scatterLimit, scatterPath, scatterCopies, scatterCopyEl, scatterBounds, refreshScatter, makeScatter, makeFan, scaleScatter, breakScatter, validScatter, FONTS: FONTS.map(([id, name]) => ({ id, name })), buildElementEntity, groupOf, fitGroup, makeGroup, breakGroup, leaveGroup, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, videoHasPicture, ensureTimeCubeComponent, bakeTimeCube, validTimeCube, TIMECUBE_DIRS, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, artworkFingerprint, fingerprintDistance, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, applyTimelinePose, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, turnImageBlob, turnLayers, trackList, makeTrackRunner,
            load: id=>settledRead(id), all: ()=>settledRead(), del: delExperience, LIMITS, mediaBytes, pushBack, addBlocker, publishBlocker, restoreBlocker, exportWarning, exportJSONSize,
-           onSaveState, installSaveGuard, saveState, soundOnTouch, snapAngle, syncMedia,
+           onSaveState, installSaveGuard, saveState, soundOnTouch, snapAngle, snapFull, syncMedia,
            _testHoldSave:p=>{saveHold=p;}, _testFailSave:m=>{failSave=m;}, _testFailPut:o=>{failPut=o?{...o}:null;} };
 })();

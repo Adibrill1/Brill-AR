@@ -25,6 +25,7 @@ window.Editor3D = (() => {
   let mode = "3d", ortho = null, getView2d = null, getArt = null, getCropId = null, rigRot3d = null, frontBtn = null;
   // a layer tilted on the other axes (rotX/rotY) is one too: the flat canvas can only turn it in its own plane
   function overlayType(el) { return !!el && (el.type === "model" || el.type === "particles" || el.type === "timecube" || el.type === "codefx" || (el.type !== "sound" && el.type !== "group" && !!(el.rotX || el.rotY))
+    || (el.gravity === true && !!Studio.gravityFits && Studio.gravityFits(el)) // a hanging picture swings, smoke leans: only the 3D layer moves them
     || (el.type === "scatter" && !!el.scatter && (Studio.mediaType(el) === "model" || !!(el.scatter.item.rotX || el.scatter.item.rotY)))); } // a scatter of models or tilted copies too
 
   // The flat view: this layer sits above the canvas, so whatever it draws covers every canvas layer. To keep the order
@@ -748,6 +749,7 @@ window.Editor3D = (() => {
       }
       const it = wheelItem, base = it.keyT != null ? it.s0 : 1, lo = it.keyT != null ? 0.05 : 0.05 / (it.el.w || 1), hi = it.keyT != null ? 4 : 2 / (it.el.w || 1);
       it.f = Math.max(lo / base, Math.min(hi / base, it.f * k)); // same limits as the corner handle
+      snapItem(it);
       if (it.keyT != null) keyAt(it.el, it.keyT).scale = it.s0 * it.f;
       refreshGizmo();
       clearTimeout(it.t); it.t = setTimeout(finishWheel, 350);
@@ -929,6 +931,7 @@ window.Editor3D = (() => {
         const [a, b] = [...pinchPtrs.values()], it = pinch3d.item;
         const base = it.keyT != null ? it.s0 : 1, lo = it.keyT != null ? 0.05 : 0.05 / (it.el.w || 1), hi = it.keyT != null ? 4 : 2 / (it.el.w || 1);
         it.f = Math.max(lo / base, Math.min(hi / base, (Math.hypot(a.x - b.x, a.y - b.y) || 1) / pinch3d.d0)); // same limits as the corner handle
+        snapItem(it);
         if (it.keyT != null) keyAt(it.el, it.keyT).scale = it.s0 * it.f; // a key at the frozen playhead; the sampler draws it
         refreshGizmo(); // the drawn size follows it.f (applySampled) until the fingers lift
       } else if (pinchPtrs.size >= 2) {
@@ -1101,11 +1104,18 @@ window.Editor3D = (() => {
 
   // A finished pinch on an item: an unkeyed item takes the new width for good (a group scales with its members); a keyed
   // one already has its key. A pinch that changed nothing saves nothing.
+  // near the artwork's own size (its full width or height) a resize snaps onto it exactly
+  function snapItem(it) {
+    const k = (it.keyT != null ? it.s0 : 1) * it.f, el = it.el;
+    const f = Studio.snapFull ? Studio.snapFull((el.w || 0) * k, el.h != null ? el.h * k : null) : 1;
+    if (f !== 1 && !it.snapped && navigator.vibrate) try { navigator.vibrate(8); } catch (e) {}
+    it.snapped = f !== 1; it.f *= f;
+  }
   function endItemPinch(it) {
     const rec = getRec(); if (!rec) return;
     if (Math.abs(it.f - 1) < 0.005) { if (it.keyT != null) { rec.elements = JSON.parse(it.snap); rebuildElements(); if (restoreFrozen) restoreFrozen(it.snapT); } refreshGizmo(); return; }
     if (it.keyT == null) {
-      const w = Math.round(Math.max(0.05, Math.min(2, it.el.w * it.f)) * 1000) / 1000;
+      const w = Math.round(Math.max(0.05, Math.min(2, it.el.w * it.f)) * 10000) / 10000;
       if (it.el.type === "group") Studio.transformGroup(rec, it.el, { w });
       else { const f = w / it.el.w; it.el.w = w; if (it.el.h != null) it.el.h = Math.max(0.02, it.el.h * f); }
     }

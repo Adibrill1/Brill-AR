@@ -445,7 +445,9 @@ window.Stage = (() => {
       ctx.save(); ctx.strokeStyle = "#ff8f6b"; ctx.lineWidth = 1 / zoom; ctx.setLineDash([5 / zoom, 4 / zoom]); ctx.beginPath();
       if (guide.v) { ctx.moveTo(view.mx + view.W / 2, view.my - 20); ctx.lineTo(view.mx + view.W / 2, view.my + view.H + 20); }
       if (guide.h) { ctx.moveTo(view.mx - 20, view.my + view.H / 2); ctx.lineTo(view.mx + view.W + 20, view.my + view.H / 2); }
-      ctx.stroke(); ctx.restore();
+      ctx.stroke();
+      if (guide.full) { ctx.setLineDash([]); ctx.lineWidth = 3 / zoom; ctx.strokeRect(view.mx, view.my, view.W, view.H); } // snapped onto the artwork's size
+      ctx.restore();
     }
     if (selEl && boxes[selEl.id]) { if (App.cropping) drawCrop(selEl); else { drawMarks(selEl, boxes[selEl.id]); if (selEl.type === "scatter" && selEl.scatter.points && !drawing) drawScatterPath(selEl, boxes[selEl.id]); } }
     drawStroke();
@@ -482,11 +484,20 @@ window.Stage = (() => {
     const k = App.editKey(el);
     return k ? { k, s0: App.sample(el).scale || 1 } : { k: null, w0: el.w, h0: el.h, sc0: el.type === "scatter" ? structuredClone(el.scatter) : null, group: el.type === "group" };
   }
-  function sizeApply(el, st, ratio) {
-    if (st.k) { App.keyAt(el, st.k.t).scale = round(clamp(st.s0 * ratio, 0.05, 20)); return; }
+  // near the artwork's own size (its full width or height) a resize snaps onto it exactly, with its frame lit up
+  let snapped = false;
+  function fullSnap(w, h, free) {
+    const f = free ? 1 : Studio.snapFull(w, h), on = f !== 1 || (Math.abs(w - 1) < 1e-3 || Math.abs((h || 0) - 1) < 1e-3);
+    if (on && !snapped && navigator.vibrate) try { navigator.vibrate(8); } catch (e) {}
+    snapped = on; guide = on ? { full: true } : guide && guide.full ? null : guide;
+    return f;
+  }
+  function sizeApply(el, st, ratio, free) {
+    if (st.k) { const s = st.s0 * ratio; App.keyAt(el, st.k.t).scale = round(clamp(s * fullSnap(el.w * s, el.h != null ? el.h * s : null, free), 0.05, 20)); return; }
     if (st.sc0) { Studio.scaleScatter(App.rec, el, clamp(ratio, 0.05 / st.w0, 10 / st.w0), st.sc0); return; }
-    if (st.group) { Studio.transformGroup(App.rec, el, { w: round(clamp(st.w0 * ratio, 0.03, 10)) }); return; } // the members grow with it
-    const w = clamp(st.w0 * ratio, 0.05, 10);
+    if (st.group) { const w = st.w0 * ratio; Studio.transformGroup(App.rec, el, { w: round(clamp(w * fullSnap(w, st.h0 != null ? st.h0 * ratio : null, free), 0.03, 10)) }); return; } // the members grow with it
+    let w = clamp(st.w0 * ratio, 0.05, 10);
+    w *= fullSnap(w, st.h0 != null ? st.h0 * w / st.w0 : null, free);
     el.w = round(w); if (st.h0 != null) el.h = round(st.h0 * w / st.w0);
   }
   function onDown(e) {
@@ -570,7 +581,7 @@ window.Stage = (() => {
       drag.moved = true;
     } else if (drag.mode === "scale") {
       const b = boxes[el.id]; if (!b) return;
-      sizeApply(el, drag.st, Math.hypot(p.x - b.cx, p.y - b.cy) / drag.d0);
+      sizeApply(el, drag.st, Math.hypot(p.x - b.cx, p.y - b.cy) / drag.d0, e.altKey);
       drag.moved = true;
     }
     App.changed(false);
@@ -578,9 +589,9 @@ window.Stage = (() => {
   function onUp(e) {
     if (!pointers.has(e.pointerId)) return;
     pointers.delete(e.pointerId);
-    if (pinch) { if (pointers.size < 2) { const item = pinch.item; pinch = null; drag = { mode: "none" }; if (item) App.changed(true); } return; }
+    if (pinch) { if (pointers.size < 2) { const item = pinch.item; pinch = null; drag = { mode: "none" }; guide = null; snapped = false; if (item) App.changed(true); } return; }
     const d = drag; if (pointers.size === 0) drag = null;
-    guide = null;
+    guide = null; snapped = false;
     if (d && d.mode === "stroke") {
       if (!drawing || e.type === "pointercancel") return;
       const st = drawing.stroke || [], len = st.reduce((n, q, i) => n + (i ? Math.hypot(q.x - st[i - 1].x, q.y - st[i - 1].y) : 0), 0);
@@ -628,7 +639,7 @@ window.Stage = (() => {
     if (sel && sel.type !== "sound" && !App.cropping && boxes[sel.id] && inside(boxes[sel.id], p)) {
       if (!wheel || wheel.id !== sel.id) wheel = { id: sel.id, st: sizeStart(sel), f: 1 };
       wheel.f *= f; sizeApply(sel, wheel.st, wheel.f); App.changed(false);
-      clearTimeout(wheel.timer); wheel.timer = setTimeout(() => { wheel = null; App.changed(true); }, 350);
+      clearTimeout(wheel.timer); wheel.timer = setTimeout(() => { wheel = null; guide = null; snapped = false; App.changed(true); }, 350);
     } else setZoom(zoom * f);
   }
   // Arrow keys: a small step (a larger one with Shift).

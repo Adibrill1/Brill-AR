@@ -5,7 +5,7 @@
      dust      a greeting written in gold dust that swirls in, sparkles and blows away
      portal    the layer becomes a window into a deep world behind it (interior mapping: the view ray is followed
                into a box behind the window, so it is flat geometry in front of the artwork and nothing hides it)
-     swarm     a school of fish, a flock of birds or butterflies (boids) around the artwork; a touch scatters them
+     swarm     a school of fish, a flock of birds or butterflies with painted, hinged wings; a touch scatters them
      ivy       vines grow around the frame, leaves unfold and small flowers open
      burn      a picture burns away from glowing edges, sparks flying, and heals back (picture as in dissolve)
      fireflies little lights that blink and slowly fall into one rhythm; they come to a finger
@@ -14,7 +14,9 @@
      spiral    seeds placed by the golden angle open from the middle, like a sunflower, a galaxy or a flower
      bubbles   soap bubbles whose film turns colour with the angle; a finger pops them
      liquid    drops of liquid metal (or lava-lamp wax) melt into each other and part
-     lanterns  lit paper lanterns that rise, float or are let go one by one
+     lanterns  round paper lanterns lit from inside that rise, float or are let go one by one
+   With cfg.gravity (el.gravity, Studio.gravityFollower) the looks in Studio.GRAVITY_CODEFX keep their motion upright in
+   the real world: turn the artwork and sparks, jellyfish, bubbles and lanterns still rise, leaves fall, metal runs low.
    Each look is one A-Frame component, "studio-codefx", built in Studio.buildElementEntity. It is an overlay layer,
    so the editor's flat view draws it with the same scene. Time runs from tick's dt times the speed, so a paused
    editor (dt of almost nothing) holds it still. Its materials copy material.opacity into their own uniform each
@@ -29,6 +31,18 @@
   const smooth = (a, b, x) => { const t = Math.min(1, Math.max(0, (x - a) / (b - a))); return t * t * (3 - 2 * t); };
   const pace = (cfg) => 0.25 + 1.75 * (Number.isFinite(cfg.speed) ? cfg.speed : 0.5);
   const val = (x, d) => (Number.isFinite(x) ? Math.min(1, Math.max(0, x)) : d);
+  // real gravity (cfg.gravity): the follower's angle turns motion drawn upright; without it, nothing turns
+  const UPRIGHT = { cos: 1, sin: 0, ang: 0, gx: 0, gy: -1, flat: 1 };
+  const turn = (G, x, y, out) => { out.x = x * G.cos - y * G.sin; out.y = x * G.sin + y * G.cos; return out; };
+  // a point back in at the side the flow comes from: a random spot in the box, carried back along the flow until it is
+  // just outside (m) - with no gravity and the flow going up, that is anywhere along the bottom edge, as before
+  function enterAt(p, dx, dy, w, h, m, R, k = 0.85) {
+    const qx = (R() - 0.5) * w * k, qy = (R() - 0.5) * h * k;
+    const tx = Math.abs(dx) < 1e-6 ? 1e9 : dx > 0 ? (qx + w / 2 + m) / dx : (w / 2 + m - qx) / -dx;
+    const ty = Math.abs(dy) < 1e-6 ? 1e9 : dy > 0 ? (qy + h / 2 + m) / dy : (h / 2 + m - qy) / -dy;
+    const t = Math.min(tx, ty); p.x = qx - dx * t; p.y = qy - dy * t; return p;
+  }
+  const outside = (p, w, h, m) => Math.abs(p.x) > w / 2 + m || Math.abs(p.y) > h / 2 + m;
 
   // the drawing height in pixels and whether the camera has perspective, for point sizes in world units
   function viewInfo(sc) {
@@ -39,7 +53,7 @@
   // ---------- dust: a picture or words made of points ----------
   const DUST_VS = `
 attribute vec3 home; attribute vec3 rnd; attribute vec3 tint;
-uniform float uT, uTime, uSize, uVh, uMode, uKind; uniform vec2 uBox; uniform vec4 uTouch; uniform vec3 uC1, uC2, uC3;
+uniform float uT, uTime, uSize, uVh, uMode, uKind; uniform vec2 uBox, uRot; uniform vec4 uTouch; uniform vec3 uC1, uC2, uC3;
 varying vec3 vCol; varying float vA;
 vec3 pal(float x) { x = fract(x); return x < 0.5 ? mix(uC2, uC3, x * 2.0) : mix(uC3, uC2, x * 2.0 - 1.0); }
 vec3 gold(float x) { x = fract(x); return x < 0.33 ? mix(uC1, uC2, x * 3.0) : (x < 0.66 ? mix(uC2, uC3, x * 3.0 - 1.0) : mix(uC3, uC1, x * 3.0 - 2.0)); }
@@ -70,7 +84,7 @@ void main() {
     vA = (1.0 - e * 0.5) * (0.6 + 0.4 * tw);
   }
   vec3 drift = vec3(sin(uTime * 1.3 + rnd.x * 20.0), cos(uTime * 1.1 + rnd.y * 20.0), sin(uTime * 0.9 + rnd.z * 20.0)) * W * 0.03;
-  p += (off + drift) * e;
+  vec3 od = (off + drift) * e; p += vec3(od.x * uRot.x - od.y * uRot.y, od.x * uRot.y + od.y * uRot.x, od.z); // real gravity turns the flight
   // a finger pushes the grains aside
   if (uTouch.z > 0.001) { vec2 d = p.xy - uTouch.xy; float r = length(d), R = uTouch.w; if (r < R) p.xy += (r > 1e-5 ? d / r : vec2(0.0, 1.0)) * (R - r) * 0.9 * uTouch.z; }
   vec4 mv = modelViewMatrix * vec4(p, 1.0);
@@ -230,6 +244,71 @@ void main() {
     return g;
   }
 
+  // butterflies: two wings on hinges along the body, painted in the shader (front and back wing, veins, a dark border
+  // with pale dots, an eye on the back wing); they beat in bursts and glide between them
+  const BFLY_VS = `
+attribute float wing; attribute float side; attribute vec2 wuv; attribute float phase;
+uniform float uTime;
+varying vec2 vUv; varying float vWing; varying vec3 vCol; varying float vLit;
+void main() {
+  vec3 p = position;
+  float t = uTime + phase * 40.0;
+  float gate = smoothstep(0.15, 0.55, 0.5 + 0.5 * sin(t * 0.8 + phase * 17.0) * sin(t * 0.37 + phase * 5.0)); // beating, or gliding with the wings held up
+  float beat = sin(t * 24.0 + phase * 6.2832), th = mix(0.55, 0.45 + 1.0 * beat, gate); // the wings' angle above flat
+  if (wing > 0.5) { float d = abs(p.z); p.y = d * sin(th); p.z = side * d * cos(th); }
+  else p.y -= 0.025 * gate * beat; // the body dips against the beat
+  vec4 w = vec4(p, 1.0);
+  #ifdef USE_INSTANCING
+  w = instanceMatrix * w;
+  #endif
+  vCol = vec3(1.0);
+  #ifdef USE_INSTANCING_COLOR
+  vCol = instanceColor;
+  #endif
+  vUv = wuv; vWing = wing; vLit = 0.7 + 0.3 * cos(th);
+  gl_Position = projectionMatrix * modelViewMatrix * w;
+}`;
+  const BFLY_FS = `
+uniform vec3 uC3; uniform float uOpacity;
+varying vec2 vUv; varying float vWing; varying vec3 vCol; varying float vLit;
+void main() {
+  vec3 col; float a;
+  if (vWing < 0.5) { // the body: a dark, slim, rounded body with rings
+    float lim = sqrt(max(0.0, 1.0 - vUv.x * vUv.x)) * (vUv.x > 0.55 ? 0.8 : 1.0); if (abs(vUv.y) > lim) discard;
+    col = vec3(0.13, 0.1, 0.08) * (1.15 - 0.6 * abs(vUv.y) / max(lim, 0.01)) * (0.85 + 0.15 * step(0.5, fract(vUv.x * 6.0)));
+    a = 1.0;
+  } else {
+    vec2 q = vUv; float r = length(q), ph = atan(q.y, q.x); // ph: 0 forward, half pi straight out, pi back
+    float fore = 1.0 * exp(-pow(abs(ph - 1.05) / 0.62, 4.0)) * (1.0 - 0.12 * smoothstep(0.6, 1.3, ph)), hind = 0.8 * exp(-pow(abs(ph - 2.3) / 0.6, 4.0)), R = max(fore, hind);
+    if (r > R) discard;
+    float edge = R - r;
+    vec3 base = vCol;
+    col = mix(base * 0.5, base * 1.08, smoothstep(0.0, 0.5, r)); // darker by the body
+    col = mix(col, base * 0.28, smoothstep(0.03, 0.0, abs(fract(ph * 3.1 + 0.2) - 0.5) * r * 1.6) * step(0.1, r) * 0.6); // veins
+    float band = smoothstep(0.17 * R, 0.12 * R, edge);
+    col = mix(col, vec3(0.07, 0.055, 0.06), band * 0.9); // a dark border
+    float dots = smoothstep(0.3, 0.18, abs(fract(ph * 8.5) - 0.5)) * smoothstep(0.03, 0.012, abs(edge - 0.065 * R));
+    col = mix(col, mix(vec3(1.0), uC3, 0.3), dots * band); // with a row of pale dots
+    col *= 1.0 - 0.55 * smoothstep(0.03, 0.0, abs(fore - hind)) * step(0.12, r); // where the front wing overlaps the back one
+    vec2 ec = vec2(cos(2.25), sin(2.25)) * 0.47; float er = length(q - ec);
+    col = mix(col, vec3(0.06), smoothstep(0.1, 0.085, er)); col = mix(col, uC3, smoothstep(0.075, 0.06, er)); col = mix(col, vec3(1.0), smoothstep(0.022, 0.01, er)); // an eye
+    col *= vLit;
+    a = smoothstep(0.0, 0.02, edge);
+  }
+  gl_FragColor = vec4(col, a * uOpacity);
+}`;
+  function butterflyGeometry() {
+    const pos = [], wing = [], side = [], wuv = [], idx = [];
+    const quad = (pts, uvs, wg, sd) => { const o = pos.length / 3; pts.forEach((v, k) => { pos.push(...v); wing.push(wg); side.push(sd); wuv.push(...uvs[k]); }); idx.push(o, o + 1, o + 2, o, o + 2, o + 3); };
+    for (const sd of [1, -1]) quad([[-0.42, 0, 0.005 * sd], [0.42, 0, 0.005 * sd], [0.42, 0, 0.74 * sd], [-0.42, 0, 0.74 * sd]], [[-1, 0], [1, 0], [1, 1], [-1, 1]], 1, sd);
+    quad([[-0.24, 0, -0.03], [0.2, 0, -0.03], [0.2, 0, 0.03], [-0.24, 0, 0.03]], [[-1, -1], [1, -1], [1, 1], [-1, 1]], 0, 0); // the body, seen from above
+    quad([[-0.24, -0.03, 0], [0.2, -0.03, 0], [0.2, 0.03, 0], [-0.24, 0.03, 0]], [[-1, -1], [1, -1], [1, 1], [-1, 1]], 0, 0); // and from the side
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute("wing", new THREE.Float32BufferAttribute(wing, 1));
+    g.setAttribute("side", new THREE.Float32BufferAttribute(side, 1)); g.setAttribute("wuv", new THREE.Float32BufferAttribute(wuv, 2)); g.setIndex(idx);
+    return g;
+  }
+
   // ---------- ivy ----------
   const STEM_VS = `attribute float along; uniform float uGrow; varying float vGone; varying float vSide; attribute float side;
 void main() { vGone = along - uGrow; vSide = side; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
@@ -328,12 +407,12 @@ float burnAt(vec2 uv) {
   vec2 asp = vec2(uBox.x / uBox.y, 1.0);
   float n = fbm(uv * asp * uGrain + uSeed), b;
   if (uKind < 0.5) { vec2 e = min(uv, 1.0 - uv) * asp; b = 0.12 + min(e.x, e.y) / (0.5 * min(asp.x, 1.0)) * 0.72 + (n - 0.5) * 0.9; } // from the edges in
-  else if (uKind < 1.5) b = uv.y * 0.78 + (n - 0.5) * 0.8 + 0.1; // from the bottom up
+  else if (uKind < 1.5) { vec2 up = vec2(-uRot.y, uRot.x); b = (dot(uv - 0.5, up) / (abs(up.x) + abs(up.y)) + 0.5) * 0.78 + (n - 0.5) * 0.8 + 0.1; } // from the bottom up (the world's bottom, with gravity)
   else b = (fbm(uv * asp * uGrain * 0.5 + 3.1 + uSeed) - 0.3) / 0.4; // spots that open and spread
   return clamp(b, 0.0, 1.0);
 }`;
   const BURN_FS = `
-uniform sampler2D map; uniform float uP, uTime, uKind, uSeed, uCover, uEdge, uGrain, uOpacity; uniform vec2 uBox; uniform vec4 uTouch; uniform vec3 uC1, uC2, uC3;
+uniform sampler2D map; uniform float uP, uTime, uKind, uSeed, uCover, uEdge, uGrain, uOpacity; uniform vec2 uBox, uRot; uniform vec4 uTouch; uniform vec3 uC1, uC2, uC3;
 varying vec2 vUv; varying vec2 vP;
 ${NOISE}
 ${BURN_AT}
@@ -356,7 +435,7 @@ void main() {
   gl_FragColor = vec4(col, a * uOpacity);
 }`;
   const SPARK_VS = `
-attribute vec3 rnd; uniform sampler2D map; uniform float uP, uKind, uSeed, uGrain, uTime, uSize, uVh; uniform vec2 uBox;
+attribute vec3 rnd; uniform sampler2D map; uniform float uP, uKind, uSeed, uGrain, uTime, uSize, uVh; uniform vec2 uBox, uRot;
 varying float vA; varying float vHot;
 ${NOISE}
 ${BURN_AT}
@@ -364,7 +443,8 @@ void main() {
   float b = burnAt(rnd.xy), age = (uP - b) / 0.22; // a spark leaves as the fire passes its spot
   vec3 p = vec3((rnd.xy - 0.5) * uBox, 0.002);
   float live = step(0.0, age) * step(age, 1.0) * step(0.3, texture2D(map, rnd.xy).a);
-  p.y += age * uBox.y * (0.08 + rnd.z * 0.12); p.x += sin(age * 6.0 + rnd.z * 30.0) * uBox.y * 0.015; p.z += age * uBox.y * 0.05;
+  vec2 dd = vec2(sin(age * 6.0 + rnd.z * 30.0) * uBox.y * 0.015, age * uBox.y * (0.08 + rnd.z * 0.12));
+  p.xy += vec2(dd.x * uRot.x - dd.y * uRot.y, dd.x * uRot.y + dd.y * uRot.x); p.z += age * uBox.y * 0.05; // up, in the world
   vA = live * (1.0 - age); vHot = 1.0 - age;
   ${POINT_SIZE("uSize * (0.5 + rnd.z) * live", "24.0")}
 }`;
@@ -386,7 +466,7 @@ void main() { vec2 c = gl_PointCoord - 0.5; float r2 = dot(c, c) * 4.0; if (r2 >
   // ---------- jellyfish: a see-through bell that beats, trailing tentacles ----------
   const JELLY_VS = `
 attribute float part; attribute float along; attribute float side; attribute float ring; attribute float wid; attribute float phase;
-uniform float uTime, uHalfH;
+uniform float uTime, uHalfH, uHalfW;
 varying float vPart; varying float vAlong; varying float vFres; varying vec3 vL; varying float vFade; varying float vPulse;
 void main() {
   float t = uTime * 1.7 + phase * 6.2832, pulse = pow(0.5 + 0.5 * sin(t), 2.0);
@@ -405,7 +485,7 @@ void main() {
   vec3 vd = projectionMatrix[2][3] != 0.0 ? normalize(-mv.xyz) : vec3(0.0, 0.0, 1.0);
   vFres = 1.0 - abs(dot(normalize(mat3(MV) * n), vd));
   vL = position; vPart = part; vAlong = along; vPulse = pulse;
-  float y = im[3].y; vFade = smoothstep(-uHalfH * 1.3, -uHalfH, y) * (1.0 - smoothstep(uHalfH, uHalfH * 1.3, y));
+  float y = im[3].y, x = im[3].x; vFade = smoothstep(-uHalfH * 1.3, -uHalfH, y) * (1.0 - smoothstep(uHalfH, uHalfH * 1.3, y)) * smoothstep(-uHalfW * 1.15, -uHalfW * 0.98, x) * (1.0 - smoothstep(uHalfW * 0.98, uHalfW * 1.15, x));
   gl_Position = projectionMatrix * mv;
 }`;
   const JELLY_FS = `
@@ -458,7 +538,7 @@ void main() { float th = smoothstep(along, along + 0.2, uGrow); vec2 p = sway(ce
   vGone = along - uGrow; vSide = side; gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 0.0012, 1.0); }`;
   const TREE_LEAF_VS = `
 attribute vec2 corner; attribute vec4 leaf; attribute vec3 more; // leaf: x, y, angle, size; more: birth, kind (0 leaf, 1 flower, 2 bud), random
-uniform float uGrow, uTime, uBase, uH, uFall, uShare;
+uniform float uGrow, uTime, uBase, uH, uFall, uShare; uniform vec2 uRot;
 varying vec2 vUv; varying float vKind; varying float vOpen; varying float vR; varying float vA;
 ${SWAY}
 void main() {
@@ -467,7 +547,8 @@ void main() {
   float a = leaf.z + sin(uTime * 2.3 + more.z * 40.0) * 0.25 + (more.y > 0.5 ? (1.0 - g) * 1.5 : 0.0);
   // some let go and float down, each at its own moment
   float f = clamp((uFall - more.z * 0.6) / 0.4, 0.0, 1.0) * step(fract(more.z * 7.13), uShare);
-  at.y -= f * f * (leaf.y - uBase + uH * 0.05); at.x += sin(f * 7.0 + more.z * 20.0) * uH * 0.05 * f; a += f * 9.0 * (more.z - 0.5);
+  vec2 fd = vec2(sin(f * 7.0 + more.z * 20.0) * uH * 0.05 * f, -f * f * (leaf.y - uBase + uH * 0.05));
+  at += vec2(fd.x * uRot.x - fd.y * uRot.y, fd.x * uRot.y + fd.y * uRot.x); a += f * 9.0 * (more.z - 0.5); // down, in the world
   vec2 c = corner * leaf.w * (more.y > 0.5 ? mix(0.3, 1.0, g) : g);
   vec2 r = vec2(c.x * cos(a) - c.y * sin(a), c.x * sin(a) + c.y * cos(a));
   vUv = corner; vKind = more.y; vOpen = g; vR = more.z; vA = 1.0 - smoothstep(0.8, 1.0, f);
@@ -582,34 +663,62 @@ void main() {
   gl_FragColor = vec4(col, a * uOpacity);
 }`;
 
-  // ---------- lanterns: lit paper lanterns that rise and flicker ----------
+  // ---------- lanterns: round paper lanterns lit from inside, that rise and flicker ----------
+  // a body turned on a lathe (open at the bottom, a bamboo hoop there, rounded shoulders on top), lit by the flame
+  // inside: brightest low down and where the paper faces the viewer, deeper and redder toward the top and the sides
   const LANTERN_VS = `
 attribute float phase; attribute float fade; attribute float tone; uniform float uTime;
-varying vec2 vUv; varying float vFl; varying float vFade; varying float vTone;
+varying vec3 vL; varying vec3 vN; varying vec3 vV; varying float vFl; varying float vFade; varying float vTone;
 void main() {
   ${INST}
-  vec4 c = MV * vec4(0.0, 0.0, 0.0, 1.0);
-  float sw = sin(uTime * 0.9 + phase * 6.2832) * 0.07;
-  vec2 q = position.xy * 2.0; // the quad is twice the lantern, for its glow
-  c.xy += vec2(q.x * cos(sw) - q.y * sin(sw), q.x * sin(sw) + q.y * cos(sw)) * length(MV[0].xyz); // always facing the viewer
-  vUv = q; vFl = 0.82 + 0.18 * sin(uTime * 7.0 + phase * 40.0) * sin(uTime * 11.3 + phase * 17.0); vFade = fade; vTone = tone;
-  gl_Position = projectionMatrix * c;
+  vec4 mv = MV * vec4(position, 1.0);
+  vL = position; vN = normalize(mat3(MV) * normal); vV = projectionMatrix[2][3] != 0.0 ? normalize(-mv.xyz) : vec3(0.0, 0.0, 1.0);
+  vFl = 0.86 + 0.14 * sin(uTime * 7.0 + phase * 40.0) * sin(uTime * 11.3 + phase * 17.0); vFade = fade; vTone = tone;
+  gl_Position = projectionMatrix * mv;
 }`;
   const LANTERN_FS = `
 uniform vec3 uC1, uC2, uC3; uniform float uOpacity;
-varying vec2 vUv; varying float vFl; varying float vFade; varying float vTone;
+varying vec3 vL; varying vec3 vN; varying vec3 vV; varying float vFl; varying float vFade; varying float vTone;
+${NOISE}
 void main() {
-  vec2 p = vUv; float yb = -0.55, yt = 0.5, k = clamp((p.y - yb) / (yt - yb), 0.0, 1.0);
-  float hw = mix(0.27, 0.36, k) * (1.0 - 0.12 * pow(abs(k * 2.0 - 1.0), 4.0)), d = max(abs(p.x) - hw, max(yb - p.y, p.y - yt));
-  vec3 paper = mix(uC1, uC1 * 0.7 + uC3 * 0.3, vTone);
-  vec3 body = mix(paper * 0.75, uC2, (1.0 - k) * 0.75) * (0.75 + 0.35 * vFl); // brightest just above the flame
-  body *= 0.88 + 0.12 * cos(p.x / hw * 7.85); // the paper's folds
-  body = mix(body, paper * 0.45, smoothstep(0.05, 0.0, yt - p.y)); // a darker rim on top
-  body += uC2 * exp(-(pow(p.x / 0.09, 2.0) + pow((p.y - yb - 0.04) / 0.12, 2.0))) * 0.9; // the flame
-  float inside = smoothstep(0.012, -0.012, d), glow = exp(-max(d, 0.0) * 7.0) * (1.0 - inside) * 0.55 * vFl;
-  float a = max(inside, glow) * smoothstep(1.0, 0.85, max(abs(p.x), abs(p.y)));
-  gl_FragColor = vec4(mix(uC3 * 1.2, body, inside), a * vFade * uOpacity);
+  if (vFade < 0.01) discard;
+  float y = vL.y + 0.5, th = atan(vL.z, vL.x); // y: 0 at the open bottom, 1 at the top
+  vec3 n = normalize(vN); if (!gl_FrontFacing) n = -n;
+  float facing = abs(dot(n, vV));
+  vec3 paper = mix(uC1, mix(uC1, uC3, 0.55), vTone);
+  vec3 col;
+  if (gl_FrontFacing) {
+    float near = exp(-pow((y - 0.18) / 0.5, 2.0));
+    float lit = (0.25 + 0.75 * near) * (0.35 + 0.65 * pow(facing, 1.3)) * vFl;
+    col = mix(uC3 * 0.62, paper * 1.02, smoothstep(0.12, 0.6, lit)); // deep red-orange away from the light, the paper's own colour nearer
+    col = mix(col, uC2 * 1.12, smoothstep(0.55, 1.0, lit)); // the hot glow just above the flame
+    float sp = abs(fract(th / 6.2832 * 8.0) - 0.5); // eight paper panels: soft folds and thin seams
+    col *= (0.88 + 0.12 * smoothstep(0.0, 0.5, sp)) * (1.0 - 0.3 * smoothstep(0.025, 0.0, sp));
+    col *= 1.0 - 0.08 * smoothstep(0.03, 0.0, abs(fract(y * 3.0 + 0.5) - 0.5)); // the thin hoops that hold the paper out
+    col *= 0.93 + 0.07 * noise(vec2(th * 7.0, y * 45.0)); // fibres
+    col = mix(col, vec3(0.3, 0.19, 0.1) * (0.5 + 0.7 * near * vFl), smoothstep(0.05, 0.025, y)); // the bamboo hoop
+  } else col = mix(uC2 * 1.15, paper, smoothstep(0.1, 0.9, y)) * vFl; // seen from below: the inside, all lit
+  gl_FragColor = vec4(col, vFade * uOpacity);
 }`;
+  // the soft light around each lantern, added on top (its shape in the alpha, for the editor's see-through canvas)
+  const HALO_VS = `
+attribute float phase; attribute float fade; uniform float uTime; varying vec2 vUv; varying float vA;
+void main() {
+  ${INST}
+  vec4 c = MV * vec4(0.0, -0.1, 0.0, 1.0);
+  c.xy += position.xy * 3.2 * length(MV[0].xyz);
+  vUv = position.xy * 2.0; vA = fade * (0.85 + 0.15 * sin(uTime * 7.0 + phase * 40.0) * sin(uTime * 11.3 + phase * 17.0));
+  gl_Position = projectionMatrix * c;
+}`;
+  const HALO_FS = `uniform vec3 uC2, uC3; uniform float uOpacity; varying vec2 vUv; varying float vA;
+void main() { float r2 = dot(vUv, vUv); if (r2 > 1.0) discard; float g = exp(-r2 * 5.0) * (1.0 - r2) * 0.42 + exp(-r2 * 26.0) * 0.25;
+  gl_FragColor = vec4(mix(uC3, uC2, exp(-r2 * 18.0)), g * vA * uOpacity); }`;
+  function lanternGeometry() {
+    const pr = [[0.285, 0], [0.3, 0.03], [0.33, 0.2], [0.365, 0.42], [0.395, 0.64], [0.41, 0.78], [0.4, 0.86], [0.36, 0.93], [0.27, 0.975], [0.14, 0.995], [0, 1]];
+    const g = new THREE.LatheGeometry(pr.map(([r, y]) => new THREE.Vector2(r, y)), 28);
+    g.translate(0, -0.5, 0);
+    return g;
+  }
 
   // the proportions of a greeting's words, for the layer's shape
   window.StudioCodeFx = { wordsAspect: (text, font) => { const c = wordsCanvas(text, font); return c.width / c.height; } };
@@ -625,12 +734,14 @@ void main() {
     teardown() {
       if (this.finger) this.finger.state.users.delete(this);
       if (this.group) { this.group.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) { if (o.material.uniforms && o.material.uniforms.map && o.material.uniforms.map.value) o.material.uniforms.map.value.dispose(); o.material.dispose(); } }); this.el.removeObject3D("codefx"); }
-      this.group = null; this.mats = []; this.parts = null; this.step = null;
+      this.group = null; this.mats = []; this.parts = null; this.step = null; this.depthMats = null;
     },
     mat(opts) { const m = new THREE.ShaderMaterial(Object.assign({ transparent: true, depthWrite: false }, opts)); m.uniforms.uOpacity = { value: 1 }; this.mats.push(m); return m; },
     build() {
       let cfg; try { cfg = JSON.parse(this.data.cfg); } catch (e) { cfg = {}; }
       this.cfg = cfg; this.look = cfg.look; this.speed = pace(cfg);
+      this.rot = new THREE.Vector2(1, 0); // gravity's turn, (cos, sin), shared by the shaders that need it
+      this.G = cfg.gravity && Studio.GRAVITY_CODEFX && Studio.GRAVITY_CODEFX.includes(this.look) ? Studio.gravityFollower(3) : null;
       this.group = new THREE.Group();
       const w = this.data.width, h = this.data.height;
       const C = (cfg.colors || []).map(vec3); while (C.length < 3) C.push(new THREE.Color("#ffffff"));
@@ -660,7 +771,7 @@ void main() {
         g.boundingSphere = new THREE.Sphere(new THREE.Vector3(), Math.hypot(w, h) * 2); // the grains fly far from home
         const size = pts.cell * (words ? 1.3 + val(cfg.size, 0.5) * 2.4 : 1.25 + val(cfg.size, 0.5) * 0.9);
         const m = this.mat({ vertexShader: DUST_VS, fragmentShader: DUST_FS, blending: words ? THREE.AdditiveBlending : THREE.NormalBlending,
-          uniforms: { uT: { value: 0 }, uTime: { value: 0 }, uSize: { value: size }, uVh: { value: 800 }, uMode: { value: words ? 1 : 0 }, uKind: { value: cfg.kind | 0 }, uBox: { value: new THREE.Vector2(w, h) },
+          uniforms: { uT: { value: 0 }, uTime: { value: 0 }, uSize: { value: size }, uVh: { value: 800 }, uMode: { value: words ? 1 : 0 }, uKind: { value: cfg.kind | 0 }, uBox: { value: new THREE.Vector2(w, h) }, uRot: { value: this.rot },
             uTouch: { value: new THREE.Vector4(0, 0, 0, Math.max(w, h) * 0.18) }, uC1: { value: C[0] }, uC2: { value: C[1] }, uC3: { value: C[2] } } });
         const p = new THREE.Points(g, m); p.frustumCulled = false; this.group.add(p);
         this.parts.points = p;
@@ -699,11 +810,12 @@ void main() {
     },
     buildSwarm(cfg, w, h, C) {
       const kind = Math.min(2, Math.max(0, cfg.kind | 0)), n = Math.round(12 + val(cfg.amount, 0.5) * 108), R = rand(2000 + (cfg.seed | 0));
-      const geo = bodyGeometry(kind), ph = new Float32Array(n); for (let i = 0; i < n; i++) ph[i] = R();
+      const geo = kind === 2 ? butterflyGeometry() : bodyGeometry(kind), ph = new Float32Array(n); for (let i = 0; i < n; i++) ph[i] = R();
       geo.setAttribute("phase", new THREE.InstancedBufferAttribute(ph, 1));
-      const m = this.mat({ vertexShader: SWARM_VS, fragmentShader: SWARM_FS, side: THREE.DoubleSide, uniforms: { uTime: { value: 0 }, uKind: { value: kind }, uC3: { value: C[2] } } });
+      const m = kind === 2 ? this.mat({ vertexShader: BFLY_VS, fragmentShader: BFLY_FS, side: THREE.DoubleSide, uniforms: { uTime: { value: 0 }, uC3: { value: C[2] } } })
+        : this.mat({ vertexShader: SWARM_VS, fragmentShader: SWARM_FS, side: THREE.DoubleSide, uniforms: { uTime: { value: 0 }, uKind: { value: kind }, uC3: { value: C[2] } } });
       const mesh = new THREE.InstancedMesh(geo, m, n); mesh.frustumCulled = false;
-      const len = Math.min(w, h) * (0.05 + val(cfg.size, 0.5) * 0.09), depth = Math.min(w, h) * 0.45;
+      const len = Math.min(w, h) * (0.05 + val(cfg.size, 0.5) * 0.09) * (kind === 2 ? 1.25 : 1), depth = Math.min(w, h) * 0.45;
       const b = [], col = new THREE.Color();
       for (let i = 0; i < n; i++) {
         const a = R() * TAU;
@@ -712,7 +824,8 @@ void main() {
       }
       if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
       this.group.add(mesh);
-      this.parts = { swarm: mesh, boids: b, len, depth, kind, w, h, M: new THREE.Matrix4(), Q: new THREE.Quaternion(), S: new THREE.Vector3(), X: new THREE.Vector3(), Y: new THREE.Vector3(), Z: new THREE.Vector3(), A: new THREE.Vector3(), up: new THREE.Vector3(0, 1, 0) };
+      this.parts = { swarm: mesh, boids: b, len, depth, kind, w, h, M: new THREE.Matrix4(), Q: new THREE.Quaternion(), S: new THREE.Vector3(), X: new THREE.Vector3(), Y: new THREE.Vector3(), Z: new THREE.Vector3(), A: new THREE.Vector3(),
+        up: kind === 2 ? new THREE.Vector3(0, 0.5, 0.87) : new THREE.Vector3(0, 1, 0) }; // butterflies lean their backs toward the viewer, so their wings show
       this.stepSwarm(0.016, true);
     },
     buildIvy(cfg, w, h, C) {
@@ -769,7 +882,7 @@ void main() {
       const touch = new THREE.Vector4(0, 0, 0, 0);
       this.parts = { touch, edge };
       this.loadPicture((tex) => {
-        const box = new THREE.Vector2(w, h), common = { map: { value: tex }, uP: { value: 0 }, uKind: { value: kind }, uSeed: { value: (cfg.seed | 0) * 0.37 }, uGrain: { value: grain }, uBox: { value: box } };
+        const box = new THREE.Vector2(w, h), common = { map: { value: tex }, uP: { value: 0 }, uKind: { value: kind }, uSeed: { value: (cfg.seed | 0) * 0.37 }, uGrain: { value: grain }, uBox: { value: box }, uRot: { value: this.rot } };
         const pic = new THREE.Mesh(new THREE.PlaneGeometry(w, h), this.mat({ vertexShader: FLAT_VS, fragmentShader: BURN_FS,
           uniforms: Object.assign({}, common, { uTime: { value: 0 }, uCover: { value: cfg.cover !== false ? 1 : 0 }, uEdge: { value: edge }, uTouch: { value: touch }, uC1: { value: C[0] }, uC2: { value: C[1] }, uC3: { value: C[2] } }) }));
         pic.position.z = 0.0008;
@@ -839,20 +952,23 @@ void main() {
       for (let i = 0; i < n; i++) ph[i] = R();
       geo.setAttribute("phase", new THREE.InstancedBufferAttribute(ph, 1));
       const m = this.mat({ vertexShader: JELLY_VS, fragmentShader: JELLY_FS, side: THREE.DoubleSide, blending: kind === 0 ? THREE.AdditiveBlending : THREE.NormalBlending,
-        uniforms: { uTime: { value: 0 }, uHalfH: { value: h / 2 }, uKind: { value: kind }, uC1: { value: C[0] }, uC2: { value: C[1] }, uC3: { value: C[2] } } });
+        uniforms: { uTime: { value: 0 }, uHalfH: { value: h / 2 }, uHalfW: { value: w / 2 }, uKind: { value: kind }, uC1: { value: C[0] }, uC2: { value: C[1] }, uC3: { value: C[2] } } });
       const mesh = new THREE.InstancedMesh(geo, m, n); mesh.frustumCulled = false; this.group.add(mesh);
       const S = unit * (0.05 + val(cfg.size, 0.5) * 0.07), tall = 0.75 + len, M = new THREE.Matrix4(), Q = new THREE.Quaternion(), E = new THREE.Euler(), V = new THREE.Vector3();
       const jl = [];
       for (let i = 0; i < n; i++) { const s = S * (0.7 + R() * 0.6); jl.push({ p: new THREE.Vector3((R() - 0.5) * w * 0.8, -h / 2 + R() * h, unit * (0.05 + R() * 0.35)), s, ph: ph[i], dr: R() * TAU, push: new THREE.Vector2() }); }
+      const mv = { x: 0, y: 0 }, up = { x: 0, y: 0 };
       this.step = (dt) => {
-        const touch = this.touchPoint();
+        const touch = this.touchPoint(), G = this.G || UPRIGHT;
+        turn(G, 0, 1, up);
         jl.forEach((j, i) => {
           const pulse = Math.pow(0.5 + 0.5 * Math.sin(this.t * 1.7 + j.ph * TAU), 2), drift = Math.sin(this.t * 0.3 + j.dr) * j.s * 0.35;
           if (touch) { const dx = j.p.x - touch.x, dy = j.p.y - touch.y, r = Math.hypot(dx, dy); if (r < unit * 0.3) j.push.set(dx, dy).multiplyScalar(unit * 0.6 / Math.max(r, 1e-4)); }
-          j.p.x += (drift + j.push.x) * dt; j.p.y += (j.s * (0.15 + 0.9 * pulse) + j.push.y) * dt; j.push.multiplyScalar(Math.exp(-dt * 2));
-          if (j.p.y > h / 2 + j.s * 1.3) { j.p.y = -h / 2 - j.s * 0.8; j.p.x = (R() - 0.5) * w * 0.8; } // gone out the top: back in from below
-          j.p.x = Math.max(-w * 0.48, Math.min(w * 0.48, j.p.x));
-          E.set(0, 0, -(drift + j.push.x) / (j.s * 2)); Q.setFromEuler(E);
+          turn(G, drift, j.s * (0.15 + 0.9 * pulse), mv); // they rise up in the world
+          j.p.x += (mv.x + j.push.x) * dt; j.p.y += (mv.y + j.push.y) * dt; j.push.multiplyScalar(Math.exp(-dt * 2));
+          if (outside(j.p, w, h, j.s * 1.3)) { enterAt(j.p, up.x, up.y, w, h, j.s * 0.8, R, 0.8); } // gone out the top: back in from below
+          if (!this.G) j.p.x = Math.max(-w * 0.48, Math.min(w * 0.48, j.p.x));
+          E.set(0, 0, G.ang - (drift + j.push.x) / (j.s * 2)); Q.setFromEuler(E);
           M.compose(j.p, Q, V.setScalar(j.s)); mesh.setMatrixAt(i, M);
         });
         mesh.instanceMatrix.needsUpdate = true;
@@ -910,7 +1026,7 @@ void main() {
       lg.setAttribute("position", new THREE.BufferAttribute(new Float32Array(lc.length / 2 * 3), 3));
       lg.setAttribute("corner", new THREE.Float32BufferAttribute(lc, 2)); lg.setAttribute("leaf", new THREE.Float32BufferAttribute(ll, 4)); lg.setAttribute("more", new THREE.Float32BufferAttribute(lm, 3)); lg.setIndex(li);
       const lmat = this.mat({ vertexShader: TREE_LEAF_VS, fragmentShader: TREE_LEAF_FS, side: THREE.DoubleSide,
-        uniforms: Object.assign({}, shared, { uFall: { value: 0 }, uShare: { value: [0, 0.3, 0.85][kind] }, uC2: { value: C[1] }, uC3: { value: C[2] } }) });
+        uniforms: Object.assign({}, shared, { uFall: { value: 0 }, uShare: { value: [0, 0.3, 0.85][kind] }, uRot: { value: this.rot }, uC2: { value: C[1] }, uC3: { value: C[2] } }) });
       const bmesh = new THREE.Mesh(bg, bm), lmesh = new THREE.Mesh(lg, lmat);
       bmesh.frustumCulled = lmesh.frustumCulled = false;
       this.group.add(bmesh, lmesh);
@@ -948,15 +1064,21 @@ void main() {
       const m = this.mat({ vertexShader: BUBBLE_VS, fragmentShader: BUBBLE_FS, side: THREE.DoubleSide, uniforms: { uTime: { value: 0 }, uC1: { value: C[0] }, uC2: { value: C[1] }, uC3: { value: C[2] } } });
       const mesh = new THREE.InstancedMesh(geo, m, n); mesh.frustumCulled = false; this.group.add(mesh);
       const base = unit * (0.025 + val(cfg.size, 0.5) * 0.055), M = new THREE.Matrix4(), Q = new THREE.Quaternion(), V = new THREE.Vector3(), wand = new THREE.Vector3(-w * 0.38, -h * 0.15, depth * 0.3);
+      const up = { x: 0, y: 1 }, mv = { x: 0, y: 0 }, at = new THREE.Vector3();
       const spawn = (b, first) => {
         b.r = base * (0.5 + R() * 0.9); b.pop = -1; b.age = 0; b.life = 5 + R() * 9;
-        if (kind === 0) { b.p.set((R() - 0.5) * w * 0.85, first ? (R() - 0.5) * h : -h * 0.5 - b.r, R() * depth); b.v.set(0, unit * (0.05 + R() * 0.07), 0); }
+        if (kind === 0) { // rising: in from below (the world's below, with gravity)
+          if (first) b.p.set((R() - 0.5) * w * 0.85, (R() - 0.5) * h, R() * depth); else { enterAt(b.p, up.x, up.y, w, h, b.r, R); b.p.z = R() * depth; }
+          b.v.set(0, unit * (0.05 + R() * 0.07), 0);
+        }
         else if (kind === 1) { b.p.set((R() - 0.5) * w * 0.8, (R() - 0.5) * h * 0.8, R() * depth); b.v.set((R() - 0.5) * unit * 0.04, (R() - 0.5) * unit * 0.04, 0); }
         else { b.p.copy(wand); if (first) b.p.x += R() * w * 0.6; b.v.set(unit * (0.2 + R() * 0.25), unit * (0.03 + R() * 0.15), unit * (R() - 0.3) * 0.08); b.life = 3 + R() * 4; }
       };
       const bs = []; for (let i = 0; i < n; i++) { const b = { p: new THREE.Vector3(), v: new THREE.Vector3(), ph: ph[i] }; spawn(b, true); if (kind === 2) b.age = R() * 3; bs.push(b); }
       this.step = (dt) => {
-        const touch = this.touchPoint();
+        const touch = this.touchPoint(), G = this.G || UPRIGHT;
+        turn(G, 0, 1, up);
+        const ext = Math.abs(up.x) * w / 2 + Math.abs(up.y) * h / 2; // how far the box reaches up the flow
         bs.forEach((b, i) => {
           let s = b.r;
           if (b.pop >= 0) { b.pop += dt; s = b.r * (1 + b.pop * 3) * Math.max(0, 1 - b.pop / 0.15); if (b.pop > 0.15) spawn(b, false); } // pop: it swells for a blink and is gone
@@ -964,12 +1086,14 @@ void main() {
             b.age += dt;
             if (kind === 1) { b.v.x += Math.sin(this.t * 0.5 + b.ph * 30) * unit * 0.01 * dt; b.v.y += Math.cos(this.t * 0.4 + b.ph * 20) * unit * 0.01 * dt; }
             if (kind === 2) { b.v.multiplyScalar(Math.exp(-dt * 0.6)); b.v.y += unit * 0.02 * dt; }
-            b.p.addScaledVector(b.v, dt); b.p.x += Math.sin(this.t * 1.3 + b.ph * 10) * unit * 0.02 * dt;
+            if (kind === 0) { turn(G, b.v.x + Math.sin(this.t * 1.3 + b.ph * 10) * unit * 0.02, b.v.y, mv); b.p.x += mv.x * dt; b.p.y += mv.y * dt; } // they rise up in the world
+            else { b.p.addScaledVector(b.v, dt); b.p.x += Math.sin(this.t * 1.3 + b.ph * 10) * unit * 0.02 * dt; }
             const out = Math.abs(b.p.x) > w * 0.55 || b.p.y > h * 0.46 || b.p.y < -h * 0.6;
-            if ((kind === 0 && b.p.y > h * 0.44) || (kind !== 0 && (b.age > b.life || out))) b.pop = 0;
-            if (touch && Math.hypot(b.p.x - touch.x, b.p.y - touch.y) < b.r * 1.4 + unit * 0.03) b.pop = 0; // a finger pops it
+            if ((kind === 0 && (b.p.x * up.x + b.p.y * up.y > ext * 0.88 || outside(b.p, w, h, b.r * 2))) || (kind !== 0 && (b.age > b.life || out))) b.pop = 0;
           }
-          M.compose(b.p, Q, V.setScalar(Math.max(s, 1e-6))); mesh.setMatrixAt(i, M);
+          at.copy(b.p); if (kind === 2) { turn(G, b.p.x, b.p.y, mv); at.x = mv.x; at.y = mv.y; } // the wand's stream turns as a whole
+          if (b.pop < 0 && touch && Math.hypot(at.x - touch.x, at.y - touch.y) < b.r * 1.4 + unit * 0.03) b.pop = 0; // a finger pops it
+          M.compose(at, Q, V.setScalar(Math.max(s, 1e-6))); mesh.setMatrixAt(i, M);
         });
         mesh.instanceMatrix.needsUpdate = true;
       };
@@ -985,14 +1109,19 @@ void main() {
       const m = this.mat({ vertexShader: FLAT_VS, fragmentShader: LIQUID_FS, uniforms: { uB: { value: B }, uN: { value: n }, uKind: { value: kind }, uTime: { value: 0 }, uPx: { value: unit * 0.004 },
         uDome: { value: base * 0.5 }, uEye: { value: eye }, uC1: { value: C[0] }, uC2: { value: C[1] }, uC3: { value: C[2] } } });
       const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), m); mesh.position.z = 0.001; this.group.add(mesh);
-      const held = { k: 0, x: 0, y: 0 }, tmpEye = new THREE.Vector3();
+      const held = { k: 0, x: 0, y: 0 }, tmpEye = new THREE.Vector3(), q = { x: 0, y: 0 };
       this.step = (dt, d) => {
-        const t = this.t;
+        const t = this.t, G = this.G;
         drops.forEach((o, i) => {
           let x, y;
           if (o.pool) { x = Math.sin(t * 0.1 + o.px) * w * 0.05; y = o.pool * h * 0.5; }
           else if (kind === 2) { x = o.x0 + Math.sin(t * 0.1 * o.fx * 6 + o.px) * w * 0.12; y = Math.sin(t * 0.18 * o.fy * 6 + o.py) * h * 0.36; } // wax rises and sinks slowly
           else { x = Math.sin(t * o.fx * 2 + o.px) * o.ax; y = Math.sin(t * o.fy * 2 + o.py) * o.ay; }
+          if (G) { // real gravity: the lamp turns with the world (its pools stay at the bottom and top), metal runs to the low side
+            if (kind === 2) { turn(G, x, y, q); x = q.x; y = q.y; }
+            else { x += G.gx * w * 0.28; y += G.gy * h * 0.28; }
+            const m = o.r * 0.8; x = Math.max(-w / 2 + m, Math.min(w / 2 - m, x)); y = Math.max(-h / 2 + m, Math.min(h / 2 - m, y));
+          }
           if (i === n - 1 && !o.pool) { x += (held.x - x) * held.k; y += (held.y - y) * held.k; } // one drop follows the finger
           B[i].set(x, y, o.r, 0);
         });
@@ -1007,27 +1136,37 @@ void main() {
     },
     buildLanterns(cfg, w, h, C) {
       const kind = Math.min(2, Math.max(0, cfg.kind | 0)), n = Math.round(5 + val(cfg.amount, 0.5) * 40), R = rand(1200 + (cfg.seed | 0)), unit = Math.min(w, h), depth = unit * 0.5;
-      const geo = new THREE.PlaneGeometry(1, 1), phase = new Float32Array(n), fade = new Float32Array(n), tone = new Float32Array(n);
-      for (const [k, a] of [["phase", phase], ["fade", fade], ["tone", tone]]) geo.setAttribute(k, new THREE.InstancedBufferAttribute(a, 1));
-      const m = this.mat({ vertexShader: LANTERN_VS, fragmentShader: LANTERN_FS, uniforms: { uTime: { value: 0 }, uC1: { value: C[0] }, uC2: { value: C[1] }, uC3: { value: C[2] } } });
-      const mesh = new THREE.InstancedMesh(geo, m, n); mesh.frustumCulled = false; this.group.add(mesh);
-      const S = unit * (0.05 + val(cfg.size, 0.5) * 0.07), M = new THREE.Matrix4(), Q = new THREE.Quaternion(), V = new THREE.Vector3(), SC = new THREE.Vector3(), cycle = 16;
+      const geo = lanternGeometry(), hgeo = new THREE.PlaneGeometry(1, 1), phase = new Float32Array(n), fade = new Float32Array(n), tone = new Float32Array(n);
+      const attrs = { phase: new THREE.InstancedBufferAttribute(phase, 1), fade: new THREE.InstancedBufferAttribute(fade, 1), tone: new THREE.InstancedBufferAttribute(tone, 1) };
+      for (const [k, at] of Object.entries(attrs)) { geo.setAttribute(k, at); hgeo.setAttribute(k, at); }
+      const m = this.mat({ vertexShader: LANTERN_VS, fragmentShader: LANTERN_FS, side: THREE.DoubleSide, depthWrite: true, uniforms: { uTime: { value: 0 }, uC1: { value: C[0] }, uC2: { value: C[1] }, uC3: { value: C[2] } } });
+      const hm = this.mat({ vertexShader: HALO_VS, fragmentShader: HALO_FS, blending: THREE.AdditiveBlending, uniforms: { uTime: { value: 0 }, uC2: { value: C[1] }, uC3: { value: C[2] } } });
+      this.depthMats = [m]; // paper is not see-through: each lantern hides what is behind it, its own inside too
+      const mesh = new THREE.InstancedMesh(geo, m, n), halo = new THREE.InstancedMesh(hgeo, hm, n);
+      mesh.frustumCulled = halo.frustumCulled = false; halo.renderOrder = 1; this.group.add(mesh, halo);
+      const S = unit * (0.06 + val(cfg.size, 0.5) * 0.08), M = new THREE.Matrix4(), Q = new THREE.Quaternion(), E = new THREE.Euler(0, 0, 0, "ZYX"), V = new THREE.Vector3(), SC = new THREE.Vector3(), cycle = 16;
       const ls = [];
       for (let i = 0; i < n; i++) ls.push({ p: new THREE.Vector3((R() - 0.5) * w * 0.85, (R() - 0.5) * h, R() * depth), home: new THREE.Vector3((R() - 0.5) * w * 0.8, (R() - 0.5) * h * 0.7, R() * depth),
-        s: S * (0.6 + R() * 0.7), ph: R(), tone: R(), vy: unit * (0.035 + R() * 0.035), dir: R() - 0.5, push: new THREE.Vector2(), off: new THREE.Vector2(), f: 1 });
-      const order = ls.slice();
+        s: S * (0.6 + R() * 0.7), ph: R(), tone: R(), vy: unit * (0.035 + R() * 0.035), dir: R() - 0.5, spin: R() * TAU, push: new THREE.Vector2(), off: new THREE.Vector2(), f: 1 });
+      const order = ls.slice(), up = { x: 0, y: 1 }, mv = { x: 0, y: 0 };
       this.step = (dt) => {
-        const t = this.t, touch = this.touchPoint();
+        const t = this.t, touch = this.touchPoint(), G = this.G || UPRIGHT;
+        turn(G, 0, 1, up);
+        const ext = Math.abs(up.x) * w / 2 + Math.abs(up.y) * h / 2;
         ls.forEach((l, i) => {
-          if (kind === 0) { // rising to the sky, back in from below
-            l.p.y += l.vy * (l.s / S) * dt; l.p.x += Math.sin(t * 0.2 + l.ph * 9) * unit * 0.02 * dt;
-            if (l.p.y > h * 0.5) { l.p.y = -h * 0.5; l.p.x = (R() - 0.5) * w * 0.85; }
-            l.f = smooth(-h * 0.5, -h * 0.38, l.p.y) * (1 - smooth(h * 0.32, h * 0.5, l.p.y));
+          if (kind === 0) { // rising to the sky (up in the world, with gravity), back in from below
+            turn(G, Math.sin(t * 0.2 + l.ph * 9) * unit * 0.02, l.vy * (l.s / S), mv);
+            l.p.x += mv.x * dt; l.p.y += mv.y * dt;
+            const u = l.p.x * up.x + l.p.y * up.y;
+            if (u > ext || outside(l.p, w, h, l.s * 2)) { enterAt(l.p, up.x, up.y, w, h, 0, R); }
+            const u2 = l.p.x * up.x + l.p.y * up.y;
+            l.f = smooth(-ext, -ext * 0.76, u2) * (1 - smooth(ext * 0.64, ext, u2));
           } else if (kind === 1) { // floating in place
             l.p.set(l.home.x + Math.sin(t * 0.4 + l.ph * 9) * unit * 0.03, l.home.y + Math.sin(t * 0.6 + l.ph * 13) * unit * 0.04, l.home.z); l.f = 1;
-          } else { // let go one after another from below the middle, spreading as they rise
+          } else { // let go one after another from below the middle, spreading as they rise (the whole flight turns with gravity)
             const age = ((t - (i / n) * cycle) % cycle + cycle) % cycle, y = -h * 0.45 + age * unit * 0.07;
-            l.p.set(l.dir * age * unit * 0.05 + Math.sin(t * 0.3 + l.ph * 9) * unit * 0.015, y, depth * (0.2 + l.ph * 0.6));
+            turn(G, l.dir * age * unit * 0.05 + Math.sin(t * 0.3 + l.ph * 9) * unit * 0.015, y, mv);
+            l.p.set(mv.x, mv.y, depth * (0.2 + l.ph * 0.6));
             l.f = smooth(0, 0.8, age) * (1 - smooth(h * 0.3, h * 0.48, y));
           }
           if (touch) { const dx = l.p.x + l.off.x - touch.x, dy = l.p.y + l.off.y - touch.y, r = Math.hypot(dx, dy); if (r < unit * 0.25) l.push.set(dx, dy).multiplyScalar(unit * 0.5 / Math.max(r, 1e-4)); } // a finger nudges them aside
@@ -1035,10 +1174,12 @@ void main() {
         });
         order.sort((a, b) => a.p.z - b.p.z); // the far ones are drawn first
         order.forEach((l, i) => {
-          V.set(l.p.x + l.off.x, l.p.y + l.off.y, l.p.z); M.compose(V, Q, SC.setScalar(l.s)); mesh.setMatrixAt(i, M);
+          // upright in the world, a gentle sway, and a slow turn around its own middle (seen in 3D and in the camera)
+          E.set(Math.sin(t * 0.7 + l.ph * 11) * 0.05, l.spin + t * 0.15 * (l.ph - 0.5), G.ang + Math.sin(t * 0.9 + l.ph * TAU) * 0.07 + l.off.x / unit * 0.6); Q.setFromEuler(E);
+          V.set(l.p.x + l.off.x, l.p.y + l.off.y, l.p.z); M.compose(V, Q, SC.setScalar(l.s)); mesh.setMatrixAt(i, M); halo.setMatrixAt(i, M);
           phase[i] = l.ph; fade[i] = l.f; tone[i] = l.tone;
         });
-        mesh.instanceMatrix.needsUpdate = true; for (const k of ["phase", "fade", "tone"]) geo.attributes[k].needsUpdate = true;
+        mesh.instanceMatrix.needsUpdate = true; halo.instanceMatrix.needsUpdate = true; for (const at of Object.values(attrs)) at.needsUpdate = true;
       };
       this.step(0.016);
     },
@@ -1063,6 +1204,8 @@ void main() {
       const t = this.t;
       const vh = viewInfo(sc);
       for (const m of this.mats) { m.uniforms.uOpacity.value = m.opacity; if (m.uniforms.uTime) m.uniforms.uTime.value = t; if (m.uniforms.uVh) m.uniforms.uVh.value = vh; }
+      if (this.depthMats) for (const m of this.depthMats) m.depthWrite = true; // the layer's arrival turns it off for every mesh
+      if (this.G) { this.G.step(this.group, sc, d); this.rot.set(this.G.cos, this.G.sin); }
       if (this.step) this.step(d * this.speed, d);
       const P = this.parts || {};
       if (P.points) {
@@ -1098,14 +1241,15 @@ void main() {
           k++; cx += dx; cy += dy; cz += dz; ax += o.v.x; ay += o.v.y; az += o.v.z;
           if (r2 < sep * sep && r2 > 1e-12) { const s = 1 / r2; sx -= dx * s; sy -= dy * s; sz -= dz * s; }
         }
-        if (k) { acc.x += cx / k * 1.6 + (ax / k - me.v.x) * 1.8 + sx * sep * sep * 2.2; acc.y += cy / k * 1.6 + (ay / k - me.v.y) * 1.8 + sy * sep * sep * 2.2; acc.z += cz / k * 1.6 + (az / k - me.v.z) * 1.8 + sz * sep * sep * 2.2; }
+        const fl = kind === 2 ? 0.25 : 1; // butterflies hardly flock: each flutters its own way
+        if (k) { acc.x += (cx / k * 1.6 + (ax / k - me.v.x) * 1.8) * fl + sx * sep * sep * 2.2; acc.y += (cy / k * 1.6 + (ay / k - me.v.y) * 1.8) * fl + sy * sep * sep * 2.2; acc.z += (cz / k * 1.6 + (az / k - me.v.z) * 1.8) * fl + sz * sep * sep * 2.2; }
         // stay around the artwork: a soft pull back near the edges, and in front of it in depth
         const ex = w * 0.4, ey = h * 0.38;
         if (me.p.x > ex) acc.x -= (me.p.x - ex) * 6; if (me.p.x < -ex) acc.x -= (me.p.x + ex) * 6;
         if (me.p.y > ey) acc.y -= (me.p.y - ey) * 6; if (me.p.y < -ey) acc.y -= (me.p.y + ey) * 6;
         if (me.p.z < depth * 0.05) acc.z += (depth * 0.05 - me.p.z) * 8; if (me.p.z > depth) acc.z -= (me.p.z - depth) * 8;
         acc.x += Math.sin(this.t * 0.7 + i) * maxV * 0.6; acc.y += Math.cos(this.t * 0.5 + i * 1.7) * maxV * 0.4; // wandering
-        if (kind === 2) acc.y += Math.sin(this.t * 3 + i * 2.1) * maxV * 1.5; // butterflies bob as they fly
+        if (kind === 2) { acc.x += Math.sin(this.t * 1.7 + i * 3.1) * Math.sin(this.t * 0.6 + i) * maxV * 3; acc.y += Math.sin(this.t * 3 + i * 2.1) * maxV * 1.5 + Math.cos(this.t * 2.2 + i * 1.3) * maxV * 1.5; } // butterflies bob and flutter
         // a finger: everyone near it darts away, and keeps the fright for a moment
         if (f) { const dx = me.p.x - f.x, dy = me.p.y - f.y, r = Math.hypot(dx, dy), R = Math.min(w, h) * 0.3; if (r < R) { me.f = 1; const s = (R - r) / R * maxV * 30 / Math.max(r, R * 0.1); acc.x += dx * s; acc.y += dy * s; acc.z += maxV * 4; } }
         me.f = Math.max(0, me.f - dt * 1.2);

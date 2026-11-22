@@ -327,8 +327,8 @@ window.Layers = (() => {
     const tile = (id, name, css, run) => h("button.part-tile", { type: "button", data: { codefx: id }, onclick: async () => {
       if (busy) return; busy = true;
       try { d.close(); await run(); } catch (e) { if (e.say == null) console.warn(e); toast(e.say || "לא נוסף. אפשר לנסות שוב.", { kind: "error" }); } finally { busy = false; }
-    } }, h("span.part-pic", h("span.bg-swatch", { style: { background: css } })), h("span.part-name", name));
-    const grad = (c) => "radial-gradient(circle at 35% 35%," + c[2] + "," + c[1] + " 45%," + c[0] + ")";
+    } }, h("span.part-pic", { style: { background: css } }, h("img", { src: "library/codefx/" + id + ".jpg", alt: "", loading: "lazy", draggable: false, onerror: (e) => e.target.remove() })), h("span.part-name", name));
+    const grad = (c) => "radial-gradient(circle at 35% 35%," + c[2] + "," + c[1] + " 45%," + c[0] + ")"; // behind the cover picture, while it loads
     const tiles = Studio.CODEFX.map((c) => tile(c.id, c.name, grad(c.colors), () => addCodeFx(c.id)))
       .concat(tile("holo", "ברק הולוגרפי", "linear-gradient(120deg,#ff9ad5,#9ad0ff,#b8ffcf,#fff3a8,#ff9ad5)", async () => addFoil()));
     const d = UI.dialog({ title: "איזו אנימציה?", sheet: true, body: [h("div.part-grid", tiles),
