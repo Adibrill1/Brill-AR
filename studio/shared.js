@@ -496,16 +496,43 @@ const Studio = (() => {
     if (obj) { obj.updateWorldMatrix(true, false); v.applyQuaternion(obj.getWorldQuaternion(gT.q).invert()); }
     out.x = v.x; out.y = v.y; out.z = v.z; return out;
   }
+  // How a layer follows gravity (el.gravityTune, every value 0-1): power how much of the real turn it takes (0 stays as
+  // designed), speed how fast it catches up, calm how big a tilt is let go as a trembling hand, swing how long a hung
+  // layer swings, flip the other way round (balloons). Particles can also collect in a pile on the low side: pile,
+  // pileMax its greatest height, pileRate how many of those landing stay, melt how fast it melts away.
+  const GRAVITY_TUNE = { power: 1, speed: 0.5, calm: 0, swing: 0.5, flip: false, pile: false, pileMax: 0.3, pileRate: 0.5, melt: 0 };
+  function gravityTuneOf(el) {
+    const t = el && el.gravityTune, o = Object.assign({}, GRAVITY_TUNE);
+    if (t && typeof t === "object") for (const k in GRAVITY_TUNE) if (typeof t[k] === typeof GRAVITY_TUNE[k]) o[k] = typeof t[k] === "number" ? Math.min(1, Math.max(0, t[k])) : t[k];
+    return o;
+  }
+  function validGravityTune(el) {
+    const t = el.gravityTune; if (t == null) return true;
+    if (typeof t !== "object" || Array.isArray(t)) return false;
+    for (const k of Object.keys(t)) {
+      if (!(k in GRAVITY_TUNE)) return false;
+      if (typeof GRAVITY_TUNE[k] === "boolean" ? typeof t[k] !== "boolean" : !(typeof t[k] === "number" && t[k] >= 0 && t[k] <= 1)) return false;
+    }
+    return true;
+  }
+  const tuneJSON = (el) => { const t = gravityTuneOf(el), o = {}; for (const k in t) if (t[k] !== GRAVITY_TUNE[k]) o[k] = t[k]; return JSON.stringify(o); };
+  const tuneParse = (s) => { try { if (typeof s === "string" && s[0] === "%") s = decodeURIComponent(s); return gravityTuneOf({ gravityTune: typeof s === "string" ? (s ? JSON.parse(s) : {}) : s }); } catch (e) { return gravityTuneOf(null); } };
   // one per layer: down on its plane, smoothed (gx, gy), how upright the layer stands (flat: 1 upright, 0 lying down),
-  // and the angle that turns the upright design so its down points down (cos, sin)
-  function gravityFollower(rate) {
-    const raw = { x: 0, y: -1, z: 0 }, s = { gx: 0, gy: -1, flat: 1, ang: 0, cos: 1, sin: 0, first: true };
+  // and the angle that turns the upright design so its down points down (cos, sin). The tune shapes that angle.
+  function gravityFollower(rate, tune) {
+    const raw = { x: 0, y: -1, z: 0 }, s = { gx: 0, gy: -1, flat: 1, ang: 0, cos: 1, sin: 0, first: true, rx: 0, ry: -1, tune: tuneParse(tune || "") };
     s.step = (obj, sceneEl, dt) => {
       gravityIn(obj, sceneEl, raw);
-      const k = s.first ? 1 : 1 - Math.exp(-dt * (rate || 4)); s.first = false;
-      s.gx += (raw.x - s.gx) * k; s.gy += (raw.y - s.gy) * k;
-      const m = Math.hypot(s.gx, s.gy); s.flat = Math.min(1, m);
-      if (m > 0.12) { s.ang = Math.atan2(s.gx, -s.gy); s.cos = Math.cos(s.ang); s.sin = Math.sin(s.ang); } // lying flat: keeps the last way
+      const T = s.tune, k = s.first ? 1 : 1 - Math.exp(-dt * (rate || 4) * Math.pow(4, 2 * T.speed - 1)); s.first = false;
+      s.rx += (raw.x - s.rx) * k; s.ry += (raw.y - s.ry) * k;
+      const m = Math.hypot(s.rx, s.ry); s.flat = Math.min(1, m);
+      if (m > 0.12) { // lying flat: keeps the last way
+        let a = Math.atan2(s.rx, -s.ry); const dz = T.calm * 0.6;
+        a = Math.sign(a) * Math.max(0, Math.abs(a) - dz) * T.power;
+        if (T.flip) a += Math.PI;
+        s.ang = a; s.cos = Math.cos(a); s.sin = Math.sin(a);
+      }
+      s.gx = s.sin * m; s.gy = -s.cos * m;
       return s;
     };
     return s;
@@ -522,25 +549,28 @@ const Studio = (() => {
   function ensureHangComponent() {
     if (!window.AFRAME || AFRAME.components["studio-hang"]) return;
     AFRAME.registerComponent("studio-hang", {
-      init() { this.G = gravityFollower(12); this.a = null; this.v = 0; },
+      schema: { tune: { default: "" } },
+      init() { this.G = gravityFollower(12, this.data.tune); this.a = null; this.v = 0; },
+      update() { if (this.G) this.G.tune = tuneParse(this.data.tune); },
       remove() { const m = this.el.getObject3D("mesh"); if (m) { m.rotation.z = 0; m.position.x = 0; m.position.y = 0; } },
       tick(time, dt) {
         const m = this.el.getObject3D("mesh"); if (!m || this.el.closest("[data-studio-editing]")) return;
         const d = Math.min(0.05, (dt || 16) / 1000), G = this.G.step(this.el.object3D, this.el.sceneEl, d);
         if (this.a == null) this.a = G.ang;
         const diff = Math.atan2(Math.sin(G.ang - this.a), Math.cos(G.ang - this.a));
-        const w = 2 * Math.PI * 0.85; // a gentle pendulum, damped so it settles after a few swings
-        this.v += (w * w * Math.sin(diff) * Math.max(0.25, G.flat) - 2 * 0.12 * w * this.v) * d; this.a += this.v * d;
+        const w = 2 * Math.PI * 0.85, z = 0.7 * Math.pow(0.0294, G.tune.swing); // a gentle pendulum, damped so it settles after a few swings (swing 0: none)
+        this.v += (w * w * Math.sin(diff) * Math.max(0.25, G.flat) - 2 * z * w * this.v) * d; this.a += this.v * d;
         const gp = m.geometry && m.geometry.parameters, h = (gp && gp.height || 0) / 2, c = Math.cos(this.a), s = Math.sin(this.a);
         m.rotation.z = this.a; m.position.x = s * h; m.position.y = h - c * h; // turned around the middle of its top edge
       }
     });
   }
+  const PILE_WAYS = [[1, 0], [1, 1], [0, 1], [-1, 1], [-1, 0], [-1, -1], [0, -1], [1, -1]]; // eight steps on the pile's grid, counted from right toward up
   // Particles: lightweight THREE.Points emitter (sparkle rises, confetti falls).
   function ensureParticlesComponent() {
     if (!window.AFRAME || AFRAME.components["particles"]) return;
     AFRAME.registerComponent("particles", {
-      schema: { depth: { default: 0 }, preset: { default: "sparkle" }, count: { default: 120 }, color: { default: "#ffd94d" }, width: { default: 0.5 }, height: { default: 0.5 }, size: { default: 12 }, speed: { default: 1 }, sprite: { default: "" }, direction: { default: -1 },lifetime:{default:0},life2:{default:0},emitter:{default:"box"},endColor:{default:"#ffffff"},endSize:{default:1},fade:{default:false},spread:{default:1},color2:{default:""},touch:{default:"none"},touchPower:{default:0.6},touchRange:{default:0.6},touchBack:{default:true},turn:{default:false},flap:{default:0},gravity:{default:false} }, // direction: degrees (0=up,90=right,180=down,270=left); -1 = preset's fixed direction; -2 = random per particle; -3 = outward from center. spread: emission-area scale (documented Artivive control)
+      schema: { depth: { default: 0 }, preset: { default: "sparkle" }, count: { default: 120 }, color: { default: "#ffd94d" }, width: { default: 0.5 }, height: { default: 0.5 }, size: { default: 12 }, speed: { default: 1 }, sprite: { default: "" }, direction: { default: -1 },lifetime:{default:0},life2:{default:0},emitter:{default:"box"},endColor:{default:"#ffffff"},endSize:{default:1},fade:{default:false},spread:{default:1},color2:{default:""},touch:{default:"none"},touchPower:{default:0.6},touchRange:{default:0.6},touchBack:{default:true},turn:{default:false},flap:{default:0},gravity:{default:false},gravityTune:{default:""} }, // direction: degrees (0=up,90=right,180=down,270=left); -1 = preset's fixed direction; -2 = random per particle; -3 = outward from center. spread: emission-area scale (documented Artivive control)
       init() {
         const n = Math.min(500, Math.max(10, this.data.count | 0));
         const pos = new Float32Array(n * 3);
@@ -648,12 +678,18 @@ const Studio = (() => {
         if (off) for (let i = 0; i < arr.length; i += 3) { arr[i] -= off[i]; arr[i + 1] -= off[i + 1]; }
         // real gravity: the whole flow turns so that its down is the world's down (the layer turned right: they run right)
         let gc = 1, gs = 0;
-        if (this.data.gravity) { const G = this.grav || (this.grav = gravityFollower(3)); G.step(this.el.object3D, this.el.sceneEl, dtS); gc = G.cos; gs = G.sin; if (this.turnBase != null && this.points.material.map) this.points.material.map.rotation = this.turnBase - G.ang; }
+        let P = null;
+        if (this.data.gravity) {
+          if (!this.grav || this.grav.src !== this.data.gravityTune) { this.grav = gravityFollower(3, this.data.gravityTune); this.grav.src = this.data.gravityTune; this.pileClear(); }
+          const G = this.grav; G.step(this.el.object3D, this.el.sceneEl, dtS); gc = G.cos; gs = G.sin; if (this.turnBase != null && this.points.material.map) this.points.material.map.rotation = this.turnBase - G.ang;
+          if (G.tune.pile) P = this.pile || this.pileInit();
+        } else if (this.pile) this.pileClear();
         for (let i = 0; i < arr.length; i += 3) {
           const index=i/3,d=this.data,life=this.lives?this.lives[index]:d.lifetime;if(d.lifetime>0&&life>0){this.ages[index]+=dtS;if(this.ages[index]>=life){this.ages[index]%=life;this.spawn(index);this.setVelocity(index);}const f=this.ages[index]/life;this.sizes[index]=1+(d.endSize-1)*f;this.alphas[index]=d.fade?Math.sin(Math.PI*f):1;this.ageColor=this.ageColor||new THREE.Color();if(this.color2)this.ageColor.setRGB(this.startColors[i],this.startColors[i+1],this.startColors[i+2]);else this.ageColor.copy(this.startColor);this.ageColor.lerp(this.endColor,f).toArray(this.points.geometry.attributes.color.array,i);}
           const vx = this.vel[i] * gc - this.vel[i + 1] * gs, vy = this.vel[i] * gs + this.vel[i + 1] * gc;
           arr[i] += vx * dtS;
           arr[i + 1] += vy * dtS;
+          if (P && this.pileCatch(arr, i, vx, vy)) continue;
           const halfW = this.data.width / 2 * (this.data.spread>0?Math.min(2,this.data.spread):1);
           if (this.data.lifetime<=0&&vx > 0 && arr[i] > halfW) arr[i] = -halfW;
           if (this.data.lifetime<=0&&vx < 0 && arr[i] < -halfW) arr[i] = halfW;
@@ -661,10 +697,115 @@ const Studio = (() => {
           if (this.data.lifetime<=0&&vy < 0 && arr[i + 1] < -half) arr[i + 1] = half;
         }
         if (off) this.touchStep(arr, dtS);
+        if (P) this.pileStep(dtS);
         this.points.geometry.attributes.position.needsUpdate = true;
         for(const name of ['color','particleSize','particleAlpha'])this.points.geometry.attributes[name].needsUpdate=true;
       },
-      remove(){finger.users.delete(this);if(this.points){this.el.object3D.remove(this.points);this.points.geometry.dispose();if(this.points.material.map)this.points.material.map.dispose();this.points.material.dispose();}}
+      // The pile (el.gravityTune.pile): particles that reach the low side settle there as grains on a grid laid over the
+      // layer, falling sand style: each grain steps down if it can, else down to either side, so the heap keeps its
+      // slope and pours over to wherever down is now when the artwork turns. The grains are drawn as a second cloud
+      // with the same picture and colours, sliding smoothly from cell to cell.
+      pileInit() {
+        const d = this.data, T = this.grav.tune, sz = Math.min(0.2, Math.max(0.002, d.size / 1000));
+        const cell = Math.max(sz * 0.55, Math.max(d.width, d.height) / 110);
+        const cols = Math.max(4, Math.min(160, Math.round(d.width / cell))), rows = Math.max(4, Math.min(160, Math.round(d.height / cell)));
+        const cap = Math.max(20, Math.min(4000, Math.round(cols * rows * Math.max(0.03, T.pileMax))));
+        const P = this.pile = { cols, rows, cw: d.width / cols, ch: d.height / rows, cap, n: 0, acc: 0, occ: new Int32Array(cols * rows).fill(-1),
+          cx: new Int16Array(cap), cy: new Int16Array(cap), jx: new Float32Array(cap), jy: new Float32Array(cap), age: new Float32Array(cap), order: new Int32Array(cap) };
+        const geo = new THREE.BufferGeometry();
+        P.pos = new Float32Array(cap * 3); P.col = new Float32Array(cap * 3); P.size = new Float32Array(cap); P.alpha = new Float32Array(cap); const ph = new Float32Array(cap);
+        for (let i = 0; i < cap; i++) { P.size[i] = 0.9 + Math.random() * 0.35; P.alpha[i] = 1; ph[i] = Math.random(); }
+        geo.setAttribute("position", new THREE.BufferAttribute(P.pos, 3)); geo.setAttribute("color", new THREE.BufferAttribute(P.col, 3));
+        geo.setAttribute("particleSize", new THREE.BufferAttribute(P.size, 1)); geo.setAttribute("particleAlpha", new THREE.BufferAttribute(P.alpha, 1)); geo.setAttribute("particlePhase", new THREE.BufferAttribute(ph, 1));
+        geo.setDrawRange(0, 0);
+        P.points = new THREE.Points(geo, this.points.material); P.points.frustumCulled = false; this.el.object3D.add(P.points);
+        return P;
+      },
+      pileClear() { const P = this.pile; if (!P) return; this.el.object3D.remove(P.points); P.points.geometry.dispose(); this.pile = null; },
+      // the cell a step down (k: one of eight ways, 0 = right, counted toward up)
+      pileWay(k) { k &= 7; return PILE_WAYS[k]; },
+      // a falling particle on the low side or on the heap: it stays as a grain (some of them) and starts again up high
+      pileCatch(arr, i, vx, vy) {
+        const P = this.pile, G = this.grav, dx = G.sin, dy = -G.cos;
+        if (vx * dx + vy * dy <= 0) return false;
+        const hw = this.data.width / 2, hh = this.data.height / 2; let x = arr[i], y = arr[i + 1];
+        if (x < -hw || x > hw || y < -hh || y > hh) { // outside: only when it went out past the low side
+          const ox = x < -hw ? x + hw : x > hw ? x - hw : 0, oy = y < -hh ? y + hh : y > hh ? y - hh : 0;
+          if (ox * dx + oy * dy <= 0 || (ox && Math.sign(ox) !== Math.sign(dx)) || (oy && Math.sign(oy) !== Math.sign(dy))) return false;
+          x = Math.max(-hw + 1e-6, Math.min(hw - 1e-6, x)); y = Math.max(-hh + 1e-6, Math.min(hh - 1e-6, y));
+        }
+        let c = Math.min(P.cols - 1, Math.floor((x + hw) / P.cw)), r = Math.min(P.rows - 1, Math.floor((y + hh) / P.ch));
+        const w = this.pileWay(Math.round(Math.atan2(dy, dx) / (Math.PI / 4)));
+        if (P.occ[r * P.cols + c] >= 0) { // came into the heap: back up to the first free cell above it
+          let k = 0; while (k < 6 && c >= 0 && r >= 0 && c < P.cols && r < P.rows && P.occ[r * P.cols + c] >= 0) { c -= w[0]; r -= w[1]; k++; }
+          if (k >= 6 || c < 0 || r < 0 || c >= P.cols || r >= P.rows) { this.pileRespawn(arr, i); return true; }
+        } else {
+          const nc = c + w[0], nr = r + w[1];
+          if (nc >= 0 && nr >= 0 && nc < P.cols && nr < P.rows && P.occ[nr * P.cols + nc] < 0) return false; // still falling
+        }
+        if (P.n < P.cap && Math.random() < 0.05 + 0.95 * G.tune.pileRate) {
+          const g = P.n++; P.cx[g] = c; P.cy[g] = r; P.occ[r * P.cols + c] = g; P.jx[g] = (Math.random() - 0.5) * 0.7; P.jy[g] = (Math.random() - 0.5) * 0.7; P.age[g] = -Math.random() * 2; P.alpha[g] = 1;
+          P.pos[g * 3] = arr[i]; P.pos[g * 3 + 1] = arr[i + 1]; P.pos[g * 3 + 2] = arr[i + 2];
+          const ca = this.points.geometry.attributes.color.array; P.col[g * 3] = ca[i]; P.col[g * 3 + 1] = ca[i + 1]; P.col[g * 3 + 2] = ca[i + 2];
+        }
+        this.pileRespawn(arr, i); return true;
+      },
+      // starts again just inside the high side, anywhere along it
+      pileRespawn(arr, i) {
+        const G = this.grav, ux = -G.sin, uy = G.cos, hw = this.data.width / 2, hh = this.data.height / 2;
+        const qx = (Math.random() - 0.5) * 2 * hw, qy = (Math.random() - 0.5) * 2 * hh;
+        const tx = ux > 1e-6 ? (hw - qx) / ux : ux < -1e-6 ? (-hw - qx) / ux : Infinity, ty = uy > 1e-6 ? (hh - qy) / uy : uy < -1e-6 ? (-hh - qy) / uy : Infinity;
+        const t = Math.min(tx, ty); arr[i] = qx + ux * t * 0.98; arr[i + 1] = qy + uy * t * 0.98;
+        if (this.ages && this.lives && this.lives[i / 3] > 0) this.ages[i / 3] = 0;
+      },
+      pileStep(dt) {
+        const P = this.pile, G = this.grav, T = G.tune, dx = G.sin, dy = -G.cos, cols = P.cols;
+        P.acc = Math.min(P.acc + dt, 0.05);
+        const oct = Math.atan2(dy, dx) / (Math.PI / 4), k0 = Math.floor(oct), fr = oct - k0;
+        while (P.acc >= 1 / 70) { // 70 steps a second: a heap pours across the layer in about a second and a half
+          P.acc -= 1 / 70;
+          const n = P.n, ord = P.order.subarray(0, n), cx = P.cx, cy = P.cy;
+          for (let g = 0; g < n; g++) ord[g] = g;
+          ord.sort((a, b) => (cx[b] * dx + cy[b] * dy) - (cx[a] * dx + cy[a] * dy)); // the lowest first
+          for (let j = 0; j < n; j++) {
+            const g = ord[j], c = cx[g], r = cy[g], k = k0 + (Math.random() < fr ? 1 : 0);
+            const side = Math.random() < 0.5 ? 1 : -1, free = (q, z) => q >= 0 && z >= 0 && q < cols && z < P.rows && P.occ[z * cols + q] < 0;
+            let moved = false;
+            for (const t of [k, k + side, k - side]) {
+              const w = this.pileWay(t), nc = c + w[0], nr = r + w[1];
+              if (!free(nc, nr)) continue;
+              P.occ[r * cols + c] = -1; P.occ[nr * cols + nc] = g; cx[g] = nc; cy[g] = nr; moved = true; break;
+            }
+            // half the time a grain also slides two aside and one down, over a free cell: the heap settles flatter, like sand
+            if (!moved && Math.random() < 0.5) for (const sd of [side, -side]) {
+              const a = this.pileWay(k), b = this.pileWay(k + 2 * sd), mc = c + b[0], mr = r + b[1], nc = mc + a[0] + b[0], nr = mr + a[1] + b[1];
+              if (!free(mc, mr) || !free(nc, nr)) continue;
+              P.occ[r * cols + c] = -1; P.occ[nr * cols + nc] = g; cx[g] = nc; cy[g] = nr; break;
+            }
+          }
+        }
+        // melting: grains go one by one, each fading out over a second
+        const life = T.melt > 0 ? 4 + 80 * Math.pow(1 - T.melt, 2) : 0;
+        for (let g = 0; g < P.n; g++) {
+          if (life) { P.age[g] += dt; const left = life - P.age[g] * (1 + 0.8 * P.jx[g]); if (left <= 0) { this.pileDrop(g); g--; continue; } P.alpha[g] = Math.min(1, left); }
+        }
+        const k = 1 - Math.exp(-dt * 22), hw = this.data.width / 2, hh = this.data.height / 2;
+        for (let g = 0; g < P.n; g++) {
+          const tx = -hw + (P.cx[g] + 0.5 + P.jx[g] * 1.15) * P.cw, ty = -hh + (P.cy[g] + 0.5 + P.jy[g] * 1.15) * P.ch; // loose, not in rows
+          P.pos[g * 3] += (tx - P.pos[g * 3]) * k; P.pos[g * 3 + 1] += (ty - P.pos[g * 3 + 1]) * k; P.pos[g * 3 + 2] *= 1 - k;
+        }
+        const a = P.points.geometry.attributes; P.points.geometry.setDrawRange(0, P.n);
+        a.position.needsUpdate = true; a.color.needsUpdate = true; a.particleAlpha.needsUpdate = true;
+      },
+      // one grain gone: the last one takes its place in the lists
+      pileDrop(g) {
+        const P = this.pile, last = --P.n; P.occ[P.cy[g] * P.cols + P.cx[g]] = -1;
+        if (g === last) return;
+        P.cx[g] = P.cx[last]; P.cy[g] = P.cy[last]; P.jx[g] = P.jx[last]; P.jy[g] = P.jy[last]; P.age[g] = P.age[last]; P.alpha[g] = P.alpha[last];
+        for (let q = 0; q < 3; q++) { P.pos[g * 3 + q] = P.pos[last * 3 + q]; P.col[g * 3 + q] = P.col[last * 3 + q]; }
+        P.occ[P.cy[g] * P.cols + P.cx[g]] = g;
+      },
+      remove(){this.pileClear();finger.users.delete(this);if(this.points){this.el.object3D.remove(this.points);this.points.geometry.dispose();if(this.points.material.map)this.points.material.map.dispose();this.points.material.dispose();}}
     });
   }
 
@@ -1417,7 +1558,7 @@ vec4 bpPattern(vec2 uv) {
     const VERT = "varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position.xy * 2.0, 0.0, 1.0); }";
     const FRAG = "varying vec2 vUv;\n" + PATTERN_GLSL + "\nvoid main() { vec4 c = bpPattern(vUv); if (!(c.a >= 0.0 && c.a <= 1.0)) c = vec4(0.0); gl_FragColor = bpLinear(clamp(c, 0.0, 1.0)); }";
     AFRAME.registerComponent("studio-weather", {
-      schema: { values: { default: "{}" }, speed: { default: 0 }, width: { default: 1 }, height: { default: 1 }, depth3d: { default: false }, gravity: { default: false } },
+      schema: { values: { default: "{}" }, speed: { default: 0 }, width: { default: 1 }, height: { default: 1 }, depth3d: { default: false }, gravity: { default: false }, tune: { default: "" } },
       init() {
         this.t = 0; this.seeds = []; this.targets = []; this.quads = [];
         this.cam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -1496,7 +1637,8 @@ vec4 bpPattern(vec2 uv) {
       lean(d) {
         const g = this.group; if (!g) return;
         if (!this.data.gravity) { if (g.rotation.z) { g.rotation.z = 0; g.position.set(0, 0, 0); } return; }
-        const G = this.G || (this.G = gravityFollower(3)), a = G.step(this.el.object3D, this.el.sceneEl, d).ang, h = this.data.height / 2;
+        if (!this.G || this.G.src !== this.data.tune) { this.G = gravityFollower(3, this.data.tune); this.G.src = this.data.tune; }
+        const G = this.G, a = G.step(this.el.object3D, this.el.sceneEl, d).ang, h = this.data.height / 2;
         g.rotation.z = a; g.position.set(-Math.sin(a) * h, -h + Math.cos(a) * h, 0);
       },
       // the 3D sheets turn to the camera: the sun all the way, the smoke slices only around the layer's own up
@@ -2593,7 +2735,7 @@ vec4 bpPattern(vec2 uv) {
       e = document.createElement("a-entity");
       let spriteAttr = "";
       if (pc.preset === "custom" && pc.spriteAssetId && rec.assets && rec.assets[pc.spriteAssetId]) spriteAttr = `; sprite: ${blobURL(rec.assets[pc.spriteAssetId])}`;
-      e.setAttribute("particles", `preset: ${pc.preset || "sparkle"}; count: ${pc.count || 120}; color: ${pc.color || "#ffd94d"}; size: ${pc.size || 12}; speed: ${pc.speed || 1}; width: ${ts.w}; height: ${ts.h}; lifetime: ${pc.lifetime||0}; emitter: ${pc.emitter||"box"}; endColor: ${pc.endColor||pc.color||"#ffd94d"}; endSize: ${pc.endSize==null?1:pc.endSize}; fade: ${!!pc.fade}; spread: ${pc.spread>0?Math.min(2,pc.spread):1}${pc.life2>0?"; life2: "+pc.life2:""}${pc.color2?"; color2: "+pc.color2:""}${spriteAttr}${pc.direction != null ? "; direction: " + (pc.direction | 0) : ""}${pc.turn ? "; turn: true" : ""}${pc.depth3d ? "; depth: " + (0.7 * Math.min(ts.w, ts.h)).toFixed(4) : ""}${pc.flap > 0 ? "; flap: " + pc.flap : ""}${el.gravity === true ? "; gravity: true" : ""}${TOUCH_MODES.includes(pc.touch) ? `; touch: ${pc.touch}; touchPower: ${pc.touchPower > 0 ? pc.touchPower : 0.6}; touchRange: ${pc.touchRange > 0 ? pc.touchRange : 0.6}; touchBack: ${pc.touchBack !== false}` : ""}`);
+      e.setAttribute("particles", `preset: ${pc.preset || "sparkle"}; count: ${pc.count || 120}; color: ${pc.color || "#ffd94d"}; size: ${pc.size || 12}; speed: ${pc.speed || 1}; width: ${ts.w}; height: ${ts.h}; lifetime: ${pc.lifetime||0}; emitter: ${pc.emitter||"box"}; endColor: ${pc.endColor||pc.color||"#ffd94d"}; endSize: ${pc.endSize==null?1:pc.endSize}; fade: ${!!pc.fade}; spread: ${pc.spread>0?Math.min(2,pc.spread):1}${pc.life2>0?"; life2: "+pc.life2:""}${pc.color2?"; color2: "+pc.color2:""}${spriteAttr}${pc.direction != null ? "; direction: " + (pc.direction | 0) : ""}${pc.turn ? "; turn: true" : ""}${pc.depth3d ? "; depth: " + (0.7 * Math.min(ts.w, ts.h)).toFixed(4) : ""}${pc.flap > 0 ? "; flap: " + pc.flap : ""}${el.gravity === true ? "; gravity: true; gravityTune: " + encodeURIComponent(tuneJSON(el)) : ""}${TOUCH_MODES.includes(pc.touch) ? `; touch: ${pc.touch}; touchPower: ${pc.touchPower > 0 ? pc.touchPower : 0.6}; touchRange: ${pc.touchRange > 0 ? pc.touchRange : 0.6}; touchBack: ${pc.touchBack !== false}` : ""}`);
     } else if (el.type === "model") {
       // glTF/GLB: wrapper carries placement (timeline/tap target); inner child carries the
       // normalized model scale so timeline scale keys don't fight the fit-to-size normalization.
@@ -2644,11 +2786,11 @@ vec4 bpPattern(vec2 uv) {
       // drawn by codefx.js (without it the layer stays empty)
       e = document.createElement("a-entity");
       const c = el.codefx || codeFxDefaults(), blob = CODEFX_PICTURE.includes(c.look) && rec.assets && rec.assets[c.picture || "__artwork"];
-      e.setAttribute("studio-codefx", { cfg: JSON.stringify(el.gravity === true ? Object.assign({}, c, { gravity: true }) : c), width: ts.w, height: ts.h, src: blob ? blobURL(blob) : "" });
+      e.setAttribute("studio-codefx", { cfg: JSON.stringify(el.gravity === true ? Object.assign({}, c, { gravity: true, gravityTune: tuneJSON(el) }) : c), width: ts.w, height: ts.h, src: blob ? blobURL(blob) : "" });
     } else if (isWeather(el)) {
       ensureWeatherComponent();
       e = document.createElement("a-entity");
-      e.setAttribute("studio-weather", { values: JSON.stringify(patternValues(el, ts.w / ts.h, 1 / 600)), speed: el.pattern.speed || 0, width: ts.w, height: ts.h, depth3d: el.pattern.depth3d === true, gravity: el.gravity === true && gravityFits(el) });
+      e.setAttribute("studio-weather", { values: JSON.stringify(patternValues(el, ts.w / ts.h, 1 / 600)), speed: el.pattern.speed || 0, width: ts.w, height: ts.h, depth3d: el.pattern.depth3d === true, gravity: el.gravity === true && gravityFits(el), tune: el.gravity === true ? tuneJSON(el) : "" });
     } else if (el.type === "pattern") {
       ensurePatternComponent();
       e = document.createElement("a-plane");
@@ -2680,7 +2822,7 @@ vec4 bpPattern(vec2 uv) {
 
     e.setAttribute("position", pos);
     e.setAttribute("rotation", rot);
-    if (el.gravity === true && ["image", "video", "text"].includes(el.type)) { ensureHangComponent(); e.setAttribute("studio-hang", ""); } // hangs from its top edge
+    if (el.gravity === true && ["image", "video", "text"].includes(el.type)) { ensureHangComponent(); e.setAttribute("studio-hang", { tune: tuneJSON(el) }); } // hangs from its top edge
     e.dataset.elId = el.id;
     if (hasEnterExit(el)) watchEnterExit(e, el, rec);
     // a scatter's copies carry their own order (farthest first), a group's members their own
@@ -3459,6 +3601,7 @@ vec4 bpPattern(vec2 uv) {
       if(!validParticles(el))throw new Error('bad particles');
       if (el.depth3d != null && typeof el.depth3d !== "boolean") throw new Error("bad depth");
       if (el.gravity != null && typeof el.gravity !== "boolean") throw new Error("bad gravity");
+      if (!validGravityTune(el)) throw new Error("bad gravity settings");
       if(!validTextFx(el))throw new Error('bad text effect');
       if(!validTimeCube(el))throw new Error('bad time cube');
       // bindTap may navigate to el.tapUrl on tap - refuse script-executing schemes
@@ -3816,7 +3959,7 @@ vec4 bpPattern(vec2 uv) {
            audioDistances, connectSpatialAudio, validParticles, validCrop, setImageCrop, geom, toTargetSpace, blankExperience, save, blobURL, releaseBlobURL, blobURLs, historyState, restoreHistory, duplicateLayer, exportJSON, exportObject, exportedAssetIds, importPublished, missingAssets, importJSON, exportZIP, importZIP, zipToJSON, fetchPublished, ownBlob, assetHealth, fileHealth, seedDemo, normEl, ANIMS, drawTextCanvas, loadTextFonts, lineDir, visualOrder, ENTER_EXIT: ENTER_EXIT.map(([id, enter, exit, , text]) => ({ id, enter, exit, text: !!text })), enterExitFor, validEnterExit, hasEnterExit, enterExitDur, fxLook, fxTimes, drawEnterExitText, animSpeed, FX: FX.map(([id, name]) => ({ id, name, moving: FX_MOVING.has(id) })), fxFrame,
            WEATHER: WEATHER.map(([id, name, colors, speed, kinds]) => ({ id, name, kinds: kinds.slice() })), isWeather, PATTERNS: PATTERNS.map(([id, name, colors, speed]) => ({ id, name, colors: colors.slice(), speed })), PATTERN_PALETTES: PATTERN_PALETTES.map(([name, colors]) => ({ name, colors: colors.slice() })),
            fingerGrab: () => finger.grab, fingerTools: { watch: watchFinger, state: finger, onPlane: fingerOnPlane },
-           gravityFollower, gravityFits, askTilt, GRAVITY_CODEFX,
+           gravityFollower, gravityFits, askTilt, GRAVITY_CODEFX, GRAVITY_TUNE, gravityTuneOf, validGravityTune,
            CODEFX: CODEFX.map(([id, name, colors, kinds]) => ({ id, name, colors, kinds })), CODEFX_SHAPES, CODEFX_PICTURE, codeFxDefaults, validCodeFx, TOUCH_MODES, PATTERN_TOUCH, validPattern, textFxOf, TEXT_FX: TEXT_FX.map(([id, name, color, amount]) => ({ id, name, color, amount })), validTextFx,
            PATTERN_SHAPES: PATTERN_SHAPES.map(([id, name]) => ({ id, name })), patternDefaults, patternAspect, patternFrame, validPattern, validFx, validChroma, keyValues, pixelAt, CHROMA_DEFAULT, SCATTER_TYPES, SCATTER_MAX, mediaType, isStill, stillAt, setStill, scatterItem, scatterLimit, scatterPath, scatterCopies, scatterCopyEl, scatterBounds, refreshScatter, makeScatter, makeFan, scaleScatter, breakScatter, validScatter, FONTS: FONTS.map(([id, name]) => ({ id, name })), buildElementEntity, groupOf, fitGroup, makeGroup, breakGroup, leaveGroup, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, videoHasPicture, ensureTimeCubeComponent, bakeTimeCube, validTimeCube, TIMECUBE_DIRS, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, artworkFingerprint, fingerprintDistance, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, applyTimelinePose, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, turnImageBlob, turnLayers, trackList, makeTrackRunner,
            load: id=>settledRead(id), all: ()=>settledRead(), del: delExperience, LIMITS, mediaBytes, pushBack, addBlocker, publishBlocker, restoreBlocker, exportWarning, exportJSONSize,

@@ -56,6 +56,31 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
     const o=JSON.parse(await Studio.exportJSON(App.rec));o.elements.find(x=>x.gravity).gravity='yes';let bad;try{await Studio.importJSON(JSON.stringify(o),{save:false});bad=false;}catch(err){bad=err.message;}await App.removeLayer(e.id);return {ok,bad};});
   assert.equal(imp.ok,true);assert.match(String(imp.bad),/gravity/);
 
+  // the settings: no power keeps the design's turn, flip sends confetti up
+  l=await add(Object.assign({},P,{rot:90,gravity:true,gravityTune:{power:0}}));await p.waitForTimeout(600);f=await flow(l,'particles');
+  assert.ok(Math.abs(f.dx)>Math.abs(f.dy)*3,'power 0: it keeps its own turn '+JSON.stringify(f));await p.evaluate(i=>App.removeLayer(i),l);
+  l=await add(Object.assign({},P,{rot:90,gravity:true,gravityTune:{flip:true}}));await p.waitForTimeout(600);f=await flow(l,'particles');
+  assert.ok(f.dy>0&&Math.abs(f.dy)>Math.abs(f.dx)*3,'flipped: it rises '+JSON.stringify(f));
+  // the controls show once gravity is on, the pile's only after the pile is on
+  await p.evaluate(i=>App.select(i),l);await p.waitForTimeout(300);
+  const grp=p.locator('section.group',{hasText:'גרביטציה'});await grp.waitFor();
+  for(const t of ['עוצמה','מהירות תגובה','התעלמות מרעידות','הפוך כיוון','הצטברות בתחתית'])assert.ok(await grp.locator('.ctl-label',{hasText:t}).count()>0,t);
+  assert.equal(await grp.getByText('גובה הערימה').count(),0);
+  await grp.locator('label.ctl-toggle',{hasText:'הצטברות בתחתית'}).tap();await p.waitForTimeout(300);
+  assert.equal(await p.evaluate(i=>App.el(i).gravityTune.pile,l),true);assert.ok(await grp.getByText('גובה הערימה').count()>0,'pile controls');
+  await p.evaluate(i=>App.removeLayer(i),l);
+  // the pile: confetti collect on the low side; turned a quarter, the heap pours to the new low side
+  l=await add(Object.assign({},P,{particles:Object.assign({},P.particles,{count:400,speed:3}),gravity:true,gravityTune:{pile:true,pileRate:1}}));await p.waitForTimeout(5000);
+  const heap=()=>p.evaluate(lid=>{const n0=Editor3D._test.node(lid),n=[n0,...n0.querySelectorAll('*')].find(x=>x.components&&x.components.particles),c=n.components.particles,P=c.pile;if(!P)return null;
+    let sx=0,sy=0;for(let g=0;g<P.n;g++){sx+=P.pos[g*3];sy+=P.pos[g*3+1];}return {n:P.n,x:sx/P.n/c.data.width,y:sy/P.n/c.data.height,down:[c.grav.sin,-c.grav.cos]};},l);
+  let h1=await heap();assert.ok(h1&&h1.n>30&&h1.y<-0.3,'a heap at the bottom '+JSON.stringify(h1));
+  await p.evaluate(i=>{App.el(i).rot=90;App.changed(true);},l);await p.waitForTimeout(4000);
+  const h2=await heap();assert.ok(h2&&h2.n>=h1.n*0.8,'the heap stays when the layer turns '+JSON.stringify(h2));
+  assert.ok(h2.x*h2.down[0]>0.22&&h2.y>h1.y+0.05,'it poured to the new low side '+JSON.stringify([h1,h2]));
+  await p.evaluate(i=>App.removeLayer(i),l);
+  const badTune=await p.evaluate(async()=>{const o=JSON.parse(await Studio.exportJSON(App.rec));o.elements.push({id:'tt',type:'image',assetId:'pic',x:0,y:0,w:0.5,h:0.5,aspect:0.75,rot:0,z:0,gravity:true,gravityTune:{power:2}});try{await Studio.importJSON(JSON.stringify(o),{save:false});return false;}catch(e){return e.message;}});
+  assert.match(String(badTune),/gravity settings/);
+
   // the snap: a picture at 97% of the artwork's width, made a little bigger, lands on 100%
   l=await add({type:'image',name:'s',assetId:'pic',w:0.96,h:0.96},true);await p.evaluate(i=>App.select(i),l);await p.waitForTimeout(300);
   const c=await p.evaluate(()=>{const v=Stage.view,r=document.querySelector('#stage canvas, canvas').getBoundingClientRect();return {x:r.left+v.mx+v.W/2,y:r.top+v.my+v.H/2};});

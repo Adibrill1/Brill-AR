@@ -448,9 +448,28 @@ window.Inspector = (() => {
   function gravityGroup(e) {
     if (!Studio.gravityFits || !Studio.gravityFits(e)) return null;
     const hint = GRAVITY_HINT[e.type === "codefx" ? e.codefx.look : e.type];
+    const on = e.gravity === true, tune = () => Studio.gravityTuneOf(App.sel());
+    // one value of el.gravityTune; values back at their default are left out
+    const GT = (fn) => upd((x, v) => {
+      const t = Object.assign({}, x.gravityTune || {}); fn(t, v);
+      for (const k of Object.keys(t)) if (t[k] === Studio.GRAVITY_TUNE[k]) delete t[k];
+      if (Object.keys(t).length) x.gravityTune = t; else delete x.gravityTune;
+    });
+    const tS = (key, label, hint) => S(Object.assign({ label, hint, min: 0, max: 1, step: 0.01, get: () => tune()[key], set: GT((t, v) => { t[key] = round(v, 2); }) }, pct));
+    const hangs = ["image", "video", "text"].includes(e.type), pile = e.type === "particles" && tune().pile;
     return UI.group("גרביטציה",
       T({ label: "לפי כוח המשיכה האמיתי", hint, get: () => App.sel().gravity === true,
-        set: upd((x, v) => { if (v) { x.gravity = true; Studio.askTilt(); } else delete x.gravity; }) }),
+        set: (v, f) => { upd((x, val) => { if (val) { x.gravity = true; Studio.askTilt(); } else delete x.gravity; })(v, f); build(); } }),
+      on ? tS("power", "עוצמה", "כמה מהסיבוב האמיתי השכבה מקבלת. 100%: בדיוק כמו בעולם, פחות: רק נוטה קצת") : null,
+      on ? tS("speed", "מהירות תגובה", "כמה מהר היא מגיבה כשמסובבים") : null,
+      on ? tS("calm", "התעלמות מרעידות", "הטיות קטנות לא מזיזות כלום, כך שיד רועדת לא מפריעה") : null,
+      on && hangs ? tS("swing", "נדנוד", "0%: נתלית בלי להתנדנד, 100%: מתנדנדת הרבה זמן") : null,
+      on ? T({ label: "הפוך כיוון", hint: "נגד כוח המשיכה, כמו בלונים שעולים למעלה", get: () => tune().flip, set: GT((t, v) => { t.flip = !!v; }) }) : null,
+      on && e.type === "particles" ? T({ label: "הצטברות בתחתית", hint: "החלקיקים נערמים בצד הנמוך של השכבה, וכשמסובבים את היצירה הערימה נשפכת",
+        get: () => tune().pile, set: (v, f) => { GT((t, val) => { t.pile = !!val; })(v, f); build(); } }) : null,
+      on && pile ? tS("pileMax", "גובה הערימה", "עד כמה מהשכבה הערימה יכולה להתמלא") : null,
+      on && pile ? tS("pileRate", "כמה נשארים", "כמה מהחלקיקים שנוחתים נשארים בערימה") : null,
+      on && pile ? tS("melt", "נמס", "0%: הערימה נשארת, יותר: נמסה לאט ומתחילה מחדש") : null,
       note("במצלמה: כשמסובבים את היצירה ימינה, התנועה זורמת ימינה, כמו בעולם האמיתי. כאן בעורך אפשר לראות את זה כשמסובבים את השכבה, ובטלפון גם כשמטים את הטלפון.", "refresh"));
   }
   function styleOf(e) {

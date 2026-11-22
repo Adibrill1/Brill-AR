@@ -741,7 +741,7 @@ void main() { float r2 = dot(vUv, vUv); if (r2 > 1.0) discard; float g = exp(-r2
       let cfg; try { cfg = JSON.parse(this.data.cfg); } catch (e) { cfg = {}; }
       this.cfg = cfg; this.look = cfg.look; this.speed = pace(cfg);
       this.rot = new THREE.Vector2(1, 0); // gravity's turn, (cos, sin), shared by the shaders that need it
-      this.G = cfg.gravity && Studio.GRAVITY_CODEFX && Studio.GRAVITY_CODEFX.includes(this.look) ? Studio.gravityFollower(3) : null;
+      this.G = cfg.gravity && Studio.GRAVITY_CODEFX && Studio.GRAVITY_CODEFX.includes(this.look) ? Studio.gravityFollower(3, cfg.gravityTune || "") : null;
       this.group = new THREE.Group();
       const w = this.data.width, h = this.data.height;
       const C = (cfg.colors || []).map(vec3); while (C.length < 3) C.push(new THREE.Color("#ffffff"));

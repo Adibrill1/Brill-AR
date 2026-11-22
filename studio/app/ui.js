@@ -152,7 +152,7 @@ window.UI = (() => {
     range.oninput = () => { const v = +range.value; num.value = +(v * k).toFixed(Math.max(0, dec - (k >= 100 ? 2 : 0))); paint(v); o.set(v, false); };
     range.onchange = () => o.set(+range.value, true);
     num.onchange = () => { let v = parseFloat(num.value) / k; if (!Number.isFinite(v)) return show(o.get()); v = Math.max(o.min, Math.min(o.max, v)); show(v); o.set(v, true); };
-    const node = h("div.ctl.ctl-slider", h("span.ctl-label", o.label), h("div.slider-row", range, h("span.num-wrap", num, o.unit ? h("span.unit", o.unit) : null)));
+    const node = h("div.ctl.ctl-slider", h("span.ctl-label", o.label, o.hint ? h("span.ctl-hint", o.hint) : null), h("div.slider-row", range, h("span.num-wrap", num, o.unit ? h("span.unit", o.unit) : null)));
     const sync = () => { if (document.activeElement !== num) show(o.get()); };
     sync();
     return { node, sync };
