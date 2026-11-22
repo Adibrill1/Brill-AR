@@ -58,6 +58,25 @@ const day=(n)=>{const t=new Date(Date.now()+n*86400000),z=v=>String(v).padStart(
   const gap=await C('C.parts.puzzle.board.indexOf(8)'),nb=gap%3<2?gap+1:gap-1;await tapSlot(nb);
   assert.equal(await C('C.parts.puzzle.board.indexOf(8)'),nb,'the piece slid into the gap');
   assert.equal(await C('C.parts.puzzle.moves'),1);
+  // the real jigsaw: drag each piece to its place, it snaps in; more pieces from the setting
+  await open('puzzle',{kind:3,pieces:3});await shot('jig-a');
+  const jn=await C('C.parts.jig.pieces.length');assert.equal(jn,9,'three a row on a square picture: nine pieces');
+  for(let i=0;i<jn;i++){
+    const pc=await C('(p=>({x:p.pos.x,y:p.pos.y,hx:p.home.x,hy:p.home.y}))(C.parts.jig.pieces['+i+'])');
+    // a piece under another may not be the top one: lift whichever is on top there until this one moves
+    const from=await screen(pc.x,pc.y),to=await screen(pc.hx,pc.hy);
+    await p.mouse.move(from.x,from.y);await p.mouse.down();await p.waitForTimeout(60);await p.mouse.move(to.x,to.y,{steps:8});await p.waitForTimeout(60);await p.mouse.up();await p.waitForTimeout(80);
+    if(i===3)await shot('jig-b');
+  }
+  for(let round=0;round<4&&!(await C('C.parts.jig.solved'));round++){ // pieces that were under another: again
+    const left=await C('C.parts.jig.pieces.map((p,i)=>p.locked?-1:i).filter(i=>i>=0)');
+    for(const i of left){const pc=await C('(p=>({x:p.pos.x,y:p.pos.y,hx:p.home.x,hy:p.home.y}))(C.parts.jig.pieces['+i+'])');const from=await screen(pc.x,pc.y),to=await screen(pc.hx,pc.hy);
+      await p.mouse.move(from.x,from.y);await p.mouse.down();await p.waitForTimeout(60);await p.mouse.move(to.x,to.y,{steps:8});await p.waitForTimeout(60);await p.mouse.up();await p.waitForTimeout(80);}
+  }
+  await p.waitForTimeout(600);await shot('jig-c');
+  assert.ok(await C('C.parts.jig.solved'),'every piece in its place: solved');
+  await open('puzzle',{kind:3,pieces:6});await shot('jig-d');assert.equal(await C('C.parts.jig.pieces.length'),36,'six a row: thirty-six pieces');
+  await open('puzzle',{kind:0,pieces:5});assert.equal(await C('C.parts.puzzle.n'),5,'the swap puzzle takes the number too');
   assert.deepEqual(errs,[],'no errors');
   console.log('v2-four ok');
  }finally{await b.close();server.close();}

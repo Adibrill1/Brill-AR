@@ -280,7 +280,7 @@ window.Inspector = (() => {
       storm: "שמיים כהים, גשם וברקים שמאירים את הכול. מתאים מעל תמונה או כרקע.",
       countdown: "סופר ימים, שעות, דקות ושניות עד התאריך, לפי השעון בטלפון של מי שצופה. ביום עצמו כתוב ״זה היום!״ ויורד קונפטי.",
       face: "מי שצופה משנה את הפנים באצבע: במשיכה מושכים (למשל מאריכים את האף), בניפוח ובכיווץ מחזיקים את האצבע על עין או על הפה, ובג׳לי נוגעים והפנים רועדות. אחרי רגע הפנים חוזרות לאט, אלא אם ״השינויים נשארים״ דולק.",
-      puzzle: "התמונה מתפרקת לחלקים מעורבבים. בהחלפה נוגעים בשני חלקים והם מתחלפים. בהזזה נוגעים בחלק שליד המקום הריק. כשהתמונה מסתדרת יש חגיגה, ונגיעה מתחילה פאזל חדש.",
+      puzzle: "התמונה מתפרקת לחלקים מעורבבים. בהחלפה נוגעים בשני חלקים והם מתחלפים. בהזזה נוגעים בחלק שליד המקום הריק. בפאזל האמיתי החלקים מפוזרים, גוררים כל אחד למקומו והוא ננעל שם. כשהתמונה מסתדרת יש חגיגה, ונגיעה מתחילה פאזל חדש.",
       game: "משחק של 30 שניות: נוגעים בכוכבים (או בבועות, או בלבבות) לפני שהם בורחים. בסוף רואים את הניקוד ואת השיא בטלפון הזה, ונגיעה מתחילה משחק חדש. אפשר לשחק בתצוגה המקדימה ובמצלמה.",
       tunnel: "התמונה בתוך עצמה שוב ושוב, ואנחנו טסים פנימה. מהירות משנה את קצב הטיסה.",
       lens: "התמונה מוסתרת, ובמצלמה היא נחשפת במקום שהטלפון מכוון אליו. ככל שמתקרבים, העיגול גדל. כשלא זזים, העיגול משוטט לבד.",
@@ -326,7 +326,7 @@ window.Inspector = (() => {
     pals.node.classList.add("swatches");
     const col = (i) => K({ label: CODEFX_TEXT.colors[look][i], get: () => cur().colors[i], set: X((c, v) => { c.colors = c.colors.slice(); c.colors[i] = v; }) });
     const fitWords = (c, x) => { if (!window.StudioCodeFx) return; x.aspect = StudioCodeFx.wordsAspect(c.text, c.font || "heebo"); x.h = (x.w / x.aspect) * artRatio(); };
-    const kindSet = X((c, v) => { const k = KIND_COLORS[look]; if (k && k[c.kind || 0] && k[c.kind || 0].join() === c.colors.join()) c.colors = k[+v].slice(); c.kind = +v; }, sync);
+    const kindSet = X((c, v) => { if (look === "puzzle") delete c.pieces; /* each kind starts with its own number of pieces */ const k = KIND_COLORS[look]; if (k && k[c.kind || 0] && k[c.kind || 0].join() === c.colors.join()) c.colors = k[+v].slice(); c.kind = +v; }, sync);
     const out = [UI.group("סוג", C({ label: "", bare: true, wrap: true, options: d.kinds.map((name, i) => ({ id: String(i), name })), get: () => String(cur().kind || 0), set: kindSet }))];
     if (look === "dust") {
       const ta = h("textarea.field", { rows: 2, dir: "auto", maxlength: 60, "aria-label": "הברכה", id: "in-dust-text", placeholder: "מה כתוב באבק?" });
@@ -364,6 +364,7 @@ window.Inspector = (() => {
       look === "portal" ? L({ label: "צורת החלון", options: [{ id: "rect", name: "מלבן" }, { id: "circle", name: "עיגול" }, { id: "arch", name: "קשת" }], get: () => cur().shape || "rect",
         set: X((c, v, x) => { c.shape = v; x.aspect = v === "circle" ? 1 : v === "arch" ? 0.75 : artRatio(); x.h = (x.w / x.aspect) * artRatio(); }) }) : null,
       !["portal", "countdown", "scratch", "face"].includes(look) ? S({ label: "וריאציה", min: 0, max: 999, step: 1, get: () => cur().seed || 0, set: X((c, v) => { c.seed = Math.round(v); }) }) : null,
+      look === "puzzle" ? S({ label: "חלקים בכל שורה", hint: "כמה חלקים לרוחב; לגובה לפי צורת התמונה בפאזל האמיתי", min: 2, max: 10, step: 1, get: () => cur().pieces || [3, 4, 3, 4][cur().kind | 0], set: X((c, v) => { c.pieces = Math.round(v); }) }) : null,
       look === "sand" && (cur().kind | 0) !== 2 ? T({ label: "רקע מאחור", hint: "מסתיר את התמונה המודפסת במקום שהחול עזב (בצבע השלישי). בערימה תמיד יש רקע.", get: () => cur().cover === true, set: X((c, v) => { c.cover = v; }) }) : null,
       ["dissolve", "burn", "shatter"].includes(look) ? T({ label: "רקע מאחור", hint: look === "shatter" ? "מסתיר את התמונה המודפסת כשהרסיסים נופלים" : look === "burn" ? "מסתיר את התמונה המודפסת כשהיא נשרפת" : "מסתיר את התמונה המודפסת כשהחלקיקים עפים", get: () => cur().cover !== false, set: X((c, v) => { c.cover = v; }) }) : null,
       !["portal", "ivy", "tree", "countdown"].includes(look) ? T({ label: "מגיב למגע", hint: CODEFX_TEXT.touch[look] || "נגיעה מפזרת את החלקיקים", get: () => cur().touch !== false, set: X((c, v) => { c.touch = v; }) }) : null,

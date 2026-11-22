@@ -931,13 +931,14 @@ void main() {
   vec2 off = -d.xy * 1.6 * step(0.001, d.z); off = vec2(off.x * uRot.x - off.y * uRot.y, off.x * uRot.y + off.y * uRot.x) * uBox.y / uBox; // back onto the layer
   vec3 sharp = texture2D(map, clamp(vUv + off, 0.001, 0.999)).rgb;
   float clear = max(max(d.z, trail * 0.9), wipe); fog = clamp(fog, 0.0, 1.0) * (1.0 - clear);
-  vec3 col = mix(sharp, mix(fogged(vUv), uC1, 0.3), fog);
-  col += uC2 * fog * 0.07 * step(0.82, noise(q * 380.0)); // the tiny beads a mist is made of
+  vec3 fc = mix(fogged(vUv), uC1, 0.3) + uC2 * 0.07 * step(0.82, noise(q * 380.0)); // the fog, and the tiny beads a mist is made of
+  fc = mix(fc, fc * uC3 * 2.0, 0.12);
   vec2 n = d.xy / max(length(d.xy), 1e-5);
-  col *= 1.0 - 0.4 * d.z * smoothstep(0.55, 1.0, d.w); // a dark rim
-  col += uC2 * d.z * pow(max(0.0, dot(n, vec2(-0.55, 0.8))), 4.0) * smoothstep(0.3, 0.9, d.w) * 0.9; // the light caught at the top of each drop
-  col = mix(col, col * uC3 * 2.0, 0.12 * fog);
-  gl_FragColor = vec4(col, texture2D(map, vUv).a * uOpacity);
+  vec3 drop = sharp * (1.0 - 0.4 * smoothstep(0.55, 1.0, d.w)); // a drop: the picture bent through it, a dark rim
+  drop += uC2 * pow(max(0.0, dot(n, vec2(-0.55, 0.8))), 4.0) * smoothstep(0.3, 0.9, d.w) * 0.9; // the light caught at the top of each drop
+  float a = max(fog, d.z); // clear glass is see-through: the layers and the print under it show
+  vec3 col = mix(drop, fc, fog / max(a, 1e-4));
+  gl_FragColor = vec4(col, a * texture2D(map, vUv).a * uOpacity);
 }`;
 
   // ---------- drip: the paint runs down the real down, hangs off the bottom, then heals ----------
@@ -1174,11 +1175,11 @@ void main() {
   vec4 c = texture2D(map, vUv);
   float d = length(vP - uSpot.xy), R = max(uSpot.z, 1e-4);
   float k = 1.0 - smoothstep(R * 0.5, R, d * (1.0 + 0.12 * (noise(vP / uBox.y * 5.0 + uTime * 0.4) - 0.5)));
-  vec3 col;
-  if (uKind < 0.5) col = mix(c.rgb * 0.05 + uC2 * 0.05, c.rgb * mix(vec3(1.0), uC1 * 1.2, 0.25) * (1.15 - 0.3 * d / R), k); // a torch in the dark
-  else if (uKind < 1.5) { float g = dot(c.rgb, vec3(0.299, 0.587, 0.114)); col = mix(mix(vec3(g), uC2 * g * 1.8, 0.2), c.rgb, k); } // grey, colour where it is close
-  else col = mix(mix(soft(vUv), uC1, 0.55), c.rgb, k); // fog that clears
-  gl_FragColor = vec4(col, c.a * uOpacity);
+  vec3 col; float a = 1.0 - k; // where it is revealed, see-through: the layers and the print under it show
+  if (uKind < 0.5) { col = c.rgb * 0.05 + uC2 * 0.05; a = (1.0 - k) * 0.97 + k * 0.1 * (d / R); col = mix(col, uC1 * 0.25, k); } // a torch in the dark, a little warm at its edge
+  else if (uKind < 1.5) { float g = dot(c.rgb, vec3(0.299, 0.587, 0.114)); col = mix(vec3(g), uC2 * g * 1.8, 0.2); } // grey, colour where it is close
+  else col = mix(soft(vUv), uC1, 0.55); // fog that clears
+  gl_FragColor = vec4(col, a * c.a * uOpacity);
 }`;
 
   // ---------- day sky: the sky at the viewer's own time of day, with the sun, the moon, stars and clouds ----------
@@ -1268,15 +1269,20 @@ void main() { vCol = aCol; vA = aA; vec4 mv = modelViewMatrix * vec4(position, 1
 
   // ---------- scratch: a silver (gold, coloured) coat that the viewer scratches off to find the picture ----------
   const SCRATCH_FS = `
-uniform sampler2D map; uniform sampler2D uCoat; uniform sampler2D uMask; uniform float uAll, uTime, uOpacity;
+uniform sampler2D uCoat; uniform sampler2D uMask; uniform float uAll, uTime, uOpacity, uMetal; uniform vec2 uView;
 varying vec2 vUv; varying vec2 vP;
 ${NOISE}
 void main() {
-  vec4 pic = texture2D(map, vUv);
-  vec3 coat = texture2D(uCoat, vUv).rgb + 0.16 * smoothstep(0.07, 0.0, abs(fract((vUv.x + vUv.y) * 0.5 - uTime * 0.1) - 0.5)); // a shine passing over
-  float k = max(smoothstep(0.3, 0.7, texture2D(uMask, vUv).r + (noise(vUv * 90.0) - 0.5) * 0.4), uAll);
-  float rim = smoothstep(0.0, 0.25, k) * (1.0 - smoothstep(0.25, 0.6, k)) * (1.0 - uAll); // the torn edge of the coat
-  gl_FragColor = vec4(mix(coat, pic.rgb, k) * (1.0 - 0.35 * rim), mix(1.0, pic.a, k) * uOpacity);
+  vec3 coat = texture2D(uCoat, vUv).rgb;
+  // metal: a soft light that slides across as the phone moves, and a thin glint beside it
+  float s = (vUv.x + vUv.y) * 0.5 + uView.x * 0.7 - uView.y * 0.35 + sin(uTime * 0.25) * 0.05;
+  float band = exp(-pow((fract(s) - 0.5) / 0.18, 2.0)), glint = exp(-pow((fract(s + 0.31) - 0.5) / 0.025, 2.0));
+  coat = coat * (0.84 + 0.3 * band * uMetal) + glint * 0.16 * uMetal;
+  float m = texture2D(uMask, vUv).r + (noise(vUv * 150.0) - 0.5) * 0.3 + (noise(vUv * 38.0) - 0.5) * 0.22;
+  float k = max(smoothstep(0.34, 0.6, m), uAll);
+  float rim = smoothstep(0.0, 0.35, k) * (1.0 - smoothstep(0.35, 0.8, k)) * (1.0 - uAll); // the torn edge of the coat: darker, with crumbs
+  coat *= 1.0 - 0.4 * rim; coat += rim * 0.25 * step(0.8, noise(vUv * 420.0));
+  gl_FragColor = vec4(coat, (1.0 - k) * uOpacity); // scratched: see-through, so whatever is under it shows
 }`;
 
   // ---------- storm: dark sky, rain, and lightning that lights everything up ----------
@@ -2111,44 +2117,62 @@ void main() {
       const coat = document.createElement("canvas"); coat.width = CW; coat.height = CH;
       const mask = document.createElement("canvas"); mask.width = MW; mask.height = MH;
       const mx = mask.getContext("2d", { willReadFrequently: true }); mx.fillStyle = "#000"; mx.fillRect(0, 0, MW, MH);
-      const coatTex = new THREE.CanvasTexture(coat), maskTex = new THREE.CanvasTexture(mask), uAll = { value: 0 };
+      const coatTex = new THREE.CanvasTexture(coat), maskTex = new THREE.CanvasTexture(mask), uAll = { value: 0 }, uView = { value: new THREE.Vector2(0, 0) };
       const css = (c) => "#" + c.getHexString(), text = cfg.text == null ? "גרדו כאן" : String(cfg.text);
+      // the coat's own colours: dark, middle, light, as a real scratch panel (silver, gold, or a coloured foil from colour 1)
+      const shade = (c, k) => { const o = c.clone(); if (k < 1) o.multiplyScalar(k); else o.lerp(new THREE.Color("#ffffff"), k - 1); return css(o); };
+      const tone = kind === 0 ? { dark: "#7d848d", mid: "#b9bfc7", light: "#eef1f4", ink: "#4f555d" }
+        : kind === 1 ? { dark: "#7a520e", mid: "#c9962f", light: "#f7e09a", ink: "#5a3c08" }
+        : { dark: shade(C[0], 0.5), mid: css(C[0]), light: shade(C[0], 1.5), ink: shade(C[0], 0.35) };
       const drawCoat = () => {
         const x = coat.getContext("2d"), Rg = rand(77);
-        const stops = kind === 0 ? ["#8f96a0", "#eef1f5", "#b9bec7", "#f6f8fa", "#8f96a0"] : kind === 1 ? ["#9c6b16", "#f7dc8a", "#b8892d", "#ffe9a8", "#9c6b16"] : [css(C[0]), css(C[1]), css(C[0])];
-        const gr = x.createLinearGradient(0, 0, CW, CH); stops.forEach((c, i) => gr.addColorStop(i / (stops.length - 1), c));
+        const gr = x.createLinearGradient(0, 0, CW, CH * 0.6); [[0, tone.dark], [0.22, tone.mid], [0.4, tone.light], [0.55, tone.mid], [0.78, tone.light], [1, tone.dark]].forEach(([o, c]) => gr.addColorStop(o, c));
         x.fillStyle = gr; x.fillRect(0, 0, CW, CH);
-        for (let i = 0; i < CW * CH / 50; i++) { x.fillStyle = Rg() < 0.5 ? "rgba(255,255,255,0.16)" : "rgba(0,0,0,0.1)"; x.fillRect(Rg() * CW, Rg() * CH, 1.5, 1.5); } // grain
-        if (kind === 2) for (let i = 0; i < 46; i++) { // little stars on the coloured coat
-          const sx = Rg() * CW, sy = Rg() * CH, r = 5 + Rg() * 9; x.fillStyle = Rg() < 0.5 ? css(C[2]) : "rgba(255,255,255,0.7)"; x.beginPath();
-          for (let k = 0; k < 10; k++) { const a = -Math.PI / 2 + k * Math.PI / 5, rr = k % 2 ? r * 0.45 : r; x.lineTo(sx + Math.cos(a) * rr, sy + Math.sin(a) * rr); }
-          x.fill();
+        for (let i = 0; i < 26; i++) { // slow clouds in the metal, as the foil is never even
+          const cx = Rg() * CW, cy = Rg() * CH, r = 40 + Rg() * 140, g2 = x.createRadialGradient(cx, cy, 0, cx, cy, r), lt = Rg() < 0.5;
+          g2.addColorStop(0, lt ? "rgba(255,255,255,0.09)" : "rgba(0,0,0,0.08)"); g2.addColorStop(1, "rgba(0,0,0,0)"); x.fillStyle = g2; x.fillRect(cx - r, cy - r, r * 2, r * 2);
         }
-        if (text.trim()) {
+        for (let y = 0; y < CH; y++) { // brushed: fine lines along the panel
+          const a = (Rg() - 0.5) * 0.09; x.fillStyle = a > 0 ? "rgba(255,255,255," + a + ")" : "rgba(0,0,0," + -a + ")";
+          const x0 = Rg() * CW * 0.3; x.fillRect(x0, y, CW * (0.5 + Rg() * 0.5), 1);
+        }
+        for (let i = 0; i < CW * CH / 28; i++) { x.fillStyle = Rg() < 0.5 ? "rgba(255,255,255,0.13)" : "rgba(0,0,0,0.11)"; x.fillRect(Rg() * CW, Rg() * CH, 1, 1); } // grain
+        if (kind === 2) { // a printed pattern on the coloured foil: small stars, pressed in
+          const step = Math.max(34, CW / 11);
+          for (let yy = step / 2, row = 0; yy < CH + step; yy += step * 0.8, row++) for (let xx = (row % 2) * step / 2; xx < CW + step; xx += step) {
+            const r = step * 0.17;
+            for (const [dx, dy, col] of [[-1, -1, "rgba(255,255,255,0.22)"], [1, 1, "rgba(0,0,0,0.16)"], [0, 0, tone.light]]) {
+              x.fillStyle = col; x.globalAlpha = col === tone.light ? 0.28 : 1; x.beginPath();
+              for (let k = 0; k < 10; k++) { const a = -Math.PI / 2 + k * Math.PI / 5, rr = k % 2 ? r * 0.45 : r; x.lineTo(xx + dx + Math.cos(a) * rr, yy + dy + Math.sin(a) * rr); }
+              x.fill(); x.globalAlpha = 1;
+            }
+          }
+        }
+        if (text.trim()) { // the words pressed into the coat: a light edge above, a shadow below
           let px = Math.min(CW * 0.15, CH * 0.3); const fam = '"BA heebo", Heebo, Arial, sans-serif';
           x.font = "800 " + px + "px " + fam; const wd = x.measureText(text).width; if (wd > CW * 0.84) { px *= CW * 0.84 / wd; x.font = "800 " + px + "px " + fam; }
           x.textAlign = "center"; x.textBaseline = "middle"; x.direction = "rtl";
-          x.fillStyle = "rgba(255,255,255,0.55)"; x.fillText(text, CW / 2 - 1.5, CH / 2 - 1.5); // pressed into the coat
-          x.fillStyle = kind === 1 ? "rgba(92,60,8,0.8)" : kind === 0 ? "rgba(58,64,74,0.78)" : css(C[2]); x.fillText(text, CW / 2, CH / 2);
+          x.fillStyle = "rgba(255,255,255,0.5)"; x.fillText(text, CW / 2 - 1.5, CH / 2 - 1.5);
+          x.fillStyle = "rgba(0,0,0,0.28)"; x.fillText(text, CW / 2 + 1.5, CH / 2 + 1.5);
+          x.globalAlpha = 0.85; x.fillStyle = tone.ink; x.fillText(text, CW / 2, CH / 2); x.globalAlpha = 1;
         }
         coatTex.needsUpdate = true;
       };
       drawCoat();
       if (Studio.loadTextFonts) Studio.loadTextFonts({ font: "heebo", text: text || "א", bold: true }).then(() => this.group && drawCoat(), () => {});
       this.parts = {};
-      const under = new THREE.Group(); this.group.add(under); // the picture's place: the scene draws in the order things were added, and the picture comes later
-      this.loadPicture((tex) => {
-        const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), this.mat({ vertexShader: FLAT_VS, fragmentShader: SCRATCH_FS,
-          uniforms: { map: { value: tex }, uCoat: { value: coatTex }, uMask: { value: maskTex }, uAll, uTime: { value: 0 } } }));
-        mesh.position.z = 0.0008; under.add(mesh);
-      });
-      const tint = kind === 1 ? [new THREE.Color("#d9b25a"), new THREE.Color("#f7dc8a")] : kind === 0 ? [new THREE.Color("#c9ced6"), new THREE.Color("#f1f3f6")] : [C[0], C[1]];
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), this.mat({ vertexShader: FLAT_VS, fragmentShader: SCRATCH_FS,
+        uniforms: { uCoat: { value: coatTex }, uMask: { value: maskTex }, uAll, uView, uMetal: { value: 1 }, uTime: { value: 0 } } }));
+      mesh.position.z = 0.0008; this.group.add(mesh);
+      const tint = [new THREE.Color(tone.mid), new THREE.Color(tone.light), new THREE.Color(tone.dark)];
       const flakes = this.makeSparks(unit * 0.7, tint, false), glitter = this.makeSparks(unit, [C[0], C[1], C[2], new THREE.Color("#ffffff")], true);
       const small = document.createElement("canvas"); small.width = small.height = 24; const sx = small.getContext("2d", { willReadFrequently: true });
-      const brush = MW * (0.06 + val(cfg.amount, 0.5) * 0.1);
+      const brush = MW * (0.06 + val(cfg.amount, 0.5) * 0.1), vp = new THREE.Vector3(), vd = new THREE.Vector3(), vt = new THREE.Vector3();
       let last = null, dirty = false, checkIn = 0, open = 0, openFor = 0;
       this.parts.scratch = { get open() { return open; }, mask }; // for the tests
       this.step = (dt, d) => {
+        const v = this.viewer(vp, vd, vt); // where the phone is: the shine follows it
+        if (v && v.dist > 1e-4) { uView.value.x += (Math.max(-1, Math.min(1, vp.x / v.dist)) - uView.value.x) * (1 - Math.exp(-d * 6)); uView.value.y += (Math.max(-1, Math.min(1, vp.y / v.dist)) - uView.value.y) * (1 - Math.exp(-d * 6)); }
         const f = cfg.touch !== false ? this.touchPoint() : null; // a finger on the layer (or a mouse over it)
         if (f && !open) { // the finger scratches the coat away
           const x = (f.x / w + 0.5) * MW, y = (0.5 - f.y / h) * MH;
@@ -2283,7 +2307,8 @@ void main() {
       this.step(0, 0);
     },
     buildPuzzle(cfg, w, h, C) {
-      const kind = Math.min(2, Math.max(0, cfg.kind | 0)), n = kind === 1 ? 4 : 3, slide = kind === 2, N = n * n, R = rand(6600 + (cfg.seed | 0)), unit = Math.min(w, h);
+      if ((cfg.kind | 0) === 3) return this.buildJigsaw(cfg, w, h, C);
+      const kind = Math.min(2, Math.max(0, cfg.kind | 0)), n = cfg.pieces ? Math.min(10, Math.max(2, cfg.pieces | 0)) : kind === 1 ? 4 : 3, slide = kind === 2, N = n * n, R = rand(6600 + (cfg.seed | 0)), unit = Math.min(w, h);
       const gap = 0.012 + val(cfg.amount, 0.5) * 0.05, tw = w / n, th = h / n;
       const board = []; for (let i = 0; i < N; i++) board.push(i); // board[slot] = the piece there (a piece's number is its own slot)
       const slotAt = (s) => ({ x: -w / 2 + tw * (s % n + 0.5), y: h / 2 - th * (Math.floor(s / n) + 0.5) });
@@ -2345,6 +2370,101 @@ void main() {
     // sets eyes, nose, mouth, smile and head with sliders (where they are comes from el.codefx.face, found in the editor,
     // or from a portrait's usual proportions). The viewer pulls, grows, shrinks or wobbles it with a finger; it goes back
     // slowly unless the changes stay. "alive" makes it pull faces by itself; "follow" turns it a little toward the viewer.
+    // A real jigsaw: pieces with tabs and blanks, scattered over the board; the viewer drags each to its place, where it
+    // snaps in. A faint copy of the picture on the board shows where. Solved: a card, and a tap scatters them again.
+    buildJigsaw(cfg, w, h, C) {
+      const unit = Math.min(w, h), cols = cfg.pieces ? Math.min(10, Math.max(2, cfg.pieces | 0)) : 4, rows = Math.max(2, Math.min(12, Math.round(cols * h / w)));
+      const tw = w / cols, th = h / rows, L = Math.min(tw, th), R = rand(6700 + (cfg.seed | 0));
+      const LINE_FS = "uniform vec3 uC; uniform float uA, uOpacity; void main() { gl_FragColor = vec4(uC, uA * uOpacity); }";
+      const boardMesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), this.mat({ vertexShader: FLAT_VS, fragmentShader: FILL_FS, uniforms: { uC: { value: new THREE.Color("#1b1a24") } } }));
+      boardMesh.position.z = 0.0004; this.group.add(boardMesh);
+      const ghostU = { map: { value: null }, uA: { value: 0.14 } }, ghost = new THREE.Mesh(new THREE.PlaneGeometry(w, h), this.mat({ vertexShader: FLAT_VS, fragmentShader: PIC_FS, uniforms: ghostU }));
+      ghost.position.z = 0.0005; ghost.visible = false; this.group.add(ghost);
+      const tray = new THREE.Group(); this.group.add(tray);
+      // which way each inner edge's tab points
+      const Hs = [], Vs = []; for (let r = 0; r <= rows; r++) { Hs.push([]); Vs.push([]); for (let c = 0; c <= cols; c++) { Hs[r].push(R() < 0.5 ? 1 : -1); Vs[r].push(R() < 0.5 ? 1 : -1); } }
+      const PROFILE = [[0.37, 0], [0.43, 0, 0.45, 0.07, 0.4, 0.12], [0.34, 0.19, 0.39, 0.27, 0.5, 0.27], [0.61, 0.27, 0.66, 0.19, 0.6, 0.12], [0.55, 0.07, 0.57, 0, 0.63, 0], [1, 0]];
+      const edge = (sh, ax, ay, bx, by, nx, ny) => { // from a to b, the tab toward n (n = 0: a straight side)
+        const P = (t, u) => [ax + (bx - ax) * t + nx * u * L, ay + (by - ay) * t + ny * u * L];
+        if (!nx && !ny) { sh.lineTo(bx, by); return; }
+        for (const seg of PROFILE) {
+          if (seg.length === 2) { const [x, y] = P(seg[0], seg[1]); sh.lineTo(x, y); }
+          else { const a = P(seg[0], seg[1]), b = P(seg[2], seg[3]), c = P(seg[4], seg[5]); sh.bezierCurveTo(a[0], a[1], b[0], b[1], c[0], c[1]); }
+        }
+      };
+      const pieces = [];
+      for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+        const hx = -w / 2 + tw * (c + 0.5), hy = h / 2 - th * (r + 0.5), x0 = -tw / 2, x1 = tw / 2, y0 = -th / 2, y1 = th / 2;
+        const sh = new THREE.Shape(); sh.moveTo(x0, y1);
+        edge(sh, x0, y1, x1, y1, 0, r === 0 ? 0 : Hs[r][c]); // top: the tab up or down
+        edge(sh, x1, y1, x1, y0, c === cols - 1 ? 0 : Vs[r][c + 1], 0); // right
+        edge(sh, x1, y0, x0, y0, 0, r === rows - 1 ? 0 : Hs[r + 1][c]); // bottom
+        edge(sh, x0, y0, x0, y1, c === 0 ? 0 : Vs[r][c], 0); // left
+        const geo = new THREE.ShapeGeometry(sh, 10), pa = geo.attributes.position, uv = new Float32Array(pa.count * 2);
+        for (let i = 0; i < pa.count; i++) { uv[i * 2] = (hx + pa.getX(i)) / w + 0.5; uv[i * 2 + 1] = (hy + pa.getY(i)) / h + 0.5; }
+        geo.setAttribute("uv", new THREE.BufferAttribute(uv, 2));
+        const g = new THREE.Group(), u = { map: { value: null }, uA: { value: 1 } };
+        const shadow = new THREE.Mesh(geo, this.mat({ vertexShader: FLAT_VS, fragmentShader: LINE_FS, uniforms: { uC: { value: new THREE.Color("#000000") }, uA: { value: 0.4 } } }));
+        shadow.position.set(L * 0.025, -L * 0.035, -0.0002);
+        const mesh = new THREE.Mesh(geo, this.mat({ vertexShader: FLAT_VS, fragmentShader: PIC_FS, uniforms: u }));
+        const pts = sh.getPoints(10), lg = new THREE.BufferGeometry().setFromPoints(pts.map((p) => new THREE.Vector3(p.x, p.y, 0.0001)));
+        const dark = new THREE.LineLoop(lg, this.mat({ vertexShader: FLAT_VS, fragmentShader: LINE_FS, uniforms: { uC: { value: new THREE.Color("#2a1e14") }, uA: { value: 0.55 } } }));
+        const lit = new THREE.LineLoop(lg, this.mat({ vertexShader: FLAT_VS, fragmentShader: LINE_FS, uniforms: { uC: { value: new THREE.Color("#ffffff") }, uA: { value: 0.28 } } }));
+        lit.position.set(-L * 0.006, L * 0.006, 0.0001); // a light edge up and left, a dark one all round: the piece looks cut from card
+        g.add(shadow, mesh, lit, dark); g.visible = false; tray.add(g);
+        pieces.push({ g, u, home: { x: hx, y: hy }, pos: { x: hx, y: hy }, locked: false, shadow });
+      }
+      this.loadPicture((tex) => { ghostU.map.value = tex; ghost.visible = true; for (const p of pieces) { p.u.map.value = tex; p.g.visible = true; } });
+      const scatter = () => {
+        for (const p of pieces) {
+          p.locked = false; let x, y, k = 0;
+          do { x = (R() - 0.5) * Math.max(0, w - tw * 1.1); y = (R() - 0.5) * Math.max(0, h - th * 1.1); } while (Math.hypot(x - p.home.x, y - p.home.y) < L * 0.7 && ++k < 20);
+          p.pos.x = x; p.pos.y = y; p.shadow.visible = true;
+        }
+        for (let i = pieces.length - 1; i > 0; i--) { const j = Math.floor(R() * (i + 1)); tray.remove(pieces[j].g); tray.add(pieces[j].g); } // a mixed pile
+      };
+      scatter();
+      for (const p of pieces) p.g.position.set(p.pos.x, p.pos.y, 0.0008);
+      const sparks = this.makeSparks(unit, [C[0], C[1], C[2], new THREE.Color("#ffffff")], true);
+      const css = (c) => "#" + c.getHexString(), fam = '"BA heebo", Heebo, Arial, sans-serif';
+      const card = this.makeCard(w, h, (x, moves) => {
+        x.beginPath(); x.moveTo(40, 0); x.arcTo(512, 0, 512, 320, 40); x.arcTo(512, 320, 0, 320, 40); x.arcTo(0, 320, 0, 0, 40); x.arcTo(0, 0, 512, 0, 40); x.closePath(); x.fillStyle = "rgba(10,10,24,0.78)"; x.fill();
+        x.textAlign = "center"; x.textBaseline = "middle"; x.direction = "rtl";
+        x.fillStyle = css(C[0]); x.font = "800 62px " + fam; x.fillText("כל הכבוד!", 256, 90);
+        x.fillStyle = "#ffffff"; x.font = "600 40px " + fam; x.fillText(pieces.length + " חלקים", 256, 175);
+        x.fillStyle = css(C[2]); x.font = "600 32px " + fam; x.fillText("נגיעה לפאזל חדש", 256, 255);
+      });
+      let held = null, grab = { x: 0, y: 0 }, solved = false, solvedFor = 0, moves = 0, presses = null;
+      this.parts = { jig: { pieces, cols, rows, get solved() { return solved; }, get moves() { return moves; } } }; // for the tests
+      const lockAt = (p) => { p.locked = true; p.pos.x = p.home.x; p.pos.y = p.home.y; p.shadow.visible = false; tray.remove(p.g); tray.children.unshift(p.g); p.g.parent = tray; sparks.emit(p.home.x, p.home.y, 6, 0.2, false); };
+      this.step = (dt, d) => {
+        const st = this.finger && this.finger.state, f = st && st.held && cfg.touch !== false ? this.touchPoint() : null;
+        const pressed = st && presses != null && st.presses !== presses; if (st) presses = st.presses;
+        if (solved) {
+          solvedFor += d;
+          if ((pressed && f && solvedFor > 0.8) || solvedFor > 10) { solved = false; card.show(false); scatter(); moves = 0; }
+        } else if (f && !held && pressed) { // pick up the top loose piece under the finger
+          for (let i = tray.children.length - 1; i >= 0; i--) {
+            const p = pieces.find((q) => q.g === tray.children[i]); if (!p || p.locked) continue;
+            if (Math.abs(f.x - p.pos.x) < tw * 0.5 && Math.abs(f.y - p.pos.y) < th * 0.5) { held = p; grab.x = p.pos.x - f.x; grab.y = p.pos.y - f.y; tray.remove(p.g); tray.add(p.g); break; }
+          }
+        }
+        if (held && f) { held.pos.x = Math.max(-w / 2, Math.min(w / 2, f.x + grab.x)); held.pos.y = Math.max(-h / 2, Math.min(h / 2, f.y + grab.y)); }
+        else if (held) { // let go: near its place, it snaps in
+          moves++;
+          if (Math.hypot(held.pos.x - held.home.x, held.pos.y - held.home.y) < L * 0.3) lockAt(held);
+          held = null;
+          if (pieces.every((p) => p.locked)) { solved = true; solvedFor = 0; card.show(true); for (let k = 0; k < 8; k++) sparks.emit((R() - 0.5) * w * 0.8, (R() - 0.5) * h * 0.8, 12, 0.45, false); }
+        }
+        const k = 1 - Math.exp(-dt * 14);
+        for (const p of pieces) {
+          const z = p === held ? 0.003 : 0.0008, sc = p === held ? 1.04 : 1;
+          if (p === held) p.g.position.set(p.pos.x, p.pos.y, z); else { p.g.position.x += (p.pos.x - p.g.position.x) * k; p.g.position.y += (p.pos.y - p.g.position.y) * k; p.g.position.z = z; }
+          p.g.scale.set(sc, sc, 1);
+        }
+        card.step(d); sparks.step(d, 0.3);
+      };
+    },
     buildFace(cfg, w, h, C) {
       const kind = Math.min(3, Math.max(0, cfg.kind | 0)), unit = Math.min(w, h);
       const SX = Math.max(24, Math.round(80 * w / unit)), SY = Math.max(24, Math.round(80 * h / unit));

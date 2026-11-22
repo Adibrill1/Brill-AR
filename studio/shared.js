@@ -1132,7 +1132,7 @@ vec4 baFilter(vec2 uv) {
     ["scratch", "כרטיס גירוד", ["#ff6fa5", "#ffd166", "#ffffff"], ["כסף", "זהב", "צבעוני"]],
     ["storm", "ברקים וסערה", ["#bcd7ff", "#eef4ff", "#0b1424"], ["סערה", "ברקים בלבד", "סערה רחוקה"]],
     ["countdown", "ספירה לאחור", ["#ffd166", "#ffffff", "#ff8fd8"], ["כרטיסים מתהפכים", "ניאון", "פשוט"]],
-    ["puzzle", "פאזל", ["#ffd166", "#ffffff", "#7fe0ff"], ["3×3 החלפה", "4×4 החלפה", "הזזה"]],
+    ["puzzle", "פאזל", ["#ffd166", "#ffffff", "#7fe0ff"], ["החלפה", "החלפה בחלקים קטנים", "הזזה", "פאזל אמיתי"]],
     ["face", "פנים במגע", ["#ffd166", "#ff8fa3", "#ffffff"], ["משיכה", "ניפוח", "כיווץ", "ג׳לי"]]
   ];
   const CODEFX_RETIRED = ["daysky"]; // no longer offered; creations that have it still play
@@ -1153,6 +1153,7 @@ vec4 baFilter(vec2 uv) {
     if (el.type !== "codefx" || typeof c !== "object" || Array.isArray(c) || !CODEFX_IDS.includes(c.look)) return false;
     if (!Array.isArray(c.colors) || c.colors.length !== 3 || !c.colors.every((x) => typeof x === "string" && /^#[0-9a-f]{6}$/i.test(x))) return false;
     if (!["speed", "amount", "size", "fog", "eyes", "nose", "mouth", "smile", "head"].every((k) => c[k] == null || Number.isFinite(c[k]) && c[k] >= 0 && c[k] <= 1)) return false;
+    if (c.pieces != null && !(Number.isInteger(c.pieces) && c.pieces >= 2 && c.pieces <= 10)) return false;
     if (c.face != null && !(Array.isArray(c.face) && c.face.length === 16 && c.face.every((v) => Number.isFinite(v) && v >= -0.5 && v <= 1.5))) return false;
     if (c.kind != null && !(Number.isInteger(c.kind) && c.kind >= 0 && c.kind <= 3) || c.seed != null && !(Number.isInteger(c.seed) && c.seed >= 0 && c.seed <= 999)) return false;
     if (c.text != null && (typeof c.text !== "string" || c.text.length > 60) || c.font != null && !(typeof c.font === "string" && /^[a-z0-9-]{1,32}$/.test(c.font))) return false;
