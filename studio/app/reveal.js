@@ -26,7 +26,7 @@ window.Reveal = (() => {
     stack: "השכבות מופיעות אחת אחרי השנייה, מהרחוקה לקרובה.",
     drop: "כל שכבה נוחתת למקום שלה מלמעלה, מהרחוקה לקרובה.",
     slide: "השכבות נכנסות לסירוגין מימין ומשמאל.",
-    popup: "כמו בספר פופ־אפ: הרקע נשאר במקום, ושאר השכבות מתרוממות על ציר, אחת אחרי השנייה, עד שהן עומדות בעומק שלהן.",
+    popup: "כמו בספר פופ־אפ: הרקע נשאר במקום, ושאר השכבות מתרוממות על ציר, אחת אחרי השנייה, עד שהן עומדות בעומק שלהן. עם \"נפתחת כשמקרבים את הטלפון\" הספר נפתח כשמתקרבים אליו ונסגר כשמתרחקים.",
     breathe: "השכבות מתקרבות ומתרחקות לאט, כל הזמן.",
     dolly: "כמו מצלמה שנכנסת לתוך התמונה: השכבות מתקרבות לאט, הקרובה הכי מהר והרקע כמעט לא זז, וחוזרות.",
     assemble: "השכבות מתחילות מפוזרות באוויר, בזוויות ובמרחקים שונים, ועפות כל אחת למקום שלה עד שהתמונה מורכבת.",
@@ -49,7 +49,7 @@ window.Reveal = (() => {
     if (style === "none" || !kids.length) return;
     const G = Studio.geom(rec), n = kids.length, zmin = kids[0].z || 0, zmax = kids[n - 1].z || 0;
     const span = Math.max(zmax - zmin, 0.05 * G.artH), T = (t) => r2(t / sp);
-    const made = [];
+    const made = [], near = !!o.revealNear && !LOOPS.has(style); // played by how near the phone is, not by time
     kids.forEach((c, i) => {
       if (c.timeline) return; // her own path stays as it is
       const x = c.x || 0, y = c.y || 0, z = c.z || 0, keys = [];
@@ -115,10 +115,11 @@ window.Reveal = (() => {
         ease = "linear";
       }
       c.timeline = { keys, ease, loop, reveal: true };
+      if (near) { c.timeline.loop = false; c.timeline.near = true; }
       made.push(c);
     });
     // played again and again: all the layers start over together, after a short rest at the end
-    if (o.revealLoop && !LOOPS.has(style) && made.length) {
+    if (o.revealLoop && !near && !LOOPS.has(style) && made.length) {
       const end = Math.max(...made.map((c) => Math.max(...c.timeline.keys.map((q) => q.t))));
       for (const c of made) { c.timeline.loop = true; c.timeline.dur = r2(end + 2 / sp); }
     }
@@ -131,7 +132,8 @@ window.Reveal = (() => {
     return [
       C({ label: "הנפשת פתיחה", wrap: true, options: STYLES, get: () => o().reveal || "none", set: set((v) => ({ reveal: v })) }),
       S({ label: "מהירות", min: 0.25, max: 4, step: 0.25, unit: "×", get: () => o().revealSpeed || 1, set: set((v) => ({ revealSpeed: v })) }),
-      T({ label: "לחזור שוב ושוב", hint: "אחרי עצירה קצרה, מההתחלה", get: () => !!o().revealLoop, set: set((v) => ({ revealLoop: !!v })) }),
+      LOOPS.has(o().reveal) ? null : T({ label: "נפתחת כשמקרבים את הטלפון", hint: "רחוק: שטוחה. מקרבים: נפתחת. מרחיקים: נסגרת חזרה", get: () => !!o().revealNear, set: set((v) => ({ revealNear: !!v })) }),
+      LOOPS.has(o().reveal) || o().revealNear ? null : T({ label: "לחזור שוב ושוב", hint: "אחרי עצירה קצרה, מההתחלה", get: () => !!o().revealLoop, set: set((v) => ({ revealLoop: !!v })) }),
       note(HINTS[o().reveal || "none"], "play")
     ];
   }

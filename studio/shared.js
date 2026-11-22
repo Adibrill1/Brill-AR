@@ -538,7 +538,7 @@ const Studio = (() => {
     return s;
   }
   // the layers that can follow gravity
-  const GRAVITY_CODEFX = ["dissolve", "dust", "burn", "jelly", "tree", "bubbles", "liquid", "lanterns", "shatter", "rain", "drip", "sand"];
+  const GRAVITY_CODEFX = ["dissolve", "dust", "burn", "jelly", "tree", "bubbles", "liquid", "lanterns", "shatter", "rain", "drip", "sand", "balloons", "ink"];
   function gravityFits(el) {
     if (!el) return false;
     if (["image", "video", "text", "particles"].includes(el.type)) return true;
@@ -1133,16 +1133,19 @@ vec4 baFilter(vec2 uv) {
     ["storm", "ברקים וסערה", ["#bcd7ff", "#eef4ff", "#0b1424"], ["סערה", "ברקים בלבד", "סערה רחוקה"]],
     ["countdown", "ספירה לאחור", ["#ffd166", "#ffffff", "#ff8fd8"], ["כרטיסים מתהפכים", "ניאון", "פשוט"]],
     ["puzzle", "פאזל", ["#ffd166", "#ffffff", "#7fe0ff"], ["החלפה", "החלפה בחלקים קטנים", "הזזה", "פאזל אמיתי"]],
-    ["face", "פנים במגע", ["#ffd166", "#ff8fa3", "#ffffff"], ["משיכה", "ניפוח", "כיווץ", "ג׳לי"]]
+    ["face", "פנים במגע", ["#ffd166", "#ff8fa3", "#ffffff"], ["משיכה", "ניפוח", "כיווץ", "ג׳לי"]],
+    ["flip", "תמונה לפי הזווית", ["#1b2a4a", "#ff8fa3", "#fff1c9"], ["מתהפכת בפסים", "מתחלפת ברכות", "פסים שרואים"]],
+    ["balloons", "בלונים", ["#ff5d73", "#ffd166", "#5ec8ff"], ["צבעוניים", "זהב וכסף", "לבבות"]],
+    ["ink", "דיו במים", ["#1d2340", "#ff7ab6", "#f4f1ea"], ["דיו כהה", "צבעי מים", "עשן צבעוני"]]
   ];
   const CODEFX_RETIRED = ["daysky"]; // no longer offered; creations that have it still play
-  const CODEFX_PICTURE = ["dissolve", "burn", "ripple", "shatter", "rain", "mist", "drip", "sketch", "sand", "tunnel", "lens", "scratch", "puzzle", "face"]; // the looks made from a picture
+  const CODEFX_PICTURE = ["dissolve", "burn", "ripple", "shatter", "rain", "mist", "drip", "sketch", "sand", "tunnel", "lens", "scratch", "puzzle", "face", "flip", "ink"]; // the looks made from a picture
   const CODEFX_IDS = CODEFX.map((c) => c[0]), CODEFX_SHAPES = ["rect", "circle", "arch"];
   function codeFxDefaults(look) {
     const d = CODEFX.find((c) => c[0] === look) || CODEFX[1];
     const o = { look: d[0], colors: d[2].slice(), speed: 0.5, amount: 0.5, size: 0.5, kind: 0, seed: 0, touch: true };
     if (d[0] === "dust") o.text = "מזל טוב";
-    if (CODEFX_PICTURE.includes(d[0])) { o.cover = d[0] === "dissolve" || d[0] === "burn"; o.picture = "__artwork"; } // broken glass shows what is under it
+    if (CODEFX_PICTURE.includes(d[0])) { o.cover = d[0] === "dissolve" || d[0] === "burn" || d[0] === "ink"; o.picture = "__artwork"; } // broken glass shows what is under it
     if (d[0] === "portal") o.shape = "rect";
     if (d[0] === "scratch") o.text = "גרדו כאן";
     if (d[0] === "countdown") { const t = new Date(Date.now() + 30 * 86400000), z = (v) => String(v).padStart(2, "0"); o.text = "עד היום הגדול"; o.date = t.getFullYear() + "-" + z(t.getMonth() + 1) + "-" + z(t.getDate()); o.time = "00:00"; } // a month from now
@@ -1157,7 +1160,7 @@ vec4 baFilter(vec2 uv) {
     if (c.face != null && !(Array.isArray(c.face) && c.face.length === 16 && c.face.every((v) => Number.isFinite(v) && v >= -0.5 && v <= 1.5))) return false;
     if (c.kind != null && !(Number.isInteger(c.kind) && c.kind >= 0 && c.kind <= 3) || c.seed != null && !(Number.isInteger(c.seed) && c.seed >= 0 && c.seed <= 999)) return false;
     if (c.text != null && (typeof c.text !== "string" || c.text.length > 60) || c.font != null && !(typeof c.font === "string" && /^[a-z0-9-]{1,32}$/.test(c.font))) return false;
-    if (c.picture != null && !(typeof c.picture === "string" && /^[a-zA-Z0-9_-]{1,128}$/.test(c.picture))) return false;
+    if (["picture", "picture2"].some((k) => c[k] != null && !(typeof c[k] === "string" && /^[a-zA-Z0-9_-]{1,128}$/.test(c[k])))) return false;
     if (c.shape != null && !CODEFX_SHAPES.includes(c.shape)) return false;
     if (c.date != null && !(typeof c.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(c.date)) || c.time != null && !(typeof c.time === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(c.time))) return false;
     return ["touch", "cover", "keep", "alive", "follow"].every((k) => c[k] == null || typeof c[k] === "boolean");
@@ -2813,7 +2816,8 @@ vec4 bpPattern(vec2 uv) {
       // drawn by codefx.js (without it the layer stays empty)
       e = document.createElement("a-entity");
       const c = el.codefx || codeFxDefaults(), blob = CODEFX_PICTURE.includes(c.look) && rec.assets && rec.assets[c.picture || "__artwork"];
-      e.setAttribute("studio-codefx", { cfg: JSON.stringify(el.gravity === true ? Object.assign({}, c, { gravity: true, gravityTune: tuneJSON(el) }) : c), width: ts.w, height: ts.h, src: blob ? blobURL(blob) : "" });
+      const blob2 = c.look === "flip" && c.picture2 && rec.assets && rec.assets[c.picture2]; // the second picture of "תמונה לפי הזווית"
+      e.setAttribute("studio-codefx", { cfg: JSON.stringify(el.gravity === true ? Object.assign({}, c, { gravity: true, gravityTune: tuneJSON(el) }) : c), width: ts.w, height: ts.h, src: blob ? blobURL(blob) : "", src2: blob2 ? blobURL(blob2) : "" });
     } else if (isWeather(el)) {
       ensureWeatherComponent();
       e = document.createElement("a-entity");
@@ -3243,6 +3247,19 @@ vec4 bpPattern(vec2 uv) {
     o.scale.set(s.scale, s.scale, 1);
     applyOpacity(node, s.opacity);
   }
+  // A path that plays by how near the phone is (the pop-up book): far away it is at its start, as the phone comes
+  // close it runs forward, and it goes back as the phone moves away. The distance is the camera's, measured in the
+  // frame of the picture (its width is 1), so it is the same for a small print and a big poster.
+  const NEAR_FAR = 1.3, NEAR_CLOSE = 0.7, _nv = typeof THREE !== "undefined" ? new THREE.Vector3() : null;
+  function nearTime(tr, now) {
+    const dur = timelineDur(tr.el), o = tr.e.object3D, cam = tr.e.sceneEl && tr.e.sceneEl.camera;
+    let root = o.parent; while (root && root.el && root.el.dataset && root.el.dataset.elId && root.parent) root = root.parent;
+    let f = 0;
+    if (cam && root && _nv) { cam.getWorldPosition(_nv); root.worldToLocal(_nv); f = Math.min(1, Math.max(0, (NEAR_FAR - _nv.length()) / (NEAR_FAR - NEAR_CLOSE))); }
+    const dt = tr.nearAt ? Math.min(0.1, (now - tr.nearAt) / 1000) : 0; tr.nearAt = now;
+    tr.nearF = tr.nearF == null ? f : tr.nearF + (f - tr.nearF) * Math.min(1, dt * 4); // smooth, so a shaky hand does not shake the pages
+    return tr.nearF * dur;
+  }
   // Controllable driver: play/pause/reset so the AR player can start motion at target-found
   // and freeze it when tracking is lost. Returns null when no element has keyframes.
   function startTimelineDriver(rec, entities, opts) {
@@ -3274,7 +3291,7 @@ vec4 bpPattern(vec2 uv) {
           }
         }
         for (const tr of tracks) {
-          tr.e._tlTime = (now - tr.startedAt) / 1000; // where its path is (an exit ends right at a step that hides it)
+          tr.e._tlTime = tr.el.timeline.near ? nearTime(tr, now) : (now - tr.startedAt) / 1000; // where its path is (an exit ends right at a step that hides it)
           const s = sampleTimeline(tr.el, tr.e._tlTime);
           applyTimelinePose(rec, tr.e, tr.el, s, tr);
           tr.e._timelineVisible = s.visible !== false;
@@ -3394,7 +3411,7 @@ vec4 bpPattern(vec2 uv) {
   const MB=1024*1024,mb=n=>Math.round(n/MB)+'MB';
   const LIMITS={maxLayers:60,maxEntryBytes:50*MB,maxMediaBytes:100*MB,maxPublishBytes:40*MB,maxAssets:121};
   // Same set exportJSON/exportZIP write: assets referenced by a layer/particle sprite, plus the artwork.
-  function exportedAssetIds(rec){const ids=new Set();for(const el of rec.elements||[])for(const id of [el.assetId,el.particles&&el.particles.spriteAssetId,el.codefx&&el.codefx.picture])if(id&&rec.assets&&rec.assets[id])ids.add(id);if(rec.assets&&rec.assets.__artwork)ids.add('__artwork');return [...ids];}
+  function exportedAssetIds(rec){const ids=new Set();for(const el of rec.elements||[])for(const id of [el.assetId,el.particles&&el.particles.spriteAssetId,el.codefx&&el.codefx.picture,el.codefx&&el.codefx.picture2])if(id&&rec.assets&&rec.assets[id])ids.add(id);if(rec.assets&&rec.assets.__artwork)ids.add('__artwork');return [...ids];}
   function mediaBytes(rec){let n=0;for(const id of exportedAssetIds(rec))n+=rec.assets[id].size||0;return n;}
   // Why this record's backup could not be restored by this version (null = restorable).
   function restoreBlocker(rec){
@@ -3503,7 +3520,7 @@ vec4 bpPattern(vec2 uv) {
   function missingAssets(rec) {
     const out = [];
     for (const el of (rec && rec.elements) || []) {
-      for (const id of [el.assetId, el.particles && el.particles.spriteAssetId, el.codefx && el.codefx.picture]) {
+      for (const id of [el.assetId, el.particles && el.particles.spriteAssetId, el.codefx && el.codefx.picture, el.codefx && el.codefx.picture2]) {
         if (id && !(rec.assets && rec.assets[id] && typeof rec.assets[id].slice === "function")) out.push({ id, name: el.name || el.type || id });
       }
     }
@@ -3514,7 +3531,7 @@ vec4 bpPattern(vec2 uv) {
   async function exportJSON(rec) {
     const out = exportObject(rec);
     for (const el of rec.elements) {
-      for (const id of [el.assetId, el.particles && el.particles.spriteAssetId, el.codefx && el.codefx.picture]) {
+      for (const id of [el.assetId, el.particles && el.particles.spriteAssetId, el.codefx && el.codefx.picture, el.codefx && el.codefx.picture2]) {
         if (id && rec.assets[id]) out.assets[id] = await blobToDataURL(rec.assets[id]);
       }
     }
@@ -3534,7 +3551,7 @@ vec4 bpPattern(vec2 uv) {
     const slim = { format: "ar-studio/1", id: rec.id, name: rec.name, createdAt: rec.createdAt, target: rec.target, elements: (rec.elements || []).map((e) => ({ ...e })), sequences: (rec.sequences || []).map((q) => ({ ...q })), tracks: (rec.tracks || []).map((t) => ({ ...t })), actionSequences: JSON.parse(JSON.stringify(rec.actionSequences || [])) };
     slim.assets = {};
     const wanted = new Set();
-    for (const el of rec.elements) for (const id of [el.assetId, el.particles && el.particles.spriteAssetId, el.codefx && el.codefx.picture]) if (id && rec.assets[id]) wanted.add(id);
+    for (const el of rec.elements) for (const id of [el.assetId, el.particles && el.particles.spriteAssetId, el.codefx && el.codefx.picture, el.codefx && el.codefx.picture2]) if (id && rec.assets[id]) wanted.add(id);
     if (rec.assets.__artwork) wanted.add("__artwork");
     if (rec.assets.__artworkOrig) wanted.add("__artworkOrig"); // the picture as uploaded, while the artwork is turned (layers.js rotateArtwork)
     if (rec.assets.__cover && typeof rec.assets.__cover.arrayBuffer === "function") wanted.add("__cover"); // the gallery picture rides the backup (not the published JSON)

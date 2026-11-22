@@ -306,7 +306,7 @@ window.Layers = (() => {
       const s = App.sel();
       if (s && s.type === "image" && s.assetId && rec.assets[s.assetId] && !Studio.groupOf(rec, s.id) && !App.keyed(s)) {
         replace = s; fx.picture = s.assetId; fx.cover = false;
-        Object.assign(el, { name: ({ burn: "שריפה ", ripple: "מים ", shatter: "ניפוץ ", rain: "גשם ", mist: "אדים ", drip: "נזילה ", sketch: "ציור ", sand: "חול ", tunnel: "מנהרה ", lens: "גילוי ", scratch: "גירוד ", puzzle: "פאזל ", face: "פנים ", dissolve: "פירוק " }[look] || "") + (s.name || "תמונה"), x: s.x, y: s.y, w: s.w, rot: s.rot || 0, z: s.z || 0, aspect: s.crop ? (s.aspect || 1) * s.crop.h / s.crop.w : s.aspect || 1 });
+        Object.assign(el, { name: ({ burn: "שריפה ", ripple: "מים ", shatter: "ניפוץ ", rain: "גשם ", mist: "אדים ", drip: "נזילה ", sketch: "ציור ", sand: "חול ", tunnel: "מנהרה ", lens: "גילוי ", scratch: "גירוד ", puzzle: "פאזל ", face: "פנים ", flip: "מתהפכת ", ink: "דיו ", dissolve: "פירוק " }[look] || "") + (s.name || "תמונה"), x: s.x, y: s.y, w: s.w, rot: s.rot || 0, z: s.z || 0, aspect: s.crop ? (s.aspect || 1) * s.crop.h / s.crop.w : s.aspect || 1 });
       } else el.aspect = A;
     } else if (look === "dust") Object.assign(el, { aspect: window.StudioCodeFx ? StudioCodeFx.wordsAspect(fx.text, "heebo") : 2.6, w: 0.8, y: 0.05 });
     else if (look === "portal") Object.assign(el, { aspect: A, w: 0.7 });

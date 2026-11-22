@@ -76,8 +76,17 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
   assert.ok(Math.abs(pg+0.5)<0.01,'turns on its left edge '+pg);
 
   // again and again: all the layers share one length, with a rest at the end
-  await p.locator('label:has-text("לחזור שוב ושוב") input, [role=switch]:near(:text("לחזור שוב ושוב"))').first().click();await p.waitForTimeout(250);
+  await p.locator('label.ctl-toggle:has-text("לחזור שוב ושוב") input').click();await p.waitForTimeout(250);
   k=await kids();const durs=k.filter(x=>x.tl).map(x=>x.tl.dur);assert.ok(durs.length===3&&durs.every(d=>d===durs[0]&&d>0)&&k.filter(x=>x.tl).every(x=>x.tl.loop),'one shared loop '+durs);
+
+  // opens as the phone comes near: the paths play by distance (not looped), and "again and again" is put away
+  await pick('ספר פופ־אפ');await p.locator('label.ctl-toggle:has-text("נפתחת כשמקרבים את הטלפון") input').click();await p.waitForTimeout(300);
+  k=await kids();assert.ok(k.slice(1).every(x=>x.tl&&x.tl.near&&!x.tl.loop),'pop-up by distance');
+  assert.equal(await p.evaluate(g=>App.rec.elements.find(x=>x.id===g).split.revealNear,ids.g),true);
+  assert.equal(await p.locator('label.ctl-toggle:has-text("לחזור שוב ושוב")').count(),0,'no repeat while it follows the distance');
+  await p.locator('label.ctl-toggle:has-text("נפתחת כשמקרבים את הטלפון") input').click();await p.waitForTimeout(300);
+  k=await kids();assert.ok(k.slice(1).every(x=>x.tl&&!x.tl.near),'back to playing by time');
+  await pick('דפדוף');
 
   // the depth slider rewrites the paths for the new depths
   await pick('נפתחת לעומק');

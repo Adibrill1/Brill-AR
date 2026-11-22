@@ -63,6 +63,14 @@
   }
   const outside = (p, w, h, m) => Math.abs(p.x) > w / 2 + m || Math.abs(p.y) > h / 2 + m;
 
+  // two indexed or plain geometries into one plain one (position + normal), e.g. a heart balloon and its knot
+  function mergeTwo(a, b) {
+    const parts = [a.index ? a.toNonIndexed() : a, b.index ? b.toNonIndexed() : b];
+    const n = parts.reduce((s, g) => s + g.attributes.position.count, 0), P = new Float32Array(n * 3), N = new Float32Array(n * 3);
+    let o = 0; for (const g of parts) { P.set(g.attributes.position.array, o * 3); N.set(g.attributes.normal.array, o * 3); o += g.attributes.position.count; }
+    const out = new THREE.BufferGeometry(); out.setAttribute("position", new THREE.BufferAttribute(P, 3)); out.setAttribute("normal", new THREE.BufferAttribute(N, 3)); return out;
+  }
+
   // the drawing height in pixels and whether the camera has perspective, for point sizes in world units
   function viewInfo(sc) {
     const r = sc && sc.renderer, c = r && r.domElement;
@@ -1355,11 +1363,114 @@ void main() {
   gl_FragColor = vec4(col, clamp(I, 0.0, 1.0) * edge * uOpacity);
 }`;
 
-  const BUILDERS = { burn: "buildBurn", fireflies: "buildFireflies", jelly: "buildJelly", tree: "buildTree", spiral: "buildSpiral", bubbles: "buildBubbles", liquid: "buildLiquid", lanterns: "buildLanterns", ripple: "buildRipple", shatter: "buildShatter", rain: "buildRain", mist: "buildMist", drip: "buildDrip", sketch: "buildSketch", sand: "buildSand", eyes: "buildEyes", tunnel: "buildTunnel", lens: "buildLens", daysky: "buildDaysky", game: "buildGame", scratch: "buildScratch", storm: "buildStorm", countdown: "buildCountdown", puzzle: "buildPuzzle", face: "buildFace", aurora: "buildAurora" };
+  // ---------- flip: two pictures in one, which one shows depends on the angle it is seen from (a lenticular print) ----------
+  const FLIP_FS = `
+uniform sampler2D map; uniform sampler2D map2; uniform float uHas2, uMix, uKind, uN, uOpacity; uniform vec2 uFit2; uniform vec3 uC1, uC2, uC3;
+varying vec2 vUv;
+vec3 other(vec2 uv, out float a) {
+  if (uHas2 > 0.5) { vec4 c = texture2D(map2, (uv - 0.5) * uFit2 + 0.5); a = c.a; return c.rgb; }
+  vec4 c = texture2D(map, uv); a = c.a; float l = dot(c.rgb, vec3(0.299, 0.587, 0.114)); // no second picture: the same one in the three colours
+  return l < 0.5 ? mix(uC1, uC2, l * 2.0) : mix(uC2, uC3, l * 2.0 - 1.0);
+}
+void main() {
+  vec4 A = texture2D(map, vUv); float aB; vec3 B = other(vUv, aB);
+  float s = fract(vUv.x * uN), b, shade = 1.0;
+  if (uKind < 0.5) { float k = mix(-0.12, 1.12, smoothstep(0.38, 0.62, uMix)); b = smoothstep(s - 0.05, s + 0.05, k); shade = 0.95 + 0.07 * sin(s * 3.1416); } // each ridge turns over quickly, in stripes
+  else if (uKind < 1.5) { b = smoothstep(0.25, 0.75, uMix); shade = 0.98 + 0.03 * sin(s * 3.1416); } // a soft fade
+  else { // the ridges show: shaded lines and a glint that runs along them as it turns
+    float k = mix(-0.12, 1.12, uMix); b = smoothstep(s - 0.04, s + 0.04, k);
+    shade = 0.8 + 0.3 * pow(sin(s * 3.1416), 0.7);
+  }
+  vec3 col = mix(A.rgb, B, b) * shade;
+  if (uKind > 1.5) col += vec3(1.0) * pow(max(0.0, cos((s - uMix) * 6.2832)), 24.0) * 0.22;
+  gl_FragColor = vec4(col, mix(A.a, aB, b) * uOpacity);
+}`;
+
+  // ---------- ink: the picture's colours spread like ink dropped in water, swirl, and gather back ----------
+  const INK_FS = `
+uniform sampler2D map; uniform float uS, uTime, uKind, uSeed, uCover, uOpacity; uniform vec2 uBox, uRot; uniform vec4 uTouch; uniform vec3 uC1, uC2, uC3;
+varying vec2 vUv;
+${NOISE}
+// a swirling flow that never piles up anywhere: the curl of a few slow waves (cheap enough for a phone)
+vec2 flow(vec2 q, float t) {
+  vec2 f = vec2(0.0);
+  for (int i = 0; i < 5; i++) {
+    float fi = float(i), a = fi * 2.399 + uSeed, kk = 3.4 + fi * 2.1;
+    vec2 k = vec2(cos(a), sin(a)) * kk; float ph = dot(k, q) + t * (0.35 + 0.17 * fi) + fi * 1.7;
+    f += cos(ph) * vec2(k.y, -k.x) / (kk * (1.0 + fi * 0.6));
+  }
+  return f;
+}
+void main() {
+  vec2 asp = vec2(uBox.x / uBox.y, 1.0), p = vUv * asp, q = p, up = vec2(-uRot.y, uRot.x);
+  float s = uS;
+  // where the water here came from: walked back along the flow, the farther the more it has spread
+  for (int i = 0; i < 6; i++) {
+    vec2 f = flow(q * 1.6, uTime * 0.6);
+    if (uKind > 1.5) f += up * 0.9; // smoke rises (up in the world)
+    q -= f * s * 0.05;
+  }
+  // a finger stirs the water around it
+  if (uTouch.z > 0.001) { vec2 d = q - uTouch.xy; float r2 = dot(d, d), a = uTouch.z * 3.2 * exp(-r2 / (uTouch.w * uTouch.w)); float c = cos(a), sn = sin(a); q = uTouch.xy + vec2(c * d.x - sn * d.y, sn * d.x + c * d.y); }
+  vec2 uv = q / asp;
+  vec2 o = max(-uv, uv - 1.0); float away = smoothstep(0.0, 0.06, max(o.x, o.y)); // drawn from outside the picture: water
+  vec4 c = texture2D(map, clamp(uv, 0.002, 0.998));
+  float n = fbm(p * 3.0 + uSeed + uTime * 0.05), r = 1.0 - abs(fbm(q * 5.0 + 7.3 + uSeed) - 0.5) * 2.0, vein = pow(r, 9.0) * s;
+  float thin = clamp(s * (0.25 + 0.75 * n) + away, 0.0, 1.0); // the farther it spread, the paler, in clouds
+  vec3 water = uC3, col = c.rgb;
+  float lum = dot(col, vec3(0.299, 0.587, 0.114));
+  if (uKind < 0.5) { // dark ink: the colours sink into the ink colour and pale into the water, with dark veins
+    col = mix(col, mix(uC1, col, 0.35 + 0.4 * lum), s * 0.75);
+    col = mix(col, water, thin * 0.85);
+    col = mix(col, uC1, vein * 0.55);
+  } else if (uKind < 1.5) { // watercolour: soft bleeding colours, darker where the paint pools at the edge of a wash
+    col = mix(col, water, thin * 0.7);
+    col *= 1.0 - vein * 0.22 - smoothstep(0.55, 0.75, n) * s * 0.08;
+    col = mix(col, col * (0.94 + 0.06 * noise(p * 140.0)), s); // the paper's grain
+  } else { // coloured smoke: thin and glowing, rising
+    col = mix(col, water, thin * 0.9) + uC2 * vein * 0.35;
+  }
+  float a = c.a * (1.0 - away);
+  if (uCover > 0.5) { col = mix(water, col, a); a = 1.0; } // on the artwork: water everywhere, so the print never shows
+  else a *= 1.0 - thin * 0.45;
+  gl_FragColor = vec4(col, a * uOpacity);
+}`;
+
+  // ---------- balloons: they rise (up in the world), a tap pops one into confetti ----------
+  const BALLOON_VS = `
+attribute vec3 aCol; attribute float aPh;
+varying vec3 vN; varying vec3 vV; varying vec3 vCol; varying vec3 vL; varying float vFade;
+void main() {
+  ${INST}
+  vFade = aPh;
+  vec4 mv = MV * vec4(position, 1.0);
+  vN = normalize(mat3(MV) * normal); vV = projectionMatrix[2][3] != 0.0 ? normalize(-mv.xyz) : vec3(0.0, 0.0, 1.0);
+  vCol = aCol; vL = position; gl_Position = projectionMatrix * mv;
+}`;
+  const BALLOON_FS = `
+uniform float uMetal, uOpacity; varying vec3 vN; varying vec3 vV; varying vec3 vCol; varying vec3 vL; varying float vFade;
+void main() {
+  vec3 n = normalize(vN); float c = max(dot(n, vV), 0.0);
+  vec3 L = normalize(vec3(-0.45, 0.7, 0.55)), rv = reflect(-vV, n);
+  float dif = max(dot(n, L), 0.0), spec = pow(max(dot(rv, L), 0.0), uMetal > 0.5 ? 18.0 : 60.0), spec2 = pow(max(dot(rv, normalize(vec3(0.6, -0.2, 0.8))), 0.0), 12.0);
+  vec3 col;
+  if (uMetal > 0.5) { // foil: dark in the turns, bright bands of the sky in it
+    float band = 0.5 + 0.5 * sin(rv.y * 5.0 + rv.x * 2.0);
+    col = vCol * (0.25 + 1.05 * pow(c, 0.6) * (0.55 + 0.45 * band)) + vec3(1.0) * (spec * 0.9 + spec2 * 0.25);
+  } else { // latex: soft light through it, a darker rim and a white window of light
+    col = vCol * (0.66 + 0.42 * dif) * (0.84 + 0.16 * c) + vCol * pow(1.0 - c, 3.0) * 0.2 + vec3(1.0) * (spec * 0.75 + spec2 * 0.08);
+  }
+  col *= 1.0 - smoothstep(-0.95, -1.15, vL.y) * 0.25; // the knot a touch darker
+  gl_FragColor = vec4(col, vFade * uOpacity);
+}`;
+  const LINE_A_VS = "attribute float aA; varying float vA; void main() { vA = aA; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }";
+  const LINE_A_FS = "uniform vec3 uC; uniform float uA, uOpacity; varying float vA; void main() { gl_FragColor = vec4(uC, uA * vA * uOpacity); }";
+
+  const BUILDERS = { flip: "buildFlip", ink: "buildInk", balloons: "buildBalloons", burn: "buildBurn", fireflies: "buildFireflies", jelly: "buildJelly", tree: "buildTree", spiral: "buildSpiral", bubbles: "buildBubbles", liquid: "buildLiquid", lanterns: "buildLanterns", ripple: "buildRipple", shatter: "buildShatter", rain: "buildRain", mist: "buildMist", drip: "buildDrip", sketch: "buildSketch", sand: "buildSand", eyes: "buildEyes", tunnel: "buildTunnel", lens: "buildLens", daysky: "buildDaysky", game: "buildGame", scratch: "buildScratch", storm: "buildStorm", countdown: "buildCountdown", puzzle: "buildPuzzle", face: "buildFace", aurora: "buildAurora" };
   // the looks a finger plays with
-  const TOUCHY = new Set(["dissolve", "dust", "swarm", "burn", "fireflies", "jelly", "spiral", "bubbles", "liquid", "lanterns", "ripple", "shatter", "rain", "mist", "drip", "sketch", "sand", "eyes", "tunnel", "lens", "game", "scratch", "storm", "puzzle", "face"]);
+  const TOUCHY = new Set(["dissolve", "dust", "swarm", "burn", "fireflies", "jelly", "spiral", "bubbles", "liquid", "lanterns", "ripple", "shatter", "rain", "mist", "drip", "sketch", "sand", "eyes", "tunnel", "lens", "game", "scratch", "storm", "puzzle", "face", "flip", "ink", "balloons"]);
   AFRAME.registerComponent("studio-codefx", {
-    schema: { cfg: { default: "{}" }, width: { default: 1 }, height: { default: 1 }, src: { default: "" } },
+    schema: { cfg: { default: "{}" }, width: { default: 1 }, height: { default: 1 }, src: { default: "" }, src2: { default: "" } },
     init() { this.t = 0; this.mats = []; this.tmp = {}; this.finger = Studio.fingerTools; },
     update() { this.teardown(); this.build(); },
     remove() { this.teardown(); },
@@ -2551,6 +2662,160 @@ void main() {
         P.needsUpdate = true;
       };
     },
+    // Two pictures in one, like a lenticular print: the layer's picture from one side, a second picture (or the same
+    // one in the three colours) from the other. It follows where the phone looks from; a finger sliding across turns it
+    // too; when nobody moves it rocks gently from one to the other.
+    buildFlip(cfg, w, h, C) {
+      const kind = Math.min(2, Math.max(0, cfg.kind | 0)), unit = Math.max(w, h), uMix = { value: 0 }, map2 = { value: null }, uHas2 = { value: 0 }, uFit2 = { value: new THREE.Vector2(1, 1) };
+      const span = 0.36 - val(cfg.amount, 0.5) * 0.26; // how far to turn (radians, either side) to go from one to the other
+      this.parts = { flip: uMix };
+      this.loadPicture((tex) => {
+        const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), this.mat({ vertexShader: FLAT_VS, fragmentShader: FLIP_FS,
+          uniforms: { map: { value: tex }, map2, uHas2, uFit2, uMix, uKind: { value: kind }, uN: { value: Math.round(16 + (1 - val(cfg.size, 0.5)) * 110) }, uC1: { value: C[0] }, uC2: { value: C[1] }, uC3: { value: C[2] } } }));
+        mesh.position.z = 0.0008; this.group.add(mesh);
+      });
+      if (this.data.src2) {
+        const img = new Image(); img.crossOrigin = "anonymous"; const src = this.data.src2;
+        img.onload = () => {
+          if (!this.group || this.data.src2 !== src) return;
+          const t = new THREE.Texture(img); t.needsUpdate = true; map2.value = t; uHas2.value = 1;
+          const ia = img.naturalWidth / Math.max(1, img.naturalHeight), ba = w / h; // cropped to fill, like the artwork
+          uFit2.value.set(ia > ba ? ba / ia : 1, ia > ba ? 1 : ia / ba);
+        };
+        img.src = src;
+      }
+      const pos = new THREE.Vector3(), dir = new THREE.Vector3(), tmp = new THREE.Vector3(), last = new THREE.Vector3();
+      let still = 99, seen = false, clock = 0, held = 0;
+      this.step = (dt, d) => {
+        clock += d;
+        const f = this.touchPoint(), v = this.viewer(pos, dir, tmp);
+        if (v) { if (seen && pos.distanceTo(last) / unit > 0.0012) still = 0; last.copy(pos); seen = true; }
+        still += d;
+        let target;
+        if (f) { held = 1.5; target = smooth(-w * 0.3, w * 0.3, f.x); } // the finger: left is the first picture, right the second
+        else if (held > 0) { held -= d; target = uMix.value; }
+        else if (v && still < 2.5) target = smooth(-span, span, Math.atan2(pos.x, Math.max(pos.z, 1e-4))); // the angle it is seen from
+        else target = smooth(-0.75, 0.75, Math.sin(clock * 0.9)); // nobody moving: it rocks from one to the other
+        uMix.value += (target - uMix.value) * (1 - Math.exp(-d * 10));
+      };
+    },
+    // The picture's colours spread into the water like ink, swirl, pale, and gather back into the picture. A finger
+    // stirs the water where it touches (and starts it spreading if it has not yet).
+    buildInk(cfg, w, h, C) {
+      const kind = Math.min(2, Math.max(0, cfg.kind | 0)), uS = { value: 0 }, unit = Math.min(w, h), touch = new THREE.Vector4(0, 0, 0, 0.18);
+      this.parts = { ink: uS };
+      this.loadPicture((tex) => {
+        const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), this.mat({ vertexShader: FLAT_VS, fragmentShader: INK_FS,
+          uniforms: { map: { value: tex }, uS, uTime: { value: 0 }, uKind: { value: kind }, uSeed: { value: (cfg.seed | 0) * 0.37 }, uCover: { value: cfg.cover === false ? 0 : 1 },
+            uBox: { value: new THREE.Vector2(w, h) }, uRot: { value: this.rot }, uTouch: { value: touch }, uC1: { value: C[0] }, uC2: { value: C[1] }, uC3: { value: C[2] } } }));
+        mesh.position.z = 0.0008; this.group.add(mesh);
+      });
+      const most = 0.35 + val(cfg.amount, 0.5) * 0.75; // how far it spreads
+      const WHOLE = 1.6, SPREAD = 6, HOLD = 2.4, BACK = 4.5, ALL = WHOLE + SPREAD + HOLD + BACK;
+      let clock = 0;
+      this.step = (dt, d) => {
+        const f = this.touchPoint();
+        if (f && clock < WHOLE) clock = WHOLE;
+        if (f && clock > WHOLE + SPREAD && clock < WHOLE + SPREAD + HOLD) clock = Math.min(clock, WHOLE + SPREAD + 0.5); // stirring keeps it in the water
+        clock = (clock + dt) % ALL;
+        const e = clock < WHOLE ? 0 : clock < WHOLE + SPREAD ? smooth(0, 1, (clock - WHOLE) / SPREAD) : clock < WHOLE + SPREAD + HOLD ? 1 : 1 - smooth(0, 1, (clock - WHOLE - SPREAD - HOLD) / BACK);
+        uS.value = e * most;
+        if (f) { const ax = w / h; touch.x += ((f.x / w + 0.5) * ax - touch.x) * (touch.z < 0.05 ? 1 : 0.3); touch.y += ((f.y / h + 0.5) - touch.y) * (touch.z < 0.05 ? 1 : 0.3); }
+        touch.z += ((f ? 1 : 0) - touch.z) * (1 - Math.exp(-d * (f ? 3 : 0.8)));
+        touch.w = 0.22;
+      };
+    },
+    // Balloons that rise (up in the real world, with gravity) on swaying strings; a tap pops one into confetti, and a new
+    // one comes up from below. Colourful latex, gold and silver foil, or hearts.
+    buildBalloons(cfg, w, h, C) {
+      const kind = Math.min(2, Math.max(0, cfg.kind | 0)), R = rand(4200 + (cfg.seed | 0)), unit = Math.min(w, h), depth = unit * 0.25;
+      const n = Math.round(5 + val(cfg.amount, 0.5) * 19), S = unit * (0.045 + val(cfg.size, 0.5) * 0.06);
+      let geo;
+      if (kind === 2) { // a puffy heart
+        const sh = new THREE.Shape(); sh.moveTo(0, -0.95);
+        sh.bezierCurveTo(-0.35, -0.6, -1.05, -0.15, -1.0, 0.38); sh.bezierCurveTo(-0.95, 0.85, -0.4, 1.05, 0, 0.62);
+        sh.bezierCurveTo(0.4, 1.05, 0.95, 0.85, 1.0, 0.38); sh.bezierCurveTo(1.05, -0.15, 0.35, -0.6, 0, -0.95);
+        geo = new THREE.ExtrudeGeometry(sh, { depth: 0.2, bevelEnabled: true, bevelThickness: 0.28, bevelSize: 0.16, bevelSegments: 6, curveSegments: 20 });
+        geo.translate(0, -0.05, -0.1); geo.computeVertexNormals();
+        const knot = new THREE.ConeGeometry(0.09, 0.16, 10); knot.translate(0, -1.13, 0); geo = mergeTwo(geo, knot);
+      } else { // a round balloon with its knot, turned on a lathe
+        const prof = [[0, -1.24], [0.07, -1.23], [0.075, -1.17], [0.045, -1.12], [0.1, -1.06], [0.3, -0.9], [0.55, -0.62], [0.76, -0.24], [0.85, 0.12], [0.82, 0.46], [0.66, 0.76], [0.38, 0.95], [0, 1.02]];
+        geo = new THREE.LatheGeometry(prof.map(([x, y]) => new THREE.Vector2(x, y)), 28);
+      }
+      const gold = [vec3("#d9a93a"), vec3("#c8ccd3"), vec3("#e0b25c"), vec3("#b8bec7")];
+      const tones = kind === 1 ? gold.concat([C[0]]) : [C[0], C[1], C[2]];
+      const col = new Float32Array(n * 3), ph = new Float32Array(n);
+      geo.setAttribute("aCol", new THREE.InstancedBufferAttribute(col, 3)); geo.setAttribute("aPh", new THREE.InstancedBufferAttribute(ph, 1));
+      // the strings first, so the balloons are drawn over them
+      const SEG = 6, lp = new Float32Array(n * SEG * 2 * 3), la = new Float32Array(n * SEG * 2), lg = new THREE.BufferGeometry();
+      lg.setAttribute("position", new THREE.BufferAttribute(lp, 3)); lg.setAttribute("aA", new THREE.BufferAttribute(la, 1));
+      const strings = new THREE.LineSegments(lg, this.mat({ vertexShader: LINE_A_VS, fragmentShader: LINE_A_FS, uniforms: { uC: { value: new THREE.Color(kind === 1 ? "#f3e6c4" : "#f4f4f4") }, uA: { value: 0.75 } } }));
+      strings.frustumCulled = false; this.group.add(strings);
+      const mesh = new THREE.InstancedMesh(geo, this.mat({ vertexShader: BALLOON_VS, fragmentShader: BALLOON_FS, uniforms: { uMetal: { value: kind === 1 ? 1 : 0 } } }), n);
+      mesh.frustumCulled = false; this.group.add(mesh);
+      const confetti = this.makeSparks(unit * 1.9, tones.concat([vec3("#ffffff"), vec3("#ffd84d")]), false);
+      const up = { x: 0, y: 1 }, mv = { x: 0, y: 0 }, M = new THREE.Matrix4(), Q = new THREE.Quaternion(), E = new THREE.Euler(), V = new THREE.Vector3(), SC = new THREE.Vector3();
+      const spawn = (b, first) => {
+        b.s = S * (0.8 + R() * 0.45); b.vy = unit * (0.045 + R() * 0.045); b.pop = -1; b.wait = 0; b.ph = R(); b.grow = first ? 1 : 0;
+        const c = tones[Math.floor(R() * tones.length)]; b.col.copy(c);
+        // the first ones anywhere in the picture; the next ones blown up at its bottom (the world's bottom), inside it
+        if (first) b.p.set((R() - 0.5) * w * 0.8, (R() - 0.5) * h * 0.8, R() * depth); else { enterAt(b.p, up.x, up.y, w, h, -b.s * 1.3, R, 0.75); b.p.z = R() * depth; }
+      };
+      const bs = []; for (let i = 0; i < n; i++) { const b = { p: new THREE.Vector3(), col: new THREE.Color() }; spawn(b, true); bs.push(b); }
+      this.parts = { balloons: bs, popped: 0 };
+      const ray = new THREE.Vector3(), rel = new THREE.Vector3(), cr = new THREE.Vector3();
+      const knot = new THREE.Vector3(), down = new THREE.Vector3();
+      this.step = (dt, d) => {
+        const t = this.t, G = this.G || UPRIGHT;
+        turn(G, 0, 1, up);
+        const ext = Math.abs(up.x) * w / 2 + Math.abs(up.y) * h / 2;
+        // a tap: the nearest balloon along the finger's line pops
+        const tap = cfg.touch !== false ? this.tapped() : null;
+        if (tap && this.tmp.a) {
+          ray.copy(this.tmp.b).sub(this.tmp.a).normalize();
+          let best = null, bestT = Infinity;
+          for (const b of bs) {
+            if (b.pop >= 0 || b.wait > 0) continue;
+            rel.copy(b.p).sub(this.tmp.a); const along = rel.dot(ray); cr.copy(rel).addScaledVector(ray, -along);
+            if (cr.length() < b.s * 1.35 && along < bestT) { best = b; bestT = along; }
+          }
+          if (best) { best.pop = 0; this.parts.popped++; confetti.emit(best.p.x, best.p.y, 60, 0.8, false); }
+        }
+        bs.forEach((b, i) => {
+          let sc = b.s, fade = 1;
+          if (b.wait > 0) { b.wait -= dt; sc = 0; if (b.wait <= 0) spawn(b, false); }
+          else if (b.pop >= 0) { b.pop += d; sc = b.s * (1 + b.pop * 4); if (b.pop > 0.07) { sc = 0; b.wait = 1.2 + R() * 1.5; } } // a quick swell, and gone
+          else {
+            if (b.grow < 1) { b.grow = Math.min(1, b.grow + dt / 0.8); sc = b.s * (1 - Math.pow(1 - b.grow, 3)); } // blown up
+            else { turn(G, Math.sin(t * 0.6 + b.ph * 20) * unit * 0.02, b.vy, mv); b.p.x += mv.x * dt; b.p.y += mv.y * dt; }
+            const u = b.p.x * up.x + b.p.y * up.y;
+            fade = 1 - smooth(ext - b.s * 1.5, ext + b.s * 1.5, u); // it fades as it floats out of the top of the picture
+            if (fade <= 0 || outside(b.p, w, h, b.s * 8)) { spawn(b, false); sc = 0; } // floated away: a new one from below
+          }
+          const sway = Math.sin(t * 0.8 + b.ph * 12) * 0.12;
+          E.set(0, kind === 2 ? Math.sin(t * 0.5 + b.ph * 9) * 0.5 : 0, G.ang + sway); Q.setFromEuler(E);
+          V.copy(b.p); M.compose(V, Q, SC.set(sc || 1e-6, (sc || 1e-6) * (kind === 2 ? 1 : 1.08), sc || 1e-6)); mesh.setMatrixAt(i, M);
+          col[i * 3] = b.col.r; col[i * 3 + 1] = b.col.g; col[i * 3 + 2] = b.col.b; ph[i] = fade;
+          // the string hangs from the knot, down in the world, swaying behind
+          knot.set(0, -1.24 * (sc || 0) * (kind === 2 ? 0.95 : 1.08), 0).applyQuaternion(Q).add(b.p);
+          down.set(-up.x, -up.y, 0);
+          const len = b.s * 5.5, base = i * SEG * 6;
+          let px = knot.x, py = knot.y;
+          for (let k = 0; k < SEG; k++) {
+            const u = (k + 1) / SEG, wig = Math.sin(t * 1.6 + b.ph * 30 + u * 4) * b.s * 0.35 * u;
+            const nx = knot.x + down.x * len * u + up.y * wig, ny = knot.y + down.y * len * u - up.x * wig;
+            const o = base + k * 6, on = sc > 0;
+            lp[o] = px; lp[o + 1] = py; lp[o + 2] = b.p.z; lp[o + 3] = on ? nx : px; lp[o + 4] = on ? ny : py; lp[o + 5] = b.p.z;
+            la[(base + k * 6) / 3] = la[(base + k * 6) / 3 + 1] = fade * (1 - u * 0.6);
+            px = nx; py = ny;
+          }
+        });
+        mesh.instanceMatrix.needsUpdate = true; geo.attributes.aCol.needsUpdate = true; geo.attributes.aPh.needsUpdate = true; lg.attributes.position.needsUpdate = true; lg.attributes.aA.needsUpdate = true;
+        confetti.step(d, 1.1);
+      };
+      this.step(0.016, 0.016);
+    },
+
     buildAurora(cfg, w, h, C) {
       const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), this.mat({ vertexShader: FLAT_VS, fragmentShader: AURORA_FS,
         uniforms: { uTime: { value: 0 }, uKind: { value: Math.min(2, Math.max(0, cfg.kind | 0)) }, uAmount: { value: val(cfg.amount, 0.5) }, uSize: { value: val(cfg.size, 0.5) }, uBox: { value: new THREE.Vector2(w, h) },
