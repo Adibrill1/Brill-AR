@@ -24,7 +24,7 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
   assert.deepEqual(await p.locator('dialog[open] .add-tile').evaluateAll(n=>n.map(x=>x.dataset.add)),['image','video','text','pattern','weather','particles','codefx','model','sound','split']);
   await p.locator('dialog[open] .add-tile[data-add="weather"]').click();await p.waitForSelector('dialog[open] .part-tile[data-weather="sun"]');
   const ids=await p.locator('dialog[open] .part-tile[data-weather]').evaluateAll(n=>n.map(x=>x.dataset.weather));
-  assert.equal(ids.length,22);assert.deepEqual(ids.slice(0,3),['sun','smoke','fire'],'sun, smoke and fire first');
+  assert.equal(ids.length,23);assert.deepEqual(ids.slice(0,3),['sun','smoke','fire'],'sun, smoke and fire first');
   assert.equal(await p.locator('dialog[open] .dialog-title, dialog[open] h2').first().textContent().then(t=>t.trim()),'איזה מזג אוויר?');
 
   // the sun: on top, with its own controls

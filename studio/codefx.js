@@ -1,5 +1,5 @@
 "use strict";
-/* Live code animations ("אנימציות קוד"): twenty-six looks drawn in three.js, written here, with no files to download.
+/* Live code animations ("אנימציות קוד"): thirty looks drawn in three.js, written here, with no files to download.
    el.codefx = { look, colors[3], speed, amount, size (0-1 each), kind, text, touch, cover, seed }:
      dissolve  a picture (el.assetId, the artwork by default) falls apart into coloured dust and gathers back
      dust      a greeting written in gold dust that swirls in, sparkles and blows away
@@ -29,6 +29,10 @@
      lens      the picture hides in the dark, in grey or in fog and shows where the phone comes close
      daysky    the sky at the viewer's own hour: sun, moon, stars and clouds (or a day in a loop)
      game      a little game: tap the falling stars (rising bubbles, drifting hearts) for 30 seconds; a score and this phone's best
+     scratch   a silver (gold, coloured) coat with a line on it; the viewer scratches it off to find the picture
+     storm     a dark sky, rain and lightning that lights everything; a tap brings the lightning down there
+     countdown days, hours, minutes and seconds to a date on the viewer's clock (el.codefx.date, time, text); confetti on the day
+     puzzle    the picture in 3x3 or 4x4 squares to swap back, or a sliding puzzle; a card when it is solved
    With cfg.gravity (el.gravity, Studio.gravityFollower) the looks in Studio.GRAVITY_CODEFX keep their motion upright in
    the real world: turn the artwork and sparks, jellyfish, bubbles and lanterns still rise, leaves fall, metal runs low.
    Each look is one A-Frame component, "studio-codefx", built in Studio.buildElementEntity. It is an overlay layer,
@@ -1258,6 +1262,56 @@ void main() { float r = length(gl_PointCoord - 0.5); if (r > 0.5) discard; gl_Fr
 void main() { vCol = aCol; vA = aA; vec4 mv = modelViewMatrix * vec4(position, 1.0); gl_Position = projectionMatrix * mv;
   float persp = projectionMatrix[2][3] != 0.0 ? -mv.z : 1.0; gl_PointSize = aA > 0.0 ? clamp(uSize * uVh * 0.5 * projectionMatrix[1][1] / max(persp, 1e-4), 1.0, 40.0) : 0.0; }`;
 
+  // ---------- scratch: a silver (gold, coloured) coat that the viewer scratches off to find the picture ----------
+  const SCRATCH_FS = `
+uniform sampler2D map; uniform sampler2D uCoat; uniform sampler2D uMask; uniform float uAll, uTime, uOpacity;
+varying vec2 vUv; varying vec2 vP;
+${NOISE}
+void main() {
+  vec4 pic = texture2D(map, vUv);
+  vec3 coat = texture2D(uCoat, vUv).rgb + 0.16 * smoothstep(0.07, 0.0, abs(fract((vUv.x + vUv.y) * 0.5 - uTime * 0.1) - 0.5)); // a shine passing over
+  float k = max(smoothstep(0.3, 0.7, texture2D(uMask, vUv).r + (noise(vUv * 90.0) - 0.5) * 0.4), uAll);
+  float rim = smoothstep(0.0, 0.25, k) * (1.0 - smoothstep(0.25, 0.6, k)) * (1.0 - uAll); // the torn edge of the coat
+  gl_FragColor = vec4(mix(coat, pic.rgb, k) * (1.0 - 0.35 * rim), mix(1.0, pic.a, k) * uOpacity);
+}`;
+
+  // ---------- storm: dark sky, rain, and lightning that lights everything up ----------
+  const STORM_FS = `
+uniform float uTime, uAmount, uDark, uKind, uFlash, uOpacity; uniform vec2 uBox; uniform vec3 uC2, uC3;
+varying vec2 vUv; varying vec2 vP;
+${NOISE}
+float rainAt(vec2 q, float cols, float speed, float len, float seed) {
+  q.x += q.y * 0.18; // slanted by the wind
+  float c = floor(q.x * cols), hc = h21(vec2(c, seed)), x = fract(q.x * cols) - 0.5;
+  float y = fract(q.y / len + uTime * speed * (0.8 + hc * 0.4) + hc * 7.0);
+  return step(0.45, h21(vec2(c, seed + 3.0))) * smoothstep(0.09, 0.0, abs(x)) * smoothstep(0.55, 0.97, y) * step(y, 0.985);
+}
+void main() {
+  vec2 q = vP / uBox.y;
+  float r = uKind > 0.5 && uKind < 1.5 ? 0.0 : (rainAt(q, 70.0, 2.4, 0.22, 1.0) * 0.5 + rainAt(q, 38.0, 1.6, 0.38, 5.0) * 0.8) * (0.35 + uAmount);
+  float dark = uDark * (1.0 - uFlash * 0.85);
+  vec3 col = uC3; float a = dark;
+  float cl = smoothstep(0.35, 0.8, fbm(vec2(q.x * 2.0 + uTime * 0.04, q.y * 3.0))) * smoothstep(-0.2, 0.45, q.y); // heavy clouds above
+  col = mix(col, mix(uC3 * 1.8 + 0.04, uC2, uFlash * 0.8), cl * 0.7); a = max(a, cl * (0.35 + 0.5 * uDark));
+  col = mix(col, mix(vec3(0.72, 0.78, 0.88), uC2, uFlash), clamp(r, 0.0, 1.0)); a = max(a, clamp(r, 0.0, 1.0) * 0.55);
+  gl_FragColor = vec4(col, a * uOpacity);
+}`;
+  const FLASH_FS = `uniform vec3 uC; uniform float uF, uX, uW, uOpacity; varying vec2 vP;
+void main() { gl_FragColor = vec4(uC, uF * (0.25 + 0.45 * exp(-abs(vP.x - uX) / uW * 1.6)) * uOpacity); }`;
+
+  // ---------- puzzle: the picture in squares to put back in place ----------
+  const TILE_FS = `
+uniform sampler2D map; uniform vec4 uCell; uniform float uSel, uDone, uOpacity; uniform vec3 uC1;
+varying vec2 vUv;
+void main() {
+  vec4 c = texture2D(map, uCell.xy + vUv * uCell.zw);
+  vec2 e = min(vUv, 1.0 - vUv); float ed = min(e.x, e.y), bev = (1.0 - uDone) * (1.0 - smoothstep(0.0, 0.05, ed));
+  float tl = step(vUv.y, 1.0 - vUv.x) < 0.5 ? 1.0 : 0.0; // which half: the top-left catches the light
+  vec3 col = c.rgb + bev * (tl > 0.5 ? 0.12 : -0.18);
+  col = mix(col, uC1, uSel * (1.0 - smoothstep(0.05, 0.08, ed))) + uSel * 0.08;
+  gl_FragColor = vec4(col, c.a * uOpacity);
+}`;
+
   // ---------- aurora: curtains of northern lights that fold and drift ----------
   const AURORA_FS = `
 uniform float uTime, uKind, uAmount, uSize, uOpacity; uniform vec2 uBox; uniform vec3 uC1, uC2, uC3;
@@ -1291,9 +1345,9 @@ void main() {
   gl_FragColor = vec4(col, clamp(I, 0.0, 1.0) * edge * uOpacity);
 }`;
 
-  const BUILDERS = { burn: "buildBurn", fireflies: "buildFireflies", jelly: "buildJelly", tree: "buildTree", spiral: "buildSpiral", bubbles: "buildBubbles", liquid: "buildLiquid", lanterns: "buildLanterns", ripple: "buildRipple", shatter: "buildShatter", rain: "buildRain", mist: "buildMist", drip: "buildDrip", sketch: "buildSketch", sand: "buildSand", eyes: "buildEyes", tunnel: "buildTunnel", lens: "buildLens", daysky: "buildDaysky", game: "buildGame", aurora: "buildAurora" };
+  const BUILDERS = { burn: "buildBurn", fireflies: "buildFireflies", jelly: "buildJelly", tree: "buildTree", spiral: "buildSpiral", bubbles: "buildBubbles", liquid: "buildLiquid", lanterns: "buildLanterns", ripple: "buildRipple", shatter: "buildShatter", rain: "buildRain", mist: "buildMist", drip: "buildDrip", sketch: "buildSketch", sand: "buildSand", eyes: "buildEyes", tunnel: "buildTunnel", lens: "buildLens", daysky: "buildDaysky", game: "buildGame", scratch: "buildScratch", storm: "buildStorm", countdown: "buildCountdown", puzzle: "buildPuzzle", aurora: "buildAurora" };
   // the looks a finger plays with
-  const TOUCHY = new Set(["dissolve", "dust", "swarm", "burn", "fireflies", "jelly", "spiral", "bubbles", "liquid", "lanterns", "ripple", "shatter", "rain", "mist", "drip", "sketch", "sand", "eyes", "tunnel", "lens", "game"]);
+  const TOUCHY = new Set(["dissolve", "dust", "swarm", "burn", "fireflies", "jelly", "spiral", "bubbles", "liquid", "lanterns", "ripple", "shatter", "rain", "mist", "drip", "sketch", "sand", "eyes", "tunnel", "lens", "game", "scratch", "storm", "puzzle"]);
   AFRAME.registerComponent("studio-codefx", {
     schema: { cfg: { default: "{}" }, width: { default: 1 }, height: { default: 1 }, src: { default: "" } },
     init() { this.t = 0; this.mats = []; this.tmp = {}; this.finger = Studio.fingerTools; },
@@ -1877,6 +1931,284 @@ void main() {
       };
       this.parts = { game: { things, get score() { return score; }, get state() { return state; }, finish() { left = 0; } } }; // for the tests
       this.step(0, 0);
+    },
+    // a press on this layer since the last frame (even a quick tap between two frames): where, on the layer
+    tapped() {
+      const st = this.finger && this.finger.state; if (!st) return null;
+      if (this._presses == null) { this._presses = st.presses; return null; }
+      if (st.presses === this._presses) return null;
+      this._presses = st.presses;
+      return st.users.has(this) && this.shown() ? this.finger.onPlane(this.group, this.el.sceneEl, this.tmp) : null;
+    },
+    // a card in the middle of the layer (a canvas texture), shown with show(true) and hidden with show(false)
+    makeCard(w, h, draw) {
+      const card = document.createElement("canvas"); card.width = 512; card.height = 320;
+      const tex = new THREE.CanvasTexture(card), unit = Math.min(w, h), cw = Math.min(w * 0.8, unit * 0.95), ch = cw * 320 / 512, uA = { value: 0 };
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(cw, ch), this.mat({ vertexShader: FLAT_VS, fragmentShader: PIC_FS, uniforms: { map: { value: tex }, uA } }));
+      mesh.position.z = 0.006; this.group.add(mesh);
+      let on = false;
+      return {
+        show(v, ...args) { if (v && !on) { const x = card.getContext("2d"); x.clearRect(0, 0, 512, 320); draw(x, ...args); tex.needsUpdate = true; } on = v; },
+        step(d) { uA.value += ((on ? 1 : 0) - uA.value) * (1 - Math.exp(-d * 8)); }
+      };
+    },
+    // sparks that fly from a point (or fall from above), drawn as round dots
+    makeSparks(unit, colors, additive) {
+      const B = 200, bp = new Float32Array(B * 3), ba = new Float32Array(B), bc = new Float32Array(B * 3), bv = new Float32Array(B * 2), R = rand(321);
+      const bg = new THREE.BufferGeometry();
+      bg.setAttribute("position", new THREE.BufferAttribute(bp, 3)); bg.setAttribute("aA", new THREE.BufferAttribute(ba, 1)); bg.setAttribute("aCol", new THREE.BufferAttribute(bc, 3));
+      const pts = new THREE.Points(bg, this.mat({ vertexShader: BURST_VS, fragmentShader: BURST_FS, blending: additive ? THREE.AdditiveBlending : THREE.NormalBlending, uniforms: { uSize: { value: unit * 0.018 }, uVh: { value: 800 } } }));
+      pts.frustumCulled = false; pts.position.z = 0.007; this.group.add(pts);
+      return {
+        emit(x, y, n, speed, up) {
+          for (let i = 0, made = 0; i < B && made < n; i++) {
+            if (ba[i] > 0) continue;
+            const a = up ? -Math.PI / 2 + (R() - 0.5) * 0.6 : R() * 6.283, v = unit * speed * (0.4 + R() * 0.8), col = colors[Math.floor(R() * colors.length)];
+            bp[i * 3] = x; bp[i * 3 + 1] = y; bp[i * 3 + 2] = 0; bv[i * 2] = Math.cos(a) * v; bv[i * 2 + 1] = Math.sin(a) * v; ba[i] = 1;
+            bc[i * 3] = col.r; bc[i * 3 + 1] = col.g; bc[i * 3 + 2] = col.b; made++;
+          }
+        },
+        step(d, fall) {
+          for (let i = 0; i < B; i++) if (ba[i] > 0) { bv[i * 2 + 1] -= unit * fall * d; bp[i * 3] += bv[i * 2] * d; bp[i * 3 + 1] += bv[i * 2 + 1] * d; ba[i] = Math.max(0, ba[i] - d * 1.2); }
+          bg.attributes.position.needsUpdate = true; bg.attributes.aA.needsUpdate = true; bg.attributes.aCol.needsUpdate = true;
+        }
+      };
+    },
+    buildScratch(cfg, w, h, C) {
+      const kind = Math.min(2, Math.max(0, cfg.kind | 0)), unit = Math.min(w, h);
+      const CW = 512, CH = Math.max(64, Math.min(1024, Math.round(512 * h / w))), MW = 256, MH = Math.max(32, Math.min(512, Math.round(256 * h / w)));
+      const coat = document.createElement("canvas"); coat.width = CW; coat.height = CH;
+      const mask = document.createElement("canvas"); mask.width = MW; mask.height = MH;
+      const mx = mask.getContext("2d", { willReadFrequently: true }); mx.fillStyle = "#000"; mx.fillRect(0, 0, MW, MH);
+      const coatTex = new THREE.CanvasTexture(coat), maskTex = new THREE.CanvasTexture(mask), uAll = { value: 0 };
+      const css = (c) => "#" + c.getHexString(), text = cfg.text == null ? "גרדו כאן" : String(cfg.text);
+      const drawCoat = () => {
+        const x = coat.getContext("2d"), Rg = rand(77);
+        const stops = kind === 0 ? ["#8f96a0", "#eef1f5", "#b9bec7", "#f6f8fa", "#8f96a0"] : kind === 1 ? ["#9c6b16", "#f7dc8a", "#b8892d", "#ffe9a8", "#9c6b16"] : [css(C[0]), css(C[1]), css(C[0])];
+        const gr = x.createLinearGradient(0, 0, CW, CH); stops.forEach((c, i) => gr.addColorStop(i / (stops.length - 1), c));
+        x.fillStyle = gr; x.fillRect(0, 0, CW, CH);
+        for (let i = 0; i < CW * CH / 50; i++) { x.fillStyle = Rg() < 0.5 ? "rgba(255,255,255,0.16)" : "rgba(0,0,0,0.1)"; x.fillRect(Rg() * CW, Rg() * CH, 1.5, 1.5); } // grain
+        if (kind === 2) for (let i = 0; i < 46; i++) { // little stars on the coloured coat
+          const sx = Rg() * CW, sy = Rg() * CH, r = 5 + Rg() * 9; x.fillStyle = Rg() < 0.5 ? css(C[2]) : "rgba(255,255,255,0.7)"; x.beginPath();
+          for (let k = 0; k < 10; k++) { const a = -Math.PI / 2 + k * Math.PI / 5, rr = k % 2 ? r * 0.45 : r; x.lineTo(sx + Math.cos(a) * rr, sy + Math.sin(a) * rr); }
+          x.fill();
+        }
+        if (text.trim()) {
+          let px = Math.min(CW * 0.15, CH * 0.3); const fam = '"BA heebo", Heebo, Arial, sans-serif';
+          x.font = "800 " + px + "px " + fam; const wd = x.measureText(text).width; if (wd > CW * 0.84) { px *= CW * 0.84 / wd; x.font = "800 " + px + "px " + fam; }
+          x.textAlign = "center"; x.textBaseline = "middle"; x.direction = "rtl";
+          x.fillStyle = "rgba(255,255,255,0.55)"; x.fillText(text, CW / 2 - 1.5, CH / 2 - 1.5); // pressed into the coat
+          x.fillStyle = kind === 1 ? "rgba(92,60,8,0.8)" : kind === 0 ? "rgba(58,64,74,0.78)" : css(C[2]); x.fillText(text, CW / 2, CH / 2);
+        }
+        coatTex.needsUpdate = true;
+      };
+      drawCoat();
+      if (Studio.loadTextFonts) Studio.loadTextFonts({ font: "heebo", text: text || "א", bold: true }).then(() => this.group && drawCoat(), () => {});
+      this.parts = {};
+      const under = new THREE.Group(); this.group.add(under); // the picture's place: the scene draws in the order things were added, and the picture comes later
+      this.loadPicture((tex) => {
+        const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), this.mat({ vertexShader: FLAT_VS, fragmentShader: SCRATCH_FS,
+          uniforms: { map: { value: tex }, uCoat: { value: coatTex }, uMask: { value: maskTex }, uAll, uTime: { value: 0 } } }));
+        mesh.position.z = 0.0008; under.add(mesh);
+      });
+      const tint = kind === 1 ? [new THREE.Color("#d9b25a"), new THREE.Color("#f7dc8a")] : kind === 0 ? [new THREE.Color("#c9ced6"), new THREE.Color("#f1f3f6")] : [C[0], C[1]];
+      const flakes = this.makeSparks(unit * 0.7, tint, false), glitter = this.makeSparks(unit, [C[0], C[1], C[2], new THREE.Color("#ffffff")], true);
+      const small = document.createElement("canvas"); small.width = small.height = 24; const sx = small.getContext("2d", { willReadFrequently: true });
+      const brush = MW * (0.06 + val(cfg.amount, 0.5) * 0.1);
+      let last = null, dirty = false, checkIn = 0, open = 0, openFor = 0;
+      this.parts.scratch = { get open() { return open; }, mask }; // for the tests
+      this.step = (dt, d) => {
+        const f = cfg.touch !== false ? this.touchPoint() : null; // a finger on the layer (or a mouse over it)
+        if (f && !open) { // the finger scratches the coat away
+          const x = (f.x / w + 0.5) * MW, y = (0.5 - f.y / h) * MH;
+          mx.strokeStyle = "#fff"; mx.lineCap = "round"; mx.lineJoin = "round"; mx.lineWidth = brush;
+          mx.beginPath(); mx.moveTo(last ? last.x : x, last ? last.y : y); mx.lineTo(x + 0.01, y); mx.stroke();
+          if (!last || Math.hypot(x - last.x, y - last.y) > 1) flakes.emit(f.x, f.y, 2, 0.35, false);
+          last = { x, y }; dirty = true; maskTex.needsUpdate = true;
+        } else last = null;
+        if (dirty && !open) { checkIn -= d; if (checkIn <= 0) { // how much is scratched off: past 60% the rest goes by itself
+          checkIn = 0.35; dirty = false; sx.drawImage(mask, 0, 0, 24, 24); const px = sx.getImageData(0, 0, 24, 24).data; let sum = 0; for (let i = 0; i < px.length; i += 4) sum += px[i];
+          if (sum / (24 * 24 * 255) > 0.6) { open = 1; openFor = 0; for (let k = 0; k < 6; k++) glitter.emit((Math.random() - 0.5) * w * 0.8, (Math.random() - 0.5) * h * 0.8, 10, 0.4, false); }
+        } }
+        if (open) { openFor += d; if (openFor > 12) { open = 0; mx.fillStyle = "#000"; mx.fillRect(0, 0, MW, MH); maskTex.needsUpdate = true; } } // after a while the coat comes back for the next one
+        uAll.value += (open - uAll.value) * (1 - Math.exp(-d * 4));
+        flakes.step(d, 1.6); glitter.step(d, 0.3);
+      };
+    },
+    buildStorm(cfg, w, h, C) {
+      const kind = Math.min(2, Math.max(0, cfg.kind | 0)), unit = Math.min(w, h), R = rand(4400 + (cfg.seed | 0));
+      const u = { uFlash: { value: 0 } };
+      const sky = new THREE.Mesh(new THREE.PlaneGeometry(w, h), this.mat({ vertexShader: FLAT_VS, fragmentShader: STORM_FS,
+        uniforms: { uTime: { value: 0 }, uAmount: { value: val(cfg.amount, 0.5) }, uDark: { value: (kind === 2 ? 0.45 : 0.25) + val(cfg.size, 0.5) * 0.4 }, uKind: { value: kind }, uFlash: u.uFlash, uBox: { value: new THREE.Vector2(w, h) }, uC2: { value: C[1] }, uC3: { value: C[2] } } }));
+      sky.position.z = 0.0008; this.group.add(sky);
+      const BW = 512, BH = Math.max(64, Math.min(1024, Math.round(512 * h / w)));
+      const bolt = document.createElement("canvas"); bolt.width = BW; bolt.height = BH;
+      const bx = bolt.getContext("2d"), boltTex = new THREE.CanvasTexture(bolt), boltA = { value: 0 };
+      const boltMesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), this.mat({ vertexShader: FLAT_VS, fragmentShader: PIC_FS, blending: THREE.AdditiveBlending, uniforms: { map: { value: boltTex }, uA: boltA } }));
+      boltMesh.position.z = 0.0011; this.group.add(boltMesh);
+      const fx = { uC: { value: C[1] }, uF: { value: 0 }, uX: { value: 0 }, uW: { value: w } };
+      const flash = new THREE.Mesh(new THREE.PlaneGeometry(w, h), this.mat({ vertexShader: FLAT_VS, fragmentShader: FLASH_FS, blending: THREE.AdditiveBlending, uniforms: fx }));
+      flash.position.z = 0.0012; this.group.add(flash);
+      const css = (c) => "#" + c.getHexString();
+      const path = (x0, y0, x1, y1, rough) => { // a jagged line: midpoints pushed aside, again and again
+        let pts = [[x0, y0], [x1, y1]];
+        for (let it = 0; it < 6; it++) { const nx = []; for (let i = 0; i < pts.length - 1; i++) { const [ax, ay] = pts[i], [cx, cy] = pts[i + 1], L = Math.hypot(cx - ax, cy - ay); nx.push(pts[i], [(ax + cx) / 2 + (R() - 0.5) * L * rough, (ay + cy) / 2 + (R() - 0.5) * L * rough * 0.3]); } nx.push(pts[pts.length - 1]); pts = nx; }
+        return pts;
+      };
+      const drawBolt = (tx, ty) => {
+        bx.clearRect(0, 0, BW, BH);
+        const x0 = tx + (R() - 0.5) * BW * 0.3, main = path(x0, -4, tx, ty, 0.55), lines = [[main, 1]];
+        for (let i = 4; i < main.length - 6; i += 3) if (R() < 0.22) { const [ax, ay] = main[i], L = (ty - ay) * (0.3 + R() * 0.4); lines.push([path(ax, ay, ax + (R() - 0.5) * L * 1.4, ay + L, 0.6), 0.55]); }
+        for (const pass of [[css(C[0]), 30, 7], ["#ffffff", 10, 2.4]]) for (const [pts, k] of lines) {
+          bx.strokeStyle = pass[0]; bx.shadowColor = css(C[0]); bx.shadowBlur = pass[1]; bx.lineWidth = pass[2] * k; bx.lineJoin = "round"; bx.lineCap = "round";
+          bx.beginPath(); pts.forEach(([x, y], i) => (i ? bx.lineTo(x, y) : bx.moveTo(x, y))); bx.stroke();
+        }
+        boltTex.needsUpdate = true;
+      };
+      const env = (t) => (t < 0.06 ? 1 : t < 0.12 ? 0.3 : t < 0.2 ? 0.85 : Math.exp(-(t - 0.2) * 7)); // flash, dip, flash, fade
+      let since = 9, nextIn = 1.2, strength = 1;
+      const strike = (x, y) => { // x, y on the layer; none: somewhere
+        const tx = x == null ? (0.15 + R() * 0.7) * BW : (x / w + 0.5) * BW, ty = y == null ? (0.55 + R() * 0.4) * BH : (0.5 - y / h) * BH;
+        if (kind !== 2 || x != null) drawBolt(tx, ty); else bx.clearRect(0, 0, BW, BH), boltTex.needsUpdate = true;
+        fx.uX.value = (tx / BW - 0.5) * w; since = 0; strength = kind === 2 && x == null ? 0.45 + R() * 0.3 : 0.8 + R() * 0.2;
+      };
+      this.parts = { strike }; // for the tests
+      this.step = (dt, d) => {
+        const tap = cfg.touch !== false ? this.tapped() : null;
+        if (tap) strike(tap.x, tap.y); // the lightning strikes where the finger touched
+        nextIn -= dt; if (nextIn <= 0) { strike(); nextIn = kind === 1 ? 1.2 + R() * 2.5 : 2.5 + R() * 5; }
+        since += d;
+        const e = env(since) * strength;
+        u.uFlash.value = e; fx.uF.value = e; boltA.value = kind === 2 && since > 0.5 ? 0 : Math.min(1, env(since) * 1.3);
+      };
+    },
+    buildCountdown(cfg, w, h, C) {
+      const kind = Math.min(2, Math.max(0, cfg.kind | 0)), unit = Math.min(w, h);
+      const CW = 1024, CH = Math.max(128, Math.min(1024, Math.round(1024 * h / w)));
+      const cv = document.createElement("canvas"); cv.width = CW; cv.height = CH;
+      const x = cv.getContext("2d"), tex = new THREE.CanvasTexture(cv);
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), this.mat({ vertexShader: FLAT_VS, fragmentShader: PIC_FS, uniforms: { map: { value: tex }, uA: { value: 1 } } }));
+      mesh.position.z = 0.0008; this.group.add(mesh);
+      const confetti = this.makeSparks(unit * 0.6, [C[0], C[1], C[2]], false);
+      const css = (c) => "#" + c.getHexString(), fam = '"BA heebo", Heebo, Arial, sans-serif';
+      const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(cfg.date || ""), t = /^(\d{2}):(\d{2})$/.exec(cfg.time || "") || [0, "00", "00"];
+      const target = m ? new Date(+m[1], +m[2] - 1, +m[3], +t[1], +t[2]).getTime() : NaN; // on the viewer's own clock
+      const title = cfg.text == null ? "עד היום הגדול" : String(cfg.text);
+      const pill = (px, py, wd, hh, r) => { x.beginPath(); x.moveTo(px + r, py); x.arcTo(px + wd, py, px + wd, py + hh, r); x.arcTo(px + wd, py + hh, px, py + hh, r); x.arcTo(px, py + hh, px, py, r); x.arcTo(px, py, px + wd, py, r); x.closePath(); };
+      const names = ["ימים", "שעות", "דקות", "שניות"], flips = [0, 0, 0, 0];
+      let prev = null, shown = "", party = false;
+      const draw = (vals, line) => {
+        x.clearRect(0, 0, CW, CH);
+        x.textAlign = "center"; x.textBaseline = "middle"; x.direction = "rtl";
+        const hasTitle = title.trim().length > 0, top = hasTitle ? CH * 0.24 : 0;
+        if (hasTitle) {
+          let px = Math.min(CH * 0.15, 80); x.font = "700 " + px + "px " + fam; const wd = x.measureText(title).width; if (wd > CW * 0.9) { px *= CW * 0.9 / wd; x.font = "700 " + px + "px " + fam; }
+          x.fillStyle = css(C[1]); x.shadowColor = "rgba(0,0,0,0.45)"; x.shadowBlur = 8; x.fillText(title, CW / 2, top * 0.55); x.shadowBlur = 0;
+        }
+        if (line) { // the day itself (or after it)
+          let px = Math.min((CH - top) * 0.45, 190); x.font = "800 " + px + "px " + fam;
+          x.fillStyle = css(C[0]); x.shadowColor = kind === 1 ? css(C[0]) : "rgba(0,0,0,0.5)"; x.shadowBlur = kind === 1 ? 30 : 12; x.fillText(line, CW / 2, top + (CH - top) * 0.5); x.shadowBlur = 0;
+          tex.needsUpdate = true; return;
+        }
+        const n = 4, gap = CW * 0.025, bw = Math.min((CW - gap * 5) / n, (CH - top) * 0.62), bh = Math.min(bw * 1.05, (CH - top) * 0.66), y0 = top + ((CH - top) - bh * 1.28) / 2;
+        const left = (CW - (bw * n + gap * (n - 1))) / 2;
+        for (let i = 0; i < n; i++) {
+          const bxp = CW - left - bw - i * (bw + gap); // right to left: days first, like the words
+          const v = String(vals[i]).padStart(2, "0"), fl = flips[i];
+          if (kind === 0) { // cards, with a flap that turns when the number changes
+            pill(bxp, y0, bw, bh, bw * 0.1); x.fillStyle = "rgba(14,14,28,0.82)"; x.fill();
+            x.fillStyle = "rgba(255,255,255,0.06)"; x.fillRect(bxp, y0, bw, bh / 2);
+          }
+          const sq = fl > 0 ? Math.abs(Math.cos(Math.PI * (1 - fl))) : 1; // flap turning: squash, then open
+          x.save(); x.translate(bxp + bw / 2, y0 + bh / 2); x.scale(1, Math.max(0.05, sq));
+          x.font = "800 " + Math.round(bh * (v.length > 2 ? 0.48 : 0.6)) + "px " + fam; x.fillStyle = kind === 0 ? "#ffffff" : css(C[0]);
+          if (kind === 1) { x.shadowColor = css(C[0]); x.shadowBlur = 28; } else if (kind === 2) { x.shadowColor = "rgba(0,0,0,0.45)"; x.shadowBlur = 10; }
+          x.fillText(v, 0, bh * 0.04); x.restore(); x.shadowBlur = 0;
+          if (kind === 0) { x.fillStyle = "rgba(0,0,0,0.5)"; x.fillRect(bxp, y0 + bh / 2 - 1.5, bw, 3); }
+          x.font = "600 " + Math.round(bh * 0.17) + "px " + fam; x.fillStyle = css(C[kind === 0 ? 1 : 2]); x.fillText(names[i], bxp + bw / 2, y0 + bh * 1.16);
+        }
+        tex.needsUpdate = true;
+      };
+      this.parts = { get target() { return target; } };
+      const redraw = (d) => {
+        const now = Date.now(), diff = target - now;
+        if (!Number.isFinite(target)) { if (shown !== "none") { shown = "none"; draw(null, "בחרו תאריך"); } return; }
+        if (diff <= 0) { const line = diff > -86400000 ? "זה היום!" : "התאריך עבר"; party = diff > -86400000; if (shown !== line) { shown = line; draw(null, line); } return; }
+        party = false;
+        const s = Math.floor(diff / 1000), vals = [Math.floor(s / 86400), Math.floor(s / 3600) % 24, Math.floor(s / 60) % 60, s % 60];
+        if (prev) vals.forEach((v, i) => { if (v !== prev[i] && kind === 0) flips[i] = 1; });
+        let moving = false; for (let i = 0; i < 4; i++) if (flips[i] > 0) { flips[i] = Math.max(0, flips[i] - d / 0.3); moving = true; }
+        const key = vals.join(":");
+        if (key !== shown || moving) { shown = key; draw(vals); }
+        prev = vals;
+      };
+      let rainIn = 0;
+      this.step = (dt, d) => {
+        redraw(d);
+        if (party) { rainIn -= d; if (rainIn <= 0) { rainIn = 0.06; confetti.emit((Math.random() - 0.5) * w, h / 2, 2, 0.15, false); } }
+        confetti.step(d, 0.25);
+      };
+      if (Studio.loadTextFonts) Studio.loadTextFonts({ font: "heebo", text: title + "0123456789", bold: true }).then(() => { shown = ""; }, () => {});
+      this.step(0, 0);
+    },
+    buildPuzzle(cfg, w, h, C) {
+      const kind = Math.min(2, Math.max(0, cfg.kind | 0)), n = kind === 1 ? 4 : 3, slide = kind === 2, N = n * n, R = rand(6600 + (cfg.seed | 0)), unit = Math.min(w, h);
+      const gap = 0.012 + val(cfg.amount, 0.5) * 0.05, tw = w / n, th = h / n;
+      const board = []; for (let i = 0; i < N; i++) board.push(i); // board[slot] = the piece there (a piece's number is its own slot)
+      const slotAt = (s) => ({ x: -w / 2 + tw * (s % n + 0.5), y: h / 2 - th * (Math.floor(s / n) + 0.5) });
+      const shuffle = () => {
+        if (slide) { let e = N - 1, last = -1; for (let k = 0; k < 40 * n; k++) { const r = Math.floor(e / n), c = e % n, nb = []; if (r > 0) nb.push(e - n); if (r < n - 1) nb.push(e + n); if (c > 0) nb.push(e - 1); if (c < n - 1) nb.push(e + 1); const opts = nb.filter((v) => v !== last); const t = opts[Math.floor(R() * opts.length)]; board[e] = board[t]; board[t] = N - 1; last = e; e = t; } }
+        else do { for (let i = N - 1; i > 0; i--) { const j = Math.floor(R() * (i + 1)); [board[i], board[j]] = [board[j], board[i]]; } } while (board.filter((p, i) => p === i).length > 1);
+        if (board.every((p, i) => p === i)) shuffle();
+      };
+      shuffle();
+      const pieces = [], tray = new THREE.Group();
+      const boardMesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), this.mat({ vertexShader: FLAT_VS, fragmentShader: FILL_FS, uniforms: { uC: { value: new THREE.Color("#15151f") } } }));
+      boardMesh.position.z = 0.0005; this.group.add(boardMesh, tray); // the board hides the printed picture in the gaps
+      this.loadPicture((tex) => {
+        for (let p = 0; p < N; p++) {
+          const u = { map: { value: tex }, uCell: { value: new THREE.Vector4((p % n) / n, 1 - (Math.floor(p / n) + 1) / n, 1 / n, 1 / n) }, uSel: { value: 0 }, uDone: { value: 0 }, uC1: { value: C[0] } };
+          const mesh = new THREE.Mesh(new THREE.PlaneGeometry(tw * (1 - gap), th * (1 - gap)), this.mat({ vertexShader: FLAT_VS, fragmentShader: TILE_FS, uniforms: u }));
+          const at = slotAt(board.indexOf(p)); mesh.position.set(at.x, at.y, 0.0008); tray.add(mesh);
+          pieces[p] = { mesh, u };
+        }
+      });
+      const sparks = this.makeSparks(unit, [C[0], C[1], C[2], new THREE.Color("#ffffff")], true);
+      const css = (c) => "#" + c.getHexString(), fam = '"BA heebo", Heebo, Arial, sans-serif';
+      const card = this.makeCard(w, h, (x, moves) => {
+        x.beginPath(); x.moveTo(40, 0); x.arcTo(512, 0, 512, 320, 40); x.arcTo(512, 320, 0, 320, 40); x.arcTo(0, 320, 0, 0, 40); x.arcTo(0, 0, 512, 0, 40); x.closePath(); x.fillStyle = "rgba(10,10,24,0.78)"; x.fill();
+        x.textAlign = "center"; x.textBaseline = "middle"; x.direction = "rtl";
+        x.fillStyle = css(C[0]); x.font = "800 62px " + fam; x.fillText("כל הכבוד!", 256, 90);
+        x.fillStyle = "#ffffff"; x.font = "600 40px " + fam; x.fillText(moves + " מהלכים", 256, 175);
+        x.fillStyle = css(C[2]); x.font = "600 32px " + fam; x.fillText("נגיעה לפאזל חדש", 256, 255);
+      });
+      let sel = -1, moves = 0, solved = false, solvedFor = 0, done = 0;
+      this.parts = { puzzle: { board, n, get solved() { return solved; }, get moves() { return moves; }, slotAt } }; // for the tests
+      const win = () => { solved = true; solvedFor = 0; sel = -1; card.show(true, moves); for (let k = 0; k < 8; k++) sparks.emit((R() - 0.5) * w * 0.8, (R() - 0.5) * h * 0.8, 12, 0.45, false); };
+      this.step = (dt, d) => {
+        const tap = cfg.touch !== false ? this.tapped() : null;
+        if (tap && !solved) {
+          const c = Math.floor((tap.x + w / 2) / tw), r = Math.floor((h / 2 - tap.y) / th);
+          if (c >= 0 && c < n && r >= 0 && r < n) {
+            const s = r * n + c;
+            if (slide) { const e = board.indexOf(N - 1), er = Math.floor(e / n), ec = e % n; if (Math.abs(er - r) + Math.abs(ec - c) === 1) { board[e] = board[s]; board[s] = N - 1; moves++; } }
+            else if (sel < 0) sel = s; else if (sel === s) sel = -1; else { [board[sel], board[s]] = [board[s], board[sel]]; moves++; sel = -1; }
+            if (board.every((p, i) => p === i)) win();
+          }
+        } else if (tap && solved && solvedFor > 0.8) { solved = false; card.show(false); shuffle(); moves = 0; }
+        if (solved) { solvedFor += d; if (solvedFor > 8) { solved = false; card.show(false); shuffle(); moves = 0; } }
+        done += ((solved ? 1 : 0) - done) * (1 - Math.exp(-d * 5));
+        const k = 1 - Math.exp(-dt * 12);
+        pieces.forEach((pc, p) => {
+          if (!pc) return;
+          const slot = board.indexOf(p), at = slotAt(slot), m = pc.mesh, picked = slot === sel;
+          m.position.x += (at.x - m.position.x) * k; m.position.y += (at.y - m.position.y) * k; m.position.z = picked ? 0.004 : 0.0008;
+          const sc = (picked ? 1.06 : 1) * (1 + done * gap / (1 - gap)); m.scale.set(sc, sc, 1);
+          pc.u.uSel.value += ((picked ? 1 : 0) - pc.u.uSel.value) * k; pc.u.uDone.value = done;
+          if (slide && p === N - 1) m.visible = done > 0.02; // the missing piece comes back when it is solved
+        });
+        card.step(d); sparks.step(d, 0.3);
+      };
     },
     buildAurora(cfg, w, h, C) {
       const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), this.mat({ vertexShader: FLAT_VS, fragmentShader: AURORA_FS,

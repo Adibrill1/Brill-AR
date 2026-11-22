@@ -14,7 +14,7 @@ const SHOTS=process.env.SHOTS||'';
     a.assets.__artwork=await new Promise(r=>c.toBlob(r,'image/png'));a.elements=[];await Studio.save(a);return a.id;});
   await p.goto(base+'/index.html#/e/'+id);await p.waitForSelector('#btn-add');await p.waitForTimeout(600);
   const shot=async(name)=>{if(SHOTS)await p.screenshot({path:SHOTS+'/'+name+'.png'});};
-  const looks=await p.evaluate(()=>Studio.CODEFX.map(c=>c.id));assert.deepEqual(looks,['dissolve','dust','portal','swarm','ivy','burn','fireflies','jelly','tree','spiral','bubbles','liquid','lanterns','ripple','shatter','rain','aurora','mist','drip','sketch','sand','eyes','tunnel','lens','daysky','game']);
+  const looks=await p.evaluate(()=>Studio.CODEFX.map(c=>c.id));assert.deepEqual(looks,['dissolve','dust','portal','swarm','ivy','burn','fireflies','jelly','tree','spiral','bubbles','liquid','lanterns','ripple','shatter','rain','aurora','mist','drip','sketch','sand','eyes','tunnel','lens','daysky','game','scratch','storm','countdown','puzzle']);
   for(const look of looks){
     await p.evaluate(()=>Layers.openAdd());await p.locator('button.add-tile[data-add="codefx"]').tap();
     await p.locator('button.part-tile[data-codefx="'+look+'"]').tap();
@@ -27,7 +27,8 @@ const SHOTS=process.env.SHOTS||'';
     await p.evaluate(id=>App.select(id),elId);
     // its controls: the colours, the speed and the amount
     if(await p.locator('.tab[data-tab="style"]').isVisible())await p.locator('.tab[data-tab="style"]').tap();
-    await p.waitForSelector('text=ערכות צבע');assert.ok(await p.locator('section.group',{hasText:'התאמה'}).locator('text=מהירות').count(),'speed control');
+    await p.waitForSelector('text=ערכות צבע');if(look!=='countdown')assert.ok(await p.locator('section.group',{hasText:'התאמה'}).locator('text=מהירות').count(),'speed control'); // a countdown runs on the clock
+    if(look==='countdown')assert.ok(await p.locator('#in-codefx-date').count(),'the countdown asks for a date');
     await p.evaluate(()=>{const e=App.sel();e.codefx=Object.assign({},e.codefx,{amount:0.2,speed:0.8});App.changed(true);});
     await p.waitForTimeout(400);
     assert.ok(await p.evaluate(id=>{const n=document.querySelector('[data-el-id="'+id+'"]');return !!n&&n.getAttribute('studio-codefx').cfg.includes('"amount":0.2');},elId),look+': the scene follows the controls');
@@ -52,7 +53,7 @@ const SHOTS=process.env.SHOTS||'';
   await p.evaluate(()=>App.flush&&App.flush());await p.waitForTimeout(400);
   const recId=await p.evaluate(()=>App.rec.id);
   await p.goto(base+'/preview.html#'+recId);
-  await p.waitForFunction(()=>{const n=[...document.querySelectorAll('[studio-codefx]')];return n.length===26&&n.every(x=>x.getObject3D('codefx')&&x.getObject3D('codefx').children.length>0);},null,{timeout:15000});
+  await p.waitForFunction(()=>{const n=[...document.querySelectorAll('[studio-codefx]')];return n.length===30&&n.every(x=>x.getObject3D('codefx')&&x.getObject3D('codefx').children.length>0);},null,{timeout:15000});
   await p.waitForTimeout(1500);await shot('preview');
   console.log(JSON.stringify(errs.slice(0,8)));assert.deepEqual(errs.filter(e=>!/favicon|Failed to load resource/.test(e)),[]);
   console.log('v2-codefx ok');

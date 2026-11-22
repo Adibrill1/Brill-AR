@@ -1128,9 +1128,13 @@ vec4 baFilter(vec2 uv) {
     ["tunnel", "מנהרת זמן", ["#f2e6c9", "#05040a", "#9fd8ff"], ["מסגרות", "ספירלה", "עגולה"]],
     ["lens", "גילוי מקרוב", ["#fff1c9", "#0b0a14", "#ffffff"], ["פנס בחושך", "שחור־לבן לצבע", "ערפל שמתפזר"]],
     ["daysky", "שמיים לפי השעה", ["#3b8fe0", "#ff8a4c", "#060b24"], ["השעה אצל הצופה", "יום ולילה בלולאה", "שקיעה ולילה"]],
-    ["game", "משחק קטן", ["#ffd84d", "#ff8fd8", "#7fe0ff"], ["כוכבים נופלים", "בועות שעולות", "לבבות מרחפים"]]
+    ["game", "משחק קטן", ["#ffd84d", "#ff8fd8", "#7fe0ff"], ["כוכבים נופלים", "בועות שעולות", "לבבות מרחפים"]],
+    ["scratch", "כרטיס גירוד", ["#ff6fa5", "#ffd166", "#ffffff"], ["כסף", "זהב", "צבעוני"]],
+    ["storm", "ברקים וסערה", ["#bcd7ff", "#eef4ff", "#0b1424"], ["סערה", "ברקים בלבד", "סערה רחוקה"]],
+    ["countdown", "ספירה לאחור", ["#ffd166", "#ffffff", "#ff8fd8"], ["כרטיסים מתהפכים", "ניאון", "פשוט"]],
+    ["puzzle", "פאזל", ["#ffd166", "#ffffff", "#7fe0ff"], ["3×3 החלפה", "4×4 החלפה", "הזזה"]]
   ];
-  const CODEFX_PICTURE = ["dissolve", "burn", "ripple", "shatter", "rain", "mist", "drip", "sketch", "sand", "tunnel", "lens"]; // the looks made from a picture
+  const CODEFX_PICTURE = ["dissolve", "burn", "ripple", "shatter", "rain", "mist", "drip", "sketch", "sand", "tunnel", "lens", "scratch", "puzzle"]; // the looks made from a picture
   const CODEFX_IDS = CODEFX.map((c) => c[0]), CODEFX_SHAPES = ["rect", "circle", "arch"];
   function codeFxDefaults(look) {
     const d = CODEFX.find((c) => c[0] === look) || CODEFX[1];
@@ -1138,6 +1142,8 @@ vec4 baFilter(vec2 uv) {
     if (d[0] === "dust") o.text = "מזל טוב";
     if (CODEFX_PICTURE.includes(d[0])) { o.cover = d[0] === "dissolve" || d[0] === "burn"; o.picture = "__artwork"; } // broken glass shows what is under it
     if (d[0] === "portal") o.shape = "rect";
+    if (d[0] === "scratch") o.text = "גרדו כאן";
+    if (d[0] === "countdown") { const t = new Date(Date.now() + 30 * 86400000), z = (v) => String(v).padStart(2, "0"); o.text = "עד היום הגדול"; o.date = t.getFullYear() + "-" + z(t.getMonth() + 1) + "-" + z(t.getDate()); o.time = "00:00"; } // a month from now
     return o;
   }
   function validCodeFx(el) {
@@ -1149,6 +1155,7 @@ vec4 baFilter(vec2 uv) {
     if (c.text != null && (typeof c.text !== "string" || c.text.length > 60) || c.font != null && !(typeof c.font === "string" && /^[a-z0-9-]{1,32}$/.test(c.font))) return false;
     if (c.picture != null && !(typeof c.picture === "string" && /^[a-zA-Z0-9_-]{1,128}$/.test(c.picture))) return false;
     if (c.shape != null && !CODEFX_SHAPES.includes(c.shape)) return false;
+    if (c.date != null && !(typeof c.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(c.date)) || c.time != null && !(typeof c.time === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(c.time))) return false;
     return ["touch", "cover"].every((k) => c[k] == null || typeof c[k] === "boolean");
   }
   const isWeather = (el) => !!(el && el.type === "pattern" && el.pattern && WEATHER.some((w) => w[0] === el.pattern.look));

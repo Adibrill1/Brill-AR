@@ -257,16 +257,16 @@ window.Inspector = (() => {
       burn: ["הרקע שמאחור", "להבה", "ניצוצות"], fireflies: ["אור", "אור שני", "הילה"], jelly: ["גוף", "זוהר", "זרועות"], tree: ["גזע", "עלים או פרחים", "גוון שני"],
       spiral: ["מרכז", "אמצע", "שוליים"], bubbles: ["גוון", "גוון שני", "גוון שלישי"], liquid: ["כהה", "אמצע", "ברק"], lanterns: ["נייר", "להבה", "זוהר"],
       ripple: ["גוון המים", "ברק", "צל"], shatter: ["הרקע שמאחור", "סדקים", "ברק הזכוכית"], rain: ["ערפל", "ברק הטיפות", "צל"], aurora: ["תחתית", "אמצע", "למעלה"],
-      mist: ["אדים", "נצנוץ", "גוון"], drip: ["גוון הנזילה", "ברק", "שוליים"], sketch: ["נייר (בגיר: הקו)", "קו", "גוון שלישי"], sand: ["חול", "אובך הסופה", "גוון שלישי"], eyes: ["צבע העין", "לבן העין", "עפעף וריסים"], tunnel: ["מסגרת", "העומק", "האור בסוף"], lens: ["אור הפנס (בערפל: הערפל)", "החושך", "גוון שלישי"], daysky: ["שמיים ביום", "שקיעה", "לילה"], game: ["צבע", "צבע שני", "גוון שלישי"] },
+      mist: ["אדים", "נצנוץ", "גוון"], drip: ["גוון הנזילה", "ברק", "שוליים"], sketch: ["נייר (בגיר: הקו)", "קו", "גוון שלישי"], sand: ["חול", "אובך הסופה", "גוון שלישי"], eyes: ["צבע העין", "לבן העין", "עפעף וריסים"], tunnel: ["מסגרת", "העומק", "האור בסוף"], lens: ["אור הפנס (בערפל: הערפל)", "החושך", "גוון שלישי"], daysky: ["שמיים ביום", "שקיעה", "לילה"], game: ["צבע", "צבע שני", "גוון שלישי"], scratch: ["צבע (בצבעוני)", "צבע שני", "הכיתוב והכוכבים"], storm: ["זוהר הברק", "אור ההבזק", "חושך"], countdown: ["מספרים", "כותרת", "מילים"], puzzle: ["מסגרת החלק שנבחר", "צבע שני", "גוון שלישי"] },
     amount: { dissolve: "צפיפות החלקיקים", dust: "כמות האבק", portal: "עומק", swarm: "כמה", ivy: "כמות עלים ופרחים",
       burn: "רוחב הלהבה", fireflies: "כמה", jelly: "כמה", tree: "כמות עלים", spiral: "כמה זרעים", bubbles: "כמה", liquid: "כמה טיפות", lanterns: "כמה",
-      ripple: "עוצמת הגלים", shatter: "כמה רסיסים", rain: "כמה טיפות", aurora: "בהירות", mist: "כמה אדים (פחות = שקוף יותר)", drip: "כמה נוזל", sketch: "כמה קווים", sand: "כמה גרגרים", eyes: "כמה עיניים (ב״הרבה עיניים״)", tunnel: "עובי המסגרת", lens: "גודל העיגול", daysky: "כמה עננים", game: "כמה בבת אחת" },
+      ripple: "עוצמת הגלים", shatter: "כמה רסיסים", rain: "כמה טיפות", aurora: "בהירות", mist: "כמה אדים (פחות = שקוף יותר)", drip: "כמה נוזל", sketch: "כמה קווים", sand: "כמה גרגרים", eyes: "כמה עיניים (ב״הרבה עיניים״)", tunnel: "עובי המסגרת", lens: "גודל העיגול", daysky: "כמה עננים", game: "כמה בבת אחת", scratch: "עובי האצבע", storm: "כמה גשם", countdown: "—", puzzle: "רווח בין החלקים" },
     size: { dissolve: "גודל החלקיקים", dust: "גודל הנצנוצים", swarm: "גודל", ivy: "גודל העלים",
       burn: "גודל הכתמים", fireflies: "גודל", jelly: "גודל", tree: "גודל העלים", spiral: "גודל הזרעים", bubbles: "גודל", liquid: "גודל", lanterns: "גודל",
-      ripple: "אורך הגל", rain: "גודל הטיפות", aurora: "גובה הווילונות", drip: "רוחב הנזילות", sketch: "עובי הקו", sand: "גודל הגרגרים", eyes: "גודל", tunnel: "המרחק בין התמונות", daysky: "גודל השמש והירח", game: "גודל" },
+      ripple: "אורך הגל", rain: "גודל הטיפות", aurora: "גובה הווילונות", drip: "רוחב הנזילות", sketch: "עובי הקו", sand: "גודל הגרגרים", eyes: "גודל", tunnel: "המרחק בין התמונות", daysky: "גודל השמש והירח", game: "גודל", storm: "כמה חושך" },
     touch: { swarm: "נגיעה מבריחה אותם", burn: "נגיעה מציתה את התמונה", fireflies: "הן מתקרבות לאצבע", jelly: "נגיעה דוחפת אותן", bubbles: "נגיעה מפוצצת בועה",
       liquid: "טיפה אחת נמשכת אחרי האצבע", lanterns: "נגיעה מזיזה אותם הצידה",
-      ripple: "נגיעה במים יוצרת גלים", shatter: "נגיעה שוברת את הזכוכית במקום שנגעו", rain: "האצבע מנגבת את האדים והטיפות מהחלון", mist: "האצבע מנגבת את האדים", drip: "נגיעה ממיסה את הצבע במקום", sketch: "האצבע צובעת לפני הזמן", sand: "נגיעה מחזקת את הרוח", eyes: "העיניים מסתכלות על האצבע, ונגיעה בעין גורמת לה למצמץ", tunnel: "נגיעה מאיצה את הטיסה פנימה", lens: "העיגול הולך אחרי האצבע", game: "בלי זה אי אפשר לשחק" },
+      ripple: "נגיעה במים יוצרת גלים", shatter: "נגיעה שוברת את הזכוכית במקום שנגעו", rain: "האצבע מנגבת את האדים והטיפות מהחלון", mist: "האצבע מנגבת את האדים", drip: "נגיעה ממיסה את הצבע במקום", sketch: "האצבע צובעת לפני הזמן", sand: "נגיעה מחזקת את הרוח", eyes: "העיניים מסתכלות על האצבע, ונגיעה בעין גורמת לה למצמץ", tunnel: "נגיעה מאיצה את הטיסה פנימה", lens: "העיגול הולך אחרי האצבע", game: "בלי זה אי אפשר לשחק", scratch: "בלי זה אי אפשר לגרד", storm: "נגיעה מורידה ברק למקום שנגעו", puzzle: "בלי זה אי אפשר לפתור" },
     note: { portal: "העומק נראה הכי טוב במצלמה: כשזזים מול היצירה, רואים את העולם שמאחורי החלון מזוויות אחרות.", swarm: "בתלת־ממד ובמצלמה הם שוחים גם במרחב שלפני היצירה.",
       liquid: "במצלמה ההשתקפויות במתכת זזות כשמזיזים את הטלפון.", bubbles: "הצבעים בבועה משתנים לפי הזווית, כמו בבועת סבון אמיתית.", burn: "התמונה נשרפת, נעלמת לרגע וחוזרת. בלי ״רקע מאחור״ רואים דרכה את מה שמתחת.",
       ripple: "התמונה נראית כאילו היא מתחת למים. ב״טיפות גשם״ נופלות טיפות כל הזמן, וגם כל נגיעה יוצרת גלים.",
@@ -276,6 +276,10 @@ window.Inspector = (() => {
       drip: "הצבע של התמונה נוזל ונוטף למטה, ואחר כך חוזר למקום. עם גרביטציה הוא נוזל לכיוון האמיתי של למטה.",
       sand: "התמונה נושבת ברוח לגרגרי חול ואחר כך חוזרת. ב״שעון חול״ הגרגרים נופלים ונערמים למטה, ועם גרביטציה לכיוון האמיתי של למטה.",
       eyes: "במצלמה העיניים עוקבות אחרי הטלפון של מי שמסתכל. כשלא זזים, הן מסתכלות סביב וממצמצות.",
+      scratch: "מי שצופה מגרד באצבע את השכבה וחושף את התמונה שמתחת. כשרוב השכבה מגורדת, השאר נעלם לבד עם נצנצים. אחרי 12 שניות השכבה חוזרת למי שבא אחריו.",
+      storm: "שמיים כהים, גשם וברקים שמאירים את הכול. מתאים מעל תמונה או כרקע.",
+      countdown: "סופר ימים, שעות, דקות ושניות עד התאריך, לפי השעון בטלפון של מי שצופה. ביום עצמו כתוב ״זה היום!״ ויורד קונפטי.",
+      puzzle: "התמונה מתפרקת לחלקים מעורבבים. בהחלפה נוגעים בשני חלקים והם מתחלפים. בהזזה נוגעים בחלק שליד המקום הריק. כשהתמונה מסתדרת יש חגיגה, ונגיעה מתחילה פאזל חדש.",
       game: "משחק של 30 שניות: נוגעים בכוכבים (או בבועות, או בלבבות) לפני שהם בורחים. בסוף רואים את הניקוד ואת השיא בטלפון הזה, ונגיעה מתחילה משחק חדש. אפשר לשחק בתצוגה המקדימה ובמצלמה.",
       tunnel: "התמונה בתוך עצמה שוב ושוב, ואנחנו טסים פנימה. מהירות משנה את קצב הטיסה.",
       lens: "התמונה מוסתרת, ובמצלמה היא נחשפת במקום שהטלפון מכוון אליו. ככל שמתקרבים, העיגול גדל. כשלא זזים, העיגול משוטט לבד.",
@@ -310,17 +314,34 @@ window.Inspector = (() => {
       fonts.node.querySelectorAll(".chip").forEach((b) => { b.style.fontFamily = '"BA ' + b.dataset.id + '", Heebo, sans-serif'; b.classList.add("font-chip"); });
       out.push(UI.group("הברכה", UI.field("מה כתוב", ta), fonts, note("עד שלוש שורות. השינוי נראה כשיוצאים מהתיבה.")));
     }
+    if (look === "scratch" || look === "countdown") { // the line on the coat; the countdown's title, date and hour
+      const setFx = (o) => { const x = App.sel(); if (!x || x.type !== "codefx") return; x.codefx = Object.assign({}, x.codefx, o); App.changed(true); };
+      const inp = h("input.field", { type: "text", dir: "auto", maxlength: 60, id: "in-codefx-text", "aria-label": "כיתוב", placeholder: look === "scratch" ? "גרדו כאן" : "עד היום הגדול" });
+      inp.value = cur().text || ""; inp.onchange = () => setFx({ text: inp.value.slice(0, 60) });
+      const parts = [UI.field(look === "scratch" ? "מה כתוב על השכבה" : "כותרת", inp)];
+      const syncs = [[inp, "text"]];
+      if (look === "countdown") {
+        const di = h("input.field", { type: "date", id: "in-codefx-date", "aria-label": "התאריך" }), ti = h("input.field", { type: "time", id: "in-codefx-time", "aria-label": "השעה" });
+        di.value = cur().date || ""; ti.value = cur().time || "00:00";
+        di.onchange = () => { if (/^\d{4}-\d{2}-\d{2}$/.test(di.value)) setFx({ date: di.value }); };
+        ti.onchange = () => { if (/^([01]\d|2[0-3]):[0-5]\d$/.test(ti.value)) setFx({ time: ti.value }); };
+        parts.push(UI.field("התאריך", di), UI.field("השעה", ti), note("הספירה לפי השעון בטלפון של מי שצופה."));
+        syncs.push([di, "date"], [ti, "time"]);
+      }
+      ctls.push({ sync: () => { const x = App.sel(); if (!x || !x.codefx) return; for (const [el, k] of syncs) if (document.activeElement !== el && el.value !== (x.codefx[k] || "")) el.value = x.codefx[k] || (k === "time" ? "00:00" : ""); } });
+      out.push(UI.group(look === "scratch" ? "השכבה לגירוד" : "הספירה", ...parts));
+    }
     out.push(UI.group("צבעים", pals, h("div.color-trio", col(0).node, col(1).node, col(2).node)));
     out.push(UI.group("התאמה",
-      S(Object.assign({ label: "מהירות", min: 0, max: 1, step: 0.01, get: () => (Number.isFinite(cur().speed) ? cur().speed : 0.5), set: X((c, v) => { c.speed = v; }) }, pct)),
-      S(Object.assign({ label: CODEFX_TEXT.amount[look], min: 0, max: 1, step: 0.01, get: () => (Number.isFinite(cur().amount) ? cur().amount : 0.5), set: X((c, v) => { c.amount = v; }) }, pct)),
+      look === "countdown" ? null : S(Object.assign({ label: "מהירות", min: 0, max: 1, step: 0.01, get: () => (Number.isFinite(cur().speed) ? cur().speed : 0.5), set: X((c, v) => { c.speed = v; }) }, pct)),
+      look === "countdown" ? null : S(Object.assign({ label: CODEFX_TEXT.amount[look], min: 0, max: 1, step: 0.01, get: () => (Number.isFinite(cur().amount) ? cur().amount : 0.5), set: X((c, v) => { c.amount = v; }) }, pct)),
       CODEFX_TEXT.size[look] ? S(Object.assign({ label: CODEFX_TEXT.size[look], min: 0, max: 1, step: 0.01, get: () => (Number.isFinite(cur().size) ? cur().size : 0.5), set: X((c, v) => { c.size = v; }) }, pct)) : null,
       look === "rain" ? S(Object.assign({ label: "כמה אדים", hint: "באפס אין אדים בכלל, רק טיפות", min: 0, max: 1, step: 0.01, get: () => (Number.isFinite(cur().fog) ? cur().fog : [0.72, 0.45, 0.94][Math.min(2, cur().kind | 0)]), set: X((c, v) => { c.fog = v; }) }, pct)) : null,
       look === "portal" ? L({ label: "צורת החלון", options: [{ id: "rect", name: "מלבן" }, { id: "circle", name: "עיגול" }, { id: "arch", name: "קשת" }], get: () => cur().shape || "rect",
         set: X((c, v, x) => { c.shape = v; x.aspect = v === "circle" ? 1 : v === "arch" ? 0.75 : artRatio(); x.h = (x.w / x.aspect) * artRatio(); }) }) : null,
-      look !== "portal" ? S({ label: "וריאציה", min: 0, max: 999, step: 1, get: () => cur().seed || 0, set: X((c, v) => { c.seed = Math.round(v); }) }) : null,
+      !["portal", "countdown", "scratch"].includes(look) ? S({ label: "וריאציה", min: 0, max: 999, step: 1, get: () => cur().seed || 0, set: X((c, v) => { c.seed = Math.round(v); }) }) : null,
       ["dissolve", "burn", "shatter"].includes(look) ? T({ label: "רקע מאחור", hint: look === "shatter" ? "מסתיר את התמונה המודפסת כשהרסיסים נופלים" : look === "burn" ? "מסתיר את התמונה המודפסת כשהיא נשרפת" : "מסתיר את התמונה המודפסת כשהחלקיקים עפים", get: () => cur().cover !== false, set: X((c, v) => { c.cover = v; }) }) : null,
-      !["portal", "ivy", "tree"].includes(look) ? T({ label: "מגיב למגע", hint: CODEFX_TEXT.touch[look] || "נגיעה מפזרת את החלקיקים", get: () => cur().touch !== false, set: X((c, v) => { c.touch = v; }) }) : null,
+      !["portal", "ivy", "tree", "countdown"].includes(look) ? T({ label: "מגיב למגע", hint: CODEFX_TEXT.touch[look] || "נגיעה מפזרת את החלקיקים", get: () => cur().touch !== false, set: X((c, v) => { c.touch = v; }) }) : null,
       opacity()));
     out.push(h("section.group", note(CODEFX_TEXT.note[look] || "האנימציה רצה כאן, בתצוגה המקדימה ובמצלמה.", "cube")));
     return out;

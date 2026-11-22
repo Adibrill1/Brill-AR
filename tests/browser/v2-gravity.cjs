@@ -18,7 +18,7 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
   await p.evaluate(()=>Layers.openAdd());await p.locator('button.add-tile[data-add="codefx"]').tap();
   await p.waitForSelector('button.part-tile[data-codefx="lanterns"] img');
   await p.waitForFunction(()=>[...document.querySelectorAll('button.part-tile[data-codefx] img')].every(i=>i.complete&&i.naturalWidth>0),null,{timeout:10000});
-  assert.equal(await p.locator('button.part-tile[data-codefx] img').count(),27,'twenty-six looks and the foil, each with its picture');
+  assert.equal(await p.locator('button.part-tile[data-codefx] img').count(),31,'thirty looks and the foil, each with its picture');
   assert.deepEqual(await p.evaluate(()=>['shatter','rain','drip','sand','ripple','aurora','sketch','eyes'].map(l=>Studio.gravityFits({type:'codefx',codefx:{look:l}}))),[true,true,true,true,false,false,false,false],'glass shards and rain follow gravity');
   await p.keyboard.press('Escape');await p.evaluate(()=>document.querySelectorAll('dialog[open]').forEach(d=>d.close()));
 
