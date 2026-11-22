@@ -88,6 +88,40 @@ window.Inspector = (() => {
     App.setCropping(false);
     App.changed(true);
   }
+  // "על כל היצירה": the selected layer spreads over the whole artwork, whatever it is. Pictures and videos fill it
+  // cropped to its shape (fillArt); particles, weather, code animations and the time cube take its exact rectangle;
+  // a scatter spreads its copies over it; a group, a text and a 3D model grow as big as fits, keeping their shape.
+  const SPREAD_TYPES = ["image", "video", "particles", "pattern", "codefx", "timecube", "scatter", "group", "text", "model"];
+  const canSpread = (e) => !!e && SPREAD_TYPES.includes(e.type) && !e.locked;
+  function spreadArt() {
+    const e = App.sel(), rec = App.rec; if (!canSpread(e)) return;
+    if (App.keyed(e)) return toast("לשכבה בתנועה אין פריסה אוטומטית");
+    if (e.type === "image" || e.type === "video") { fillArt(0); return toast("השכבה ממלאת את כל היצירה"); }
+    const A = artRatio(), r4 = (v) => Math.round(v * 10000) / 10000;
+    if (e.type === "group") {
+      Studio.fitGroup(rec, e); Studio.transformGroup(rec, e, { x: 0, y: 0, rot: 0 }); Studio.fitGroup(rec, e); Studio.transformGroup(rec, e, { x: 0, y: 0 });
+      const k = Math.min(1 / (e.w || 1), e.h ? 1 / e.h : Infinity);
+      if (Number.isFinite(k) && k > 0) Studio.transformGroup(rec, e, { w: r4((e.w || 1) * k) });
+    } else {
+      e.x = 0; e.y = 0; e.rot = 0; e.rotX = 0; e.rotY = 0;
+      if (e.type === "scatter") {
+        for (let n = 0; n < 4; n++) { // the copies keep their size, so the spread is found in a few steps
+          Studio.refreshScatter(rec, e, true);
+          const kx = 1 / Math.max(1e-3, e.w), ky = 1 / Math.max(1e-3, e.h), sc = e.scatter;
+          if (Math.abs(kx - 1) < 0.01 && Math.abs(ky - 1) < 0.01) break;
+          if (sc.layout === "fan") Studio.scaleScatter(rec, e, Math.min(kx, ky));
+          else { e.scatter = Object.assign({}, sc, { points: sc.points.map((q) => ({ x: r4((q.x || 0) * kx), y: r4((q.y || 0) * ky), z: q.z || 0 })) }); }
+        }
+        Studio.refreshScatter(rec, e, true); e.x = 0; e.y = 0;
+      } else if (e.type === "text") {
+        e.w = 1; Stage.fitText(e);
+        if (e.h > 1) { e.w = r4(1 / e.h); Stage.fitText(e); }
+      } else if (e.type === "model") e.w = 1;
+      else { e.w = 1; e.h = 1; e.aspect = A; }
+    }
+    App.changed(true); build();
+    toast("השכבה פרוסה על כל היצירה");
+  }
   function styleMedia(e) {
     const out = [];
     if (e.fx && e.fx !== "holo") out.push(h("div.btn-row", Object.assign(UI.button("הסרת האפקט מהשכבה", () => { upd((x) => { delete x.fx; delete x.fxAmount; })(null, true); build(); }, { kind: "ghost", small: true, icon: "close" }), { id: "btn-fx-off" })));
@@ -465,7 +499,7 @@ window.Inspector = (() => {
       on ? tS("calm", "התעלמות מרעידות", "הטיות קטנות לא מזיזות כלום, כך שיד רועדת לא מפריעה") : null,
       on && hangs ? tS("swing", "נדנוד", "0%: נתלית בלי להתנדנד, 100%: מתנדנדת הרבה זמן") : null,
       on ? T({ label: "הפוך כיוון", hint: "נגד כוח המשיכה, כמו בלונים שעולים למעלה", get: () => tune().flip, set: GT((t, v) => { t.flip = !!v; }) }) : null,
-      on && e.type === "particles" ? T({ label: "הצטברות בתחתית", hint: "החלקיקים נערמים בצד הנמוך של השכבה, וכשמסובבים את היצירה הערימה נשפכת",
+      on && e.type === "particles" ? T({ label: "הצטברות", hint: "החלקיקים נערמים בקצה: חלקיקים שנופלים למטה, חלקיקים שעולים למעלה. כשמסובבים את היצירה הערימה נשפכת",
         get: () => tune().pile, set: (v, f) => { GT((t, val) => { t.pile = !!val; })(v, f); build(); } }) : null,
       on && pile ? tS("pileMax", "גובה הערימה", "עד כמה מהשכבה הערימה יכולה להתמלא") : null,
       on && pile ? tS("pileRate", "כמה נשארים", "כמה מהחלקיקים שנוחתים נשארים בערימה") : null,
@@ -521,6 +555,7 @@ window.Inspector = (() => {
       S(Object.assign({ label: "למעלה / למטה", min: -0.7, max: 0.7, step: 0.005, get: () => place("y"), set: placeSet("y") }, pct)),
       size,
       S({ label: "סיבוב", min: -180, max: 180, step: 1, unit: "°", get: () => place("rot"), set: placeSet("rot") }),
+      !keyed && canSpread(e) ? h("div.btn-row", Object.assign(UI.button("על כל היצירה", spreadArt, { small: true, icon: "spread" }), { id: "btn-spread" })) : null,
       h("div.btn-row", UI.button("למרכז", () => { placeSet("x")(0, false); placeSet("y")(0, true); }, { small: true, kind: "ghost", icon: "fit" }),
         UI.button("איפוס סיבוב", () => { placeSet("rot")(0, false); placeSet("rotX")(0, false); placeSet("rotY")(0, true); }, { small: true, kind: "ghost", icon: "refresh" }))));
     out.push(UI.group("עומק והטיה",
@@ -653,5 +688,5 @@ window.Inspector = (() => {
     matchMedia("(max-width: 899px)").addEventListener("change", build);
   }
 
-  return { init, build, sync, fillArt };
+  return { init, build, sync, fillArt, spreadArt, canSpread };
 })();

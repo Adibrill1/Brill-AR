@@ -692,6 +692,7 @@ window.Stage = (() => {
     grip.onclick = () => { if (barDragged) { barDragged = false; return; } barAt.min = !barAt.min; saveBar(); renderBar(); };
     bar.append(grip, h("span.sel-name", el.name || ""));
     if (CROP_TYPES.includes(el.type) && !App.mode3d) bar.append(btn("crop", "חיתוך", () => App.setCropping(!App.cropping), App.cropping));
+    if (Inspector.canSpread(el) && !App.keyed(el)) bar.append(Object.assign(btn("spread", "לפרוס על כל היצירה", () => Inspector.spreadArt()), { id: "bar-spread" }));
     if (Studio.SCATTER_TYPES.includes(el.type)) bar.append(btn("path", "פיזור על נתיב", () => App.scatterFrom(el.id)), btn("fan", "מניפה", () => App.fanFrom(el.id)));
     if (App.movesItself(el)) { const still = Studio.isStill(el); bar.append(btn(still ? "play" : "snow", still ? "להפעיל תנועה" : "להקפיא תנועה", () => App.setStill(el.id, !still).then(() => toast(still ? "התנועה חזרה" : "התנועה הוקפאה. את הרגע שמוצג בוחרים בלשונית ״עיצוב״.")), still)); }
     const inGroup = Studio.groupOf(App.rec, el.id);

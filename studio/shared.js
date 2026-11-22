@@ -701,7 +701,7 @@ const Studio = (() => {
         this.points.geometry.attributes.position.needsUpdate = true;
         for(const name of ['color','particleSize','particleAlpha'])this.points.geometry.attributes[name].needsUpdate=true;
       },
-      // The pile (el.gravityTune.pile): particles that reach the low side settle there as grains on a grid laid over the
+      // The pile (el.gravityTune.pile): particles that reach the low side (the high side, for particles that rise) settle there as grains on a grid laid over the
       // layer, falling sand style: each grain steps down if it can, else down to either side, so the heap keeps its
       // slope and pours over to wherever down is now when the artwork turns. The grains are drawn as a second cloud
       // with the same picture and colours, sliding smoothly from cell to cell.
@@ -710,7 +710,9 @@ const Studio = (() => {
         const cell = Math.max(sz * 0.55, Math.max(d.width, d.height) / 110);
         const cols = Math.max(4, Math.min(160, Math.round(d.width / cell))), rows = Math.max(4, Math.min(160, Math.round(d.height / cell)));
         const cap = Math.max(20, Math.min(4000, Math.round(cols * rows * Math.max(0.03, T.pileMax))));
-        const P = this.pile = { cols, rows, cw: d.width / cols, ch: d.height / rows, cap, n: 0, acc: 0, occ: new Int32Array(cols * rows).fill(-1),
+        // particles that rise (sparkles, bubbles) collect at the top instead, against the ceiling
+        let vy = 0; for (let i = 1; i < this.vel.length; i += 3) vy += this.vel[i];
+        const P = this.pile = { up: vy > 0, cols, rows, cw: d.width / cols, ch: d.height / rows, cap, n: 0, acc: 0, occ: new Int32Array(cols * rows).fill(-1),
           cx: new Int16Array(cap), cy: new Int16Array(cap), jx: new Float32Array(cap), jy: new Float32Array(cap), age: new Float32Array(cap), order: new Int32Array(cap) };
         const geo = new THREE.BufferGeometry();
         P.pos = new Float32Array(cap * 3); P.col = new Float32Array(cap * 3); P.size = new Float32Array(cap); P.alpha = new Float32Array(cap); const ph = new Float32Array(cap);
@@ -726,7 +728,7 @@ const Studio = (() => {
       pileWay(k) { k &= 7; return PILE_WAYS[k]; },
       // a falling particle on the low side or on the heap: it stays as a grain (some of them) and starts again up high
       pileCatch(arr, i, vx, vy) {
-        const P = this.pile, G = this.grav, dx = G.sin, dy = -G.cos;
+        const P = this.pile, G = this.grav, u = P.up ? -1 : 1, dx = G.sin * u, dy = -G.cos * u;
         if (vx * dx + vy * dy <= 0) return false;
         const hw = this.data.width / 2, hh = this.data.height / 2; let x = arr[i], y = arr[i + 1];
         if (x < -hw || x > hw || y < -hh || y > hh) { // outside: only when it went out past the low side
@@ -752,14 +754,14 @@ const Studio = (() => {
       },
       // starts again just inside the high side, anywhere along it
       pileRespawn(arr, i) {
-        const G = this.grav, ux = -G.sin, uy = G.cos, hw = this.data.width / 2, hh = this.data.height / 2;
+        const G = this.grav, u = this.pile.up ? -1 : 1, ux = -G.sin * u, uy = G.cos * u, hw = this.data.width / 2, hh = this.data.height / 2;
         const qx = (Math.random() - 0.5) * 2 * hw, qy = (Math.random() - 0.5) * 2 * hh;
         const tx = ux > 1e-6 ? (hw - qx) / ux : ux < -1e-6 ? (-hw - qx) / ux : Infinity, ty = uy > 1e-6 ? (hh - qy) / uy : uy < -1e-6 ? (-hh - qy) / uy : Infinity;
         const t = Math.min(tx, ty); arr[i] = qx + ux * t * 0.98; arr[i + 1] = qy + uy * t * 0.98;
         if (this.ages && this.lives && this.lives[i / 3] > 0) this.ages[i / 3] = 0;
       },
       pileStep(dt) {
-        const P = this.pile, G = this.grav, T = G.tune, dx = G.sin, dy = -G.cos, cols = P.cols;
+        const P = this.pile, G = this.grav, T = G.tune, u = P.up ? -1 : 1, dx = G.sin * u, dy = -G.cos * u, cols = P.cols;
         P.acc = Math.min(P.acc + dt, 0.05);
         const oct = Math.atan2(dy, dx) / (Math.PI / 4), k0 = Math.floor(oct), fr = oct - k0;
         while (P.acc >= 1 / 70) { // 70 steps a second: a heap pours across the layer in about a second and a half
