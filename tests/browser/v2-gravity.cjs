@@ -64,9 +64,9 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
   // the controls show once gravity is on, the pile's only after the pile is on
   await p.evaluate(i=>App.select(i),l);await p.waitForTimeout(300);
   const grp=p.locator('section.group',{hasText:'גרביטציה'});await grp.waitFor();
-  for(const t of ['עוצמה','מהירות תגובה','התעלמות מרעידות','הפוך כיוון','הצטברות בתחתית'])assert.ok(await grp.locator('.ctl-label',{hasText:t}).count()>0,t);
+  for(const t of ['עוצמה','מהירות תגובה','התעלמות מרעידות','הפוך כיוון','הצטברות'])assert.ok(await grp.locator('.ctl-label',{hasText:t}).count()>0,t);
   assert.equal(await grp.getByText('גובה הערימה').count(),0);
-  await grp.locator('label.ctl-toggle',{hasText:'הצטברות בתחתית'}).tap();await p.waitForTimeout(300);
+  await grp.locator('label.ctl-toggle',{hasText:'הצטברות'}).tap();await p.waitForTimeout(300);
   assert.equal(await p.evaluate(i=>App.el(i).gravityTune.pile,l),true);assert.ok(await grp.getByText('גובה הערימה').count()>0,'pile controls');
   await p.evaluate(i=>App.removeLayer(i),l);
   // the pile: confetti collect on the low side; turned a quarter, the heap pours to the new low side
