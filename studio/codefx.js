@@ -1,5 +1,5 @@
 "use strict";
-/* Live code animations ("אנימציות קוד"): twenty-two looks drawn in three.js, written here, with no files to download.
+/* Live code animations ("אנימציות קוד"): twenty-five looks drawn in three.js, written here, with no files to download.
    el.codefx = { look, colors[3], speed, amount, size (0-1 each), kind, text, touch, cover, seed }:
      dissolve  a picture (el.assetId, the artwork by default) falls apart into coloured dust and gathers back
      dust      a greeting written in gold dust that swirls in, sparkles and blows away
@@ -25,6 +25,9 @@
      sketch    the picture draws itself in pencil, ink or chalk, the colour washes in, then back to paper
      sand      the picture blows away grain by grain in the wind (or a storm, or runs down like an hourglass) and back
      eyes      one, two or many eyes that follow whoever is looking (the camera), look round and blink
+     tunnel    the picture inside itself again and again, flying in (square, spiral or round)
+     lens      the picture hides in the dark, in grey or in fog and shows where the phone comes close
+     daysky    the sky at the viewer's own hour: sun, moon, stars and clouds (or a day in a loop)
    With cfg.gravity (el.gravity, Studio.gravityFollower) the looks in Studio.GRAVITY_CODEFX keep their motion upright in
    the real world: turn the artwork and sparks, jellyfish, bubbles and lanterns still rise, leaves fall, metal runs low.
    Each look is one A-Frame component, "studio-codefx", built in Studio.buildElementEntity. It is an overlay layer,
@@ -1125,6 +1128,81 @@ void main() {
   gl_FragColor = vec4(o.rgb, o.a * uOpacity);
 }`;
 
+  // ---------- tunnel: the picture inside itself, again and again, flying in ----------
+  const TUNNEL_FS = `
+uniform sampler2D map; uniform float uPhase, uKind, uAmount, uSize, uOpacity, uTime; uniform vec2 uBox; uniform vec3 uC1, uC2, uC3;
+varying vec2 vUv; varying vec2 vP;
+vec2 turn(vec2 p, float a) { float c = cos(a), s = sin(a); return vec2(c * p.x - s * p.y, s * p.x + c * p.y); }
+void main() {
+  vec2 q = vP / (uBox * 0.5); // -1..1 both ways
+  float circ = step(1.5, uKind), r0 = length(q);
+  if (uKind > 0.5 && uKind < 1.5) q = turn(q, log(max(r0, 1e-4)) * 0.9 + uTime * 0.15); // a spiral
+  float S = 1.6 + uSize * 1.6, lS = log(S);
+  float m = max(mix(max(abs(q.x), abs(q.y)), length(q), circ), 1e-4);
+  float L = log(m) / lS - uPhase, n = ceil(L), mo = pow(S, n + uPhase); // the frame this point is in; its outer edge at mo
+  vec2 p = q / mo;
+  vec4 c = texture2D(map, clamp(p * 0.5 + 0.5, 0.001, 0.999));
+  float inner = m / mo, depth = max(0.0, -(n + uPhase)), fw = 0.015 + uAmount * 0.05;
+  vec3 col = c.rgb * (1.0 - 0.3 * smoothstep(1.0 - fw * 3.0, 1.0 - fw, inner)); // a shadow under each frame
+  col = mix(col, uC1 * (0.75 + 0.25 * smoothstep(1.0, 1.0 - fw, inner)), smoothstep(1.0 - fw, 1.0 - fw * 0.75, inner) * step(0.02, uAmount)); // the frame
+  col = mix(col, uC2, clamp(depth * 0.16, 0.0, 0.88)); // deeper is darker
+  col += uC3 * 0.6 * exp(-m * 12.0); // the light at the end
+  float a = c.a * (circ > 0.5 ? smoothstep(1.0, 0.985, r0) : 1.0);
+  gl_FragColor = vec4(col, a * uOpacity);
+}`;
+
+  // ---------- lens: the picture hides in the dark (or grey, or fog) and shows where the phone comes close ----------
+  const LENS_FS = `
+uniform sampler2D map; uniform float uKind, uOpacity, uTime; uniform vec2 uBox; uniform vec3 uSpot, uC1, uC2, uC3;
+varying vec2 vUv; varying vec2 vP;
+${NOISE}
+vec3 soft(vec2 uv) {
+  vec3 s = texture2D(map, uv).rgb;
+  for (int i = 0; i < 12; i++) { float a = float(i) * 0.5236; vec2 o = vec2(cos(a), sin(a)) * (i < 6 ? 0.018 : 0.04); s += texture2D(map, clamp(uv + o * vec2(1.0, uBox.x / uBox.y), 0.001, 0.999)).rgb; }
+  return s / 13.0;
+}
+void main() {
+  vec4 c = texture2D(map, vUv);
+  float d = length(vP - uSpot.xy), R = max(uSpot.z, 1e-4);
+  float k = 1.0 - smoothstep(R * 0.5, R, d * (1.0 + 0.12 * (noise(vP / uBox.y * 5.0 + uTime * 0.4) - 0.5)));
+  vec3 col;
+  if (uKind < 0.5) col = mix(c.rgb * 0.05 + uC2 * 0.05, c.rgb * mix(vec3(1.0), uC1 * 1.2, 0.25) * (1.15 - 0.3 * d / R), k); // a torch in the dark
+  else if (uKind < 1.5) { float g = dot(c.rgb, vec3(0.299, 0.587, 0.114)); col = mix(mix(vec3(g), uC2 * g * 1.8, 0.2), c.rgb, k); } // grey, colour where it is close
+  else col = mix(mix(soft(vUv), uC1, 0.55), c.rgb, k); // fog that clears
+  gl_FragColor = vec4(col, c.a * uOpacity);
+}`;
+
+  // ---------- day sky: the sky at the viewer's own time of day, with the sun, the moon, stars and clouds ----------
+  const DAYSKY_FS = `
+uniform float uHour, uAmount, uSize, uOpacity, uTime; uniform vec2 uBox; uniform vec3 uC1, uC2, uC3;
+varying vec2 vUv; varying vec2 vP;
+${NOISE}
+void main() {
+  vec2 q = vP / uBox.y; float ar = uBox.x / uBox.y, hz = -0.3, PI = 3.14159;
+  float dayF = (uHour - 6.0) / 12.0, elev = sin(dayF * PI), nightF = (uHour < 6.0 ? uHour + 24.0 : uHour) - 18.0;
+  float day = smoothstep(-0.12, 0.3, elev), dusk = 1.0 - smoothstep(0.0, 0.32, abs(elev + 0.03)), night = 1.0 - smoothstep(-0.25, 0.05, elev);
+  float y = clamp((q.y - hz) / (0.5 - hz), 0.0, 1.0);
+  vec3 top = mix(uC3, uC1, day), hor = mix(mix(uC3, vec3(0.22, 0.27, 0.5), 0.5), mix(uC1, vec3(1.0), 0.65), day);
+  top = mix(top, mix(uC3, uC1, 0.35), dusk * 0.6); hor = mix(hor, uC2, dusk);
+  vec3 col = mix(hor, top, pow(y, 0.6));
+  float sr = 0.03 + uSize * 0.05;
+  vec2 sp = vec2(mix(-0.42, 0.42, clamp(dayF, 0.0, 1.0)) * ar, hz + elev * (0.5 - hz) * 0.85);
+  float sd = length(q - sp);
+  vec3 sunC = mix(vec3(1.0, 0.55, 0.25), vec3(1.0, 0.97, 0.88), smoothstep(0.0, 0.4, elev));
+  col += sunC * (smoothstep(sr, sr * 0.92, sd) + 0.35 * exp(-sd / (sr * 3.0)) + 0.3 * dusk * exp(-sd / (sr * 10.0))) * step(hz, q.y) * smoothstep(-0.15, 0.0, elev);
+  float mf = clamp(nightF / 12.0, 0.0, 1.0), mr = sr * 0.8;
+  vec2 mp = vec2(mix(-0.4, 0.4, mf) * ar, hz + sin(mf * PI) * (0.5 - hz) * 0.75);
+  float md = length(q - mp), moon = smoothstep(mr, mr * 0.9, md) * (1.0 - smoothstep(mr, mr * 0.9, length(q - mp - vec2(mr * 0.45, mr * 0.15))));
+  col = mix(col, vec3(0.95, 0.94, 0.85), moon * night);
+  col += vec3(0.6, 0.65, 0.8) * 0.18 * exp(-md / (mr * 3.0)) * night;
+  vec2 g = q * 60.0, cell = floor(g), o = vec2(h21(cell + 7.1), h21(cell + 3.3)) - 0.5; float hs = h21(cell);
+  col += vec3(step(0.9, hs) * smoothstep(0.12, 0.0, length(fract(g) - 0.5 - o * 0.6)) * (0.5 + 0.5 * sin(uTime * (1.0 + hs * 3.0) + hs * 40.0))) * night * smoothstep(hz, hz + 0.15, q.y);
+  float cl = clamp(smoothstep(0.62 - uAmount * 0.3, 0.9, fbm(vec2(q.x * 1.6 + uTime * 0.02, q.y * 4.0))) * uAmount * 1.4, 0.0, 1.0) * smoothstep(hz, hz + 0.1, q.y);
+  col = mix(col, mix(mix(vec3(0.1, 0.11, 0.18), vec3(1.0), day), uC2 * 1.1, dusk * 0.7), cl * 0.85); // clouds take the light of the hour
+  if (q.y < hz) col = hor * (0.75 + 0.25 * smoothstep(hz - 0.3, hz, q.y)); // under the horizon (usually hidden by the picture)
+  gl_FragColor = vec4(col, uOpacity);
+}`;
+
   // ---------- aurora: curtains of northern lights that fold and drift ----------
   const AURORA_FS = `
 uniform float uTime, uKind, uAmount, uSize, uOpacity; uniform vec2 uBox; uniform vec3 uC1, uC2, uC3;
@@ -1158,9 +1236,9 @@ void main() {
   gl_FragColor = vec4(col, clamp(I, 0.0, 1.0) * edge * uOpacity);
 }`;
 
-  const BUILDERS = { burn: "buildBurn", fireflies: "buildFireflies", jelly: "buildJelly", tree: "buildTree", spiral: "buildSpiral", bubbles: "buildBubbles", liquid: "buildLiquid", lanterns: "buildLanterns", ripple: "buildRipple", shatter: "buildShatter", rain: "buildRain", mist: "buildMist", drip: "buildDrip", sketch: "buildSketch", sand: "buildSand", eyes: "buildEyes", aurora: "buildAurora" };
+  const BUILDERS = { burn: "buildBurn", fireflies: "buildFireflies", jelly: "buildJelly", tree: "buildTree", spiral: "buildSpiral", bubbles: "buildBubbles", liquid: "buildLiquid", lanterns: "buildLanterns", ripple: "buildRipple", shatter: "buildShatter", rain: "buildRain", mist: "buildMist", drip: "buildDrip", sketch: "buildSketch", sand: "buildSand", eyes: "buildEyes", tunnel: "buildTunnel", lens: "buildLens", daysky: "buildDaysky", aurora: "buildAurora" };
   // the looks a finger plays with
-  const TOUCHY = new Set(["dissolve", "dust", "swarm", "burn", "fireflies", "jelly", "spiral", "bubbles", "liquid", "lanterns", "ripple", "shatter", "rain", "mist", "drip", "sketch", "sand", "eyes"]);
+  const TOUCHY = new Set(["dissolve", "dust", "swarm", "burn", "fireflies", "jelly", "spiral", "bubbles", "liquid", "lanterns", "ripple", "shatter", "rain", "mist", "drip", "sketch", "sand", "eyes", "tunnel", "lens"]);
   AFRAME.registerComponent("studio-codefx", {
     schema: { cfg: { default: "{}" }, width: { default: 1 }, height: { default: 1 }, src: { default: "" } },
     init() { this.t = 0; this.mats = []; this.tmp = {}; this.finger = Studio.fingerTools; },
@@ -1562,6 +1640,70 @@ void main() {
         });
       };
       this.step(0.016, 0.016);
+    },
+    // where the phone is: its position and the point on the layer it looks at, in the layer's own units (null when unknown)
+    viewer(pos, dir, tmp) {
+      const sc = this.el.sceneEl, camera = sc && sc.camera; if (!camera || !this.group) return null;
+      camera.getWorldPosition(pos); camera.getWorldDirection(dir); tmp.copy(pos).add(dir);
+      this.group.worldToLocal(pos); this.group.worldToLocal(tmp); dir.copy(tmp).sub(pos);
+      if (pos.z < 1e-4 || dir.z > -1e-4) return null;
+      const t = -pos.z / dir.z; return { x: pos.x + dir.x * t, y: pos.y + dir.y * t, dist: t * dir.length() };
+    },
+    buildTunnel(cfg, w, h, C) {
+      const kind = Math.min(2, Math.max(0, cfg.kind | 0)), uPhase = { value: 0 };
+      this.parts = {};
+      this.loadPicture((tex) => {
+        const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), this.mat({ vertexShader: FLAT_VS, fragmentShader: TUNNEL_FS,
+          uniforms: { map: { value: tex }, uPhase, uTime: { value: 0 }, uKind: { value: kind }, uAmount: { value: val(cfg.amount, 0.5) }, uSize: { value: val(cfg.size, 0.5) }, uBox: { value: new THREE.Vector2(w, h) },
+            uC1: { value: C[0] }, uC2: { value: C[1] }, uC3: { value: C[2] } } }));
+        mesh.position.z = 0.0008; this.group.add(mesh);
+      });
+      let boost = 0;
+      this.step = (dt) => { // flying in; a finger flies faster
+        boost += ((this.touchPoint() ? 1 : 0) - boost) * (1 - Math.exp(-dt * 4));
+        uPhase.value = (uPhase.value + dt * (0.22 + boost * 0.9)) % 1;
+      };
+    },
+    buildLens(cfg, w, h, C) {
+      const kind = Math.min(2, Math.max(0, cfg.kind | 0)), unit = Math.max(w, h), base = unit * (0.12 + val(cfg.amount, 0.5) * 0.28);
+      const spot = new THREE.Vector3(0, 0, base);
+      this.parts = {};
+      this.loadPicture((tex) => {
+        const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), this.mat({ vertexShader: FLAT_VS, fragmentShader: LENS_FS,
+          uniforms: { map: { value: tex }, uKind: { value: kind }, uTime: { value: 0 }, uBox: { value: new THREE.Vector2(w, h) }, uSpot: { value: spot }, uC1: { value: C[0] }, uC2: { value: C[1] }, uC3: { value: C[2] } } }));
+        mesh.position.z = 0.0008; this.group.add(mesh);
+      });
+      const pos = new THREE.Vector3(), dir = new THREE.Vector3(), tmp = new THREE.Vector3(), last = new THREE.Vector3();
+      let still = 99, seen = false, clock = 0;
+      this.step = (dt, d) => {
+        clock += dt;
+        const f = this.touchPoint(), v = this.viewer(pos, dir, tmp);
+        if (v) { if (seen && pos.distanceTo(last) / unit > 0.0015) still = 0; last.copy(pos); seen = true; }
+        still += d;
+        let tx, ty, tr;
+        if (f) { tx = f.x; ty = f.y; tr = base * 1.15; }
+        else if (v && still < 2.5) { // where the phone points; closer is a bigger circle
+          tx = Math.max(-w * 0.6, Math.min(w * 0.6, v.x)); ty = Math.max(-h * 0.6, Math.min(h * 0.6, v.y));
+          tr = base * Math.pow(Math.max(0.3, Math.min(5, (unit * 1.5) / Math.max(v.dist, 1e-4))), 1.6);
+        } else { tx = Math.sin(clock * 0.37) * w * 0.3; ty = Math.sin(clock * 0.53 + 1) * h * 0.26; tr = base; } // nobody moving: it wanders
+        const k = 1 - Math.exp(-dt * 6);
+        spot.x += (tx - spot.x) * k; spot.y += (ty - spot.y) * k; spot.z += (Math.min(tr, unit * 1.6) - spot.z) * k;
+      };
+    },
+    buildDaysky(cfg, w, h, C) {
+      const kind = Math.min(2, Math.max(0, cfg.kind | 0)), uHour = { value: 12 };
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), this.mat({ vertexShader: FLAT_VS, fragmentShader: DAYSKY_FS,
+        uniforms: { uHour, uTime: { value: 0 }, uAmount: { value: val(cfg.amount, 0.5) }, uSize: { value: val(cfg.size, 0.5) }, uBox: { value: new THREE.Vector2(w, h) }, uC1: { value: C[0] }, uC2: { value: C[1] }, uC3: { value: C[2] } } }));
+      mesh.position.z = 0.0007; this.group.add(mesh);
+      this.parts = {};
+      let clock = 0;
+      const hour = () => {
+        if (kind === 0) { const n = new Date(); return n.getHours() + n.getMinutes() / 60 + n.getSeconds() / 3600; } // the viewer's own clock
+        if (kind === 1) return (6 + clock * 24 / 40) % 24; // a whole day in 40 seconds
+        return 16.8 + 4 * (0.5 - 0.5 * Math.cos(clock * Math.PI * 2 / 40)); // late afternoon, sunset, night and back
+      };
+      this.step = (dt) => { clock += dt; uHour.value = hour(); };
+      this.step(0);
     },
     buildAurora(cfg, w, h, C) {
       const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), this.mat({ vertexShader: FLAT_VS, fragmentShader: AURORA_FS,

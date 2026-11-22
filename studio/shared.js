@@ -1124,9 +1124,12 @@ vec4 baFilter(vec2 uv) {
     ["drip", "צבע שנוזל", ["#ff4d6d", "#ffffff", "#3a0ca3"], ["נזילה עדינה", "המסה", "טפטופים"]],
     ["sketch", "ציור שמצטייר", ["#f4efe6", "#2b2b2b", "#e85d04"], ["עיפרון", "דיו", "גיר על לוח"]],
     ["sand", "חול נושב ברוח", ["#e3b878", "#c9955a", "#8a5a2b"], ["רוח מהצד", "סופת חול", "שעון חול"]],
-    ["eyes", "עיניים שעוקבות", ["#3f7fbf", "#f5f1e8", "#b9785a"], ["עין אחת", "זוג עיניים", "הרבה עיניים"]]
+    ["eyes", "עיניים שעוקבות", ["#3f7fbf", "#f5f1e8", "#b9785a"], ["עין אחת", "זוג עיניים", "הרבה עיניים"]],
+    ["tunnel", "מנהרת זמן", ["#f2e6c9", "#05040a", "#9fd8ff"], ["מסגרות", "ספירלה", "עגולה"]],
+    ["lens", "גילוי מקרוב", ["#fff1c9", "#0b0a14", "#ffffff"], ["פנס בחושך", "שחור־לבן לצבע", "ערפל שמתפזר"]],
+    ["daysky", "שמיים לפי השעה", ["#3b8fe0", "#ff8a4c", "#060b24"], ["השעה אצל הצופה", "יום ולילה בלולאה", "שקיעה ולילה"]]
   ];
-  const CODEFX_PICTURE = ["dissolve", "burn", "ripple", "shatter", "rain", "mist", "drip", "sketch", "sand"]; // the looks made from a picture
+  const CODEFX_PICTURE = ["dissolve", "burn", "ripple", "shatter", "rain", "mist", "drip", "sketch", "sand", "tunnel", "lens"]; // the looks made from a picture
   const CODEFX_IDS = CODEFX.map((c) => c[0]), CODEFX_SHAPES = ["rect", "circle", "arch"];
   function codeFxDefaults(look) {
     const d = CODEFX.find((c) => c[0] === look) || CODEFX[1];

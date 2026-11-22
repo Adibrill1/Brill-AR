@@ -284,7 +284,7 @@ window.Layers = (() => {
     const tile = (id, name, p, fn) => h("button.part-tile", { type: "button", data: { weather: id }, onclick: run(fn) }, h("span.part-pic.wx-pic", p), h("span.part-name", name));
     const coded = (id, name) => tile(id, name, pic("library/codefx/" + id + ".jpg"), async () => { d.close(); await addCodeFx(id); }); // looks drawn in code that are weather too
     const tiles = Studio.WEATHER.map((w) => tile(w.id, w.name, drawn(w.id), async () => { d.close(); await addWeather(w.id); }))
-      .concat([coded("aurora", "זוהר צפוני"), coded("mist", "אדים על זכוכית")])
+      .concat([coded("aurora", "זוהר צפוני"), coded("mist", "אדים על זכוכית"), coded("daysky", "שמיים לפי השעה")])
       .concat(vids.map((v) => tile(v.id, v.name, pic("library/" + v.thumb), async () => {
         const end = UI.busy("מוסיפה " + v.name + "…");
         try { const f = await fetchFile(v.file, "video/mp4"); d.close(); await importAsset("video", f, { name: v.name, w: v.w, loop: true, chroma: v.chroma }); App.setTab("style"); } finally { end(); }
@@ -293,7 +293,7 @@ window.Layers = (() => {
         const end = UI.busy("מוסיפה " + st.name + "…");
         try { const f = await fetchFile(st.file, "image/png"); d.close(); await importAsset("particles", f, { name: st.name, particles: st.particles, w: st.w, h: st.h }); App.setTab("style"); } finally { end(); }
       })));
-    const d = UI.dialog({ title: "איזה מזג אוויר?", sheet: true, body: [h("div.part-grid", tiles), h("p.note", icon("sun", 18), h("span", "בשמש, בעשן ובאש אפשר לבחור סוג, גודל, עוצמה וגוון. בזוהר הצפוני ובאדים אפשר לשנות צבעים, מהירות וכמות. בשאר אפשר לשנות גודל, שקיפות וכמות."))] });
+    const d = UI.dialog({ title: "איזה מזג אוויר?", sheet: true, body: [h("div.part-grid", tiles), h("p.note", icon("sun", 18), h("span", "בשמש, בעשן ובאש אפשר לבחור סוג, גודל, עוצמה וגוון. בזוהר הצפוני, באדים ובשמיים לפי השעה אפשר לשנות צבעים, מהירות וכמות. בשאר אפשר לשנות גודל, שקיפות וכמות."))] });
   }
   // "אנימציות קוד": live animations drawn in code (codefx.js), and the holographic foil for a picture or a text.
   async function addCodeFx(look) {
@@ -306,7 +306,7 @@ window.Layers = (() => {
       const s = App.sel();
       if (s && s.type === "image" && s.assetId && rec.assets[s.assetId] && !Studio.groupOf(rec, s.id) && !App.keyed(s)) {
         replace = s; fx.picture = s.assetId; fx.cover = false;
-        Object.assign(el, { name: ({ burn: "שריפה ", ripple: "מים ", shatter: "ניפוץ ", rain: "גשם ", mist: "אדים ", drip: "נזילה ", sketch: "ציור ", sand: "חול ", dissolve: "פירוק " }[look] || "") + (s.name || "תמונה"), x: s.x, y: s.y, w: s.w, rot: s.rot || 0, z: s.z || 0, aspect: s.crop ? (s.aspect || 1) * s.crop.h / s.crop.w : s.aspect || 1 });
+        Object.assign(el, { name: ({ burn: "שריפה ", ripple: "מים ", shatter: "ניפוץ ", rain: "גשם ", mist: "אדים ", drip: "נזילה ", sketch: "ציור ", sand: "חול ", tunnel: "מנהרה ", lens: "גילוי ", dissolve: "פירוק " }[look] || "") + (s.name || "תמונה"), x: s.x, y: s.y, w: s.w, rot: s.rot || 0, z: s.z || 0, aspect: s.crop ? (s.aspect || 1) * s.crop.h / s.crop.w : s.aspect || 1 });
       } else el.aspect = A;
     } else if (look === "dust") Object.assign(el, { aspect: window.StudioCodeFx ? StudioCodeFx.wordsAspect(fx.text, "heebo") : 2.6, w: 0.8, y: 0.05 });
     else if (look === "portal") Object.assign(el, { aspect: A, w: 0.7 });
@@ -335,7 +335,7 @@ window.Layers = (() => {
     const tiles = Studio.CODEFX.map((c) => tile(c.id, c.name, grad(c.colors), () => addCodeFx(c.id)))
       .concat(tile("holo", "ברק הולוגרפי", "linear-gradient(120deg,#ff9ad5,#9ad0ff,#b8ffcf,#fff3a8,#ff9ad5)", async () => addFoil()));
     const d = UI.dialog({ title: "איזו אנימציה?", sheet: true, body: [h("div.part-grid", tiles),
-      h("p.note", icon("sparkle", 18), h("span", "אנימציות שנכתבו בקוד ורצות חי. אפשר לשנות צבעים, מהירות וכמות. ״תמונה שמתפרקת״, ״התפוגגות בוערת״, ״אדוות מים״, ״זכוכית מתנפצת״, ״גשם על חלון״, ״אדים על זכוכית״, ״צבע שנוזל״, ״ציור שמצטייר״ ו״חול נושב ברוח״ פועלות על התמונה שבחרת, ובלי בחירה על תמונת היצירה. ״ברק הולוגרפי״ מתווסף לתמונה או לטקסט שבחרת."))] });
+      h("p.note", icon("sparkle", 18), h("span", "אנימציות שנכתבו בקוד ורצות חי. אפשר לשנות צבעים, מהירות וכמות. ״תמונה שמתפרקת״, ״התפוגגות בוערת״, ״אדוות מים״, ״זכוכית מתנפצת״, ״גשם על חלון״, ״אדים על זכוכית״, ״צבע שנוזל״, ״ציור שמצטייר״, ״חול נושב ברוח״, ״מנהרת זמן״ ו״גילוי מקרוב״ פועלות על התמונה שבחרת, ובלי בחירה על תמונת היצירה. ״ברק הולוגרפי״ מתווסף לתמונה או לטקסט שבחרת."))] });
   }
   // "תמונה": a picture from the device, or one of the ready stickers.
   function openImages() {
