@@ -538,7 +538,7 @@ const Studio = (() => {
     return s;
   }
   // the layers that can follow gravity
-  const GRAVITY_CODEFX = ["dissolve", "dust", "burn", "jelly", "tree", "bubbles", "liquid", "lanterns", "shatter", "rain"];
+  const GRAVITY_CODEFX = ["dissolve", "dust", "burn", "jelly", "tree", "bubbles", "liquid", "lanterns", "shatter", "rain", "drip"];
   function gravityFits(el) {
     if (!el) return false;
     if (["image", "video", "text", "particles"].includes(el.type)) return true;
@@ -1119,15 +1119,18 @@ vec4 baFilter(vec2 uv) {
     ["ripple", "אדוות מים", ["#bfe6ff", "#ffffff", "#0b2a4a"], ["טיפות גשם", "אגם שקט", "נחל זורם"]],
     ["shatter", "זכוכית מתנפצת", ["#0e0d12", "#ffffff", "#bfe9ff"], ["שבר מנקודה", "נשירה", "פיצוץ"]],
     ["rain", "גשם על חלון", ["#c9d6e3", "#ffffff", "#5b6b7d"], ["גשם", "טפטוף", "חלון מעורפל"]],
-    ["aurora", "זוהר צפוני", ["#3dffa8", "#2bd4ff", "#b06bff"], ["וילונות אור", "שמי לילה וכוכבים", "ריקוד מהיר"]]
+    ["aurora", "זוהר צפוני", ["#3dffa8", "#2bd4ff", "#b06bff"], ["וילונות אור", "שמי לילה וכוכבים", "ריקוד מהיר"]],
+    ["mist", "אדים על זכוכית", ["#dfe7ee", "#ffffff", "#8fa3b5"], ["אחיד", "כתמים", "עבה בשוליים"]],
+    ["drip", "צבע שנוזל", ["#ff4d6d", "#ffffff", "#3a0ca3"], ["נזילה עדינה", "המסה", "טפטופים"]],
+    ["sketch", "ציור שמצטייר", ["#f4efe6", "#2b2b2b", "#e85d04"], ["עיפרון", "דיו", "גיר על לוח"]]
   ];
-  const CODEFX_PICTURE = ["dissolve", "burn", "ripple", "shatter", "rain"]; // the looks made from a picture
+  const CODEFX_PICTURE = ["dissolve", "burn", "ripple", "shatter", "rain", "mist", "drip", "sketch"]; // the looks made from a picture
   const CODEFX_IDS = CODEFX.map((c) => c[0]), CODEFX_SHAPES = ["rect", "circle", "arch"];
   function codeFxDefaults(look) {
     const d = CODEFX.find((c) => c[0] === look) || CODEFX[1];
     const o = { look: d[0], colors: d[2].slice(), speed: 0.5, amount: 0.5, size: 0.5, kind: 0, seed: 0, touch: true };
     if (d[0] === "dust") o.text = "מזל טוב";
-    if (CODEFX_PICTURE.includes(d[0])) { o.cover = true; o.picture = "__artwork"; }
+    if (CODEFX_PICTURE.includes(d[0])) { o.cover = d[0] === "dissolve" || d[0] === "burn"; o.picture = "__artwork"; } // broken glass shows what is under it
     if (d[0] === "portal") o.shape = "rect";
     return o;
   }
@@ -1135,7 +1138,7 @@ vec4 baFilter(vec2 uv) {
     const c = el.codefx; if (c == null) return el.type !== "codefx";
     if (el.type !== "codefx" || typeof c !== "object" || Array.isArray(c) || !CODEFX_IDS.includes(c.look)) return false;
     if (!Array.isArray(c.colors) || c.colors.length !== 3 || !c.colors.every((x) => typeof x === "string" && /^#[0-9a-f]{6}$/i.test(x))) return false;
-    if (!["speed", "amount", "size"].every((k) => c[k] == null || Number.isFinite(c[k]) && c[k] >= 0 && c[k] <= 1)) return false;
+    if (!["speed", "amount", "size", "fog"].every((k) => c[k] == null || Number.isFinite(c[k]) && c[k] >= 0 && c[k] <= 1)) return false;
     if (c.kind != null && !(Number.isInteger(c.kind) && c.kind >= 0 && c.kind <= 3) || c.seed != null && !(Number.isInteger(c.seed) && c.seed >= 0 && c.seed <= 999)) return false;
     if (c.text != null && (typeof c.text !== "string" || c.text.length > 60) || c.font != null && !(typeof c.font === "string" && /^[a-z0-9-]{1,32}$/.test(c.font))) return false;
     if (c.picture != null && !(typeof c.picture === "string" && /^[a-zA-Z0-9_-]{1,128}$/.test(c.picture))) return false;

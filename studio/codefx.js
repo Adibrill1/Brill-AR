@@ -1,5 +1,5 @@
 "use strict";
-/* Live code animations ("אנימציות קוד"): seventeen looks drawn in three.js, written here, with no files to download.
+/* Live code animations ("אנימציות קוד"): twenty looks drawn in three.js, written here, with no files to download.
    el.codefx = { look, colors[3], speed, amount, size (0-1 each), kind, text, touch, cover, seed }:
      dissolve  a picture (el.assetId, the artwork by default) falls apart into coloured dust and gathers back
      dust      a greeting written in gold dust that swirls in, sparkles and blows away
@@ -20,6 +20,9 @@
      rain      rain on a window in front of the picture: fogged glass, drops that bend the view, drops running down;
                a finger wipes the fog away and it fogs up again (picture)
      aurora    curtains of northern lights folding and drifting, alone or in a starry night sky
+     mist      only fogged glass in front of the picture (amount = how thick); a finger wipes it
+     drip      the picture's paint runs down the real down and hangs off its edge, then flows back
+     sketch    the picture draws itself in pencil, ink or chalk, the colour washes in, then back to paper
    With cfg.gravity (el.gravity, Studio.gravityFollower) the looks in Studio.GRAVITY_CODEFX keep their motion upright in
    the real world: turn the artwork and sparks, jellyfish, bubbles and lanterns still rise, leaves fall, metal runs low.
    Each look is one A-Frame component, "studio-codefx", built in Studio.buildElementEntity. It is an overlay layer,
@@ -857,8 +860,9 @@ void main() {
 
   // ---------- rain: rain on a window in front of the picture - fogged glass, drops that bend the view, drops that run down ----------
   const RAIN_FS = `
-uniform sampler2D map; uniform sampler2D uWipe; uniform float uTime, uKind, uAmount, uSize, uFog, uOpacity; uniform vec2 uBox, uRot; uniform vec3 uC1, uC2, uC3;
+uniform sampler2D map; uniform sampler2D uWipe; uniform float uTime, uKind, uAmount, uSize, uFog, uMist, uOpacity; uniform vec2 uBox, uRot; uniform vec3 uC1, uC2, uC3;
 varying vec2 vUv; varying vec2 vP;
+${NOISE}
 float h1(float n) { return fract(sin(n * 127.1) * 43758.5453); }
 vec2 h2(vec2 p) { return fract(sin(vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)))) * 43758.5453); }
 // drops resting on the glass, one or none in each cell: (offset of the view through it, how much drop, where in it 0-1)
@@ -899,20 +903,110 @@ vec3 fogged(vec2 uv) {
 }
 void main() {
   vec2 q = vec2(vP.x * uRot.x + vP.y * uRot.y, -vP.x * uRot.y + vP.y * uRot.x) / uBox.y; // upright: the drops run down the real down
-  float t = uTime, cell = 0.025 + uSize * 0.045;
-  float manyB = uKind > 1.5 ? 0.25 + uAmount * 0.3 : 0.35 + uAmount * 0.55, manyR = uKind > 0.5 ? 0.08 + uAmount * 0.15 : 0.2 + uAmount * 0.55, trail;
-  vec4 run = runners(q, t, cell * 2.4, 1.0, manyR, trail);
-  vec4 big = beads(q, cell, t, 0.0, manyB), small = beads(q, cell * 0.4, t * 1.4, 5.3, manyB * 0.8 + trail * 0.6);
-  vec4 d = run.z > 0.0 ? run : (big.z > 0.0 ? big : small);
-  vec2 off = -d.xy * 1.6; off = vec2(off.x * uRot.x - off.y * uRot.y, off.x * uRot.y + off.y * uRot.x) * uBox.y / uBox; // back onto the layer
+  float t = uTime, cell = 0.025 + uSize * 0.045, wipe = texture2D(uWipe, vUv).r, dry = 1.0 - smoothstep(0.15, 0.7, wipe); // a wiped spot has no drops either
+  vec4 d = vec4(0.0); float trail = 0.0, fog = uFog;
+  if (uMist < 0.5) {
+    float manyB = uKind > 1.5 ? 0.25 + uAmount * 0.3 : 0.35 + uAmount * 0.55, manyR = uKind > 0.5 ? 0.08 + uAmount * 0.15 : 0.2 + uAmount * 0.55;
+    vec4 run = runners(q, t, cell * 2.4, 1.0, manyR, trail);
+    vec4 big = beads(q, cell, t, 0.0, manyB), small = beads(q, cell * 0.4, t * 1.4, 5.3, manyB * 0.8 + trail * 0.6);
+    d = run.z > 0.0 ? run : (big.z > 0.0 ? big : small);
+    d.z *= dry; trail *= dry;
+  } else { // only mist: even, in patches, or thicker toward the edges, slowly breathing
+    vec2 r = q * 2.5;
+    if (uKind > 0.5 && uKind < 1.5) fog *= 0.45 + 0.75 * smoothstep(0.25, 0.75, fbm(r + vec2(t * 0.03, 0.0)));
+    else if (uKind > 1.5) { vec2 e = abs(vUv - 0.5) * 2.0; fog *= mix(0.25, 1.15, smoothstep(0.2, 1.0, max(e.x, e.y) * 0.6 + length(e) * 0.4)); }
+    fog *= 0.92 + 0.08 * noise(r * 3.0 + t * 0.1);
+  }
+  vec2 off = -d.xy * 1.6 * step(0.001, d.z); off = vec2(off.x * uRot.x - off.y * uRot.y, off.x * uRot.y + off.y * uRot.x) * uBox.y / uBox; // back onto the layer
   vec3 sharp = texture2D(map, clamp(vUv + off, 0.001, 0.999)).rgb;
-  float clear = max(max(d.z, trail * 0.9), texture2D(uWipe, vUv).r), fog = uFog * (1.0 - clear);
+  float clear = max(max(d.z, trail * 0.9), wipe); fog = clamp(fog, 0.0, 1.0) * (1.0 - clear);
   vec3 col = mix(sharp, mix(fogged(vUv), uC1, 0.3), fog);
+  col += uC2 * fog * 0.07 * step(0.82, noise(q * 380.0)); // the tiny beads a mist is made of
   vec2 n = d.xy / max(length(d.xy), 1e-5);
   col *= 1.0 - 0.4 * d.z * smoothstep(0.55, 1.0, d.w); // a dark rim
   col += uC2 * d.z * pow(max(0.0, dot(n, vec2(-0.55, 0.8))), 4.0) * smoothstep(0.3, 0.9, d.w) * 0.9; // the light caught at the top of each drop
   col = mix(col, col * uC3 * 2.0, 0.12 * fog);
   gl_FragColor = vec4(col, texture2D(map, vUv).a * uOpacity);
+}`;
+
+  // ---------- drip: the paint runs down the real down, hangs off the bottom, then heals ----------
+  const DRIP_FS = `
+uniform sampler2D map; uniform float uP, uKind, uAmount, uSize, uSeed, uOpacity, uTime; uniform vec2 uBox, uRot; uniform vec3 uHeat, uC1, uC2, uC3;
+varying vec2 vUv; varying vec2 vP;
+${NOISE}
+float freq() { return mix(26.0, 7.0, uSize); }
+float reach(float x) { // how much longer each strip of paint has grown, as a share of the height
+  float f = freq(), n = noise(vec2(x * f, uSeed)), m = noise(vec2(x * f * 2.7, uSeed + 9.0)), r;
+  if (uKind < 0.5) r = 0.12 + 0.88 * pow(n, 3.0) * (0.7 + 0.3 * m);
+  else if (uKind < 1.5) r = 0.45 + 0.55 * fbm(vec2(x * f * 0.35, uSeed + 3.0));
+  else r = 0.03 + 2.0 * pow(n * (0.6 + 0.4 * m), 6.0);
+  return r * (0.25 + uAmount * 0.75) * uP + uHeat.z * 0.45 * exp(-pow((x - uHeat.x) / 0.06, 2.0));
+}
+vec2 toUv(vec2 o) { return vec2(o.x * uRot.x - o.y * uRot.y, o.x * uRot.y + o.y * uRot.x) * uBox.y / uBox + 0.5; } // upright -> picture
+void main() {
+  vec2 q = vec2(vP.x * uRot.x + vP.y * uRot.y, -vP.x * uRot.y + vP.y * uRot.x) / uBox.y; // upright: y is the real up
+  float hy = (abs(uRot.y) * uBox.x + abs(uRot.x) * uBox.y) * 0.5 / uBox.y, H = 2.0 * hy, e = 0.004;
+  float L = reach(q.x), Ll = reach(q.x - e), Lr = reach(q.x + e);
+  float slide = uKind > 0.5 && uKind < 1.5 ? 0.3 * L * H : 0.0; // melting: the whole picture sags and leaves the top empty
+  float sy = hy - (hy - q.y + slide) / (1.0 + L); // stretched from the top, so each strip hangs longer
+  vec2 uv = toUv(vec2(q.x, sy));
+  float m = min(min(uv.x, 1.0 - uv.x) * uBox.x, min(uv.y, 1.0 - uv.y) * uBox.y) / uBox.y; // how far inside the picture
+  vec4 c = texture2D(map, clamp(uv, 0.001, 0.999));
+  float wet = clamp((sy - q.y) / (0.12 * H), 0.0, 1.0), shade = clamp(-(Lr - Ll) / (2.0 * e) * 0.03, -0.35, 0.35);
+  vec3 col = mix(c.rgb, c.rgb * uC1 * 1.6, 0.1 * wet);
+  col *= 1.0 + shade * wet; // the round side of each run catches the light
+  col += uC2 * wet * 0.2 * smoothstep(0.08, 0.3, shade);
+  col = mix(col, col * uC3 * 1.5, wet * 0.25 * (1.0 - smoothstep(0.0, 0.012, m))); // a darker rim at the tip
+  float a = c.a * smoothstep(0.0, 0.002, m);
+  if (uKind > 1.5) { // drips: drops let go of the longest strips and fall
+    float f = freq() * 1.5, ci = floor(q.x * f), cx = (ci + 0.5) / f, hh = fract(sin(ci * 12.9898 + uSeed * 7.1) * 43758.5453);
+    if (hh > 0.4) {
+      float Lc = reach(cx), tip = hy - H * (1.0 + Lc), k = fract(uTime * (0.22 + hh * 0.3) + hh * 5.0);
+      float r = 0.007 + 0.006 * hh, cy = tip - k * k * 0.8 * H - r;
+      float drop = (1.0 - smoothstep(r * 0.75, r, length((q - vec2(cx, cy)) / vec2(1.0, 1.35)))) * smoothstep(0.08, 0.2, Lc) * smoothstep(0.5, 0.9, uP);
+      vec4 dc = texture2D(map, clamp(toUv(vec2(cx, -hy + 0.01)), 0.001, 0.999));
+      vec3 dcol = dc.rgb * (1.0 + 0.5 * smoothstep(0.3, 0.0, length(q - vec2(cx - r * 0.3, cy + r * 0.4)) / r)) ;
+      col = mix(col, dcol, drop * (1.0 - a)); a = max(a, drop * dc.a);
+    }
+  }
+  gl_FragColor = vec4(col, a * uOpacity);
+}`;
+
+  // ---------- sketch: the picture draws itself in lines, the colour washes in, then it fades back to paper ----------
+  const SKETCH_FS = `
+uniform sampler2D map; uniform sampler2D uWipe; uniform float uLine, uWash, uKind, uAmount, uSize, uSeed, uOpacity; uniform vec2 uBox, uTexel; uniform vec3 uC1, uC2, uC3;
+varying vec2 vUv; varying vec2 vP;
+${NOISE}
+float lum(vec2 uv) { return dot(texture2D(map, clamp(uv, 0.001, 0.999)).rgb, vec3(0.299, 0.587, 0.114)); }
+void main() {
+  vec2 q = vP / uBox.y, px = uTexel * mix(1.0, 3.0, uSize);
+  float tl = lum(vUv + px * vec2(-1.0, 1.0)), tc = lum(vUv + px * vec2(0.0, 1.0)), tr = lum(vUv + px * vec2(1.0, 1.0));
+  float ml = lum(vUv - vec2(px.x, 0.0)), mr = lum(vUv + vec2(px.x, 0.0));
+  float bl = lum(vUv + px * vec2(-1.0, -1.0)), bc = lum(vUv - vec2(0.0, px.y)), br = lum(vUv + px * vec2(1.0, -1.0));
+  float edge = length(vec2(tr + 2.0 * mr + br - tl - 2.0 * ml - bl, tl + 2.0 * tc + tr - bl - 2.0 * bc - br)) * (1.0 + uAmount * 3.0);
+  vec4 pic = texture2D(map, vUv);
+  float L = dot(pic.rgb, vec3(0.299, 0.587, 0.114)), grain = noise(q * 420.0 + uSeed), line;
+  vec3 paper, ink;
+  if (uKind < 0.5) { // pencil: soft grey lines, hatching in the shadows
+    float h1 = smoothstep(0.55, 0.85, fract((q.x + q.y) * 95.0 + noise(q * 30.0) * 0.4)), h2 = smoothstep(0.55, 0.85, fract((q.x - q.y) * 95.0));
+    line = max(smoothstep(0.12, 0.6, edge), (smoothstep(0.6, 0.2, L) * h1 + smoothstep(0.32, 0.05, L) * h2) * 0.6) * (0.5 + 0.5 * grain);
+    paper = uC1 * (0.95 + 0.05 * noise(q * 160.0)); ink = uC2;
+  } else if (uKind < 1.5) { // ink: crisp lines and a little grey wash in the dark parts
+    line = max(smoothstep(0.22, 0.38, edge), smoothstep(0.3, 0.08, L) * 0.35);
+    paper = uC1 * (0.96 + 0.04 * noise(q * 160.0)); ink = uC2;
+  } else { // chalk on a blackboard
+    line = max(smoothstep(0.12, 0.5, edge), smoothstep(0.55, 0.85, L) * 0.35 * smoothstep(0.5, 0.8, fract((q.x + q.y) * 70.0))) * step(0.35, noise(q * 300.0 + 3.0));
+    paper = vec3(0.12, 0.19, 0.16) * (0.88 + 0.12 * noise(q * 40.0)); ink = uC1;
+  }
+  float order = 0.55 * fbm(q * 2.6 + uSeed) + 0.45 * (0.5 - q.y); // where the pen goes first: from the top, wandering
+  float drawn = smoothstep(order, order + 0.04, uLine * 1.15);
+  vec3 sk = mix(paper, ink, clamp(line, 0.0, 1.0) * drawn);
+  float wo = 0.5 * fbm(q * 3.5 + uSeed + 7.0) + 0.5 * order, wd = uWash * 1.15 - wo;
+  float wash = max(smoothstep(0.0, 0.06, wd), texture2D(uWipe, vUv).r), rim = smoothstep(0.0, 0.03, wd) * (1.0 - smoothstep(0.03, 0.1, wd)) * step(0.01, uWash);
+  float done = smoothstep(1.0, 1.3, uWash); // at the end the plain picture shows
+  vec3 tint = uKind > 1.5 ? mix(paper, pic.rgb, 0.85) : pic.rgb * mix(vec3(1.0), paper, 0.1);
+  vec3 painted = mix(mix(tint * (1.0 - 0.25 * rim), ink, clamp(line, 0.0, 1.0) * drawn * 0.45), pic.rgb, done);
+  gl_FragColor = vec4(mix(sk, painted, wash), pic.a * uOpacity);
 }`;
 
   // ---------- aurora: curtains of northern lights that fold and drift ----------
@@ -948,9 +1042,9 @@ void main() {
   gl_FragColor = vec4(col, clamp(I, 0.0, 1.0) * edge * uOpacity);
 }`;
 
-  const BUILDERS = { burn: "buildBurn", fireflies: "buildFireflies", jelly: "buildJelly", tree: "buildTree", spiral: "buildSpiral", bubbles: "buildBubbles", liquid: "buildLiquid", lanterns: "buildLanterns", ripple: "buildRipple", shatter: "buildShatter", rain: "buildRain", aurora: "buildAurora" };
+  const BUILDERS = { burn: "buildBurn", fireflies: "buildFireflies", jelly: "buildJelly", tree: "buildTree", spiral: "buildSpiral", bubbles: "buildBubbles", liquid: "buildLiquid", lanterns: "buildLanterns", ripple: "buildRipple", shatter: "buildShatter", rain: "buildRain", mist: "buildMist", drip: "buildDrip", sketch: "buildSketch", aurora: "buildAurora" };
   // the looks a finger plays with
-  const TOUCHY = new Set(["dissolve", "dust", "swarm", "burn", "fireflies", "jelly", "spiral", "bubbles", "liquid", "lanterns", "ripple", "shatter", "rain"]);
+  const TOUCHY = new Set(["dissolve", "dust", "swarm", "burn", "fireflies", "jelly", "spiral", "bubbles", "liquid", "lanterns", "ripple", "shatter", "rain", "mist", "drip", "sketch"]);
   AFRAME.registerComponent("studio-codefx", {
     schema: { cfg: { default: "{}" }, width: { default: 1 }, height: { default: 1 }, src: { default: "" } },
     init() { this.t = 0; this.mats = []; this.tmp = {}; this.finger = Studio.fingerTools; },
@@ -1186,8 +1280,9 @@ void main() {
         u.uS.value = s; u.uCrack.value = c;
       };
     },
-    buildRain(cfg, w, h, C) {
-      const kind = Math.min(2, Math.max(0, cfg.kind | 0));
+    buildMist(cfg, w, h, C) { this.buildRain(cfg, w, h, C, true); },
+    buildRain(cfg, w, h, C, mist) {
+      const kind = Math.min(2, Math.max(0, cfg.kind | 0)), fog = mist ? 0.15 + val(cfg.amount, 0.6) * 0.85 : Number.isFinite(cfg.fog) ? val(cfg.fog, 0.7) : [0.72, 0.45, 0.94][kind];
       const cv = document.createElement("canvas"); cv.width = cv.height = 128;
       const ctx = cv.getContext("2d"); ctx.fillStyle = "#000"; ctx.fillRect(0, 0, 128, 128);
       const wipe = new THREE.CanvasTexture(cv);
@@ -1195,13 +1290,13 @@ void main() {
       this.loadPicture((tex) => {
         const pic = new THREE.Mesh(new THREE.PlaneGeometry(w, h), this.mat({ vertexShader: FLAT_VS, fragmentShader: RAIN_FS,
           uniforms: { map: { value: tex }, uWipe: { value: wipe }, uTime: { value: 0 }, uKind: { value: kind }, uAmount: { value: val(cfg.amount, 0.5) }, uSize: { value: val(cfg.size, 0.5) },
-            uFog: { value: [0.72, 0.45, 0.94][kind] }, uBox: { value: new THREE.Vector2(w, h) }, uRot: { value: this.rot }, uC1: { value: C[0] }, uC2: { value: C[1] }, uC3: { value: C[2] } } }));
+            uFog: { value: fog }, uMist: { value: mist ? 1 : 0 }, uBox: { value: new THREE.Vector2(w, h) }, uRot: { value: this.rot }, uC1: { value: C[0] }, uC2: { value: C[1] }, uC3: { value: C[2] } } }));
         pic.position.z = 0.0008; this.group.add(pic);
       });
       let last = null, dirty = false;
       this.step = (dt, d) => {
         const f = this.touchPoint();
-        if (dirty) { ctx.globalCompositeOperation = "source-over"; ctx.fillStyle = "rgba(0,0,0," + Math.min(1, d * 0.12).toFixed(4) + ")"; ctx.fillRect(0, 0, 128, 128); } // the glass fogs up again
+        if (dirty) { ctx.globalCompositeOperation = "source-over"; ctx.fillStyle = "rgba(0,0,0," + Math.min(1, d * (mist ? 0.07 : 0.12)).toFixed(4) + ")"; ctx.fillRect(0, 0, 128, 128); } // the glass fogs up again
         if (f) { // a finger wipes the glass clear
           const x = (f.x / w + 0.5) * 128, y = (0.5 - f.y / h) * 128;
           ctx.globalCompositeOperation = "lighter"; ctx.strokeStyle = "rgba(255,255,255,0.5)"; ctx.lineCap = "round"; ctx.lineWidth = 16;
@@ -1209,6 +1304,69 @@ void main() {
           last = { x, y }; dirty = true;
         } else last = null;
         if (dirty) wipe.needsUpdate = true;
+      };
+    },
+    buildDrip(cfg, w, h, C) {
+      const kind = Math.min(2, Math.max(0, cfg.kind | 0)), ext = Math.max(w, h) * (0.35 + val(cfg.amount, 0.5) * 0.9);
+      const heat = new THREE.Vector3(0, 0, 0), uP = { value: 0 };
+      this.parts = {};
+      this.loadPicture((tex) => { // the plane is bigger than the picture, so the runs can hang off it in any direction
+        const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w + ext * 2, h + ext * 2), this.mat({ vertexShader: FLAT_VS, fragmentShader: DRIP_FS,
+          uniforms: { map: { value: tex }, uP, uTime: { value: 0 }, uKind: { value: kind }, uAmount: { value: val(cfg.amount, 0.5) }, uSize: { value: val(cfg.size, 0.5) }, uSeed: { value: (cfg.seed | 0) * 1.37 + 0.5 },
+            uBox: { value: new THREE.Vector2(w, h) }, uRot: { value: this.rot }, uHeat: { value: heat }, uC1: { value: C[0] }, uC2: { value: C[1] }, uC3: { value: C[2] } } }));
+        mesh.position.z = 0.0008; mesh.frustumCulled = false; this.group.add(mesh);
+      });
+      // still, runs (faster and faster), hangs a moment, flows back up; a finger melts the paint under it
+      const STILL = 1.6, MELT = 5.5, HOLD = 1.4, HEAL = 2.2, ALL = STILL + MELT + HOLD + HEAL;
+      let clock = 0;
+      this.step = (dt) => {
+        clock = (clock + dt) % ALL;
+        let p = 0;
+        if (clock < STILL) p = 0;
+        else if (clock < STILL + MELT) p = Math.pow((clock - STILL) / MELT, 1.5);
+        else if (clock < STILL + MELT + HOLD) p = 1;
+        else p = 1 - smooth(0, 1, (clock - STILL - MELT - HOLD) / HEAL);
+        uP.value = p;
+        const f = this.touchPoint();
+        if (f) { heat.x = (f.x * this.rot.x + f.y * this.rot.y) / h; heat.z = Math.min(1, heat.z + dt * 1.2); }
+        else heat.z = Math.max(0, heat.z - dt * 0.35);
+      };
+    },
+    buildSketch(cfg, w, h, C) {
+      const kind = Math.min(2, Math.max(0, cfg.kind | 0));
+      const cv = document.createElement("canvas"); cv.width = cv.height = 128;
+      const ctx = cv.getContext("2d"); ctx.fillStyle = "#000"; ctx.fillRect(0, 0, 128, 128);
+      const wipe = new THREE.CanvasTexture(cv), uLine = { value: 0 }, uWash = { value: 0 };
+      this.parts = { wipe };
+      this.loadPicture((tex) => {
+        const iw = (tex.image && tex.image.width) || 512, ih = (tex.image && tex.image.height) || 512;
+        const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), this.mat({ vertexShader: FLAT_VS, fragmentShader: SKETCH_FS,
+          uniforms: { map: { value: tex }, uWipe: { value: wipe }, uLine, uWash, uKind: { value: kind }, uAmount: { value: val(cfg.amount, 0.5) }, uSize: { value: val(cfg.size, 0.5) },
+            uSeed: { value: (cfg.seed | 0) * 1.7 + 0.3 }, uBox: { value: new THREE.Vector2(w, h) }, uTexel: { value: new THREE.Vector2(1 / iw, 1 / ih) }, uC1: { value: C[0] }, uC2: { value: C[1] }, uC3: { value: C[2] } } }));
+        mesh.position.z = 0.0008; this.group.add(mesh);
+      });
+      // paper, the lines draw themselves, the colour washes in, the plain picture, everything fades back to paper; a finger paints colour in early
+      const T = [0.6, 4.5, 0.5, 3.0, 0.6, 2.0, 1.8]; const ALL = T.reduce((a, b) => a + b, 0);
+      let clock = 0, last = null, painted = false;
+      this.step = (dt) => {
+        const was = clock; clock = (clock + dt) % ALL;
+        if (clock < was && painted) { ctx.globalCompositeOperation = "source-over"; ctx.fillStyle = "#000"; ctx.fillRect(0, 0, 128, 128); wipe.needsUpdate = true; painted = false; }
+        let c = clock, line = 0, wash = 0;
+        const at = (i) => { const k = Math.min(1, c / T[i]); c -= T[i]; return k; };
+        const k0 = at(0); if (c < 0) { line = 0; wash = 0; }
+        else { const k1 = at(1); line = smooth(0, 1, k1);
+          if (c >= 0) { at(2); if (c >= 0) { const k3 = at(3); wash = k3;
+            if (c >= 0) { const k4 = at(4); wash = 1 + 0.3 * k4;
+              if (c >= 0) { at(5); if (c >= 0) { const k6 = at(6); line = 1 - smooth(0, 1, k6); wash = 1.3 * (1 - smooth(0, 1, k6)); } } } } } }
+        void k0;
+        uLine.value = line; uWash.value = wash;
+        const f = this.touchPoint();
+        if (f) {
+          const x = (f.x / w + 0.5) * 128, y = (0.5 - f.y / h) * 128;
+          ctx.globalCompositeOperation = "lighter"; ctx.strokeStyle = "rgba(255,255,255,0.45)"; ctx.lineCap = "round"; ctx.lineWidth = 14;
+          ctx.beginPath(); ctx.moveTo(last ? last.x : x, last ? last.y : y); ctx.lineTo(x, y + 0.01); ctx.stroke();
+          last = { x, y }; painted = true; wipe.needsUpdate = true;
+        } else last = null;
       };
     },
     buildAurora(cfg, w, h, C) {
