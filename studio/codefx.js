@@ -671,11 +671,13 @@ void main() {
   // ---------- lanterns: round paper lanterns lit from inside, that rise and flicker ----------
   // a body turned on a lathe (open at the bottom, a bamboo hoop there, rounded shoulders on top), lit by the flame
   // inside: brightest low down and where the paper faces the viewer, deeper and redder toward the top and the sides
+  const LANTERN_H = 1.2; // a sky lantern's height (lanternGeometry)
   const LANTERN_VS = `
-attribute float phase; attribute float fade; attribute float tone; uniform float uTime;
-varying vec3 vL; varying vec3 vN; varying vec3 vV; varying float vFl; varying float vFade; varying float vTone;
+attribute float phase; attribute float fade; attribute float tone; attribute float part; uniform float uTime;
+varying vec3 vL; varying vec3 vN; varying vec3 vV; varying float vFl; varying float vFade; varying float vTone; varying float vPart;
 void main() {
   ${INST}
+  vPart = part;
   vec4 mv = MV * vec4(position, 1.0);
   vL = position; vN = normalize(mat3(MV) * normal); vV = projectionMatrix[2][3] != 0.0 ? normalize(-mv.xyz) : vec3(0.0, 0.0, 1.0);
   vFl = 0.86 + 0.14 * sin(uTime * 7.0 + phase * 40.0) * sin(uTime * 11.3 + phase * 17.0); vFade = fade; vTone = tone;
@@ -683,26 +685,28 @@ void main() {
 }`;
   const LANTERN_FS = `
 uniform vec3 uC1, uC2, uC3; uniform float uOpacity;
-varying vec3 vL; varying vec3 vN; varying vec3 vV; varying float vFl; varying float vFade; varying float vTone;
+varying vec3 vL; varying vec3 vN; varying vec3 vV; varying float vFl; varying float vFade; varying float vTone; varying float vPart;
 ${NOISE}
 void main() {
   if (vFade < 0.01) discard;
-  float y = vL.y + 0.5, th = atan(vL.z, vL.x); // y: 0 at the open bottom, 1 at the top
+  if (vPart > 1.5) { gl_FragColor = vec4(mix(uC2 * 1.3, vec3(1.0, 0.97, 0.85), 0.55) * vFl, vFade * uOpacity); return; } // the burning fuel cake
+  if (vPart > 0.5) { gl_FragColor = vec4(mix(vec3(0.2, 0.12, 0.06), uC3 * 0.75, 0.45 * vFl), vFade * uOpacity); return; } // bamboo and wire, lit from below
+  float y = vL.y / ${LANTERN_H.toFixed(2)} + 0.5, th = atan(vL.z, vL.x); // y: 0 at the open mouth, 1 at the top
   vec3 n = normalize(vN); if (!gl_FrontFacing) n = -n;
   float facing = abs(dot(n, vV));
   vec3 paper = mix(uC1, mix(uC1, uC3, 0.55), vTone);
   vec3 col;
   if (gl_FrontFacing) {
-    float near = exp(-pow((y - 0.18) / 0.5, 2.0));
+    float near = exp(-pow((y - 0.24) / 0.55, 2.0));
     float lit = (0.25 + 0.75 * near) * (0.35 + 0.65 * pow(facing, 1.3)) * vFl;
     col = mix(uC3 * 0.62, paper * 1.02, smoothstep(0.12, 0.6, lit)); // deep red-orange away from the light, the paper's own colour nearer
     col = mix(col, uC2 * 1.12, smoothstep(0.55, 1.0, lit)); // the hot glow just above the flame
     float sp = abs(fract(th / 6.2832 * 8.0) - 0.5); // eight paper panels: soft folds and thin seams
     col *= (0.88 + 0.12 * smoothstep(0.0, 0.5, sp)) * (1.0 - 0.3 * smoothstep(0.025, 0.0, sp));
-    col *= 1.0 - 0.08 * smoothstep(0.03, 0.0, abs(fract(y * 3.0 + 0.5) - 0.5)); // the thin hoops that hold the paper out
+    col *= 1.0 - 0.05 * smoothstep(0.02, 0.0, abs(fract(y * 4.0 + 0.5) - 0.5)); // faint creases across the paper
     col *= 0.93 + 0.07 * noise(vec2(th * 7.0, y * 45.0)); // fibres
-    col = mix(col, vec3(0.3, 0.19, 0.1) * (0.5 + 0.7 * near * vFl), smoothstep(0.05, 0.025, y)); // the bamboo hoop
-  } else col = mix(uC2 * 1.15, paper, smoothstep(0.1, 0.9, y)) * vFl; // seen from below: the inside, all lit
+    col *= 0.9 + 0.1 * smoothstep(0.0, 0.06, y); // the paper gathered at the mouth
+  } else col = mix(uC2 * 1.15, paper, smoothstep(0.1, 0.9, y)) * vFl; // seen from below, through the mouth: the inside, all lit
   gl_FragColor = vec4(col, vFade * uOpacity);
 }`;
   // the soft light around each lantern, added on top (its shape in the alpha, for the editor's see-through canvas)
@@ -710,7 +714,7 @@ void main() {
 attribute float phase; attribute float fade; uniform float uTime; varying vec2 vUv; varying float vA;
 void main() {
   ${INST}
-  vec4 c = MV * vec4(0.0, -0.1, 0.0, 1.0);
+  vec4 c = MV * vec4(0.0, -0.2, 0.0, 1.0);
   c.xy += position.xy * 3.2 * length(MV[0].xyz);
   vUv = position.xy * 2.0; vA = fade * (0.85 + 0.15 * sin(uTime * 7.0 + phase * 40.0) * sin(uTime * 11.3 + phase * 17.0));
   gl_Position = projectionMatrix * c;
@@ -718,10 +722,32 @@ void main() {
   const HALO_FS = `uniform vec3 uC2, uC3; uniform float uOpacity; varying vec2 vUv; varying float vA;
 void main() { float r2 = dot(vUv, vUv); if (r2 > 1.0) discard; float g = exp(-r2 * 5.0) * (1.0 - r2) * 0.42 + exp(-r2 * 26.0) * 0.25;
   gl_FragColor = vec4(mix(uC3, uC2, exp(-r2 * 18.0)), g * vA * uOpacity); }`;
+  // A Chinese sky lantern (kongming): a tall paper bag, narrow at its open mouth and widest under rounded shoulders, its
+  // eight panels bulging a little between the seams; a bamboo hoop round the mouth, two crossed wires and the burning
+  // fuel cake hanging in the middle of the opening. 1.2 tall, 0.62 wide; "part" tells the shader paper (0), bamboo and
+  // wire (1) and the flame (2).
   function lanternGeometry() {
-    const pr = [[0.285, 0], [0.3, 0.03], [0.33, 0.2], [0.365, 0.42], [0.395, 0.64], [0.41, 0.78], [0.4, 0.86], [0.36, 0.93], [0.27, 0.975], [0.14, 0.995], [0, 1]];
-    const g = new THREE.LatheGeometry(pr.map(([r, y]) => new THREE.Vector2(r, y)), 28);
-    g.translate(0, -0.5, 0);
+    const pr = [[0.2, 0], [0.204, 0.02], [0.222, 0.14], [0.246, 0.3], [0.27, 0.47], [0.29, 0.63], [0.302, 0.74], [0.306, 0.82], [0.296, 0.89], [0.265, 0.94], [0.2, 0.975], [0.11, 0.994], [0, 1]];
+    const paper = new THREE.LatheGeometry(pr.map(([r, y]) => new THREE.Vector2(r, y * LANTERN_H)), 48);
+    paper.translate(0, -LANTERN_H / 2, 0);
+    const pp = paper.attributes.position;
+    for (let i = 0; i < pp.count; i++) { // the panels bulge out between the seams
+      const x = pp.getX(i), z = pp.getZ(i), th = Math.atan2(z, x), f = (th / TAU * 8 % 1 + 1) % 1, k = 1 + 0.035 * Math.sin(Math.PI * f);
+      pp.setXYZ(i, x * k, pp.getY(i), z * k);
+    }
+    paper.computeVertexNormals();
+    const y0 = -LANTERN_H / 2, mouth = 0.2;
+    const hoop = new THREE.TorusGeometry(mouth, 0.012, 6, 32); hoop.rotateX(Math.PI / 2); hoop.translate(0, y0 + 0.006, 0);
+    const w1 = new THREE.BoxGeometry(mouth * 2, 0.007, 0.007); w1.translate(0, y0 + 0.07, 0);
+    const w2 = w1.clone(); w2.rotateY(Math.PI / 2);
+    const fuel = new THREE.CylinderGeometry(0.065, 0.06, 0.045, 14); fuel.translate(0, y0 + 0.07, 0);
+    const parts = [[paper, 0], [hoop, 1], [w1, 1], [w2, 1], [fuel, 2]], pos = [], nor = [], tag = [];
+    for (const [g, k] of parts) {
+      const q = g.index ? g.toNonIndexed() : g, a = q.attributes.position, b = q.attributes.normal;
+      for (let i = 0; i < a.count; i++) { pos.push(a.getX(i), a.getY(i), a.getZ(i)); nor.push(b.getX(i), b.getY(i), b.getZ(i)); tag.push(k); }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute("normal", new THREE.Float32BufferAttribute(nor, 3)); g.setAttribute("part", new THREE.Float32BufferAttribute(tag, 1));
     return g;
   }
 
