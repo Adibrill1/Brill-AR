@@ -23,6 +23,7 @@ window.UI = (() => {
 
   // Stroke icons, drawn (not typed): emoji look different on every device.
   const P = {
+    search: "M11 4a7 7 0 1 0 0 14a7 7 0 1 0 0-14ZM20 20l-4.2-4.2",
     plus: "M12 5v14M5 12h14", close: "M6 6l12 12M18 6 6 18", back: "M9 6l6 6-6 6", check: "M5 12.5l4.5 4.5L19 7.5",
     undo: "M9 7 4 12l5 5M4 12h10a6 6 0 0 1 0 12h-1", redo: "M15 7l5 5-5 5M20 12H10a6 6 0 0 0 0 12h1",
     play: "M7 5l12 7-12 7z", pause: "M8 5v14M16 5v14", eye: "M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12zM12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z",

@@ -14,7 +14,7 @@ const SHOTS=process.env.SHOTS||'';
     a.assets.__artwork=await new Promise(r=>c.toBlob(r,'image/png'));a.elements=[];await Studio.save(a);return a.id;});
   await p.goto(base+'/index.html#/e/'+id);await p.waitForSelector('#btn-add');await p.waitForTimeout(600);
   const shot=async(name)=>{if(SHOTS)await p.screenshot({path:SHOTS+'/'+name+'.png'});};
-  const looks=await p.evaluate(()=>Studio.CODEFX.map(c=>c.id));assert.deepEqual(looks,['dissolve','dust','portal','swarm','ivy','burn','fireflies','jelly','tree','spiral','bubbles','liquid','lanterns','ripple','shatter','rain','aurora','mist','drip','sketch','sand','eyes','tunnel','lens','daysky','game','scratch','storm','countdown','puzzle']);
+  const looks=await p.evaluate(()=>Studio.CODEFX.map(c=>c.id));assert.deepEqual(looks,['dissolve','dust','portal','swarm','ivy','burn','fireflies','jelly','tree','spiral','bubbles','liquid','lanterns','ripple','shatter','rain','aurora','mist','drip','sketch','sand','eyes','tunnel','lens','game','scratch','storm','countdown','puzzle','face']);
   for(const look of looks){
     await p.evaluate(()=>Layers.openAdd());await p.locator('button.add-tile[data-add="codefx"]').tap();
     await p.locator('button.part-tile[data-codefx="'+look+'"]').tap();
@@ -27,7 +27,7 @@ const SHOTS=process.env.SHOTS||'';
     await p.evaluate(id=>App.select(id),elId);
     // its controls: the colours, the speed and the amount
     if(await p.locator('.tab[data-tab="style"]').isVisible())await p.locator('.tab[data-tab="style"]').tap();
-    await p.waitForSelector('text=ערכות צבע');if(look!=='countdown')assert.ok(await p.locator('section.group',{hasText:'התאמה'}).locator('text=מהירות').count(),'speed control'); // a countdown runs on the clock
+    await p.waitForSelector(look==='face'?'text=למצוא את הפנים בתמונה':'text=ערכות צבע'); // the face has no colours, it has its own partsif(look!=='countdown')assert.ok(await p.locator('section.group',{hasText:'התאמה'}).locator('text=מהירות').count(),'speed control'); // a countdown runs on the clock
     if(look==='countdown')assert.ok(await p.locator('#in-codefx-date').count(),'the countdown asks for a date');
     await p.evaluate(()=>{const e=App.sel();e.codefx=Object.assign({},e.codefx,{amount:0.2,speed:0.8});App.changed(true);});
     await p.waitForTimeout(400);

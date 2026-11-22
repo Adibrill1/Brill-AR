@@ -1123,7 +1123,7 @@ vec4 baFilter(vec2 uv) {
     ["mist", "אדים על זכוכית", ["#dfe7ee", "#ffffff", "#8fa3b5"], ["אחיד", "כתמים", "עבה בשוליים"]],
     ["drip", "צבע שנוזל", ["#ff4d6d", "#ffffff", "#3a0ca3"], ["נזילה עדינה", "המסה", "טפטופים"]],
     ["sketch", "ציור שמצטייר", ["#f4efe6", "#2b2b2b", "#e85d04"], ["עיפרון", "דיו", "גיר על לוח"]],
-    ["sand", "חול נושב ברוח", ["#e3b878", "#c9955a", "#8a5a2b"], ["רוח מהצד", "סופת חול", "שעון חול"]],
+    ["sand", "חול נושב ברוח", ["#e3b878", "#c9955a", "#8a5a2b"], ["רוח מהצד", "סופת חול", "ערימה שזזה עם הסיבוב", "רוח בלי הפסקה"]],
     ["eyes", "עיניים שעוקבות", ["#3f7fbf", "#f5f1e8", "#b9785a"], ["עין אחת", "זוג עיניים", "הרבה עיניים"]],
     ["tunnel", "מנהרת זמן", ["#f2e6c9", "#05040a", "#9fd8ff"], ["מסגרות", "ספירלה", "עגולה"]],
     ["lens", "גילוי מקרוב", ["#fff1c9", "#0b0a14", "#ffffff"], ["פנס בחושך", "שחור־לבן לצבע", "ערפל שמתפזר"]],
@@ -1132,9 +1132,11 @@ vec4 baFilter(vec2 uv) {
     ["scratch", "כרטיס גירוד", ["#ff6fa5", "#ffd166", "#ffffff"], ["כסף", "זהב", "צבעוני"]],
     ["storm", "ברקים וסערה", ["#bcd7ff", "#eef4ff", "#0b1424"], ["סערה", "ברקים בלבד", "סערה רחוקה"]],
     ["countdown", "ספירה לאחור", ["#ffd166", "#ffffff", "#ff8fd8"], ["כרטיסים מתהפכים", "ניאון", "פשוט"]],
-    ["puzzle", "פאזל", ["#ffd166", "#ffffff", "#7fe0ff"], ["3×3 החלפה", "4×4 החלפה", "הזזה"]]
+    ["puzzle", "פאזל", ["#ffd166", "#ffffff", "#7fe0ff"], ["3×3 החלפה", "4×4 החלפה", "הזזה"]],
+    ["face", "פנים במגע", ["#ffd166", "#ff8fa3", "#ffffff"], ["משיכה", "ניפוח", "כיווץ", "ג׳לי"]]
   ];
-  const CODEFX_PICTURE = ["dissolve", "burn", "ripple", "shatter", "rain", "mist", "drip", "sketch", "sand", "tunnel", "lens", "scratch", "puzzle"]; // the looks made from a picture
+  const CODEFX_RETIRED = ["daysky"]; // no longer offered; creations that have it still play
+  const CODEFX_PICTURE = ["dissolve", "burn", "ripple", "shatter", "rain", "mist", "drip", "sketch", "sand", "tunnel", "lens", "scratch", "puzzle", "face"]; // the looks made from a picture
   const CODEFX_IDS = CODEFX.map((c) => c[0]), CODEFX_SHAPES = ["rect", "circle", "arch"];
   function codeFxDefaults(look) {
     const d = CODEFX.find((c) => c[0] === look) || CODEFX[1];
@@ -1150,13 +1152,14 @@ vec4 baFilter(vec2 uv) {
     const c = el.codefx; if (c == null) return el.type !== "codefx";
     if (el.type !== "codefx" || typeof c !== "object" || Array.isArray(c) || !CODEFX_IDS.includes(c.look)) return false;
     if (!Array.isArray(c.colors) || c.colors.length !== 3 || !c.colors.every((x) => typeof x === "string" && /^#[0-9a-f]{6}$/i.test(x))) return false;
-    if (!["speed", "amount", "size", "fog"].every((k) => c[k] == null || Number.isFinite(c[k]) && c[k] >= 0 && c[k] <= 1)) return false;
+    if (!["speed", "amount", "size", "fog", "eyes", "nose", "mouth", "smile", "head"].every((k) => c[k] == null || Number.isFinite(c[k]) && c[k] >= 0 && c[k] <= 1)) return false;
+    if (c.face != null && !(Array.isArray(c.face) && c.face.length === 16 && c.face.every((v) => Number.isFinite(v) && v >= -0.5 && v <= 1.5))) return false;
     if (c.kind != null && !(Number.isInteger(c.kind) && c.kind >= 0 && c.kind <= 3) || c.seed != null && !(Number.isInteger(c.seed) && c.seed >= 0 && c.seed <= 999)) return false;
     if (c.text != null && (typeof c.text !== "string" || c.text.length > 60) || c.font != null && !(typeof c.font === "string" && /^[a-z0-9-]{1,32}$/.test(c.font))) return false;
     if (c.picture != null && !(typeof c.picture === "string" && /^[a-zA-Z0-9_-]{1,128}$/.test(c.picture))) return false;
     if (c.shape != null && !CODEFX_SHAPES.includes(c.shape)) return false;
     if (c.date != null && !(typeof c.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(c.date)) || c.time != null && !(typeof c.time === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(c.time))) return false;
-    return ["touch", "cover"].every((k) => c[k] == null || typeof c[k] === "boolean");
+    return ["touch", "cover", "keep", "alive", "follow"].every((k) => c[k] == null || typeof c[k] === "boolean");
   }
   const isWeather = (el) => !!(el && el.type === "pattern" && el.pattern && WEATHER.some((w) => w[0] === el.pattern.look));
   // Ready colour sets for any look: [Hebrew name, colours]
@@ -3983,7 +3986,7 @@ vec4 bpPattern(vec2 uv) {
            WEATHER: WEATHER.map(([id, name, colors, speed, kinds]) => ({ id, name, kinds: kinds.slice() })), isWeather, PATTERNS: PATTERNS.map(([id, name, colors, speed]) => ({ id, name, colors: colors.slice(), speed })), PATTERN_PALETTES: PATTERN_PALETTES.map(([name, colors]) => ({ name, colors: colors.slice() })),
            fingerGrab: () => finger.grab, fingerTools: { watch: watchFinger, state: finger, onPlane: fingerOnPlane },
            gravityFollower, gravityFits, askTilt, GRAVITY_CODEFX, GRAVITY_TUNE, gravityTuneOf, validGravityTune,
-           CODEFX: CODEFX.map(([id, name, colors, kinds]) => ({ id, name, colors, kinds })), CODEFX_SHAPES, CODEFX_PICTURE, codeFxDefaults, validCodeFx, TOUCH_MODES, PATTERN_TOUCH, validPattern, textFxOf, TEXT_FX: TEXT_FX.map(([id, name, color, amount]) => ({ id, name, color, amount })), validTextFx,
+           CODEFX: CODEFX.filter((c) => !CODEFX_RETIRED.includes(c[0])).map(([id, name, colors, kinds]) => ({ id, name, colors, kinds })), CODEFX_ALL: CODEFX.map(([id, name, colors, kinds]) => ({ id, name, colors, kinds })), CODEFX_SHAPES, CODEFX_PICTURE, codeFxDefaults, validCodeFx, TOUCH_MODES, PATTERN_TOUCH, validPattern, textFxOf, TEXT_FX: TEXT_FX.map(([id, name, color, amount]) => ({ id, name, color, amount })), validTextFx,
            PATTERN_SHAPES: PATTERN_SHAPES.map(([id, name]) => ({ id, name })), patternDefaults, patternAspect, patternFrame, validPattern, validFx, validChroma, keyValues, pixelAt, CHROMA_DEFAULT, SCATTER_TYPES, SCATTER_MAX, mediaType, isStill, stillAt, setStill, scatterItem, scatterLimit, scatterPath, scatterCopies, scatterCopyEl, scatterBounds, refreshScatter, makeScatter, makeFan, scaleScatter, breakScatter, validScatter, FONTS: FONTS.map(([id, name]) => ({ id, name })), buildElementEntity, groupOf, fitGroup, makeGroup, breakGroup, leaveGroup, applyOpacity, bindTap, ensurePlayback, ensureChromaComponent, ensureTargetVideoComponent, videoHasPicture, ensureTimeCubeComponent, bakeTimeCube, validTimeCube, TIMECUBE_DIRS, makeChromaMaterial, ensureParticlesComponent, assessTargetQuality, artworkFingerprint, fingerprintDistance, seqList, elVisibleIn, makeImageMedia, nextSequence, applySequence, monitorMedia, renderSeqDots, sampleTimeline, sampleVisual, sampleComposition, previewStateTime, addTimelineKey, timelineDur, startTimelineDriver, applyTimelinePose, seqAutoNext, makeSeqRunner, notifySeq, startActionDriver, topLevelElements, groupChildren, transformGroup, turnImageBlob, turnLayers, trackList, makeTrackRunner,
            load: id=>settledRead(id), all: ()=>settledRead(), del: delExperience, LIMITS, mediaBytes, pushBack, addBlocker, publishBlocker, restoreBlocker, exportWarning, exportJSONSize,
            onSaveState, installSaveGuard, saveState, soundOnTouch, snapAngle, snapFull, syncMedia,

@@ -1,5 +1,5 @@
 "use strict";
-/* Live code animations ("אנימציות קוד"): thirty looks drawn in three.js, written here, with no files to download.
+/* Live code animations ("אנימציות קוד"): thirty looks (and one retired, daysky, still drawn for creations that have it) drawn in three.js, written here, with no files to download.
    el.codefx = { look, colors[3], speed, amount, size (0-1 each), kind, text, touch, cover, seed }:
      dissolve  a picture (el.assetId, the artwork by default) falls apart into coloured dust and gathers back
      dust      a greeting written in gold dust that swirls in, sparkles and blows away
@@ -33,6 +33,7 @@
      storm     a dark sky, rain and lightning that lights everything; a tap brings the lightning down there
      countdown days, hours, minutes and seconds to a date on the viewer's clock (el.codefx.date, time, text); confetti on the day
      puzzle    the picture in 3x3 or 4x4 squares to swap back, or a sliding puzzle; a card when it is solved
+     face      a face to pull, grow, shrink or wobble with a finger; sliders for eyes, nose, mouth, smile and head (where they are: el.codefx.face)
    With cfg.gravity (el.gravity, Studio.gravityFollower) the looks in Studio.GRAVITY_CODEFX keep their motion upright in
    the real world: turn the artwork and sparks, jellyfish, bubbles and lanterns still rise, leaves fall, metal runs low.
    Each look is one A-Frame component, "studio-codefx", built in Studio.buildElementEntity. It is an overlay layer,
@@ -1025,7 +1026,7 @@ void main() {
 float sandRel(vec2 hp, vec2 box, vec2 rot, float kind, vec2 grid) {
   vec2 u = vec2(hp.x * rot.x + hp.y * rot.y, -hp.x * rot.y + hp.y * rot.x); // upright
   float j = h21(floor((hp / box + 0.5) * grid) + 0.5), n = noise(hp / box.y * 4.0), L = length(box);
-  float s = kind > 1.5 ? 0.5 - u.y / L * 1.2 : 0.5 - u.x / L * 1.2; // the side the wind blows toward goes first; in the hourglass the top
+  float s = kind > 1.5 && kind < 2.5 ? 0.5 - u.y / L * 1.2 : 0.5 - u.x / L * 1.2; // the side the wind blows toward goes first; in the pile the top
   return (clamp(s, 0.0, 1.0) * 0.72 + n * 0.2 + j * 0.08) * (kind > 0.5 && kind < 1.5 ? 3.2 : 4.2);
 }`;
   const SAND_VS = `
@@ -1036,8 +1037,9 @@ ${NOISE}
 ${SAND_REL}
 void main() {
   float W = uBox.x, H = uBox.y, r0 = sandRel(home.xy, uBox, uRot, uKind, uGrid), a = max(0.0, uS - r0), z = 0.0, fade = 1.0;
+  if (uKind > 2.5) { float ph = fract(uS / 6.0 - r0 * 0.2); a = ph > 0.68 && ph < 0.96 ? (ph - 0.68) * 6.0 : 0.0; } // without a stop: each grain goes in its turn, and new sand settles in its place
   vec2 u = vec2(home.x * uRot.x + home.y * uRot.y, -home.x * uRot.y + home.y * uRot.x), o;
-  if (uKind < 1.5) { // carried off by the wind: skipping low, then lifted and gone
+  if (uKind < 1.5 || uKind > 2.5) { // carried off by the wind: skipping low, then lifted and gone
     float storm = uKind > 0.5 ? 1.0 : 0.0;
     float x = W * (0.2 + rnd.x * 0.15 + storm * 0.12) * a + W * (0.22 + rnd.y * 0.15 + storm * 0.15) * a * a;
     float hop = H * (0.02 + rnd.z * 0.05 + storm * 0.07) * abs(sin(a * (3.0 + rnd.x * 3.0) + rnd.y * 6.0)) * (1.0 - exp(-a * 3.0));
@@ -1063,15 +1065,17 @@ void main() {
   const SAND_FS = `uniform float uOpacity; varying vec3 vCol; varying float vA;
 void main() { vec2 d = gl_PointCoord - 0.5; float r = length(d); if (r > 0.5) discard; gl_FragColor = vec4(vCol * (1.05 - r * 0.5 - d.y * 0.3), vA * smoothstep(0.5, 0.32, r) * uOpacity); }`;
   const SANDPIC_FS = `
-uniform sampler2D map; uniform float uS, uKind, uTime, uOpacity; uniform vec2 uBox, uRot, uGrid; uniform vec3 uC1, uC2;
+uniform sampler2D map; uniform sampler2D uMask; uniform float uS, uKind, uTime, uOpacity; uniform vec2 uBox, uRot, uGrid; uniform vec3 uC1, uC2;
 varying vec2 vUv; varying vec2 vP;
 ${NOISE}
 ${SAND_REL}
 void main() {
   vec4 c = texture2D(map, vUv);
   vec2 ij = floor(vec2(vUv.x, 1.0 - vUv.y) * uGrid), hp = vec2((ij.x + 0.5) / uGrid.x - 0.5, 0.5 - (ij.y + 0.5) / uGrid.y) * uBox; // its grain's home
-  float left = sandRel(hp, uBox, uRot, uKind, uGrid) - uS, a = c.a * step(0.0, left);
+  float r0 = sandRel(hp, uBox, uRot, uKind, uGrid), left = r0 - uS, a = c.a * step(0.0, left);
   vec3 col = mix(c.rgb, uC1, (1.0 - smoothstep(0.0, 0.5, left)) * 0.45 * step(0.01, uS)); // the edge turns to sand just before it goes
+  if (uKind > 1.5 && uKind < 2.5) { float m = texture2D(uMask, vUv).r; a = c.a * step(0.5, m); col = c.rgb; } // the pile: the grains still in the picture
+  if (uKind > 2.5) { float ph = fract(uS / 6.0 - r0 * 0.2); a = c.a * (ph < 0.68 ? 1.0 : smoothstep(0.96, 1.0, ph)); col = mix(c.rgb, uC1, smoothstep(0.58, 0.68, ph) * step(ph, 0.68) * 0.45 + (1.0 - step(ph, 0.68)) * 0.3); }
   if (uKind > 0.5 && uKind < 1.5) { // the storm: a haze of sand streaming across
     vec2 q = vP / uBox.y, qu = vec2(q.x * uRot.x + q.y * uRot.y, -q.x * uRot.y + q.y * uRot.x);
     float hz = smoothstep(0.2, 1.6, uS) * (0.08 + 0.5 * smoothstep(0.45, 0.8, fbm(vec2(qu.x * 1.5 - uTime * 1.6, qu.y * 7.0)))) * smoothstep(0.0, 0.18, min(min(vUv.x, 1.0 - vUv.x), min(vUv.y, 1.0 - vUv.y))); // soft at the edges
@@ -1345,9 +1349,9 @@ void main() {
   gl_FragColor = vec4(col, clamp(I, 0.0, 1.0) * edge * uOpacity);
 }`;
 
-  const BUILDERS = { burn: "buildBurn", fireflies: "buildFireflies", jelly: "buildJelly", tree: "buildTree", spiral: "buildSpiral", bubbles: "buildBubbles", liquid: "buildLiquid", lanterns: "buildLanterns", ripple: "buildRipple", shatter: "buildShatter", rain: "buildRain", mist: "buildMist", drip: "buildDrip", sketch: "buildSketch", sand: "buildSand", eyes: "buildEyes", tunnel: "buildTunnel", lens: "buildLens", daysky: "buildDaysky", game: "buildGame", scratch: "buildScratch", storm: "buildStorm", countdown: "buildCountdown", puzzle: "buildPuzzle", aurora: "buildAurora" };
+  const BUILDERS = { burn: "buildBurn", fireflies: "buildFireflies", jelly: "buildJelly", tree: "buildTree", spiral: "buildSpiral", bubbles: "buildBubbles", liquid: "buildLiquid", lanterns: "buildLanterns", ripple: "buildRipple", shatter: "buildShatter", rain: "buildRain", mist: "buildMist", drip: "buildDrip", sketch: "buildSketch", sand: "buildSand", eyes: "buildEyes", tunnel: "buildTunnel", lens: "buildLens", daysky: "buildDaysky", game: "buildGame", scratch: "buildScratch", storm: "buildStorm", countdown: "buildCountdown", puzzle: "buildPuzzle", face: "buildFace", aurora: "buildAurora" };
   // the looks a finger plays with
-  const TOUCHY = new Set(["dissolve", "dust", "swarm", "burn", "fireflies", "jelly", "spiral", "bubbles", "liquid", "lanterns", "ripple", "shatter", "rain", "mist", "drip", "sketch", "sand", "eyes", "tunnel", "lens", "game", "scratch", "storm", "puzzle"]);
+  const TOUCHY = new Set(["dissolve", "dust", "swarm", "burn", "fireflies", "jelly", "spiral", "bubbles", "liquid", "lanterns", "ripple", "shatter", "rain", "mist", "drip", "sketch", "sand", "eyes", "tunnel", "lens", "game", "scratch", "storm", "puzzle", "face"]);
   AFRAME.registerComponent("studio-codefx", {
     schema: { cfg: { default: "{}" }, width: { default: 1 }, height: { default: 1 }, src: { default: "" } },
     init() { this.t = 0; this.mats = []; this.tmp = {}; this.finger = Studio.fingerTools; },
@@ -1364,7 +1368,7 @@ void main() {
       let cfg; try { cfg = JSON.parse(this.data.cfg); } catch (e) { cfg = {}; }
       this.cfg = cfg; this.look = cfg.look; this.speed = pace(cfg);
       this.rot = new THREE.Vector2(1, 0); // gravity's turn, (cos, sin), shared by the shaders that need it
-      this.G = cfg.gravity && Studio.GRAVITY_CODEFX && Studio.GRAVITY_CODEFX.includes(this.look) ? Studio.gravityFollower(3, cfg.gravityTune || "") : null;
+      this.G = (cfg.gravity || this.look === "sand" && (cfg.kind | 0) === 2) && Studio.GRAVITY_CODEFX && Studio.GRAVITY_CODEFX.includes(this.look) ? Studio.gravityFollower(3, cfg.gravityTune || "") : null;
       this.group = new THREE.Group();
       const w = this.data.width, h = this.data.height;
       const C = (cfg.colors || []).map(vec3); while (C.length < 3) C.push(new THREE.Color("#ffffff"));
@@ -1673,14 +1677,19 @@ void main() {
       };
     },
     buildSand(cfg, w, h, C) {
-      const kind = Math.min(2, Math.max(0, cfg.kind | 0)), R = rand(9000 + (cfg.seed | 0)), uS = { value: 0 }, grid = new THREE.Vector2(1, 1);
+      const kind = Math.min(3, Math.max(0, cfg.kind | 0)), R = rand(9000 + (cfg.seed | 0)), uS = { value: 0 }, grid = new THREE.Vector2(1, 1);
+      if (kind === 2 || cfg.cover === true) { // a backdrop, so the real print does not show where the sand has gone (the pile always has one)
+        const fill = new THREE.Mesh(new THREE.PlaneGeometry(w, h), this.mat({ vertexShader: FLAT_VS, fragmentShader: FILL_FS, uniforms: { uC: { value: C[2] } } }));
+        fill.position.z = 0.0004; this.group.add(fill);
+      }
+      if (kind === 2) return this.buildSandPile(cfg, w, h, C);
       this.parts = {};
       this.loadPicture((tex) => {
         const n = Math.round(8000 + val(cfg.amount, 0.5) * 22000), asp = w / h, gw = Math.max(8, Math.round(Math.sqrt(n * asp))), gh = Math.max(8, Math.round(gw / asp));
         grid.set(gw, gh); // the same grid pointsFromImage makes
         const pts = pointsFromImage(tex.image, w, h, n), count = pts.home.length / 3;
         const common = { uS, uKind: { value: kind }, uBox: { value: new THREE.Vector2(w, h) }, uRot: { value: this.rot }, uGrid: { value: grid }, uC1: { value: C[0] }, uC2: { value: C[1] } };
-        const pic = new THREE.Mesh(new THREE.PlaneGeometry(w, h), this.mat({ vertexShader: FLAT_VS, fragmentShader: SANDPIC_FS, uniforms: Object.assign({ map: { value: tex }, uTime: { value: 0 } }, common) }));
+        const pic = new THREE.Mesh(new THREE.PlaneGeometry(w, h), this.mat({ vertexShader: FLAT_VS, fragmentShader: SANDPIC_FS, uniforms: Object.assign({ map: { value: tex }, uMask: { value: tex }, uTime: { value: 0 } }, common) }));
         pic.position.z = 0.0008; this.group.add(pic);
         if (!count) return;
         const rnd = new Float32Array(count * 3); for (let i = 0; i < rnd.length; i++) rnd[i] = R();
@@ -1690,8 +1699,12 @@ void main() {
         const grains = new THREE.Points(g, this.mat({ vertexShader: SAND_VS, fragmentShader: SAND_FS, uniforms: Object.assign({ uSize: { value: pts.cell * (0.75 + val(cfg.size, 0.5) * 1.0) }, uVh: { value: 800 } }, common) }));
         grains.position.z = 0.001; grains.frustumCulled = false; this.group.add(grains);
       });
+      if (kind === 3) { // without a stop: the clock just runs (a finger makes the wind stronger)
+        this.step = (dt) => { uS.value += dt * (this.touchPoint() ? 2.2 : 1); };
+        return;
+      }
       // whole, blown away (a finger makes the wind stronger), gone a moment, blown back
-      const WHOLE = 1.2, BLOW = kind === 1 ? 5.5 : kind === 2 ? 5.6 : 6.5, GONE = kind === 2 ? 1.6 : 0.9, BACK = 3, ALL = WHOLE + BLOW + GONE + BACK;
+      const WHOLE = 1.2, BLOW = kind === 1 ? 5.5 : 6.5, GONE = 0.9, BACK = 3, ALL = WHOLE + BLOW + GONE + BACK;
       let clock = 0;
       this.step = (dt) => {
         const f = this.touchPoint();
@@ -1699,6 +1712,124 @@ void main() {
         clock = (clock + dt * (f && clock < WHOLE + BLOW ? 2.2 : 1)) % ALL;
         uS.value = clock < WHOLE ? 0 : clock < WHOLE + BLOW ? clock - WHOLE : clock < WHOLE + BLOW + GONE ? BLOW : BLOW * (1 - smooth(0, 1, (clock - WHOLE - BLOW - GONE) / BACK));
       };
+    },
+    // The pile: the picture crumbles into grains that fall to the low side and heap up inside the picture's frame. Turning
+    // the phone (or the artwork) sends the heap sliding to the new low side; a finger digs through it and crumbles the
+    // picture where it touches. Falling sand on a grid, one grain a cell, worked out here and drawn as dots.
+    buildSandPile(cfg, w, h, C) {
+      const R = rand(9100 + (cfg.seed | 0)), unit = Math.min(w, h), STEP = 1 / 240;
+      this.parts = {};
+      const under = new THREE.Group(); this.group.add(under);
+      this.loadPicture((tex) => {
+        const n = Math.round(4000 + val(cfg.amount, 0.5) * 9000), pts = pointsFromImage(tex.image, w, h, n), count = pts.home.length / 3;
+        const asp = w / h, gw = Math.max(8, Math.round(Math.sqrt(n * asp))), gh = Math.max(8, Math.round(gw / asp)), cw = w / gw, ch = h / gh;
+        const mask = new Uint8Array(gw * gh * 4), maskTex = new THREE.DataTexture(mask, gw, gh, THREE.RGBAFormat);
+        maskTex.magFilter = maskTex.minFilter = THREE.NearestFilter; maskTex.needsUpdate = true;
+        const pic = new THREE.Mesh(new THREE.PlaneGeometry(w, h), this.mat({ vertexShader: FLAT_VS, fragmentShader: SANDPIC_FS, uniforms: { map: { value: tex }, uMask: { value: maskTex }, uTime: { value: 0 },
+          uS: { value: 0 }, uKind: { value: 2 }, uBox: { value: new THREE.Vector2(w, h) }, uRot: { value: this.rot }, uGrid: { value: new THREE.Vector2(gw, gh) }, uC1: { value: C[0] }, uC2: { value: C[1] } } }));
+        pic.position.z = 0.0008; under.add(pic);
+        if (!count) return;
+        // each grain: its home cell, where it is, and whether it has left the picture
+        const home = new Int32Array(count), cell = new Int32Array(count), free = new Uint8Array(count), ok = new Uint8Array(count), occ = new Int32Array(gw * gh).fill(-1);
+        const col = new Float32Array(count * 3), pos = new Float32Array(count * 3), alpha = new Float32Array(count);
+        for (let i = 0; i < count; i++) {
+          const x = pts.home[i * 3], y = pts.home[i * 3 + 1];
+          const cx = Math.min(gw - 1, Math.max(0, Math.floor((x / w + 0.5) * gw))), cy = Math.min(gh - 1, Math.max(0, Math.floor((0.5 - y / h) * gh)));
+          let c = cy * gw + cx; if (occ[c] >= 0) continue; // two on one cell: the second stays out
+          home[i] = cell[i] = c; occ[c] = i; ok[i] = 1; pos[i * 3] = x; pos[i * 3 + 1] = y; pos[i * 3 + 2] = 0;
+          const k = 0.92 + R() * 0.16; col[i * 3] = Math.min(1, pts.tint[i * 3] * k); col[i * 3 + 1] = Math.min(1, pts.tint[i * 3 + 1] * k); col[i * 3 + 2] = Math.min(1, pts.tint[i * 3 + 2] * k);
+          const mr = ((gh - 1 - cy) * gw + cx) * 4; mask[mr] = 255;
+        }
+        const g = new THREE.BufferGeometry();
+        g.setAttribute("position", new THREE.BufferAttribute(pos, 3)); g.setAttribute("aCol", new THREE.BufferAttribute(col, 3)); g.setAttribute("aA", new THREE.BufferAttribute(alpha, 1));
+        const dots = new THREE.Points(g, this.mat({ vertexShader: BURST_VS, fragmentShader: SAND_FS, uniforms: { uSize: { value: pts.cell * (0.9 + val(cfg.size, 0.5) * 0.9) }, uVh: { value: 800 } } }));
+        dots.position.z = 0.001; dots.frustumCulled = false; under.add(dots);
+        const center = (c, out) => { out.x = ((c % gw) + 0.5) * cw - w / 2; out.y = h / 2 - (Math.floor(c / gw) + 0.5) * ch; return out; };
+        const tmpC = { x: 0, y: 0 };
+        const setMask = (c, on) => { const cx = c % gw, cy = Math.floor(c / gw); mask[((gh - 1 - cy) * gw + cx) * 4] = on ? 255 : 0; maskTex.needsUpdate = true; };
+        // sand packs tighter than a picture: about four in ten grains heap up, the rest turn to dust and fade
+        let cells = 0; for (let i = 0; i < count; i++) cells += ok[i];
+        const keep = Math.min(0.85, 0.42 * gw * gh / Math.max(1, cells)), dust = new Uint8Array(count); for (let i = 0; i < count; i++) dust[i] = R() > keep ? 1 : 0;
+        const release = (i) => { if (free[i] || !ok[i]) return; free[i] = dust[i] ? 2 : 1; alpha[i] = 1; setMask(home[i], false); if (dust[i]) occ[cell[i]] = -1; };
+        // the order to work the cells in: the lowest first, for each of the eight ways down
+        const DIRS = [[0, 1], [1, 1], [1, 0], [1, -1], [0, -1], [-1, -1], [-1, 0], [-1, 1]], orders = [];
+        const orderFor = (di) => orders[di] || (orders[di] = (() => { const [dx, dy] = DIRS[di], o = new Int32Array(gw * gh); for (let i = 0; i < o.length; i++) o[i] = i; const key = new Float32Array(gw * gh); for (let i = 0; i < o.length; i++) key[i] = (i % gw) * dx + Math.floor(i / gw) * dy; return Int32Array.from(o).sort((a, b) => key[b] - key[a]); })());
+        const at = (cx, cy) => (cx < 0 || cy < 0 || cx >= gw || cy >= gh ? -2 : occ[cy * gw + cx]);
+        const move = (i, from, to) => { occ[from] = -1; occ[to] = i; cell[i] = to; };
+        let phase = "whole", clock = 0, crumbleAt = 0, acc = 0, flip = 0;
+        const byLow = []; // the grains in the order they crumble: the low side first
+        const startCrumble = () => {
+          const dn = { x: this.rot.y, y: -this.rot.x }; byLow.length = 0;
+          for (let i = 0; i < count; i++) if (occ[home[i]] === i) byLow.push(i);
+          byLow.sort((a, b) => (pts.home[a * 3] * dn.x + pts.home[a * 3 + 1] * dn.y) - (pts.home[b * 3] * dn.x + pts.home[b * 3 + 1] * dn.y)).reverse();
+          crumbleAt = 0; phase = "crumble"; clock = 0;
+        };
+        const gather = () => { // all the grains fly home, and the picture is whole again
+          phase = "home"; clock = 0; occ.fill(-1);
+          for (let i = 0; i < count; i++) if (free[i]) { cell[i] = home[i]; alpha[i] = 1; }
+          for (let i = 0; i < count; i++) if (ok[i]) occ[home[i]] = i;
+        };
+        this.parts.pile = { get phase() { return phase; }, get free() { let k = 0; for (let i = 0; i < count; i++) k += free[i]; return k; }, count,
+          lowSide: () => { let sx = 0, sy = 0, k = 0; for (let i = 0; i < count; i++) if (free[i] === 1) { center(cell[i], tmpC); sx += tmpC.x; sy += tmpC.y; k++; } return k ? { x: sx / k / w, y: sy / k / h } : null; } };
+        this.step = (dt, d) => {
+          clock += d;
+          const f = cfg.touch !== false ? this.touchPoint() : null;
+          if (phase === "whole" && (clock > 1.6 || f)) startCrumble();
+          if (phase === "crumble") { // the picture comes apart, the low side first, about three seconds in all
+            const want = Math.min(byLow.length, Math.round(byLow.length * Math.min(1, clock / 3)));
+            while (crumbleAt < want) release(byLow[crumbleAt++]);
+            if (crumbleAt >= byLow.length) { phase = "pile"; clock = 0; }
+          }
+          if (phase === "pile" && clock > 45) gather(); // now and then the picture builds itself again, for whoever comes next
+          if (phase === "home") {
+            let left = 0;
+            for (let i = 0; i < count; i++) {
+              if (!free[i]) continue;
+              const hx = pts.home[i * 3], hy = pts.home[i * 3 + 1], k = 1 - Math.exp(-d * (3 + (i % 7)));
+              pos[i * 3] += (hx - pos[i * 3]) * k; pos[i * 3 + 1] += (hy - pos[i * 3 + 1]) * k;
+              if (Math.abs(hx - pos[i * 3]) + Math.abs(hy - pos[i * 3 + 1]) < cw * 0.3 || clock > 3) { free[i] = 0; alpha[i] = 0; setMask(home[i], true); } else left++;
+            }
+            g.attributes.position.needsUpdate = true; g.attributes.aA.needsUpdate = true;
+            if (!left) { phase = "whole"; clock = 0; }
+            return;
+          }
+          // a finger crumbles the picture where it touches, and pushes the grains aside
+          let fx = -9, fy = -9, fr = 0;
+          if (f) {
+            fx = (f.x / w + 0.5) * gw; fy = (0.5 - f.y / h) * gh; fr = Math.max(2, gw * (0.05 + val(cfg.size, 0.5) * 0.06));
+            const x0 = Math.max(0, Math.floor(fx - fr)), x1 = Math.min(gw - 1, Math.ceil(fx + fr)), y0 = Math.max(0, Math.floor(fy - fr)), y1 = Math.min(gh - 1, Math.ceil(fy + fr));
+            for (let cy = y0; cy <= y1; cy++) for (let cx = x0; cx <= x1; cx++) { const i = occ[cy * gw + cx]; if (i >= 0 && !free[i] && Math.hypot(cx - fx, cy - fy) < fr) release(i); }
+          }
+          // the way down on the grid (x right, rows downward), to the nearest of eight
+          const dx = this.rot.y, dy = this.rot.x; // down on the layer is (rot.y, -rot.x); rows run downward
+          const di = ((Math.round(Math.atan2(dx, dy) / (Math.PI / 4)) % 8) + 8) % 8, [ddx, ddy] = DIRS[di], [lx, ly] = DIRS[(di + 1) % 8], [rx, ry] = DIRS[(di + 7) % 8], [sx1, sy1] = DIRS[(di + 2) % 8], [sx2, sy2] = DIRS[(di + 6) % 8];
+          const order = orderFor(di);
+          acc += d; let steps = 0;
+          while (acc >= STEP && steps < 6) {
+            acc -= STEP; steps++; flip ^= 1;
+            for (let k = 0; k < order.length; k++) {
+              const c = order[k], i = occ[c]; if (i < 0 || !free[i]) continue;
+              const cx = c % gw, cy = (c / gw) | 0;
+              if (fr) { const ex = cx - fx, ey = cy - fy, ed = Math.hypot(ex, ey); if (ed < fr) { // pushed away from the finger
+                const tx = cx + Math.round(ex / (ed || 1)), ty = cy + Math.round(ey / (ed || 1)); if (at(tx, ty) === -1) { move(i, c, ty * gw + tx); continue; } } }
+              if (at(cx + ddx, cy + ddy) === -1) { move(i, c, (cy + ddy) * gw + cx + ddx); continue; }
+              const a1 = flip ^ (i & 1) ? [lx, ly, rx, ry] : [rx, ry, lx, ly];
+              if (at(cx + a1[0], cy + a1[1]) === -1) { move(i, c, (cy + a1[1]) * gw + cx + a1[0]); continue; }
+              if (at(cx + a1[2], cy + a1[3]) === -1) { move(i, c, (cy + a1[3]) * gw + cx + a1[2]); continue; }
+              if (R() < 0.3) { const s = flip ^ (i & 1) ? [sx1, sy1] : [sx2, sy2]; if (at(cx + s[0], cy + s[1]) === -1 && at(cx + s[0] + ddx, cy + s[1] + ddy) === -1) move(i, c, (cy + s[1]) * gw + cx + s[0]); } // slides off a steep side now and then
+            }
+          }
+          if (acc > STEP * 6) acc = 0;
+          // drawn: each grain glides to its cell
+          const k = 1 - Math.exp(-d * 30);
+          const ddn = { x: this.rot.y, y: -this.rot.x };
+          for (let i = 0; i < count; i++) {
+            if (free[i] === 1) { center(cell[i], tmpC); pos[i * 3] += (tmpC.x - pos[i * 3]) * k; pos[i * 3 + 1] += (tmpC.y - pos[i * 3 + 1]) * k; }
+            else if (free[i] === 2 && alpha[i] > 0) { alpha[i] = Math.max(0, alpha[i] - d * 1.4); pos[i * 3] += ddn.x * unit * 0.25 * d; pos[i * 3 + 1] += ddn.y * unit * 0.25 * d; } // dust: drifts down and fades
+          }
+          g.attributes.position.needsUpdate = true; g.attributes.aA.needsUpdate = true;
+        };
+      });
     },
     buildEyes(cfg, w, h, C) {
       const kind = Math.min(2, Math.max(0, cfg.kind | 0)), R = rand(7000 + (cfg.seed | 0)), size = val(cfg.size, 0.5), unit = Math.max(w, h), eyes = [];
@@ -2208,6 +2339,96 @@ void main() {
           if (slide && p === N - 1) m.visible = done > 0.02; // the missing piece comes back when it is solved
         });
         card.step(d); sparks.step(d, 0.3);
+      };
+    },
+    // Funny faces: the picture is a face on a fine grid; its points move, so the picture stretches with them. The creator
+    // sets eyes, nose, mouth, smile and head with sliders (where they are comes from el.codefx.face, found in the editor,
+    // or from a portrait's usual proportions). The viewer pulls, grows, shrinks or wobbles it with a finger; it goes back
+    // slowly unless the changes stay. "alive" makes it pull faces by itself; "follow" turns it a little toward the viewer.
+    buildFace(cfg, w, h, C) {
+      const kind = Math.min(3, Math.max(0, cfg.kind | 0)), unit = Math.min(w, h);
+      const SX = Math.max(24, Math.round(80 * w / unit)), SY = Math.max(24, Math.round(80 * h / unit));
+      const geo = new THREE.PlaneGeometry(w, h, Math.min(160, SX), Math.min(160, SY)), P = geo.attributes.position, N = P.count;
+      const rest = Float32Array.from(P.array), D = new Float32Array(N * 2), V = new Float32Array(N * 2), pin = new Float32Array(N);
+      for (let i = 0; i < N; i++) { const x = rest[i * 3], y = rest[i * 3 + 1], e = Math.min(w / 2 - Math.abs(x), h / 2 - Math.abs(y)) / unit; pin[i] = smooth(0, 0.07, e); } // the frame stays put
+      const F = Array.isArray(cfg.face) && cfg.face.length >= 16 ? cfg.face : [0.36, 0.42, 0.64, 0.42, 0.07, 0.5, 0.42, 0.5, 0.58, 0.39, 0.7, 0.61, 0.7, 0.5, 0.52, 0.3];
+      const at = (u, v) => ({ x: (u - 0.5) * w, y: (0.5 - v) * h });
+      const eyes = [at(F[0], F[1]), at(F[2], F[3])], eyeR = Math.max(unit * 0.02, F[4] * w);
+      const bridge = at(F[5], F[6]), tip = at(F[7], F[8]), ml = at(F[9], F[10]), mr = at(F[11], F[12]), fc = at(F[13], F[14]), fr = Math.max(unit * 0.08, F[15] * w);
+      const nose = { x: tip.x - bridge.x, y: tip.y - bridge.y }, nL = Math.max(unit * 0.03, Math.hypot(nose.x, nose.y)); nose.x /= nL; nose.y /= nL;
+      const mc = { x: (ml.x + mr.x) / 2, y: (ml.y + mr.y) / 2 }, mw = Math.max(unit * 0.03, Math.hypot(mr.x - ml.x, mr.y - ml.y) / 2), ma = { x: (mr.x - ml.x) / (2 * mw), y: (mr.y - ml.y) / (2 * mw) };
+      let mup = { x: -ma.y, y: ma.x }; // up from the mouth: toward the eyes
+      if (((eyes[0].x + eyes[1].x) / 2 - mc.x) * mup.x + ((eyes[0].y + eyes[1].y) / 2 - mc.y) * mup.y < 0) mup = { x: -mup.x, y: -mup.y };
+      const sl = (k) => (val(cfg[k], 0.5) - 0.5) * 2; // -1 .. 1, the middle as in the picture
+      const base = { eyes: sl("eyes"), nose: sl("nose"), mouth: sl("mouth"), smile: sl("smile"), head: sl("head") };
+      const bump = (q) => (q < 1 ? (1 - q * q) * (1 - q * q) : 0);
+      const mesh = new THREE.Mesh(geo, this.mat({ vertexShader: FLAT_VS, fragmentShader: PIC_FS, uniforms: { map: { value: null }, uA: { value: 1 } } }));
+      mesh.position.z = 0.0008; mesh.frustumCulled = false; mesh.visible = false; this.group.add(mesh);
+      this.loadPicture((tex) => { mesh.material.uniforms.map.value = tex; mesh.visible = true; });
+      const cv = { x: 0, y: 0, eyes: 0, nose: 0, mouth: 0, smile: 0, head: 0, turn: 0 };
+      // where a point of the picture goes for these settings
+      const shape = (x, y, o) => {
+        let ox = 0, oy = 0;
+        if (cv.head) { const dx = x - fc.x, dy = y - fc.y, b = bump(Math.hypot(dx, dy) / (fr * 1.25)); ox += dx * cv.head * 0.32 * b; oy += dy * cv.head * 0.32 * b; }
+        if (cv.turn) { const dx = x - fc.x, dy = y - fc.y, b = bump(Math.hypot(dx, dy * 0.85) / (fr * 1.2)); ox += cv.turn * fr * 0.22 * b * (1 - 0.5 * Math.abs(dx) / fr); } // the middle of the face moves more than its sides: it seems to turn
+        if (cv.eyes) for (const e of eyes) { const dx = x - e.x, dy = y - e.y, b = bump(Math.hypot(dx, dy) / (eyeR * 2.1)); ox += dx * cv.eyes * (cv.eyes > 0 ? 0.8 : 0.55) * b; oy += dy * cv.eyes * (cv.eyes > 0 ? 0.8 : 0.55) * b; }
+        if (cv.nose) {
+          const rx = x - bridge.x, ry = y - bridge.y, al = (rx * nose.x + ry * nose.y) / nL, side = Math.abs(rx * nose.y - ry * nose.x) / (nL * 0.42);
+          const g = al < 0 ? 0 : al < 1 ? al * al * (3 - 2 * al) : Math.max(0, 1 - (al - 1) / 0.9), sw = bump(side);
+          const L = cv.nose > 0 ? cv.nose * 1.6 : cv.nose * 0.45; ox += nose.x * nL * L * g * sw; oy += nose.y * nL * L * g * sw;
+        }
+        if (cv.mouth || cv.smile) {
+          const rx = x - mc.x, ry = y - mc.y, a = (rx * ma.x + ry * ma.y) / mw, b2 = (rx * mup.x + ry * mup.y) / (mw * 0.75), wgt = bump(Math.sqrt(a * a / 2.6 + b2 * b2));
+          const along = a * mw * cv.mouth * 0.42 * wgt, lift = mw * cv.smile * 0.32 * Math.min(1, a * a) * wgt;
+          ox += ma.x * along + mup.x * lift; oy += ma.y * along + mup.y * lift;
+        }
+        o.x = ox; o.y = oy; return o;
+      };
+      const tmpO = { x: 0, y: 0 }, vp = new THREE.Vector3(), vd = new THREE.Vector3(), vt = new THREE.Vector3();
+      const brushR = unit * (0.06 + val(cfg.size, 0.5) * 0.2), power = 0.35 + val(cfg.amount, 0.5) * 1.3, maxD = unit * 0.4;
+      let last = null, idle = 9, presses = null, aliveT = 0, turn = 0;
+      this.parts = { face: { D, N, shift: () => { let m = 0; for (let i = 0; i < N; i++) m = Math.max(m, Math.abs(P.array[i * 3] - rest[i * 3]) + Math.abs(P.array[i * 3 + 1] - rest[i * 3 + 1])); return m / unit; }, features: { eyes, tip, mc, fc } } };
+      this.step = (dt, d) => {
+        // the settings, alive or still
+        aliveT += dt;
+        // alive: a twelve-second round, one part at a time (eyes open wide, the nose grows, a big smile, a big head with small eyes)
+        const ph = cfg.alive ? (aliveT % 12) / 3 : -1, part = Math.floor(ph), e = cfg.alive ? Math.sin(Math.PI * (ph - part)) : 0;
+        cv.eyes = base.eyes + (part === 0 ? 0.8 * e : part === 3 ? -0.45 * e : 0);
+        cv.nose = base.nose + (part === 1 ? 0.9 * e : 0);
+        cv.smile = base.smile + (part === 2 ? 0.9 * e : 0); cv.mouth = base.mouth + (part === 2 ? 0.5 * e : 0);
+        cv.head = base.head + (part === 3 ? 0.45 * e : 0);
+        cv.turn = 0;
+        if (cfg.follow) { const v = this.viewer(vp, vd, vt), want = v && v.dist > 1e-3 ? Math.max(-1, Math.min(1, (vp.x - fc.x) / Math.max(v.dist, unit) * 1.6)) : 0; turn += (want - turn) * (1 - Math.exp(-d * 3)); cv.turn = turn; } // toward whoever looks
+        // the finger
+        const st = this.finger && this.finger.state, f = st && st.held && cfg.touch !== false ? this.touchPoint() : null;
+        if (presses == null && st) presses = st.presses;
+        if (f) {
+          idle = 0;
+          const r2 = brushR * brushR;
+          for (let i = 0; i < N; i++) {
+            const x = rest[i * 3] + D[i * 2], y = rest[i * 3 + 1] + D[i * 2 + 1], dx = x - f.x, dy = y - f.y, q2 = (dx * dx + dy * dy) / r2;
+            if (q2 >= 1) continue;
+            const b = (1 - q2) * (1 - q2);
+            if (kind === 0 && last) { D[i * 2] += (f.x - last.x) * b; D[i * 2 + 1] += (f.y - last.y) * b; } // pulled along with the finger
+            else if (kind === 1 || kind === 2) { const s = (kind === 1 ? 0.55 : -0.5) * power * dt * b, m0 = Math.hypot(D[i * 2], D[i * 2 + 1]); if (m0 < brushR * 0.5) { D[i * 2] += dx * s; D[i * 2 + 1] += dy * s; } } // grows (shrinks) while the finger stays, up to a point
+            else if (kind === 3 && last) { V[i * 2] += (f.x - last.x) / Math.max(d, 1e-3) * b * 0.5; V[i * 2 + 1] += (f.y - last.y) / Math.max(d, 1e-3) * b * 0.5; }
+            const m = Math.hypot(D[i * 2], D[i * 2 + 1]); if (m > maxD) { D[i * 2] *= maxD / m; D[i * 2 + 1] *= maxD / m; }
+          }
+          if (kind === 3 && st.presses !== presses) { // a poke: it wobbles out from the finger
+            for (let i = 0; i < N; i++) { const dx = rest[i * 3] - f.x, dy = rest[i * 3 + 1] - f.y, q = Math.hypot(dx, dy) / (brushR * 1.6); if (q < 1) { const b = bump(q) * power * unit * 1.6 / (Math.hypot(dx, dy) + unit * 0.02); V[i * 2] += dx * b; V[i * 2 + 1] += dy * b; } }
+          }
+          last = { x: f.x, y: f.y };
+        } else { last = null; idle += d; }
+        if (st) presses = st.presses;
+        if (kind === 3) { // jelly: a spring pulls each point home, and it overshoots
+          const K = 70 + power * 40, damp = Math.exp(-d * 3.2);
+          for (let i = 0; i < N * 2; i++) { V[i] = (V[i] - K * D[i] * d) * damp; D[i] += V[i] * d; }
+        } else if (!cfg.keep && idle > 2.5) { const k = Math.exp(-d * 1.2); for (let i = 0; i < N * 2; i++) D[i] *= k; } // back to the picture, slowly
+        for (let i = 0; i < N; i++) {
+          const x = rest[i * 3], y = rest[i * 3 + 1]; shape(x, y, tmpO);
+          P.array[i * 3] = Math.max(-w / 2, Math.min(w / 2, x + (tmpO.x + D[i * 2]) * pin[i])); P.array[i * 3 + 1] = Math.max(-h / 2, Math.min(h / 2, y + (tmpO.y + D[i * 2 + 1]) * pin[i])); // never out of the frame
+        }
+        P.needsUpdate = true;
       };
     },
     buildAurora(cfg, w, h, C) {
