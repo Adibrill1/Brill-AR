@@ -14,7 +14,7 @@ const SHOTS=process.env.SHOTS||'';
     a.assets.__artwork=await new Promise(r=>c.toBlob(r,'image/png'));a.elements=[];await Studio.save(a);return a.id;});
   await p.goto(base+'/index.html#/e/'+id);await p.waitForSelector('#btn-add');await p.waitForTimeout(600);
   const shot=async(name)=>{if(SHOTS)await p.screenshot({path:SHOTS+'/'+name+'.png'});};
-  const looks=await p.evaluate(()=>Studio.CODEFX.map(c=>c.id));assert.deepEqual(looks,['dissolve','dust','portal','swarm','ivy','burn','fireflies','jelly','tree','spiral','bubbles','liquid','lanterns']);
+  const looks=await p.evaluate(()=>Studio.CODEFX.map(c=>c.id));assert.deepEqual(looks,['dissolve','dust','portal','swarm','ivy','burn','fireflies','jelly','tree','spiral','bubbles','liquid','lanterns','ripple','shatter','rain','aurora']);
   for(const look of looks){
     await p.evaluate(()=>Layers.openAdd());await p.locator('button.add-tile[data-add="codefx"]').tap();
     await p.locator('button.part-tile[data-codefx="'+look+'"]').tap();
@@ -22,7 +22,7 @@ const SHOTS=process.env.SHOTS||'';
     const elId=await p.evaluate(()=>App.selId);
     // drawn by the 3D layer over the flat canvas
     await p.waitForFunction(id=>Editor3D.drawsIn2d(id),elId,{timeout:8000});
-    await p.waitForTimeout({dissolve:3800,ivy:6000,tree:7000,burn:3400,spiral:3000}[look]||2500);
+    await p.waitForTimeout({dissolve:3800,ivy:6000,tree:7000,burn:3400,spiral:3000,shatter:4200}[look]||2500);
     await p.evaluate(()=>App.select(null));await p.waitForTimeout(100);await shot('flat-'+look);
     await p.evaluate(id=>App.select(id),elId);
     // its controls: the colours, the speed and the amount
@@ -52,7 +52,7 @@ const SHOTS=process.env.SHOTS||'';
   await p.evaluate(()=>App.flush&&App.flush());await p.waitForTimeout(400);
   const recId=await p.evaluate(()=>App.rec.id);
   await p.goto(base+'/preview.html#'+recId);
-  await p.waitForFunction(()=>{const n=[...document.querySelectorAll('[studio-codefx]')];return n.length===13&&n.every(x=>x.getObject3D('codefx')&&x.getObject3D('codefx').children.length>0);},null,{timeout:15000});
+  await p.waitForFunction(()=>{const n=[...document.querySelectorAll('[studio-codefx]')];return n.length===17&&n.every(x=>x.getObject3D('codefx')&&x.getObject3D('codefx').children.length>0);},null,{timeout:15000});
   await p.waitForTimeout(1500);await shot('preview');
   console.log(JSON.stringify(errs.slice(0,8)));assert.deepEqual(errs.filter(e=>!/favicon|Failed to load resource/.test(e)),[]);
   console.log('v2-codefx ok');

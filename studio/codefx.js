@@ -1,5 +1,5 @@
 "use strict";
-/* Live code animations ("אנימציות קוד"): thirteen looks drawn in three.js, written here, with no files to download.
+/* Live code animations ("אנימציות קוד"): seventeen looks drawn in three.js, written here, with no files to download.
    el.codefx = { look, colors[3], speed, amount, size (0-1 each), kind, text, touch, cover, seed }:
      dissolve  a picture (el.assetId, the artwork by default) falls apart into coloured dust and gathers back
      dust      a greeting written in gold dust that swirls in, sparkles and blows away
@@ -15,6 +15,11 @@
      bubbles   soap bubbles whose film turns colour with the angle; a finger pops them
      liquid    drops of liquid metal (or lava-lamp wax) melt into each other and part
      lanterns  round paper lanterns lit from inside that rise, float or are let go one by one
+     ripple    the picture under water: rain drops, a finger, a still lake or a stream bend it in rings (picture)
+     shatter   the picture cracks from a blow, falls apart in glass shards (with real gravity) and flies back (picture)
+     rain      rain on a window in front of the picture: fogged glass, drops that bend the view, drops running down;
+               a finger wipes the fog away and it fogs up again (picture)
+     aurora    curtains of northern lights folding and drifting, alone or in a starry night sky
    With cfg.gravity (el.gravity, Studio.gravityFollower) the looks in Studio.GRAVITY_CODEFX keep their motion upright in
    the real world: turn the artwork and sparks, jellyfish, bubbles and lanterns still rise, leaves fall, metal runs low.
    Each look is one A-Frame component, "studio-codefx", built in Studio.buildElementEntity. It is an overlay layer,
@@ -723,9 +728,203 @@ void main() { float r2 = dot(vUv, vUv); if (r2 > 1.0) discard; float g = exp(-r2
   // the proportions of a greeting's words, for the layer's shape
   window.StudioCodeFx = { wordsAspect: (text, font) => { const c = wordsCanvas(text, font); return c.width / c.height; } };
 
-  const BUILDERS = { burn: "buildBurn", fireflies: "buildFireflies", jelly: "buildJelly", tree: "buildTree", spiral: "buildSpiral", bubbles: "buildBubbles", liquid: "buildLiquid", lanterns: "buildLanterns" };
+  // ---------- ripple: the picture under water; drops, a finger or a stream make rings that bend it ----------
+  const RIPPLE_FS = `
+uniform sampler2D map; uniform float uTime, uKind, uAmp, uWave, uOpacity; uniform vec2 uBox; uniform vec4 uDrops[12]; uniform vec3 uC1, uC2, uC3;
+varying vec2 vUv; varying vec2 vP;
+${NOISE}
+float water(vec2 p) {
+  float s = 0.0, L = uBox.y * uWave;
+  for (int i = 0; i < 12; i++) {
+    vec4 d = uDrops[i];
+    float a = uTime - d.z;
+    if (d.w <= 0.0 || a < 0.0 || a > 7.0) continue;
+    float r = length(p - d.xy), x = r - a * L * 2.2; // the ring runs outward
+    s += sin(x / L * 6.2832) * exp(-x * x / (L * L * 3.0)) * exp(-a * 1.0) * d.w / (1.0 + r / (L * 4.0));
+  }
+  vec2 q = p / uBox.y;
+  if (uKind > 0.5 && uKind < 1.5) s += (noise(q * 5.0 + uTime * 0.12) - 0.5) * 0.35 + sin(q.x * 8.0 - q.y * 3.0 + uTime * 0.7) * 0.05; // a still lake breathing
+  else if (uKind > 1.5) s += (fbm(q * vec2(3.5, 8.0) + vec2(0.0, uTime * 0.8)) - 0.5) * 1.1; // a stream running past
+  return s;
+}
+void main() {
+  float e = uBox.y * 0.004, h0 = water(vP);
+  vec2 g = vec2(water(vP + vec2(e, 0.0)) - h0, water(vP + vec2(0.0, e)) - h0) / e * uBox.y * uAmp;
+  vec4 tex = texture2D(map, clamp(vUv - g * 0.006 * vec2(uBox.y / uBox.x, 1.0), 0.001, 0.999));
+  vec3 n = normalize(vec3(-g * 0.35, 1.0));
+  float spec = pow(max(0.0, dot(n, normalize(vec3(-0.35, 0.5, 0.8)))), 90.0), shade = clamp(dot(n.xy, vec2(0.6, -0.8)) * 2.5, -1.0, 1.0);
+  vec3 col = mix(tex.rgb, tex.rgb * uC1, 0.22);
+  col = mix(col, uC3, max(0.0, -shade) * 0.35) + uC2 * max(0.0, shade) * 0.08 + uC2 * spec * 0.8;
+  gl_FragColor = vec4(col, tex.a * uOpacity);
+}`;
+
+  // ---------- shatter: the picture cracks from a point, breaks into glass shards that fall, and flies back together ----------
+  const SHARD_VS = `
+attribute vec2 centre; attribute vec3 rnd; attribute float edge;
+uniform float uS, uCrack, uKind; uniform vec2 uBox, uRot, uHit;
+varying vec2 vUv; varying float vEdge, vLit, vCrack, vA;
+mat3 spin(vec3 a, float t) { float c = cos(t), s = sin(t), k = 1.0 - c;
+  return mat3(c + a.x * a.x * k, a.y * a.x * k + a.z * s, a.z * a.x * k - a.y * s, a.x * a.y * k - a.z * s, c + a.y * a.y * k, a.z * a.y * k + a.x * s, a.x * a.z * k + a.y * s, a.y * a.z * k - a.x * s, c + a.z * a.z * k); }
+void main() {
+  vUv = uv; vEdge = edge;
+  float H = uBox.y, dist = length(centre - uHit) / length(uBox);
+  vCrack = clamp((uCrack * 1.25 - dist) * 8.0, 0.0, 1.0); // the cracks run out from the blow
+  float delay = uKind < 0.5 ? dist * 0.5 : (uKind < 1.5 ? (0.5 - (dot(centre, vec2(-uRot.y, uRot.x)) / H)) * 0.9 : dist * 0.12);
+  float s = max(0.0, uS - delay - rnd.x * 0.12);
+  vec2 out2 = normalize(centre - uHit + (rnd.yz - 0.5) * H * 0.05), down = vec2(uRot.y, -uRot.x);
+  float push = uKind < 0.5 ? 0.18 + rnd.y * 0.3 : (uKind < 1.5 ? 0.03 + rnd.y * 0.06 : 0.5 + rnd.y * 0.7);
+  vec3 off = vec3(out2 * push * H * s + down * 0.5 * 0.55 * H * s * s, (uKind > 1.5 ? 0.6 : 0.15 + rnd.z * 0.25) * H * s);
+  vec3 axis = normalize(rnd * 2.0 - 1.0 + vec3(0.0, 0.0, 0.2));
+  mat3 R = spin(axis, s * (1.5 + rnd.z * 5.0) * (uKind > 1.5 ? 1.6 : 1.0));
+  vec3 p = vec3(centre, 0.0) + R * (position - vec3(centre, 0.0)) + off;
+  vec3 nrm = R * vec3(0.0, 0.0, 1.0);
+  vLit = pow(max(0.0, dot(normalize(nrm), normalize(vec3(-0.3, 0.5, 0.8)))), 24.0) * step(0.001, s);
+  vA = 1.0 - smoothstep(2.4, 3.2, s); // far gone: faded out, back in on the way home
+  gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+}`;
+  const SHARD_FS = `
+uniform sampler2D map; uniform float uOpacity; uniform vec3 uC2, uC3;
+varying vec2 vUv; varying float vEdge, vLit, vCrack, vA;
+void main() {
+  vec4 t = texture2D(map, vUv);
+  float rim = smoothstep(0.9, 1.0, vEdge);
+  vec3 c = mix(t.rgb, uC2, rim * vCrack * 0.85) + uC3 * vLit * 0.7 + uC2 * rim * vLit;
+  gl_FragColor = vec4(c, t.a * vA * uOpacity);
+}`;
+  // glass shards: the cells of points scattered over the picture (more of them, smaller, near the middle), each cut as a
+  // fan of triangles around its middle; edge is 1 on the cell's border, so the shader can draw the cracks
+  function shardGeometry(w, h, n, R) {
+    const seeds = [];
+    for (let i = 0; i < n; i++) {
+      if (R() < 0.55) { const r = Math.pow(R(), 1.7) * Math.max(w, h) * 0.6, a = R() * TAU; seeds.push([Math.max(-w / 2, Math.min(w / 2, Math.cos(a) * r)), Math.max(-h / 2, Math.min(h / 2, Math.sin(a) * r))]); }
+      else seeds.push([(R() - 0.5) * w, (R() - 0.5) * h]);
+    }
+    const pos = [], uvs = [], cen = [], rnd = [], edg = [];
+    for (let i = 0; i < n; i++) {
+      let poly = [[-w / 2, -h / 2], [w / 2, -h / 2], [w / 2, h / 2], [-w / 2, h / 2]];
+      const [sx, sy] = seeds[i];
+      for (let j = 0; j < n && poly.length; j++) {
+        if (j === i) continue;
+        const [tx, ty] = seeds[j], nx = tx - sx, ny = ty - sy, mx = (sx + tx) / 2, my = (sy + ty) / 2;
+        if (nx * nx + ny * ny < 1e-12) continue;
+        const inside = (p) => (p[0] - mx) * nx + (p[1] - my) * ny <= 0, out = [];
+        for (let k = 0; k < poly.length; k++) {
+          const a = poly[k], b = poly[(k + 1) % poly.length], ia = inside(a), ib = inside(b);
+          if (ia) out.push(a);
+          if (ia !== ib) { const da = (a[0] - mx) * nx + (a[1] - my) * ny, db = (b[0] - mx) * nx + (b[1] - my) * ny, t = da / (da - db); out.push([a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t]); }
+        }
+        poly = out;
+      }
+      if (poly.length < 3) continue;
+      let cx = 0, cy = 0; for (const p of poly) { cx += p[0]; cy += p[1]; } cx /= poly.length; cy /= poly.length;
+      const r = [R(), R(), R()];
+      for (let k = 0; k < poly.length; k++) {
+        const a = poly[k], b = poly[(k + 1) % poly.length];
+        for (const [p, e] of [[[cx, cy], 0], [a, 1], [b, 1]]) { pos.push(p[0], p[1], 0); uvs.push(p[0] / w + 0.5, p[1] / h + 0.5); cen.push(cx, cy); rnd.push(r[0], r[1], r[2]); edg.push(e); }
+      }
+    }
+    const g = new THREE.BufferGeometry();
+    g.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute("uv", new THREE.Float32BufferAttribute(uvs, 2));
+    g.setAttribute("centre", new THREE.Float32BufferAttribute(cen, 2)); g.setAttribute("rnd", new THREE.Float32BufferAttribute(rnd, 3)); g.setAttribute("edge", new THREE.Float32BufferAttribute(edg, 1));
+    return g;
+  }
+
+  // ---------- rain: rain on a window in front of the picture - fogged glass, drops that bend the view, drops that run down ----------
+  const RAIN_FS = `
+uniform sampler2D map; uniform sampler2D uWipe; uniform float uTime, uKind, uAmount, uSize, uFog, uOpacity; uniform vec2 uBox, uRot; uniform vec3 uC1, uC2, uC3;
+varying vec2 vUv; varying vec2 vP;
+float h1(float n) { return fract(sin(n * 127.1) * 43758.5453); }
+vec2 h2(vec2 p) { return fract(sin(vec2(dot(p, vec2(127.1, 311.7)), dot(p, vec2(269.5, 183.3)))) * 43758.5453); }
+// drops resting on the glass, one or none in each cell: (offset of the view through it, how much drop, where in it 0-1)
+vec4 beads(vec2 q, float cell, float t, float seed, float many) {
+  vec2 id = floor(q / cell), f = q / cell - id; vec4 o = vec4(0.0);
+  for (int j = -1; j <= 1; j++) for (int i = -1; i <= 1; i++) {
+    vec2 c = id + vec2(float(i), float(j)), r = h2(c + seed);
+    if (h1(dot(c, vec2(3.7, 9.1)) + seed) > many) continue;
+    float life = fract(t * (0.04 + r.x * 0.07) + r.y);
+    float rad = (0.12 + 0.3 * h1(dot(c, vec2(7.1, 3.3)) + seed)) * smoothstep(0.0, 0.06, life) * (1.0 - smoothstep(0.8, 1.0, life));
+    vec2 d = vec2(float(i), float(j)) + (0.2 + r * 0.6) - f;
+    float l = length(d) / max(rad, 1e-4);
+    if (l < 1.0 && rad > 0.0) o = vec4(d * cell, smoothstep(1.0, 0.82, l), l);
+  }
+  return o;
+}
+// drops that run down, each in its own lane, stopping and going; they leave a clear streak with small beads in it
+vec4 runners(vec2 q, float t, float lane, float H, float many, out float trail) {
+  float k0 = floor(q.x / lane); vec4 o = vec4(0.0); trail = 0.0;
+  for (int i = -1; i <= 1; i++) {
+    float c = k0 + float(i), r = h1(c * 13.7 + 2.0), r2 = h1(c * 7.3 + 1.0);
+    if (r2 > many) continue;
+    float cyc = fract(t * (0.08 + r * 0.12) + r2 * 7.0), go = cyc + 0.025 * sin(cyc * 55.0 + r * 9.0);
+    float y = H * 0.6 - go * H * 1.3, x = (c + 0.5 + (r - 0.5) * 0.4) * lane + sin(y * 9.0 / H + r * 6.0) * lane * 0.12;
+    float R = lane * (0.3 + r * 0.12);
+    vec2 d = q - vec2(x, y); d.y *= d.y < 0.0 ? 0.75 : 1.15;
+    float l = length(d) / R;
+    if (l < 1.0) o = vec4(d, smoothstep(1.0, 0.8, l), l);
+    float up = q.y - y, len = H * (0.25 + r * 0.35);
+    if (up > 0.0 && up < len && abs(q.x - x - sin(q.y * 9.0 / H + r * 6.0) * lane * 0.12 + sin(y * 9.0 / H + r * 6.0) * lane * 0.12) < R * 0.75) trail = max(trail, 1.0 - up / len);
+  }
+  return o;
+}
+vec3 fogged(vec2 uv) {
+  vec2 k = vec2(uBox.y / uBox.x, 1.0) * 0.012; vec3 s = texture2D(map, uv).rgb;
+  for (int i = 0; i < 12; i++) { float a = float(i) * 0.5236, r = i < 6 ? 1.0 : 2.2; s += texture2D(map, clamp(uv + vec2(cos(a + r), sin(a + r)) * r * k, 0.001, 0.999)).rgb; }
+  return s / 13.0;
+}
+void main() {
+  vec2 q = vec2(vP.x * uRot.x + vP.y * uRot.y, -vP.x * uRot.y + vP.y * uRot.x) / uBox.y; // upright: the drops run down the real down
+  float t = uTime, cell = 0.025 + uSize * 0.045;
+  float manyB = uKind > 1.5 ? 0.25 + uAmount * 0.3 : 0.35 + uAmount * 0.55, manyR = uKind > 0.5 ? 0.08 + uAmount * 0.15 : 0.2 + uAmount * 0.55, trail;
+  vec4 run = runners(q, t, cell * 2.4, 1.0, manyR, trail);
+  vec4 big = beads(q, cell, t, 0.0, manyB), small = beads(q, cell * 0.4, t * 1.4, 5.3, manyB * 0.8 + trail * 0.6);
+  vec4 d = run.z > 0.0 ? run : (big.z > 0.0 ? big : small);
+  vec2 off = -d.xy * 1.6; off = vec2(off.x * uRot.x - off.y * uRot.y, off.x * uRot.y + off.y * uRot.x) * uBox.y / uBox; // back onto the layer
+  vec3 sharp = texture2D(map, clamp(vUv + off, 0.001, 0.999)).rgb;
+  float clear = max(max(d.z, trail * 0.9), texture2D(uWipe, vUv).r), fog = uFog * (1.0 - clear);
+  vec3 col = mix(sharp, mix(fogged(vUv), uC1, 0.3), fog);
+  vec2 n = d.xy / max(length(d.xy), 1e-5);
+  col *= 1.0 - 0.4 * d.z * smoothstep(0.55, 1.0, d.w); // a dark rim
+  col += uC2 * d.z * pow(max(0.0, dot(n, vec2(-0.55, 0.8))), 4.0) * smoothstep(0.3, 0.9, d.w) * 0.9; // the light caught at the top of each drop
+  col = mix(col, col * uC3 * 2.0, 0.12 * fog);
+  gl_FragColor = vec4(col, texture2D(map, vUv).a * uOpacity);
+}`;
+
+  // ---------- aurora: curtains of northern lights that fold and drift ----------
+  const AURORA_FS = `
+uniform float uTime, uKind, uAmount, uSize, uOpacity; uniform vec2 uBox; uniform vec3 uC1, uC2, uC3;
+varying vec2 vUv; varying vec2 vP;
+${NOISE}
+float curtain(vec2 uv, float t, float seed, float tall, out float hue) {
+  float x = uv.x * uBox.x / uBox.y;
+  float base = 0.5 - uSize * 0.22 + (fbm(vec2(x * 0.9 + seed, t * 0.04)) - 0.5) * 0.55 + sin(x * 2.4 + t * 0.15 + seed) * 0.07;
+  float fold = fbm(vec2(x * 4.5 + seed * 3.0, t * 0.2));
+  float rays = 0.35 + 0.9 * pow(noise(vec2(x * 46.0 + fold * 9.0 + seed, t * 0.5)), 2.0);
+  float y = uv.y - base;
+  hue = clamp(y / tall, 0.0, 1.0);
+  return smoothstep(-0.02, 0.005, y) * exp(-max(y, 0.0) / (tall * 0.55)) * rays * (0.55 + 0.6 * fold);
+}
+void main() {
+  float t = uTime * (uKind > 1.5 ? 3.0 : 1.0), tall = 0.22 + uSize * 0.3, ha, hb;
+  float a = curtain(vUv, t, 0.0, tall, ha), b = curtain(vUv * vec2(0.85, 1.0) + vec2(0.31, 0.07), t * 1.25, 7.0, tall * 0.8, hb) * 0.65;
+  vec3 ca = mix(mix(uC1, uC2, smoothstep(0.1, 0.6, ha)), uC3, smoothstep(0.55, 1.0, ha)), cb = mix(mix(uC1, uC2, smoothstep(0.1, 0.6, hb)), uC3, smoothstep(0.55, 1.0, hb));
+  float I = (a + b) * (0.55 + uAmount * 1.1);
+  vec3 col = (ca * a + cb * b) / max(a + b, 1e-4);
+  float sky = 0.0;
+  if (uKind > 0.5 && uKind < 1.5) { // a night sky behind it, with stars
+    sky = 0.55 * smoothstep(0.0, 0.7, vUv.y);
+    vec2 g = vUv * uBox / uBox.y * 60.0, id = floor(g), f = fract(g) - 0.5;
+    float r = fract(sin(dot(id, vec2(12.9898, 78.233))) * 43758.5453), tw = 0.6 + 0.4 * sin(uTime * (2.0 + r * 4.0) + r * 40.0);
+    float star = step(0.93, r) * smoothstep(0.12, 0.0, length(f + (vec2(r, fract(r * 7.0)) - 0.5) * 0.5)) * tw;
+    col = mix(vec3(0.015, 0.025, 0.07), col, clamp(I, 0.0, 1.0)) + vec3(star) * (1.0 - clamp(I, 0.0, 1.0));
+    I = max(I, sky + star);
+  }
+  float edge = smoothstep(0.0, 0.06, vUv.x) * smoothstep(1.0, 0.94, vUv.x) * smoothstep(1.0, 0.9, vUv.y);
+  gl_FragColor = vec4(col, clamp(I, 0.0, 1.0) * edge * uOpacity);
+}`;
+
+  const BUILDERS = { burn: "buildBurn", fireflies: "buildFireflies", jelly: "buildJelly", tree: "buildTree", spiral: "buildSpiral", bubbles: "buildBubbles", liquid: "buildLiquid", lanterns: "buildLanterns", ripple: "buildRipple", shatter: "buildShatter", rain: "buildRain", aurora: "buildAurora" };
   // the looks a finger plays with
-  const TOUCHY = new Set(["dissolve", "dust", "swarm", "burn", "fireflies", "jelly", "spiral", "bubbles", "liquid", "lanterns"]);
+  const TOUCHY = new Set(["dissolve", "dust", "swarm", "burn", "fireflies", "jelly", "spiral", "bubbles", "liquid", "lanterns", "ripple", "shatter", "rain"]);
   AFRAME.registerComponent("studio-codefx", {
     schema: { cfg: { default: "{}" }, width: { default: 1 }, height: { default: 1 }, src: { default: "" } },
     init() { this.t = 0; this.mats = []; this.tmp = {}; this.finger = Studio.fingerTools; },
@@ -734,6 +933,7 @@ void main() { float r2 = dot(vUv, vUv); if (r2 > 1.0) discard; float g = exp(-r2
     teardown() {
       if (this.finger) this.finger.state.users.delete(this);
       if (this.group) { this.group.traverse((o) => { if (o.geometry) o.geometry.dispose(); if (o.material) { if (o.material.uniforms && o.material.uniforms.map && o.material.uniforms.map.value) o.material.uniforms.map.value.dispose(); o.material.dispose(); } }); this.el.removeObject3D("codefx"); }
+      if (this.parts && this.parts.wipe) this.parts.wipe.dispose();
       this.group = null; this.mats = []; this.parts = null; this.step = null; this.depthMats = null;
     },
     mat(opts) { const m = new THREE.ShaderMaterial(Object.assign({ transparent: true, depthWrite: false }, opts)); m.uniforms.uOpacity = { value: 1 }; this.mats.push(m); return m; },
@@ -906,6 +1106,91 @@ void main() { float r2 = dot(vUv, vUv); if (r2 > 1.0) discard; float g = exp(-r2
         if (f) { if (touch.z < 0.05) touch.w = 0; touch.x = f.x; touch.y = f.y; touch.w = Math.min(Math.min(w, h) * 0.3, touch.w + d * Math.min(w, h) * 0.25); }
         touch.z += ((f ? 1 : 0) - touch.z) * (1 - Math.exp(-(f ? 12 : 1.2) * d));
       };
+    },
+    buildRipple(cfg, w, h, C) {
+      const kind = Math.min(2, Math.max(0, cfg.kind | 0)), amt = val(cfg.amount, 0.5), R = rand(11000 + (cfg.seed | 0));
+      const drops = []; for (let i = 0; i < 12; i++) drops.push(new THREE.Vector4(0, 0, -99, 0));
+      this.parts = { drops };
+      this.loadPicture((tex) => {
+        const pic = new THREE.Mesh(new THREE.PlaneGeometry(w, h), this.mat({ vertexShader: FLAT_VS, fragmentShader: RIPPLE_FS,
+          uniforms: { map: { value: tex }, uTime: { value: 0 }, uKind: { value: kind }, uAmp: { value: 0.5 + amt * 1.3 }, uWave: { value: 0.025 + val(cfg.size, 0.5) * 0.06 }, uBox: { value: new THREE.Vector2(w, h) },
+            uDrops: { value: drops }, uC1: { value: C[0] }, uC2: { value: C[1] }, uC3: { value: C[2] } } }));
+        pic.position.z = 0.0008; this.group.add(pic);
+      });
+      let next = 0.3, slot = 0, lastTouch = -9;
+      const drop = (x, y, s) => { drops[slot].set(x, y, this.t, s); slot = (slot + 1) % drops.length; };
+      this.step = () => {
+        const t = this.t, f = this.touchPoint();
+        if (f && t - lastTouch > 0.14) { drop(f.x, f.y, 1.3); lastTouch = t; } // a finger in the water
+        if (t >= next) { // rain drops (or now and then, on the lake and the stream)
+          drop((R() - 0.5) * w * 0.9, (R() - 0.5) * h * 0.9, 0.6 + R() * 0.6);
+          next = t + (kind === 0 ? 0.25 + (1 - amt) * 1.1 : 2 + R() * 3) * (0.6 + R() * 0.8);
+        }
+      };
+    },
+    buildShatter(cfg, w, h, C) {
+      const kind = Math.min(2, Math.max(0, cfg.kind | 0)), R = rand(12000 + (cfg.seed | 0)), n = Math.round(16 + val(cfg.amount, 0.5) * 74);
+      const hit = new THREE.Vector2(0, 0), u = { uS: { value: 0 }, uCrack: { value: 0 } };
+      this.parts = { hit };
+      if (cfg.cover !== false) { // the print does not show through the hole
+        const fill = new THREE.Mesh(new THREE.PlaneGeometry(w, h), this.mat({ vertexShader: FLAT_VS, fragmentShader: FILL_FS, uniforms: { uC: { value: C[0] } } }));
+        fill.position.z = -0.0006; this.group.add(fill);
+      }
+      this.loadPicture((tex) => {
+        const m = this.mat({ vertexShader: SHARD_VS, fragmentShader: SHARD_FS, side: THREE.DoubleSide,
+          uniforms: { map: { value: tex }, uS: u.uS, uCrack: u.uCrack, uKind: { value: kind }, uBox: { value: new THREE.Vector2(w, h) }, uRot: { value: this.rot }, uHit: { value: hit }, uC2: { value: C[1] }, uC3: { value: C[2] } } });
+        const mesh = new THREE.Mesh(shardGeometry(w, h, n, R), m); mesh.position.z = 0.0008; mesh.frustumCulled = false; this.group.add(mesh);
+      });
+      // whole, cracks, falls, stays gone a moment, flies back; a touch while it is whole breaks it right there
+      const WHOLE = 2.4, CRACK = 0.6, FALL = 3.2, REST = 0.4, BACK = 1.6, ALL = WHOLE + CRACK + FALL + REST + BACK;
+      let clock = 0, wasTouched = false;
+      const newHit = () => { if (kind === 1) hit.set(0, h * 0.3); else hit.set((R() - 0.5) * w * 0.5, (R() - 0.5) * h * 0.5); };
+      newHit();
+      this.step = (dt) => {
+        const f = this.touchPoint();
+        if (f && !wasTouched && clock < WHOLE) { hit.set(f.x, f.y); clock = WHOLE; } // break where the finger hits
+        wasTouched = !!f;
+        clock += dt; if (clock >= ALL) { clock = 0; newHit(); }
+        let s = 0, c = 0;
+        if (clock < WHOLE) c = 0;
+        else if (clock < WHOLE + CRACK) c = (clock - WHOLE) / CRACK;
+        else if (clock < WHOLE + CRACK + FALL) { c = 1; s = clock - WHOLE - CRACK; }
+        else if (clock < WHOLE + CRACK + FALL + REST) { c = 1; s = FALL; }
+        else { const k = (clock - WHOLE - CRACK - FALL - REST) / BACK; s = FALL * (1 - smooth(0, 1, k)); c = 1 - smooth(0.7, 1, k); } // the fall played backwards
+        u.uS.value = s; u.uCrack.value = c;
+      };
+    },
+    buildRain(cfg, w, h, C) {
+      const kind = Math.min(2, Math.max(0, cfg.kind | 0));
+      const cv = document.createElement("canvas"); cv.width = cv.height = 128;
+      const ctx = cv.getContext("2d"); ctx.fillStyle = "#000"; ctx.fillRect(0, 0, 128, 128);
+      const wipe = new THREE.CanvasTexture(cv);
+      this.parts = { wipe };
+      this.loadPicture((tex) => {
+        const pic = new THREE.Mesh(new THREE.PlaneGeometry(w, h), this.mat({ vertexShader: FLAT_VS, fragmentShader: RAIN_FS,
+          uniforms: { map: { value: tex }, uWipe: { value: wipe }, uTime: { value: 0 }, uKind: { value: kind }, uAmount: { value: val(cfg.amount, 0.5) }, uSize: { value: val(cfg.size, 0.5) },
+            uFog: { value: [0.72, 0.45, 0.94][kind] }, uBox: { value: new THREE.Vector2(w, h) }, uRot: { value: this.rot }, uC1: { value: C[0] }, uC2: { value: C[1] }, uC3: { value: C[2] } } }));
+        pic.position.z = 0.0008; this.group.add(pic);
+      });
+      let last = null, dirty = false;
+      this.step = (dt, d) => {
+        const f = this.touchPoint();
+        if (dirty) { ctx.globalCompositeOperation = "source-over"; ctx.fillStyle = "rgba(0,0,0," + Math.min(1, d * 0.12).toFixed(4) + ")"; ctx.fillRect(0, 0, 128, 128); } // the glass fogs up again
+        if (f) { // a finger wipes the glass clear
+          const x = (f.x / w + 0.5) * 128, y = (0.5 - f.y / h) * 128;
+          ctx.globalCompositeOperation = "lighter"; ctx.strokeStyle = "rgba(255,255,255,0.5)"; ctx.lineCap = "round"; ctx.lineWidth = 16;
+          ctx.beginPath(); ctx.moveTo(last ? last.x : x, last ? last.y : y); ctx.lineTo(x, y + 0.01); ctx.stroke();
+          last = { x, y }; dirty = true;
+        } else last = null;
+        if (dirty) wipe.needsUpdate = true;
+      };
+    },
+    buildAurora(cfg, w, h, C) {
+      const mesh = new THREE.Mesh(new THREE.PlaneGeometry(w, h), this.mat({ vertexShader: FLAT_VS, fragmentShader: AURORA_FS,
+        uniforms: { uTime: { value: 0 }, uKind: { value: Math.min(2, Math.max(0, cfg.kind | 0)) }, uAmount: { value: val(cfg.amount, 0.5) }, uSize: { value: val(cfg.size, 0.5) }, uBox: { value: new THREE.Vector2(w, h) },
+          uC1: { value: C[0] }, uC2: { value: C[1] }, uC3: { value: C[2] } } }));
+      mesh.position.z = 0.0009; this.group.add(mesh);
+      this.parts = {};
     },
     buildFireflies(cfg, w, h, C) {
       const kind = Math.min(2, Math.max(0, cfg.kind | 0)), n = Math.round(25 + val(cfg.amount, 0.5) * 175), R = rand(4000 + (cfg.seed | 0)), unit = Math.min(w, h), depth = unit * 0.5;

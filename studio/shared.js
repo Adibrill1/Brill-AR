@@ -538,7 +538,7 @@ const Studio = (() => {
     return s;
   }
   // the layers that can follow gravity
-  const GRAVITY_CODEFX = ["dissolve", "dust", "burn", "jelly", "tree", "bubbles", "liquid", "lanterns"];
+  const GRAVITY_CODEFX = ["dissolve", "dust", "burn", "jelly", "tree", "bubbles", "liquid", "lanterns", "shatter", "rain"];
   function gravityFits(el) {
     if (!el) return false;
     if (["image", "video", "text", "particles"].includes(el.type)) return true;
@@ -1100,7 +1100,8 @@ vec4 baFilter(vec2 uv) {
   // dissolve: the cover behind the picture, two glow colours; dust: three golds; portal: the world, the glow, the light;
   // swarm: two body colours and a highlight; ivy: leaves, petals, flower middles; burn: the cover, the flame, the sparks;
   // fireflies: two lights and the glow; jelly: bell, rim glow, tentacles; tree: bark, two leaf colours (or petals and middles);
-  // spiral: middle to edge; bubbles: the film's three colours; liquid: dark, middle, bright; lanterns: paper, flame, glow.
+  // spiral: middle to edge; bubbles: the film's three colours; liquid: dark, middle, bright; lanterns: paper, flame, glow;
+  // ripple: water tint, glints, deep shade; shatter: the cover, cracks, glints; rain: fog, glints, shade; aurora: low, middle, high.
   const CODEFX = [
     ["dissolve", "תמונה שמתפרקת", ["#14121a", "#ffd27a", "#ff7ab6"], ["רוח", "פיצוץ", "מערבולת"]],
     ["dust", "ברכה מאבק זהב", ["#fff3c4", "#f5c542", "#c98a1e"], ["אבק מסתחרר", "גשם נוצץ"]],
@@ -1114,9 +1115,13 @@ vec4 baFilter(vec2 uv) {
     ["spiral", "ספירלת זרעים", ["#3b2414", "#c98a1e", "#ffd54a"], ["חמנייה", "גלקסיה", "פרח"]],
     ["bubbles", "בועות סבון", ["#ff7ad9", "#7afcff", "#fff27a"], ["עולות", "מרחפות", "זרם בועות"]],
     ["liquid", "כסף נוזלי", ["#1c1f26", "#9aa3b5", "#ffffff"], ["כרום", "זהב נוזלי", "מנורת לבה"]],
-    ["lanterns", "פנסים מעופפים", ["#ff9f43", "#fff1a8", "#ff6b2c"], ["עולים לשמיים", "מרחפים", "משוחררים אחד אחד"]]
+    ["lanterns", "פנסים מעופפים", ["#ff9f43", "#fff1a8", "#ff6b2c"], ["עולים לשמיים", "מרחפים", "משוחררים אחד אחד"]],
+    ["ripple", "אדוות מים", ["#bfe6ff", "#ffffff", "#0b2a4a"], ["טיפות גשם", "אגם שקט", "נחל זורם"]],
+    ["shatter", "זכוכית מתנפצת", ["#0e0d12", "#ffffff", "#bfe9ff"], ["שבר מנקודה", "נשירה", "פיצוץ"]],
+    ["rain", "גשם על חלון", ["#c9d6e3", "#ffffff", "#5b6b7d"], ["גשם", "טפטוף", "חלון מעורפל"]],
+    ["aurora", "זוהר צפוני", ["#3dffa8", "#2bd4ff", "#b06bff"], ["וילונות אור", "שמי לילה וכוכבים", "ריקוד מהיר"]]
   ];
-  const CODEFX_PICTURE = ["dissolve", "burn"]; // the looks made from a picture
+  const CODEFX_PICTURE = ["dissolve", "burn", "ripple", "shatter", "rain"]; // the looks made from a picture
   const CODEFX_IDS = CODEFX.map((c) => c[0]), CODEFX_SHAPES = ["rect", "circle", "arch"];
   function codeFxDefaults(look) {
     const d = CODEFX.find((c) => c[0] === look) || CODEFX[1];
