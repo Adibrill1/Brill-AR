@@ -1165,6 +1165,7 @@ vec4 baFilter(vec2 uv) {
     if (["picture", "picture2"].some((k) => c[k] != null && !(typeof c[k] === "string" && /^[a-zA-Z0-9_-]{1,128}$/.test(c[k])))) return false;
     if (c.shape != null && !CODEFX_SHAPES.includes(c.shape)) return false;
     if (c.spacing != null && !["even", "end", "start"].includes(c.spacing)) return false; // the card trail: even gaps, or growing toward the front end or the picture
+    if (c.cards != null && !(Number.isInteger(c.cards) && c.cards >= 2 && c.cards <= 40) || c.aim != null && !(Number.isFinite(c.aim) && c.aim >= -180 && c.aim <= 180)) return false; // the card trail: how many, the line's angle
     if (c.path != null && !["spiral", "line", "wave", "arc"].includes(c.path)) return false; // the card trail's path
     if (c.date != null && !(typeof c.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(c.date)) || c.time != null && !(typeof c.time === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(c.time))) return false;
     return ["touch", "cover", "keep", "alive", "follow", "loop", "open"].every((k) => c[k] == null || typeof c[k] === "boolean");

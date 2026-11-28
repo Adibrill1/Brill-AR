@@ -221,6 +221,33 @@ window.Stage = (() => {
     pts.forEach((h, i) => { const d = Math.hypot(q.x - h.x, q.y - h.y); if (d <= d0) { d0 = d; best = i; } });
     return best;
   }
+  // the card trail's straight line: the end card's place on screen (box frame), which she drags to turn the line
+  function trailEndPx(el, b) {
+    if (!b || el.type !== "codefx" || !el.codefx || el.codefx.look !== "trail" || !["line", "wave"].includes(el.codefx.path) || !window.StudioCodeFx || !StudioCodeFx.trailEnd) return null;
+    const c = drag && drag.mode === "aim" && drag.id === el.id ? Object.assign({}, el.codefx, { aim: drag.aim }) : el.codefx, e = StudioCodeFx.trailEnd(c, b.w, b.h);
+    // a long line can end off the screen: the handle then stays inside it, on the same line
+    const r = canvas.getBoundingClientRect(), m = 26, lo = ptAt(r.left + m, r.top + m), hi = ptAt(r.right - m, r.bottom - m);
+    const co = Math.cos(b.rot), si = Math.sin(b.rot), dx = e.x * co + e.y * si, dy = e.x * si - e.y * co; // the end on the stage, from the box's middle
+    let t = 1;
+    if (b.cx + dx > hi.x) t = Math.min(t, (hi.x - b.cx) / dx); if (b.cx + dx < lo.x) t = Math.min(t, (lo.x - b.cx) / dx);
+    if (b.cy + dy > hi.y) t = Math.min(t, (hi.y - b.cy) / dy); if (b.cy + dy < lo.y) t = Math.min(t, (lo.y - b.cy) / dy);
+    t = Math.max(0.15, t);
+    return { x: e.x * t, y: -e.y * t, cut: t < 1 };
+  }
+  function drawTrailEnd(el, b) {
+    const q = trailEndPx(el, b); if (!q) return;
+    const px = 1 / zoom, on = drag && drag.mode === "aim";
+    ctx.save(); ctx.translate(b.cx, b.cy); ctx.rotate(b.rot);
+    ctx.strokeStyle = "rgba(255,255,255,.9)"; ctx.lineWidth = 2 * px; ctx.setLineDash([6 * px, 5 * px]); ctx.shadowColor = "rgba(0,0,0,.6)"; ctx.shadowBlur = 3;
+    ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(q.x, q.y); ctx.stroke(); ctx.setLineDash([]); ctx.shadowBlur = 0;
+    ctx.beginPath(); ctx.arc(q.x, q.y, (on ? 13 : 11) * px, 0, 7); ctx.fillStyle = on ? ACCENT : "#fff"; ctx.fill(); ctx.strokeStyle = on ? "#fff" : ACCENT; ctx.lineWidth = 2.5 * px; ctx.stroke();
+    ctx.fillStyle = on ? "#fff" : ACCENT; ctx.fillRect(q.x - 4 * px, q.y - 5.5 * px, 8 * px, 11 * px); // a little card
+    ctx.restore();
+  }
+  function trailEndAt(el, p) {
+    const b = boxes[el.id], q = b && trailEndPx(el, b); if (!q) return false;
+    const l = local(b, p); return Math.hypot(l.x - q.x, l.y - q.y) <= (GRAB + 4) / zoom;
+  }
   let pointSel = null; // {id, i}: the point of a scatter line last touched (the inspector deletes it)
 
   // ---------- drawing the line of a new scatter ----------
@@ -449,7 +476,7 @@ window.Stage = (() => {
       if (guide.full) { ctx.setLineDash([]); ctx.lineWidth = 3 / zoom; ctx.strokeRect(view.mx, view.my, view.W, view.H); } // snapped onto the artwork's size
       ctx.restore();
     }
-    if (selEl && boxes[selEl.id]) { if (App.cropping) drawCrop(selEl); else { drawMarks(selEl, boxes[selEl.id]); if (selEl.type === "scatter" && selEl.scatter.points && !drawing) drawScatterPath(selEl, boxes[selEl.id]); } }
+    if (selEl && boxes[selEl.id]) { if (App.cropping) drawCrop(selEl); else { drawMarks(selEl, boxes[selEl.id]); if (selEl.type === "scatter" && selEl.scatter.points && !drawing) drawScatterPath(selEl, boxes[selEl.id]); if (selEl.type === "codefx" && !drawing) drawTrailEnd(selEl, boxes[selEl.id]); } }
     drawStroke();
   }
   // The cover picture ("תמונת שער") from the flat view: the artwork with its layers as they look this moment, without
@@ -510,6 +537,7 @@ window.Stage = (() => {
     if (picker) { pickAt(p); drag = { mode: "none" }; return; }
     if (drawing) { drawing.stroke = [p]; drag = { mode: "stroke", sx: e.clientX, sy: e.clientY }; return; }
     if (App.multi) { const r = hits(p)[0]; drag = { mode: "multi", id: r ? r.id : null, sx: e.clientX, sy: e.clientY, px: pan.x, py: pan.y }; return; }
+    if (sel && !App.cropping && trailEndAt(sel, p)) { drag = { mode: "aim", id: sel.id, aim: Number.isFinite(sel.codefx.aim) ? sel.codefx.aim : null, moved: false }; return; }
     const pi = sel && !App.cropping ? pointAt(sel, p) : -1;
     if (pi >= 0) {
       pointSel = { id: sel.id, i: pi };
@@ -550,6 +578,10 @@ window.Stage = (() => {
     if (drag.mode === "stroke") { const p = pt(e), st = drawing && drawing.stroke, last = st && st[st.length - 1]; if (last && Math.hypot(p.x - last.x, p.y - last.y) > 3 / zoom) st.push(p); return; }
     const el = App.el(drag.id), p = pt(e);
     if (drag.mode === "none" || !el) return;
+    if (drag.mode === "aim") { // the line turns to the finger; it is rebuilt once, when she lets go
+      const q = local(boxes[el.id], p); if (Math.hypot(q.x, q.y) < 6 / zoom) return;
+      drag.aim = Math.round(Math.atan2(-q.y, q.x) * 180 / Math.PI * 10) / 10; drag.moved = true; return draw();
+    }
     if (drag.mode === "point") {
       const q = local(boxes[el.id], p), pp = el.scatter.points[drag.i]; if (!pp) return;
       if (!drag.moved && Math.hypot(q.x - drag.q0.x, q.y - drag.q0.y) < 4 / zoom) return;
@@ -605,6 +637,7 @@ window.Stage = (() => {
       if (drawing.straight) { const a = st[0], c = st[st.length - 1]; return finishLine([a, { x: (a.x + c.x) / 2, y: (a.y + c.y) / 2 }, c], false); }
       return finishLine(simplify(st), true);
     }
+    if (d && d.mode === "aim") { const el = App.el(d.id); if (d.moved && el && el.codefx && e.type !== "pointercancel") { el.codefx = Object.assign({}, el.codefx, { aim: d.aim }); App.changed(true); } return draw(); }
     if (d && d.mode === "point") { const el = App.el(d.id); if (d.moved && el) { Studio.refreshScatter(App.rec, el, true); App.changed(true); } return; }
     if (!d || e.type === "pointercancel") { if (d && d.moved) App.changed(true); return; }
     if (d.moved) { App.changed(true); return; }

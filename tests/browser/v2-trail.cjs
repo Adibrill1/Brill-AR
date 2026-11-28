@@ -60,6 +60,12 @@ const OUT=process.env.SHOTS||'';
   const bend=await C('(()=>{const m=C.group.children.find(o=>o.isInstancedMesh),M=new THREE.Matrix4(),pts=[];for(let i=0;i<m.count;i++){m.getMatrixAt(i,M);pts.push(new THREE.Vector3().setFromMatrixPosition(M));}const a=pts[0],b=pts[pts.length-1],d=b.clone().sub(a).normalize();return Math.max(...pts.map(q=>q.clone().sub(a).cross(d).length()));})()');
   assert.ok(bend<0.01,'straight '+bend);
   for(const path of ['line','wave','arc','spiral']){await open({speed:1,path,amount:0.5});await cam(0.45,0.2,1.7);await p.waitForTimeout(2700);await shot('trail-path-'+path);}
+  // the exact number of cards, and the straight line turned to where the end card was dragged
+  await open({speed:1,path:'line',cards:7,aim:-30});await p.waitForTimeout(2600);
+  const lead=await C('(()=>{const m=C.group.children.find(o=>o.isInstancedMesh),M=new THREE.Matrix4(),v=new THREE.Vector3();m.getMatrixAt(m.count-1,M);v.setFromMatrixPosition(M);return {n:m.count,a:Math.atan2(v.y,v.x)*180/Math.PI,x:v.x,y:v.y};})()');
+  console.log('lead',JSON.stringify(lead));assert.equal(lead.n,7,'seven cards');assert.ok(Math.abs(lead.a+30)<2,'the line goes where it was aimed');
+  const end=await p.evaluate(()=>{const C=document.querySelector('[studio-codefx]').components['studio-codefx'];return StudioCodeFx.trailEnd(JSON.parse(C.data.cfg),C.data.width,C.data.height);});
+  assert.ok(Math.abs(end.x-lead.x)<0.02&&Math.abs(end.y-lead.y)<0.02,'the editor handle sits on the end card');
   // laid out from the start: no flight, already held
   await open({speed:1,open:true});st=await C('({...C.parts.trail})');assert.equal(st.phase,'hold','laid out from the start');assert.equal(st.H,1);
   await tap();await p.waitForTimeout(300);assert.equal(await C('C.parts.trail.phase'),'back','and a tap still folds it away');

@@ -1496,6 +1496,22 @@ void main() {
   vec3 lit = c.rgb * (0.78 + 0.22 * vLit) + vec3(0.18) * pow(vLit, 24.0) * 0.35; // a little darker as it turns, a soft gloss face-on
   gl_FragColor = vec4(lit, a);
 }`;
+  // the trail's size: how many cards, how big, how long the trail is; the straight line's length and its lean toward the viewer
+  function trailGeom(cfg, w, h) {
+    const unit = Math.min(w, h), n = Number.isInteger(cfg.cards) ? Math.min(40, Math.max(2, cfg.cards)) : Math.round(5 + val(cfg.amount, 0.5) * 25);
+    const S = unit * (0.13 + val(cfg.size, 0.5) * 0.22), gw = S * (0.1 + val(cfg.gap, 0.5) * 1.15), reach = Math.min(unit * 6, Math.max(unit * 0.5, gw * (n - 1)));
+    const Ll = Math.min(reach, unit * 2.6), zc = Math.min(0.72, unit * 1.25 / Ll);
+    return { unit, n, S, reach, Ll, zc, sc2: Math.sqrt(1 - zc * zc) };
+  }
+  // which way the straight line (and the wave) goes on the picture: where she dragged the end card, or by the variation
+  const trailPhi = (cfg, th0) => Number.isFinite(cfg.aim) ? cfg.aim * Math.PI / 180 : ((cfg.seed | 0) % 2 ? Math.PI - 0.4 : 0.4) + (th0 + Math.PI / 2) * 0.25;
+  const trailWave = (s, unit, Ll) => unit * 0.17 * Math.min(1, s * 5) * Math.sin(s * TAU * Math.max(1, Ll / (unit * 0.9)));
+  // where the end card stands on the picture (x right, y up, in the units of w and h), for the editor's handle
+  StudioCodeFx.trailEnd = (cfg, w, h) => {
+    const G = trailGeom(cfg, w, h), R = rand(5100 + (cfg.seed | 0)), th0 = -Math.PI / 2 + (R() - 0.5) * 2.4, phi = trailPhi(cfg, th0), lx = Math.cos(phi), ly = Math.sin(phi);
+    const a = cfg.path === "wave" ? trailWave(1, G.unit, G.Ll) : 0;
+    return { x: lx * G.sc2 * G.Ll - ly * a, y: ly * G.sc2 * G.Ll + Math.abs(lx) * a };
+  };
   const cardTex = (cv) => { const t = new THREE.CanvasTexture(cv); t.needsUpdate = true; return t; };
   const hexOf = (c) => "#" + c.getHexString();
   function suitPath(g, suit, x, y, s) { // drawn, not typed: no emoji hearts on any phone
@@ -2932,27 +2948,26 @@ void main() {
     // with "loop" it opens and closes by itself. Playing cards, framed photos, the chosen picture as it is, or coloured
     // cards. The gap between the cards is even, or grows toward the front end, or toward the picture.
     buildTrail(cfg, w, h, C) {
-      const kind = Math.min(3, Math.max(0, cfg.kind | 0)), R = rand(5100 + (cfg.seed | 0)), unit = Math.min(w, h);
-      const n = Math.round(5 + val(cfg.amount, 0.5) * 25), S = unit * (0.13 + val(cfg.size, 0.5) * 0.22);
+      const kind = Math.min(3, Math.max(0, cfg.kind | 0)), R = rand(5100 + (cfg.seed | 0)), G0 = trailGeom(cfg, w, h), unit = G0.unit, n = G0.n, S = G0.S;
       const spacing = ["even", "end", "start"].includes(cfg.spacing) ? cfg.spacing : "even", loop = cfg.loop === true;
       const sh = (u) => (spacing === "end" ? u + 0.62 * u * (1 - u) : spacing === "start" ? u - 0.62 * u * (1 - u) : u); // the gaps change about fourfold end to end // where along the path each card ends
       // the path: out of the middle of the picture, a widening spiral that comes toward the viewer, measured by its length
-      const gw = S * (0.1 + val(cfg.gap, 0.5) * 1.15), reach = Math.min(unit * 6, Math.max(unit * 0.5, gw * (n - 1)));
+      const reach = G0.reach;
       // the path, out of the middle of the picture toward the viewer: a spiral that widens out past the frame and closes in
       // again (the first), a straight line, a wave, or an arch
       const path = ["spiral", "line", "wave", "arc"].includes(cfg.path) ? cfg.path : "spiral";
       const Rr = Math.min(unit * 0.95, Math.max(unit * 0.42, reach * 0.24)), turns = Math.min(2.2, Math.max(0.55, reach / (TAU * Rr * 0.55)));
       const Zmax = Math.min(unit * 1.15, Math.max(unit * 0.55, unit * 0.4 + reach * 0.15)), th0 = -Math.PI / 2 + (R() - 0.5) * 2.4, dir = (cfg.seed | 0) % 2 ? -1 : 1;
-      const phi = (dir > 0 ? 0.4 : Math.PI - 0.4) + (th0 + Math.PI / 2) * 0.25, lx = Math.cos(phi), ly = Math.sin(phi); // sideways and a little up
+      const phi = trailPhi(cfg, th0), lx = Math.cos(phi), ly = Math.sin(phi); // sideways and a little up, or where she dragged the end card
       const px = lx < 0 ? ly : -ly, py = Math.abs(lx); // across the line, on its upper side
-      const Ll = Math.min(reach, unit * 2.6), zc = Math.min(0.72, unit * 1.25 / Ll), sc2 = Math.sqrt(1 - zc * zc); // a straight run, not past the viewer
+      const Ll = G0.Ll, zc = G0.zc, sc2 = G0.sc2; // a straight run, not past the viewer
       const Ra = Math.min(unit * 0.9, Math.max(unit * 0.3, reach / (Math.PI * 1.1)));
       const N = 320, P = new Float32Array((N + 1) * 3), Lc = new Float32Array(N + 1);
       for (let k = 0; k <= N; k++) {
         const s = k / N; let x, y, z;
         if (path === "line" || path === "wave") {
           x = lx * sc2 * Ll * s; y = ly * sc2 * Ll * s; z = zc * Ll * s;
-          if (path === "wave") { const a = unit * 0.17 * Math.min(1, s * 5) * Math.sin(s * TAU * Math.max(1, Ll / (unit * 0.9))); x += -ly * a; y += Math.abs(lx) * a; }
+          if (path === "wave") { const a = trailWave(s, unit, Ll); x += -ly * a; y += Math.abs(lx) * a; }
         } else if (path === "arc") {
           const c = Ra * (1 - Math.cos(Math.PI * s)), u = Ra * Math.sin(Math.PI * s) * 0.9;
           x = lx * c + px * u; y = ly * c + py * u; z = Zmax * s;

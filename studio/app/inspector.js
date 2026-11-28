@@ -327,9 +327,12 @@ window.Inspector = (() => {
     };
     const kind = cur().kind | 0, pic = kind === 1 || kind === 2, has = !!cur().picture2;
     return UI.group("השובל",
-      C({ label: "צורת השובל", wrap: true, options: [{ id: "spiral", name: "ספירלה" }, { id: "line", name: "קו ישר" }, { id: "wave", name: "גל" }, { id: "arc", name: "קשת" }], get: () => cur().path || "spiral", set: X((c, v) => { c.path = v; }) }),
+      C({ label: "צורת השובל", wrap: true, options: [{ id: "spiral", name: "ספירלה" }, { id: "line", name: "קו ישר" }, { id: "wave", name: "גל" }, { id: "arc", name: "קשת" }], get: () => cur().path || "spiral", set: X((c, v) => { c.path = v; }, build) }),
+      S({ label: "מספר הקלפים", min: 2, max: 40, step: 1, get: () => (Number.isInteger(cur().cards) ? cur().cards : Math.round(5 + (Number.isFinite(cur().amount) ? cur().amount : 0.5) * 25)), set: X((c, v) => { c.cards = Math.round(v); }) }),
       S(Object.assign({ label: "מרחק בין הקלפים", hint: "שמאלה הקלפים צפופים זה על זה, ימינה רחוקים זה מזה", min: 0, max: 1, step: 0.01, get: () => (Number.isFinite(cur().gap) ? cur().gap : 0.5), set: X((c, v) => { c.gap = v; }) }, pct)),
       C({ label: "המרחק לאורך השובל", wrap: true, options: [{ id: "even", name: "קבוע" }, { id: "end", name: "גדל לכיוון הסוף" }, { id: "start", name: "גדל לכיוון ההתחלה" }], get: () => cur().spacing || "even", set: X((c, v) => { c.spacing = v; }) }),
+      ["line", "wave"].includes(cur().path) ? note("כדי לשנות את הזווית, גוררים בעורך את העיגול שבקצה הקו (איפה שהקלף האחרון עומד).") : null,
+      ["line", "wave"].includes(cur().path) ? h("div.btn-row", Object.assign(UI.button("בחזרה לזווית האוטומטית", () => { const x = App.sel(); if (!x || x.type !== "codefx") return; const c = Object.assign({}, x.codefx); delete c.aim; x.codefx = c; App.changed(true); build(); }, { kind: "ghost" }), { id: "trail-aim-off" })) : null,
       T({ label: "בהתחלה הקלפים כבר פרוסים", hint: "כבוי: בהתחלה הקלפים בתוך התמונה ויוצאים ממנה", get: () => cur().open === true, set: X((c, v) => { c.open = v; }) }),
       T({ label: "רץ בלופ: נפתח ונסגר", hint: "כבוי: השובל נעצר בסוף וקופא עד שנוגעים בו", get: () => cur().loop === true, set: X((c, v) => { c.loop = v; }) }),
       pic ? h("div.btn-row", Object.assign(UI.button(has ? "להחליף את התמונה של הקלפים" : "לבחור תמונה לקלפים", choose, { icon: "image" }), { id: "trail-picture" }),
@@ -407,7 +410,7 @@ window.Inspector = (() => {
     if (look !== "face") out.push(UI.group("צבעים", pals, h("div.color-trio", col(0).node, col(1).node, col(2).node)));
     out.push(UI.group("התאמה",
       look === "countdown" ? null : S(Object.assign({ label: "מהירות", min: 0, max: 1, step: 0.01, get: () => (Number.isFinite(cur().speed) ? cur().speed : 0.5), set: X((c, v) => { c.speed = v; }) }, pct)),
-      look === "countdown" ? null : S(Object.assign({ label: CODEFX_TEXT.amount[look], min: 0, max: 1, step: 0.01, get: () => (Number.isFinite(cur().amount) ? cur().amount : 0.5), set: X((c, v) => { c.amount = v; }) }, pct)),
+      look === "countdown" || look === "trail" ? null : S(Object.assign({ label: CODEFX_TEXT.amount[look], min: 0, max: 1, step: 0.01, get: () => (Number.isFinite(cur().amount) ? cur().amount : 0.5), set: X((c, v) => { c.amount = v; }) }, pct)),
       CODEFX_TEXT.size[look] ? S(Object.assign({ label: CODEFX_TEXT.size[look], min: 0, max: 1, step: 0.01, get: () => (Number.isFinite(cur().size) ? cur().size : 0.5), set: X((c, v) => { c.size = v; }) }, pct)) : null,
       look === "rain" ? S(Object.assign({ label: "כמה אדים", hint: "באפס אין אדים בכלל, רק טיפות", min: 0, max: 1, step: 0.01, get: () => (Number.isFinite(cur().fog) ? cur().fog : [0.72, 0.45, 0.94][Math.min(2, cur().kind | 0)]), set: X((c, v) => { c.fog = v; }) }, pct)) : null,
       look === "portal" ? L({ label: "צורת החלון", options: [{ id: "rect", name: "מלבן" }, { id: "circle", name: "עיגול" }, { id: "arch", name: "קשת" }], get: () => cur().shape || "rect",
