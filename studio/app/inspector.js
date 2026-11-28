@@ -253,21 +253,21 @@ window.Inspector = (() => {
   }
   // ---------- live code animations ----------
   const CODEFX_TEXT = {
-    colors: { flip: ["כהה (בלי תמונה שנייה)", "אמצע", "בהיר"], balloons: ["בלון", "בלון שני", "בלון שלישי"], ink: ["הדיו", "זוהר העשן", "המים"], dissolve: ["הרקע שמאחור", "ניצוץ", "ניצוץ שני"], dust: ["זהב בהיר", "זהב", "זהב כהה"], portal: ["העולם", "הזוהר", "האור"], swarm: ["צבע", "צבע שני", "ברק"], ivy: ["עלים", "פרחים", "לב הפרח"],
+    colors: { trail: ["גב הקלף (בצבעים: כרטיס ראשון)", "הקווים בגב (בצבעים: כרטיס שני)", "המסגרת והכוכב (בצבעים: כרטיס שלישי)"], flip: ["כהה (בלי תמונה שנייה)", "אמצע", "בהיר"], balloons: ["בלון", "בלון שני", "בלון שלישי"], ink: ["הדיו", "זוהר העשן", "המים"], dissolve: ["הרקע שמאחור", "ניצוץ", "ניצוץ שני"], dust: ["זהב בהיר", "זהב", "זהב כהה"], portal: ["העולם", "הזוהר", "האור"], swarm: ["צבע", "צבע שני", "ברק"], ivy: ["עלים", "פרחים", "לב הפרח"],
       burn: ["הרקע שמאחור", "להבה", "ניצוצות"], fireflies: ["אור", "אור שני", "הילה"], jelly: ["גוף", "זוהר", "זרועות"], tree: ["גזע", "עלים או פרחים", "גוון שני"],
       spiral: ["מרכז", "אמצע", "שוליים"], bubbles: ["גוון", "גוון שני", "גוון שלישי"], liquid: ["כהה", "אמצע", "ברק"], lanterns: ["נייר", "להבה", "זוהר"],
       ripple: ["גוון המים", "ברק", "צל"], shatter: ["הרקע שמאחור", "סדקים", "ברק הזכוכית"], rain: ["ערפל", "ברק הטיפות", "צל"], aurora: ["תחתית", "אמצע", "למעלה"],
       mist: ["אדים", "נצנוץ", "גוון"], drip: ["גוון הנזילה", "ברק", "שוליים"], sketch: ["נייר (בגיר: הקו)", "קו", "גוון שלישי"], sand: ["חול", "אובך הסופה", "גוון שלישי"], eyes: ["צבע העין", "לבן העין", "עפעף וריסים"], tunnel: ["מסגרת", "העומק", "האור בסוף"], lens: ["אור הפנס (בערפל: הערפל)", "החושך", "גוון שלישי"], daysky: ["שמיים ביום", "שקיעה", "לילה"], game: ["צבע", "צבע שני", "גוון שלישי"], scratch: ["צבע (בצבעוני)", "צבע שני", "הכיתוב והכוכבים"], storm: ["זוהר הברק", "אור ההבזק", "חושך"], countdown: ["מספרים", "כותרת", "מילים"], puzzle: ["מסגרת החלק שנבחר", "צבע שני", "גוון שלישי"], face: ["צבע", "צבע שני", "גוון שלישי"] },
-    amount: { flip: "כמה מעט צריך להזיז", balloons: "כמה בלונים", ink: "כמה רחוק הדיו מתפזר", dissolve: "צפיפות החלקיקים", dust: "כמות האבק", portal: "עומק", swarm: "כמה", ivy: "כמות עלים ופרחים",
+    amount: { trail: "כמה קלפים", flip: "כמה מעט צריך להזיז", balloons: "כמה בלונים", ink: "כמה רחוק הדיו מתפזר", dissolve: "צפיפות החלקיקים", dust: "כמות האבק", portal: "עומק", swarm: "כמה", ivy: "כמות עלים ופרחים",
       burn: "רוחב הלהבה", fireflies: "כמה", jelly: "כמה", tree: "כמות עלים", spiral: "כמה זרעים", bubbles: "כמה", liquid: "כמה טיפות", lanterns: "כמה",
       ripple: "עוצמת הגלים", shatter: "כמה רסיסים", rain: "כמה טיפות", aurora: "בהירות", mist: "כמה אדים (פחות = שקוף יותר)", drip: "כמה נוזל", sketch: "כמה קווים", sand: "כמה גרגרים", eyes: "כמה עיניים (ב״הרבה עיניים״)", tunnel: "עובי המסגרת", lens: "גודל העיגול", daysky: "כמה עננים", game: "כמה בבת אחת", scratch: "עובי האצבע", storm: "כמה גשם", countdown: "—", puzzle: "רווח בין החלקים", face: "עוצמת המגע" },
-    size: { flip: "רוחב הפסים", balloons: "גודל", dissolve: "גודל החלקיקים", dust: "גודל הנצנוצים", swarm: "גודל", ivy: "גודל העלים",
+    size: { trail: "גודל הקלפים", flip: "רוחב הפסים", balloons: "גודל", dissolve: "גודל החלקיקים", dust: "גודל הנצנוצים", swarm: "גודל", ivy: "גודל העלים",
       burn: "גודל הכתמים", fireflies: "גודל", jelly: "גודל", tree: "גודל העלים", spiral: "גודל הזרעים", bubbles: "גודל", liquid: "גודל", lanterns: "גודל",
       ripple: "אורך הגל", rain: "גודל הטיפות", aurora: "גובה הווילונות", drip: "רוחב הנזילות", sketch: "עובי הקו", sand: "גודל הגרגרים", eyes: "גודל", tunnel: "המרחק בין התמונות", daysky: "גודל השמש והירח", game: "גודל", storm: "כמה חושך", face: "גודל האצבע" },
-    touch: { flip: "החלקת אצבע לרוחב מחליפה בין התמונות", balloons: "נגיעה בבלון מפוצצת אותו לקונפטי", ink: "האצבע מערבבת את המים", swarm: "נגיעה מבריחה אותם", burn: "נגיעה מציתה את התמונה", fireflies: "הן מתקרבות לאצבע", jelly: "נגיעה דוחפת אותן", bubbles: "נגיעה מפוצצת בועה",
+    touch: { trail: "נגיעה מחזירה את השובל לתוך התמונה, ונגיעה נוספת מוציאה אותו שוב", flip: "החלקת אצבע לרוחב מחליפה בין התמונות", balloons: "נגיעה בבלון מפוצצת אותו לקונפטי", ink: "האצבע מערבבת את המים", swarm: "נגיעה מבריחה אותם", burn: "נגיעה מציתה את התמונה", fireflies: "הן מתקרבות לאצבע", jelly: "נגיעה דוחפת אותן", bubbles: "נגיעה מפוצצת בועה",
       liquid: "טיפה אחת נמשכת אחרי האצבע", lanterns: "נגיעה מזיזה אותם הצידה",
       ripple: "נגיעה במים יוצרת גלים", shatter: "נגיעה שוברת את הזכוכית במקום שנגעו", rain: "האצבע מנגבת את האדים והטיפות מהחלון", mist: "האצבע מנגבת את האדים", drip: "נגיעה ממיסה את הצבע במקום", sketch: "האצבע צובעת לפני הזמן", sand: "נגיעה מחזקת את הרוח", eyes: "העיניים מסתכלות על האצבע, ונגיעה בעין גורמת לה למצמץ", tunnel: "נגיעה מאיצה את הטיסה פנימה", lens: "העיגול הולך אחרי האצבע", game: "בלי זה אי אפשר לשחק", scratch: "בלי זה אי אפשר לגרד", storm: "נגיעה מורידה ברק למקום שנגעו", puzzle: "בלי זה אי אפשר לפתור", face: "בלי זה אי אפשר לשנות את הפנים במגע" },
-    note: { flip: "כמו גלויה מתהפכת: מצד אחד רואים את התמונה, ומהצד השני את התמונה השנייה. במצלמה זה מתחלף כשמזיזים את הטלפון ימינה ושמאלה. כשלא זזים, היא מתחלפת לאט מעצמה. בלי תמונה שנייה, הצד השני הוא אותה תמונה בשלושת הצבעים.",
+    note: { trail: "שובל של קלפים יוצא מהתמונה בספירלה לכיוון מי שמסתכל, ונעצר באוויר. נגיעה מחזירה אותו פנימה והוא נעלם, ואחרי כמה שניות (או בנגיעה) הוא יוצא שוב. בלופ הוא נפתח ונסגר לבד. ״וריאציה״ משנה את כיוון הספירלה.", flip: "כמו גלויה מתהפכת: מצד אחד רואים את התמונה, ומהצד השני את התמונה השנייה. במצלמה זה מתחלף כשמזיזים את הטלפון ימינה ושמאלה. כשלא זזים, היא מתחלפת לאט מעצמה. בלי תמונה שנייה, הצד השני הוא אותה תמונה בשלושת הצבעים.",
       balloons: "בלונים עולים למעלה על חוטים. נגיעה בבלון מפוצצת אותו לקונפטי, ובלון חדש עולה מלמטה. עם גרביטציה הם עולים לכיוון האמיתי של למעלה.",
       ink: "הצבעים של התמונה מתפזרים במים כמו דיו, מסתחררים ומחווירים, ואז חוזרים ומתאספים לתמונה. בעשן הצבעוני הם עולים למעלה.", portal: "העומק נראה הכי טוב במצלמה: כשזזים מול היצירה, רואים את העולם שמאחורי החלון מזוויות אחרות.", swarm: "בתלת־ממד ובמצלמה הם שוחים גם במרחב שלפני היצירה.",
       liquid: "במצלמה ההשתקפויות במתכת זזות כשמזיזים את הטלפון.", bubbles: "הצבעים בבועה משתנים לפי הזווית, כמו בבועת סבון אמיתית.", burn: "התמונה נשרפת, נעלמת לרגע וחוזרת. בלי ״רקע מאחור״ רואים דרכה את מה שמתחת.",
@@ -311,6 +311,29 @@ window.Inspector = (() => {
         has ? Object.assign(UI.button("בלי תמונה שנייה", () => set(null), { kind: "ghost" }), { id: "flip-picture2-off" }) : null),
       note(has ? "מזיזים את הטלפון ימינה ושמאלה, והתמונה מתחלפת." : "בלי תמונה שנייה, מהצד השני רואים את אותה תמונה בשלושת הצבעים."));
   }
+  // "שובל קלפים": how far apart the cards are, whether the gap changes along the trail, freeze or loop, and the picture
+  function trailGroup(cur, X) {
+    const set = (id) => { const x = App.sel(); if (!x || x.type !== "codefx") return; const c = Object.assign({}, x.codefx); if (id) c.picture2 = id; else delete c.picture2; x.codefx = c; App.changed(true); build(); };
+    const choose = async () => {
+      const f = await UI.pickFile("image/png,image/jpeg,image/webp"); if (!f) return;
+      try {
+        const bmp = await createImageBitmap(f), k = Math.min(1, 1200 / Math.max(bmp.width, bmp.height));
+        const cv = document.createElement("canvas"); cv.width = Math.max(1, Math.round(bmp.width * k)); cv.height = Math.max(1, Math.round(bmp.height * k));
+        cv.getContext("2d").drawImage(bmp, 0, 0, cv.width, cv.height); if (bmp.close) bmp.close();
+        const blob = await new Promise((r) => cv.toBlob(r, f.type === "image/jpeg" ? "image/jpeg" : "image/png", 0.88)); // png keeps a cut-out see-through
+        if (!blob || App.blocked({ bytes: blob.size })) return;
+        const id = Studio.newId(); App.rec.assets[id] = blob; set(id);
+      } catch (e) { toast("התמונה לא נפתחה", { kind: "error" }); }
+    };
+    const kind = cur().kind | 0, pic = kind === 1 || kind === 2, has = !!cur().picture2;
+    return UI.group("השובל",
+      S(Object.assign({ label: "מרחק בין הקלפים", hint: "שמאלה הקלפים צפופים זה על זה, ימינה רחוקים זה מזה", min: 0, max: 1, step: 0.01, get: () => (Number.isFinite(cur().gap) ? cur().gap : 0.5), set: X((c, v) => { c.gap = v; }) }, pct)),
+      C({ label: "המרחק לאורך השובל", wrap: true, options: [{ id: "even", name: "קבוע" }, { id: "end", name: "גדל לכיוון הסוף" }, { id: "start", name: "גדל לכיוון ההתחלה" }], get: () => cur().spacing || "even", set: X((c, v) => { c.spacing = v; }) }),
+      T({ label: "רץ בלופ: נפתח ונסגר", hint: "כבוי: השובל נעצר בסוף וקופא עד שנוגעים בו", get: () => cur().loop === true, set: X((c, v) => { c.loop = v; }) }),
+      pic ? h("div.btn-row", Object.assign(UI.button(has ? "להחליף את התמונה של הקלפים" : "לבחור תמונה לקלפים", choose, { icon: "image" }), { id: "trail-picture" }),
+        has ? Object.assign(UI.button("בחזרה לתמונת היצירה", () => set(null), { kind: "ghost" }), { id: "trail-picture-off" }) : null) : null,
+      pic ? note(kind === 2 ? "כל קלף הוא התמונה כמו שהיא. תמונה עם רקע שקוף (PNG) נראית כמו אלמנט שעף, בלי מסגרת." : "כל קלף הוא תמונה במסגרת לבנה.") : null);
+  }
   // the face: where it is (found in the picture), sliders for each part, and how it moves
   function faceGroup(cur, X) {
     const status = h("p.note", h("span", cur().face ? "הפנים נמצאו בתמונה." : "בלי חיפוש, ההנחה היא שהפנים במרכז התמונה, כמו בתמונת פספורט."));
@@ -348,7 +371,7 @@ window.Inspector = (() => {
     pals.node.classList.add("swatches");
     const col = (i) => K({ label: CODEFX_TEXT.colors[look][i], get: () => cur().colors[i], set: X((c, v) => { c.colors = c.colors.slice(); c.colors[i] = v; }) });
     const fitWords = (c, x) => { if (!window.StudioCodeFx) return; x.aspect = StudioCodeFx.wordsAspect(c.text, c.font || "heebo"); x.h = (x.w / x.aspect) * artRatio(); };
-    const kindSet = X((c, v) => { if (look === "puzzle") delete c.pieces; /* each kind starts with its own number of pieces */ const k = KIND_COLORS[look]; if (k && k[c.kind || 0] && k[c.kind || 0].join() === c.colors.join()) c.colors = k[+v].slice(); c.kind = +v; }, sync);
+    const kindSet = X((c, v) => { if (look === "puzzle") delete c.pieces; /* each kind starts with its own number of pieces */ const k = KIND_COLORS[look]; if (k && k[c.kind || 0] && k[c.kind || 0].join() === c.colors.join()) c.colors = k[+v].slice(); c.kind = +v; }, look === "trail" ? build : sync);
     const out = [UI.group("סוג", C({ label: "", bare: true, wrap: true, options: d.kinds.map((name, i) => ({ id: String(i), name })), get: () => String(cur().kind || 0), set: kindSet }))];
     if (look === "dust") {
       const ta = h("textarea.field", { rows: 2, dir: "auto", maxlength: 60, "aria-label": "הברכה", id: "in-dust-text", placeholder: "מה כתוב באבק?" });
@@ -378,6 +401,7 @@ window.Inspector = (() => {
     }
     if (look === "face") out.push(faceGroup(cur, X));
     if (look === "flip") out.push(flipGroup(cur));
+    if (look === "trail") out.push(trailGroup(cur, X));
     if (look !== "face") out.push(UI.group("צבעים", pals, h("div.color-trio", col(0).node, col(1).node, col(2).node)));
     out.push(UI.group("התאמה",
       look === "countdown" ? null : S(Object.assign({ label: "מהירות", min: 0, max: 1, step: 0.01, get: () => (Number.isFinite(cur().speed) ? cur().speed : 0.5), set: X((c, v) => { c.speed = v; }) }, pct)),

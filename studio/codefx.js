@@ -1466,9 +1466,120 @@ void main() {
   const LINE_A_VS = "attribute float aA; varying float vA; void main() { vA = aA; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }";
   const LINE_A_FS = "uniform vec3 uC; uniform float uA, uOpacity; varying float vA; void main() { gl_FragColor = vec4(uC, uA * vA * uOpacity); }";
 
-  const BUILDERS = { flip: "buildFlip", ink: "buildInk", balloons: "buildBalloons", burn: "buildBurn", fireflies: "buildFireflies", jelly: "buildJelly", tree: "buildTree", spiral: "buildSpiral", bubbles: "buildBubbles", liquid: "buildLiquid", lanterns: "buildLanterns", ripple: "buildRipple", shatter: "buildShatter", rain: "buildRain", mist: "buildMist", drip: "buildDrip", sketch: "buildSketch", sand: "buildSand", eyes: "buildEyes", tunnel: "buildTunnel", lens: "buildLens", daysky: "buildDaysky", game: "buildGame", scratch: "buildScratch", storm: "buildStorm", countdown: "buildCountdown", puzzle: "buildPuzzle", face: "buildFace", aurora: "buildAurora" };
+  // ---- the card trail: one card plane per instance; the picture is a tile of an atlas (the back may be its own tile) ----
+  const TRAIL_VS = `
+attribute float aTile; attribute float aA;
+varying vec2 vUv; varying float vTile; varying float vA; varying float vLit;
+void main() {
+  ${INST}
+  vUv = uv; vTile = aTile; vA = aA;
+  vec3 nrm = normalize(mat3(MV) * vec3(0.0, 0.0, 1.0)); vLit = abs(nrm.z);
+  gl_Position = projectionMatrix * MV * vec4(position, 1.0);
+}`;
+  const TRAIL_FS = `
+uniform sampler2D map; uniform vec2 uGrid; uniform float uBack, uRound, uAspect, uOpacity;
+varying vec2 vUv; varying float vTile; varying float vA; varying float vLit;
+void main() {
+  if (vA < 0.5) discard;
+  vec2 uv = vUv; float tile = vTile;
+  if (!gl_FrontFacing) { uv.x = 1.0 - uv.x; if (uBack >= 0.0) tile = uBack; } // the back reads the right way round
+  float m = 1.0;
+  if (uRound > 0.0) { // rounded corners
+    vec2 hb = vec2(uAspect, 1.0) * 0.5, p = (uv - 0.5) * vec2(uAspect, 1.0), q = abs(p) - hb + uRound;
+    float dd = length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - uRound;
+    m = 1.0 - smoothstep(-0.006, 0.0, dd);
+  }
+  float col = mod(tile, uGrid.x), row = floor(tile / uGrid.x);
+  vec2 st = vec2((col + uv.x) / uGrid.x, 1.0 - (row + 1.0 - uv.y) / uGrid.y);
+  vec4 c = texture2D(map, st);
+  float a = c.a * m * uOpacity; if (a < 0.01) discard;
+  vec3 lit = c.rgb * (0.78 + 0.22 * vLit) + vec3(0.18) * pow(vLit, 24.0) * 0.35; // a little darker as it turns, a soft gloss face-on
+  gl_FragColor = vec4(lit, a);
+}`;
+  const cardTex = (cv) => { const t = new THREE.CanvasTexture(cv); t.needsUpdate = true; return t; };
+  const hexOf = (c) => "#" + c.getHexString();
+  function suitPath(g, suit, x, y, s) { // drawn, not typed: no emoji hearts on any phone
+    g.save(); g.translate(x, y); g.scale(s, s); g.beginPath();
+    if (suit === "h") { g.moveTo(0, 0.42); g.bezierCurveTo(-0.6, 0.02, -0.52, -0.5, 0, -0.2); g.bezierCurveTo(0.52, -0.5, 0.6, 0.02, 0, 0.42); }
+    else if (suit === "d") { g.moveTo(0, -0.48); g.lineTo(0.34, 0); g.lineTo(0, 0.48); g.lineTo(-0.34, 0); g.closePath(); }
+    else if (suit === "s") { g.moveTo(0, -0.45); g.bezierCurveTo(-0.6, -0.02, -0.52, 0.42, 0, 0.16); g.bezierCurveTo(0.52, 0.42, 0.6, -0.02, 0, -0.45); g.moveTo(0, 0.08); g.lineTo(-0.16, 0.46); g.lineTo(0.16, 0.46); g.closePath(); }
+    else { for (const [cx, cy] of [[0, -0.2], [-0.21, 0.08], [0.21, 0.08]]) { g.moveTo(cx + 0.19, cy); g.arc(cx, cy, 0.19, 0, TAU); } g.moveTo(0, 0); g.lineTo(-0.15, 0.46); g.lineTo(0.15, 0.46); g.closePath(); }
+    g.fill(); g.restore();
+  }
+  function roundRect(g, x, y, w, h, r) { g.beginPath(); g.moveTo(x + r, y); g.arcTo(x + w, y, x + w, y + h, r); g.arcTo(x + w, y + h, x, y + h, r); g.arcTo(x, y + h, x, y, r); g.arcTo(x, y, x + w, y, r); g.closePath(); }
+  // nine faces and a back, 5 x 2 cells of 256 x 360; the back in the layer's colours
+  function trailDeck(C) {
+    const W = 256, Hh = 360, cv = document.createElement("canvas"); cv.width = W * 5; cv.height = Hh * 2; const g = cv.getContext("2d");
+    const faces = [["A", "s"], ["K", "h"], ["Q", "d"], ["J", "c"], ["10", "h"], ["A", "h"], ["7", "s"], ["9", "d"], ["K", "s"]];
+    const PIPS = { "7": [[0.3, 0.2], [0.7, 0.2], [0.5, 0.35], [0.3, 0.5], [0.7, 0.5], [0.3, 0.8], [0.7, 0.8]],
+      "9": [[0.3, 0.2], [0.7, 0.2], [0.3, 0.4], [0.7, 0.4], [0.5, 0.5], [0.3, 0.6], [0.7, 0.6], [0.3, 0.8], [0.7, 0.8]],
+      "10": [[0.3, 0.2], [0.7, 0.2], [0.5, 0.3], [0.3, 0.4], [0.7, 0.4], [0.3, 0.6], [0.7, 0.6], [0.5, 0.7], [0.3, 0.8], [0.7, 0.8]] };
+    faces.forEach(([rank, suit], i) => {
+      const x0 = (i % 5) * W, y0 = Math.floor(i / 5) * Hh, ink = suit === "h" || suit === "d" ? "#c8102e" : "#15151a";
+      g.save(); g.translate(x0, y0);
+      g.fillStyle = "#fdfcf8"; g.fillRect(0, 0, W, Hh);
+      g.strokeStyle = "#d9d5cc"; g.lineWidth = 3; roundRect(g, 3, 3, W - 6, Hh - 6, 19); g.stroke();
+      g.fillStyle = ink;
+      const corner = () => { g.font = "bold 46px Georgia, 'Times New Roman', serif"; g.textAlign = "center"; g.textBaseline = "alphabetic"; g.fillText(rank, 32, 56); suitPath(g, suit, 32, 84, 34); };
+      corner(); g.save(); g.translate(W, Hh); g.rotate(Math.PI); corner(); g.restore();
+      if (rank === "A") suitPath(g, suit, W / 2, Hh / 2, suit === "s" ? 150 : 120);
+      else if (PIPS[rank]) for (const [px, py] of PIPS[rank]) { g.save(); g.translate(px * W, 40 + py * (Hh - 80)); if (py > 0.55) g.rotate(Math.PI); suitPath(g, suit, 0, 0, 46); g.restore(); }
+      else { // a court card: a framed panel with the letter and its suit
+        const gr = g.createLinearGradient(0, 70, 0, Hh - 70); gr.addColorStop(0, "#fff4d6"); gr.addColorStop(1, ink === "#c8102e" ? "#ffd9de" : "#dfe6f5");
+        g.fillStyle = gr; roundRect(g, 52, 64, W - 104, Hh - 128, 10); g.fill();
+        g.strokeStyle = hexOf(C[2]); g.lineWidth = 5; g.stroke(); g.strokeStyle = ink; g.lineWidth = 1.5; roundRect(g, 60, 72, W - 120, Hh - 144, 7); g.stroke();
+        g.fillStyle = ink; g.font = "bold 120px Georgia, 'Times New Roman', serif"; g.textAlign = "center"; g.textBaseline = "middle"; g.fillText(rank, W / 2, Hh / 2 - 22);
+        suitPath(g, suit, W / 2, Hh / 2 + 66, 48);
+      }
+      g.restore();
+    });
+    // the back
+    const x0 = 4 * W, y0 = Hh; g.save(); g.translate(x0, y0);
+    g.fillStyle = "#fdfcf8"; g.fillRect(0, 0, W, Hh);
+    g.fillStyle = hexOf(C[0]); roundRect(g, 12, 12, W - 24, Hh - 24, 12); g.fill();
+    g.save(); roundRect(g, 12, 12, W - 24, Hh - 24, 12); g.clip();
+    g.strokeStyle = hexOf(C[1]); g.globalAlpha = 0.45; g.lineWidth = 2;
+    for (let k = -Hh; k < W + Hh; k += 18) { g.beginPath(); g.moveTo(k, 0); g.lineTo(k + Hh, Hh); g.stroke(); g.beginPath(); g.moveTo(k, Hh); g.lineTo(k + Hh, 0); g.stroke(); }
+    g.restore(); g.globalAlpha = 1;
+    g.strokeStyle = hexOf(C[2]); g.lineWidth = 6; roundRect(g, 22, 22, W - 44, Hh - 44, 9); g.stroke();
+    g.fillStyle = hexOf(C[0]); g.beginPath(); g.ellipse(W / 2, Hh / 2, 62, 84, 0, 0, TAU); g.fill();
+    g.strokeStyle = hexOf(C[2]); g.lineWidth = 5; g.stroke();
+    g.fillStyle = hexOf(C[2]); g.beginPath(); for (let k = 0; k < 10; k++) { const r = k % 2 ? 20 : 48, a = -Math.PI / 2 + k * Math.PI / 5; g.lineTo(W / 2 + Math.cos(a) * r, Hh / 2 + Math.sin(a) * r); } g.closePath(); g.fill();
+    g.restore();
+    return cardTex(cv);
+  }
+  // a framed photo of the picture (cropped to fill) and its paper back, 2 cells of 300 x 360
+  function trailPhotos(img) {
+    const W = 300, Hh = 360, cv = document.createElement("canvas"); cv.width = W * 2; cv.height = Hh; const g = cv.getContext("2d");
+    g.fillStyle = "#fbfaf5"; g.fillRect(0, 0, W, Hh);
+    const bx = 18, by = 18, bw = W - 36, bh = Hh - 90, ia = img.naturalWidth / Math.max(1, img.naturalHeight), ba = bw / bh;
+    let sw = img.naturalWidth, shh = img.naturalHeight, sx = 0, sy = 0;
+    if (ia > ba) { sw = shh * ba; sx = (img.naturalWidth - sw) / 2; } else { shh = sw / ba; sy = (img.naturalHeight - shh) / 2; }
+    g.fillStyle = "#222"; g.fillRect(bx, by, bw, bh); g.drawImage(img, sx, sy, sw, shh, bx, by, bw, bh);
+    const sh = g.createLinearGradient(bx, by, bx + bw, by + bh); sh.addColorStop(0, "rgba(255,255,255,0.16)"); sh.addColorStop(0.45, "rgba(255,255,255,0)"); g.fillStyle = sh; g.fillRect(bx, by, bw, bh);
+    g.fillStyle = "#f1eee6"; g.fillRect(W, 0, W, Hh); g.strokeStyle = "rgba(0,0,0,0.06)"; g.lineWidth = 1;
+    for (let y = 30; y < Hh; y += 14) { g.beginPath(); g.moveTo(W + 10, y); g.lineTo(2 * W - 10, y + 3); g.stroke(); }
+    return cardTex(cv);
+  }
+  // three cards in the layer's colours, each with a soft gloss and a white edge
+  function trailColours(C) {
+    const W = 256, Hh = 360, cv = document.createElement("canvas"); cv.width = W * 3; cv.height = Hh; const g = cv.getContext("2d");
+    C.slice(0, 3).forEach((c, i) => {
+      g.save(); g.translate(i * W, 0);
+      const lt = c.clone().lerp(new THREE.Color(1, 1, 1), 0.35), dk = c.clone().multiplyScalar(0.72);
+      const gr = g.createLinearGradient(0, 0, W, Hh); gr.addColorStop(0, hexOf(lt)); gr.addColorStop(0.55, hexOf(c)); gr.addColorStop(1, hexOf(dk));
+      g.fillStyle = gr; g.fillRect(0, 0, W, Hh);
+      g.strokeStyle = "rgba(255,255,255,0.85)"; g.lineWidth = 6; roundRect(g, 16, 16, W - 32, Hh - 32, 12); g.stroke();
+      g.fillStyle = "rgba(255,255,255,0.8)"; g.beginPath();
+      for (let k = 0; k < 8; k++) { const r = k % 2 ? 12 : 44, a = -Math.PI / 2 + k * Math.PI / 4; g.lineTo(W / 2 + Math.cos(a) * r, Hh / 2 + Math.sin(a) * r); } g.closePath(); g.fill();
+      g.restore();
+    });
+    return cardTex(cv);
+  }
+
+  const BUILDERS = { trail: "buildTrail", flip: "buildFlip", ink: "buildInk", balloons: "buildBalloons", burn: "buildBurn", fireflies: "buildFireflies", jelly: "buildJelly", tree: "buildTree", spiral: "buildSpiral", bubbles: "buildBubbles", liquid: "buildLiquid", lanterns: "buildLanterns", ripple: "buildRipple", shatter: "buildShatter", rain: "buildRain", mist: "buildMist", drip: "buildDrip", sketch: "buildSketch", sand: "buildSand", eyes: "buildEyes", tunnel: "buildTunnel", lens: "buildLens", daysky: "buildDaysky", game: "buildGame", scratch: "buildScratch", storm: "buildStorm", countdown: "buildCountdown", puzzle: "buildPuzzle", face: "buildFace", aurora: "buildAurora" };
   // the looks a finger plays with
-  const TOUCHY = new Set(["dissolve", "dust", "swarm", "burn", "fireflies", "jelly", "spiral", "bubbles", "liquid", "lanterns", "ripple", "shatter", "rain", "mist", "drip", "sketch", "sand", "eyes", "tunnel", "lens", "game", "scratch", "storm", "puzzle", "face", "flip", "ink", "balloons"]);
+  const TOUCHY = new Set(["dissolve", "dust", "swarm", "burn", "fireflies", "jelly", "spiral", "bubbles", "liquid", "lanterns", "ripple", "shatter", "rain", "mist", "drip", "sketch", "sand", "eyes", "tunnel", "lens", "game", "scratch", "storm", "puzzle", "face", "flip", "ink", "balloons", "trail"]);
   AFRAME.registerComponent("studio-codefx", {
     schema: { cfg: { default: "{}" }, width: { default: 1 }, height: { default: 1 }, src: { default: "" }, src2: { default: "" } },
     init() { this.t = 0; this.mats = []; this.tmp = {}; this.finger = Studio.fingerTools; },
@@ -2814,6 +2925,93 @@ void main() {
         confetti.step(d, 1.1);
       };
       this.step(0.016, 0.016);
+    },
+
+    // A trail of cards bursts out of the picture toward the viewer along a spiral, one after another, and freezes in
+    // the air. A tap sends it back into the picture and it is gone (it comes again after a while, or with another tap);
+    // with "loop" it opens and closes by itself. Playing cards, framed photos, the chosen picture as it is, or coloured
+    // cards. The gap between the cards is even, or grows toward the front end, or toward the picture.
+    buildTrail(cfg, w, h, C) {
+      const kind = Math.min(3, Math.max(0, cfg.kind | 0)), R = rand(5100 + (cfg.seed | 0)), unit = Math.min(w, h);
+      const n = Math.round(5 + val(cfg.amount, 0.5) * 25), S = unit * (0.13 + val(cfg.size, 0.5) * 0.22);
+      const spacing = ["even", "end", "start"].includes(cfg.spacing) ? cfg.spacing : "even", loop = cfg.loop === true;
+      const sh = (u) => (spacing === "end" ? u + 0.62 * u * (1 - u) : spacing === "start" ? u - 0.62 * u * (1 - u) : u); // the gaps change about fourfold end to end // where along the path each card ends
+      // the path: out of the middle of the picture, a widening spiral that comes toward the viewer, measured by its length
+      const gw = S * (0.1 + val(cfg.gap, 0.5) * 1.15), reach = Math.min(unit * 6, Math.max(unit * 0.5, gw * (n - 1)));
+      // a sweep that widens out past the frame, then closes in again as it rushes toward the viewer, ending in front
+      const Rr = Math.min(unit * 0.95, Math.max(unit * 0.42, reach * 0.24)), turns = Math.min(2.2, Math.max(0.55, reach / (TAU * Rr * 0.55)));
+      const Zmax = Math.min(unit * 1.15, Math.max(unit * 0.55, unit * 0.4 + reach * 0.15)), th0 = -Math.PI / 2 + (R() - 0.5) * 2.4, dir = (cfg.seed | 0) % 2 ? -1 : 1;
+      const N = 320, P = new Float32Array((N + 1) * 3), Lc = new Float32Array(N + 1);
+      for (let k = 0; k <= N; k++) {
+        const s = k / N, r = Rr * Math.pow(Math.sin(Math.PI * s * 0.88), 0.85), th = th0 + dir * s * turns * TAU;
+        P[k * 3] = r * Math.cos(th) * (w / unit > 1.2 ? 1.25 : 1); P[k * 3 + 1] = r * Math.sin(th) * 0.85 + unit * 0.1 * s; P[k * 3 + 2] = Zmax * Math.pow(s, 1.25);
+        if (k) Lc[k] = Lc[k - 1] + Math.hypot(P[k * 3] - P[k * 3 - 3], P[k * 3 + 1] - P[k * 3 - 2], P[k * 3 + 2] - P[k * 3 - 1]);
+      }
+      const total = Lc[N] || 1;
+      const at = (a, out, tan) => { // a point a part of the way along (0..1), and which way the path goes there
+        const want = Math.min(1, Math.max(0, a)) * total; let lo = 0, hi = N;
+        while (hi - lo > 1) { const m = (lo + hi) >> 1; if (Lc[m] < want) lo = m; else hi = m; }
+        const f = (want - Lc[lo]) / Math.max(1e-9, Lc[hi] - Lc[lo]);
+        out.set(P[lo * 3] + (P[hi * 3] - P[lo * 3]) * f, P[lo * 3 + 1] + (P[hi * 3 + 1] - P[lo * 3 + 1]) * f, P[lo * 3 + 2] + (P[hi * 3 + 2] - P[lo * 3 + 2]) * f);
+        tan.set(P[hi * 3] - P[lo * 3], P[hi * 3 + 1] - P[lo * 3 + 1], P[hi * 3 + 2] - P[lo * 3 + 2]).normalize();
+      };
+      const cards = []; for (let i = 0; i < n; i++) { const u = n > 1 ? i / (n - 1) : 0; cards.push({ u, end: 1 - sh(u), wob: R() * TAU }); } // i = 0 leads
+      const st = { phase: "out", tau: 0, H: 0, wait: 0, ready: false, cards: n, spacing, loop };
+      this.parts = { trail: st };
+      let mesh = null, geo = null, aA = null;
+      const make = (tex, grid, back, aspect, round, tileOf) => {
+        if (!this.group) return;
+        geo = new THREE.PlaneGeometry(S * aspect, S);
+        const tiles = new Float32Array(n); aA = new Float32Array(n);
+        for (let i = 0; i < n; i++) tiles[n - 1 - i] = tileOf(i); // the last card first, so the front ones are drawn over it
+        geo.setAttribute("aTile", new THREE.InstancedBufferAttribute(tiles, 1)); geo.setAttribute("aA", new THREE.InstancedBufferAttribute(aA, 1));
+        mesh = new THREE.InstancedMesh(geo, this.mat({ vertexShader: TRAIL_VS, fragmentShader: TRAIL_FS, side: THREE.DoubleSide,
+          uniforms: { map: { value: tex }, uGrid: { value: new THREE.Vector2(grid[0], grid[1]) }, uBack: { value: back }, uRound: { value: round }, uAspect: { value: aspect } } }), n);
+        mesh.frustumCulled = false; this.group.add(mesh); st.ready = true;
+        this.el.emit("object3dset", { object: this.group, type: "codefx" }, false); // the layer's order and opacity
+        if (this.step) this.step(0, 0);
+      };
+      const needsPic = kind === 1 || kind === 2;
+      if (needsPic && this.data.src2) {
+        const img = new Image(); img.crossOrigin = "anonymous"; const src = this.data.src2;
+        img.onload = () => {
+          if (!this.group || this.data.src2 !== src) return;
+          if (kind === 2) { const t = new THREE.Texture(img); t.needsUpdate = true; make(t, [1, 1], -1, img.naturalWidth / Math.max(1, img.naturalHeight), 0, () => 0); }
+          else make(trailPhotos(img), [2, 1], 1, 300 / 360, 0.025, () => 0);
+        };
+        img.src = src;
+      } else if (kind === 3) make(trailColours(C), [3, 1], -1, 256 / 360, 0.06, (i) => (i + (cfg.seed | 0)) % 3);
+      else make(trailDeck(C), [5, 2], 9, 256 / 360, 0.06, (i) => (i * 4 + (cfg.seed | 0)) % 9);
+      const OUT = 2.4, BACK = 1.5, HOLD = 1.4, GONE = loop ? 0.7 : 6;
+      const M = new THREE.Matrix4(), Q = new THREE.Quaternion(), E = new THREE.Euler(), V = new THREE.Vector3(), T3 = new THREE.Vector3(), SC = new THREE.Vector3();
+      this.step = (dt, d) => {
+        // the clock: out (slowing to a stop), held still, back in (speeding up), gone
+        const tap = cfg.touch !== false ? this.tapped() : null;
+        if (tap) {
+          if (st.phase === "out" || st.phase === "hold") { st.phase = "back"; st.tau = Math.sqrt(Math.max(0, 1 - st.H)); } // back from where it is now
+          else if (st.phase === "gone") { st.phase = "out"; st.tau = 0; }
+        }
+        if (st.phase === "out") { st.tau = Math.min(1, st.tau + dt / OUT); st.H = 1 - Math.pow(1 - st.tau, 3); if (st.tau >= 1) { st.phase = "hold"; st.wait = 0; } }
+        else if (st.phase === "hold") { st.H = 1; st.wait += dt; if (loop && st.wait >= HOLD) { st.phase = "back"; st.tau = 0; } }
+        else if (st.phase === "back") { st.tau = Math.min(1, st.tau + dt / BACK); st.H = 1 - st.tau * st.tau; if (st.tau >= 1) { st.phase = "gone"; st.wait = 0; st.H = 0; } }
+        else { st.H = 0; st.wait += dt; if (st.wait >= GONE) { st.phase = "out"; st.tau = 0; } }
+        if (!mesh) return;
+        const cam = this.el.sceneEl && this.el.sceneEl.camera, flat = !!(cam && cam.isOrthographicCamera); // the flat view has no perspective: nearer cards are drawn bigger
+        const H = st.H;
+        for (let i = 0; i < n; i++) {
+          const c = cards[i], start = 1 - c.end; // the card leaves the picture when the head has gone this far
+          const grow = smooth(start - 0.07, start + 0.005, H), a = Math.max(0, H - start), prog = c.end > 1e-4 ? Math.min(1, a / c.end) : 1;
+          at(a, V, T3);
+          const spin = prog < 1 ? (1 - prog) * (1 - prog) * TAU : 0; // a turn on the way, none once it stops
+          E.set(-T3.y * 0.35, T3.x * 0.45 + spin, Math.atan2(T3.y, T3.x) * 0.12 + Math.sin(c.wob) * 0.08);
+          Q.setFromEuler(E);
+          const k = (grow || 1e-6) * (0.72 + 0.56 * a) * (flat ? 1 + V.z / unit * 0.9 : 1); // bigger toward the front, as if nearer
+          V.z += unit * 0.004 + i * 1e-5 * unit; // just in front of the picture, the front cards a hair nearer
+          M.compose(V, Q, SC.set(k, k, k)); mesh.setMatrixAt(n - 1 - i, M); aA[n - 1 - i] = grow > 0.001 ? 1 : 0;
+        }
+        mesh.instanceMatrix.needsUpdate = true; geo.attributes.aA.needsUpdate = true;
+      };
+      this.step(0, 0);
     },
 
     buildAurora(cfg, w, h, C) {

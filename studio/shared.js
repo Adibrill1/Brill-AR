@@ -1136,7 +1136,8 @@ vec4 baFilter(vec2 uv) {
     ["face", "פנים במגע", ["#ffd166", "#ff8fa3", "#ffffff"], ["משיכה", "ניפוח", "כיווץ", "ג׳לי"]],
     ["flip", "תמונה לפי הזווית", ["#1b2a4a", "#ff8fa3", "#fff1c9"], ["מתהפכת בפסים", "מתחלפת ברכות", "פסים שרואים"]],
     ["balloons", "בלונים", ["#ff5d73", "#ffd166", "#5ec8ff"], ["צבעוניים", "זהב וכסף", "לבבות"]],
-    ["ink", "דיו במים", ["#1d2340", "#ff7ab6", "#f4f1ea"], ["דיו כהה", "צבעי מים", "עשן צבעוני"]]
+    ["ink", "דיו במים", ["#1d2340", "#ff7ab6", "#f4f1ea"], ["דיו כהה", "צבעי מים", "עשן צבעוני"]],
+    ["trail", "שובל קלפים", ["#b3122e", "#ffffff", "#d4af37"], ["קלפי משחק", "תמונות ממוסגרות", "התמונה שבחרתי", "כרטיסים בצבעים"]]
   ];
   const CODEFX_RETIRED = ["daysky"]; // no longer offered; creations that have it still play
   const CODEFX_PICTURE = ["dissolve", "burn", "ripple", "shatter", "rain", "mist", "drip", "sketch", "sand", "tunnel", "lens", "scratch", "puzzle", "face", "flip", "ink"]; // the looks made from a picture
@@ -1147,6 +1148,7 @@ vec4 baFilter(vec2 uv) {
     if (d[0] === "dust") o.text = "מזל טוב";
     if (CODEFX_PICTURE.includes(d[0])) { o.cover = d[0] === "dissolve" || d[0] === "burn" || d[0] === "ink"; o.picture = "__artwork"; } // broken glass shows what is under it
     if (d[0] === "portal") o.shape = "rect";
+    if (d[0] === "trail") { o.gap = 0.5; o.spacing = "even"; o.loop = false; }
     if (d[0] === "scratch") o.text = "גרדו כאן";
     if (d[0] === "countdown") { const t = new Date(Date.now() + 30 * 86400000), z = (v) => String(v).padStart(2, "0"); o.text = "עד היום הגדול"; o.date = t.getFullYear() + "-" + z(t.getMonth() + 1) + "-" + z(t.getDate()); o.time = "00:00"; } // a month from now
     return o;
@@ -1155,15 +1157,16 @@ vec4 baFilter(vec2 uv) {
     const c = el.codefx; if (c == null) return el.type !== "codefx";
     if (el.type !== "codefx" || typeof c !== "object" || Array.isArray(c) || !CODEFX_IDS.includes(c.look)) return false;
     if (!Array.isArray(c.colors) || c.colors.length !== 3 || !c.colors.every((x) => typeof x === "string" && /^#[0-9a-f]{6}$/i.test(x))) return false;
-    if (!["speed", "amount", "size", "fog", "eyes", "nose", "mouth", "smile", "head"].every((k) => c[k] == null || Number.isFinite(c[k]) && c[k] >= 0 && c[k] <= 1)) return false;
+    if (!["speed", "amount", "size", "fog", "gap", "eyes", "nose", "mouth", "smile", "head"].every((k) => c[k] == null || Number.isFinite(c[k]) && c[k] >= 0 && c[k] <= 1)) return false;
     if (c.pieces != null && !(Number.isInteger(c.pieces) && c.pieces >= 2 && c.pieces <= 10)) return false;
     if (c.face != null && !(Array.isArray(c.face) && c.face.length === 16 && c.face.every((v) => Number.isFinite(v) && v >= -0.5 && v <= 1.5))) return false;
     if (c.kind != null && !(Number.isInteger(c.kind) && c.kind >= 0 && c.kind <= 3) || c.seed != null && !(Number.isInteger(c.seed) && c.seed >= 0 && c.seed <= 999)) return false;
     if (c.text != null && (typeof c.text !== "string" || c.text.length > 60) || c.font != null && !(typeof c.font === "string" && /^[a-z0-9-]{1,32}$/.test(c.font))) return false;
     if (["picture", "picture2"].some((k) => c[k] != null && !(typeof c[k] === "string" && /^[a-zA-Z0-9_-]{1,128}$/.test(c[k])))) return false;
     if (c.shape != null && !CODEFX_SHAPES.includes(c.shape)) return false;
+    if (c.spacing != null && !["even", "end", "start"].includes(c.spacing)) return false; // the card trail: even gaps, or growing toward the front end or the picture
     if (c.date != null && !(typeof c.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(c.date)) || c.time != null && !(typeof c.time === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(c.time))) return false;
-    return ["touch", "cover", "keep", "alive", "follow"].every((k) => c[k] == null || typeof c[k] === "boolean");
+    return ["touch", "cover", "keep", "alive", "follow", "loop"].every((k) => c[k] == null || typeof c[k] === "boolean");
   }
   const isWeather = (el) => !!(el && el.type === "pattern" && el.pattern && WEATHER.some((w) => w[0] === el.pattern.look));
   // Ready colour sets for any look: [Hebrew name, colours]
@@ -2816,7 +2819,8 @@ vec4 bpPattern(vec2 uv) {
       // drawn by codefx.js (without it the layer stays empty)
       e = document.createElement("a-entity");
       const c = el.codefx || codeFxDefaults(), blob = CODEFX_PICTURE.includes(c.look) && rec.assets && rec.assets[c.picture || "__artwork"];
-      const blob2 = c.look === "flip" && c.picture2 && rec.assets && rec.assets[c.picture2]; // the second picture of "תמונה לפי הזווית"
+      const blob2 = rec.assets && (c.look === "flip" ? c.picture2 && rec.assets[c.picture2] // the second picture of "תמונה לפי הזווית"
+        : c.look === "trail" && (c.kind === 1 || c.kind === 2) ? rec.assets[c.picture2 || "__artwork"] : null); // the card trail's picture: the chosen one, or the artwork
       e.setAttribute("studio-codefx", { cfg: JSON.stringify(el.gravity === true ? Object.assign({}, c, { gravity: true, gravityTune: tuneJSON(el) }) : c), width: ts.w, height: ts.h, src: blob ? blobURL(blob) : "", src2: blob2 ? blobURL(blob2) : "" });
     } else if (isWeather(el)) {
       ensureWeatherComponent();
