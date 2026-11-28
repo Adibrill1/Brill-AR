@@ -28,6 +28,14 @@ const {chromium}=require('playwright-core'),assert=require('node:assert/strict')
   console.log('handle',JSON.stringify(hp));
   await p.mouse.move(hp.x,hp.y);await p.mouse.down();await p.mouse.move(hp.cx-60,hp.cy-120,{steps:8});await p.mouse.up();await p.waitForTimeout(500);
   const aim=await p.evaluate(()=>App.sel().codefx.aim);console.log('aim',aim);assert.ok(Math.abs(aim-Math.atan2(120,-60)*180/Math.PI)<3,'dragged up and to the left');
+  // to the middle: straight at the viewer; out again: it leans
+  const h2=await p.evaluate(()=>{const e=App.sel(),b=Stage.boxes[e.id],r=document.getElementById('preview').getBoundingClientRect();const k=Stage._trailHandle?0:0;return {cx:r.left+b.cx,cy:r.top+b.cy};});
+  const at=await p.evaluate(()=>{const e=App.sel(),b=Stage.boxes[e.id],r=document.getElementById('preview').getBoundingClientRect(),hp=Stage.trailHandle(e);return {x:r.left+b.cx+hp.x,y:r.top+b.cy+hp.y};});
+  await p.mouse.move(at.x,at.y);await p.mouse.down();await p.mouse.move(h2.cx+3,h2.cy+2,{steps:8});await p.mouse.up();await p.waitForTimeout(400);
+  assert.equal(await p.evaluate(()=>App.sel().codefx.tilt),0,'dragged to the middle: straight at the viewer');
+  const mid=await p.evaluate(()=>{const e=App.sel(),b=Stage.boxes[e.id],r=document.getElementById('preview').getBoundingClientRect(),hp=Stage.trailHandle(e);return {x:r.left+b.cx+hp.x,y:r.top+b.cy+hp.y};});
+  await p.mouse.move(mid.x,mid.y);await p.mouse.down();await p.mouse.move(h2.cx+50,h2.cy,{steps:8});await p.mouse.up();await p.waitForTimeout(400);
+  const t2=await p.evaluate(()=>App.sel().codefx);console.log('lean',t2.tilt,t2.aim);assert.ok(t2.tilt>0.05&&t2.tilt<1&&Math.abs(t2.aim)<3,'out again to the right: it leans that way');
   assert.equal(await p.locator('#trail-aim-off').count(),1,'a button back to the automatic angle');
   await p.locator('#trail-aim-off').tap();await p.waitForTimeout(300);assert.equal(await p.evaluate(()=>App.sel().codefx.aim),undefined);
   // the number of cards

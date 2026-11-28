@@ -1500,6 +1500,10 @@ void main() {
   function trailGeom(cfg, w, h) {
     const unit = Math.min(w, h), n = Number.isInteger(cfg.cards) ? Math.min(40, Math.max(2, cfg.cards)) : Math.round(5 + val(cfg.amount, 0.5) * 25);
     const S = unit * (0.13 + val(cfg.size, 0.5) * 0.22), gw = S * (0.1 + val(cfg.gap, 0.5) * 1.15), reach = Math.min(unit * 6, Math.max(unit * 0.5, gw * (n - 1)));
+    if (Number.isFinite(cfg.tilt)) { // dragged: how far it leans sideways (0 = straight at the viewer, 1 = flat along the picture)
+      const t = Math.min(1, Math.max(0, cfg.tilt)), zc = Math.sqrt(1 - t * t);
+      return { unit, n, S, reach, Ll: Math.min(reach, unit * 2.6, zc > 1e-3 ? unit * 1.4 / zc : Infinity), zc, sc2: t };
+    }
     const Ll = Math.min(reach, unit * 2.6), zc = Math.min(0.72, unit * 1.25 / Ll);
     return { unit, n, S, reach, Ll, zc, sc2: Math.sqrt(1 - zc * zc) };
   }
@@ -1511,6 +1515,12 @@ void main() {
     const G = trailGeom(cfg, w, h), R = rand(5100 + (cfg.seed | 0)), th0 = -Math.PI / 2 + (R() - 0.5) * 2.4, phi = trailPhi(cfg, th0), lx = Math.cos(phi), ly = Math.sin(phi);
     const a = cfg.path === "wave" ? trailWave(1, G.unit, G.Ll) : 0;
     return { x: lx * G.sc2 * G.Ll - ly * a, y: ly * G.sc2 * G.Ll + Math.abs(lx) * a };
+  };
+  // the lean that puts the end card d away from the middle on the picture (the editor's drag)
+  StudioCodeFx.trailTilt = (cfg, w, h, d) => {
+    let lo = 0, hi = 1;
+    for (let i = 0; i < 30; i++) { const m = (lo + hi) / 2, G = trailGeom(Object.assign({}, cfg, { tilt: m }), w, h); if (m * G.Ll < d) lo = m; else hi = m; }
+    return Math.round(lo * 1000) / 1000;
   };
   const cardTex = (cv) => { const t = new THREE.CanvasTexture(cv); t.needsUpdate = true; return t; };
   const hexOf = (c) => "#" + c.getHexString();
@@ -3029,13 +3039,14 @@ void main() {
         else { st.H = 0; st.wait += dt; if (st.wait >= GONE) { st.phase = "out"; st.tau = 0; } }
         if (!mesh) return;
         const cam = this.el.sceneEl && this.el.sceneEl.camera, flat = !!(cam && cam.isOrthographicCamera); // the flat view has no perspective: nearer cards are drawn bigger
-        const H = st.H;
+        const H = st.H, fan = (path === "line" || path === "wave") && G0.sc2 < 0.35 ? 0.16 * (1 - G0.sc2 / 0.35) : 0; // straight at the viewer: each card turned a little more, so their corners show
         for (let i = 0; i < n; i++) {
           const c = cards[i], start = 1 - c.end; // the card leaves the picture when the head has gone this far
           const grow = smooth(start - 0.07, start + 0.005, H), a = Math.max(0, H - start), prog = c.end > 1e-4 ? Math.min(1, a / c.end) : 1;
           at(a, V, T3);
+          if (fan) { const r = unit * 0.9 * fan * (1 - a * 0.55) * Math.min(1, a * 6); V.x += r * Math.cos(i * 0.85 + th0); V.y += r * Math.sin(i * 0.85 + th0); } // a slow twist round the line
           const spin = prog < 1 ? (1 - prog) * (1 - prog) * TAU : 0; // a turn on the way, none once it stops
-          E.set(-T3.y * 0.35, T3.x * 0.45 + spin, Math.atan2(T3.y, T3.x) * 0.12 + Math.sin(c.wob) * 0.08);
+          E.set(-T3.y * 0.35, T3.x * 0.45 + spin, Math.atan2(T3.y, T3.x) * 0.12 + Math.sin(c.wob) * 0.08 + fan * i);
           Q.setFromEuler(E);
           const k = (grow || 1e-6) * (0.72 + 0.56 * a) * (flat ? 1 + V.z / unit * 0.9 : 1); // bigger toward the front, as if nearer
           V.z += unit * 0.004 + i * 1e-5 * unit; // just in front of the picture, the front cards a hair nearer

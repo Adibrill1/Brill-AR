@@ -224,15 +224,20 @@ window.Stage = (() => {
   // the card trail's straight line: the end card's place on screen (box frame), which she drags to turn the line
   function trailEndPx(el, b) {
     if (!b || el.type !== "codefx" || !el.codefx || el.codefx.look !== "trail" || !["line", "wave"].includes(el.codefx.path) || !window.StudioCodeFx || !StudioCodeFx.trailEnd) return null;
-    const c = drag && drag.mode === "aim" && drag.id === el.id ? Object.assign({}, el.codefx, { aim: drag.aim }) : el.codefx, e = StudioCodeFx.trailEnd(c, b.w, b.h);
-    // a long line can end off the screen: the handle then stays inside it, on the same line
+    const c = drag && drag.mode === "aim" && drag.id === el.id ? Object.assign({}, el.codefx, { aim: drag.aim, tilt: drag.tilt }) : el.codefx, e = StudioCodeFx.trailEnd(c, b.w, b.h);
+    const k = trailFit(el, b, c);
+    return { x: e.x * k, y: -e.y * k, k, mid: Math.hypot(e.x, e.y) * k < 2 };
+  }
+  // a long line can end off the screen: the handle is drawn nearer the middle, the line flat along the picture
+  // just reaching the screen's edge, so every place she can drag it to means a lean
+  function trailFit(el, b, c) {
+    const f = StudioCodeFx.trailEnd(Object.assign({}, c, { tilt: 1 }), b.w, b.h);
     const r = canvas.getBoundingClientRect(), m = 26, lo = ptAt(r.left + m, r.top + m), hi = ptAt(r.right - m, r.bottom - m);
-    const co = Math.cos(b.rot), si = Math.sin(b.rot), dx = e.x * co + e.y * si, dy = e.x * si - e.y * co; // the end on the stage, from the box's middle
+    const co = Math.cos(b.rot), si = Math.sin(b.rot), dx = f.x * co + f.y * si, dy = f.x * si - f.y * co;
     let t = 1;
     if (b.cx + dx > hi.x) t = Math.min(t, (hi.x - b.cx) / dx); if (b.cx + dx < lo.x) t = Math.min(t, (lo.x - b.cx) / dx);
     if (b.cy + dy > hi.y) t = Math.min(t, (hi.y - b.cy) / dy); if (b.cy + dy < lo.y) t = Math.min(t, (lo.y - b.cy) / dy);
-    t = Math.max(0.15, t);
-    return { x: e.x * t, y: -e.y * t, cut: t < 1 };
+    return Math.max(0.1, t);
   }
   function drawTrailEnd(el, b) {
     const q = trailEndPx(el, b); if (!q) return;
@@ -240,6 +245,7 @@ window.Stage = (() => {
     ctx.save(); ctx.translate(b.cx, b.cy); ctx.rotate(b.rot);
     ctx.strokeStyle = "rgba(255,255,255,.9)"; ctx.lineWidth = 2 * px; ctx.setLineDash([6 * px, 5 * px]); ctx.shadowColor = "rgba(0,0,0,.6)"; ctx.shadowBlur = 3;
     ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(q.x, q.y); ctx.stroke(); ctx.setLineDash([]); ctx.shadowBlur = 0;
+    if (q.mid) { ctx.beginPath(); ctx.arc(0, 0, 17 * px, 0, 7); ctx.strokeStyle = "#fff"; ctx.lineWidth = 2 * px; ctx.setLineDash([3 * px, 3 * px]); ctx.stroke(); ctx.setLineDash([]); } // straight at the viewer
     ctx.beginPath(); ctx.arc(q.x, q.y, (on ? 13 : 11) * px, 0, 7); ctx.fillStyle = on ? ACCENT : "#fff"; ctx.fill(); ctx.strokeStyle = on ? "#fff" : ACCENT; ctx.lineWidth = 2.5 * px; ctx.stroke();
     ctx.fillStyle = on ? "#fff" : ACCENT; ctx.fillRect(q.x - 4 * px, q.y - 5.5 * px, 8 * px, 11 * px); // a little card
     ctx.restore();
@@ -537,7 +543,7 @@ window.Stage = (() => {
     if (picker) { pickAt(p); drag = { mode: "none" }; return; }
     if (drawing) { drawing.stroke = [p]; drag = { mode: "stroke", sx: e.clientX, sy: e.clientY }; return; }
     if (App.multi) { const r = hits(p)[0]; drag = { mode: "multi", id: r ? r.id : null, sx: e.clientX, sy: e.clientY, px: pan.x, py: pan.y }; return; }
-    if (sel && !App.cropping && trailEndAt(sel, p)) { drag = { mode: "aim", id: sel.id, aim: Number.isFinite(sel.codefx.aim) ? sel.codefx.aim : null, moved: false }; return; }
+    if (sel && !App.cropping && trailEndAt(sel, p)) { drag = { mode: "aim", id: sel.id, aim: Number.isFinite(sel.codefx.aim) ? sel.codefx.aim : null, tilt: Number.isFinite(sel.codefx.tilt) ? sel.codefx.tilt : null, moved: false }; return; }
     const pi = sel && !App.cropping ? pointAt(sel, p) : -1;
     if (pi >= 0) {
       pointSel = { id: sel.id, i: pi };
@@ -579,8 +585,11 @@ window.Stage = (() => {
     const el = App.el(drag.id), p = pt(e);
     if (drag.mode === "none" || !el) return;
     if (drag.mode === "aim") { // the line turns to the finger; it is rebuilt once, when she lets go
-      const q = local(boxes[el.id], p); if (Math.hypot(q.x, q.y) < 6 / zoom) return;
-      drag.aim = Math.round(Math.atan2(-q.y, q.x) * 180 / Math.PI * 10) / 10; drag.moved = true; return draw();
+      const b = boxes[el.id], q = local(b, p), d = Math.hypot(q.x, q.y); drag.moved = true;
+      if (d < 18 / zoom) { drag.tilt = 0; if (drag.aim == null) drag.aim = 0; return draw(); } // in the middle: straight at the viewer
+      drag.aim = Math.round(Math.atan2(-q.y, q.x) * 180 / Math.PI * 10) / 10;
+      const c = Object.assign({}, el.codefx, { aim: drag.aim }); drag.tilt = StudioCodeFx.trailTilt(c, b.w, b.h, d / trailFit(el, b, c));
+      return draw();
     }
     if (drag.mode === "point") {
       const q = local(boxes[el.id], p), pp = el.scatter.points[drag.i]; if (!pp) return;
@@ -637,7 +646,7 @@ window.Stage = (() => {
       if (drawing.straight) { const a = st[0], c = st[st.length - 1]; return finishLine([a, { x: (a.x + c.x) / 2, y: (a.y + c.y) / 2 }, c], false); }
       return finishLine(simplify(st), true);
     }
-    if (d && d.mode === "aim") { const el = App.el(d.id); if (d.moved && el && el.codefx && e.type !== "pointercancel") { el.codefx = Object.assign({}, el.codefx, { aim: d.aim }); App.changed(true); } return draw(); }
+    if (d && d.mode === "aim") { const el = App.el(d.id); if (d.moved && el && el.codefx && e.type !== "pointercancel") { el.codefx = Object.assign({}, el.codefx, { aim: d.aim, tilt: d.tilt }); App.changed(true); } return draw(); }
     if (d && d.mode === "point") { const el = App.el(d.id); if (d.moved && el) { Studio.refreshScatter(App.rec, el, true); App.changed(true); } return; }
     if (!d || e.type === "pointercancel") { if (d && d.moved) App.changed(true); return; }
     if (d.moved) { App.changed(true); return; }
@@ -819,7 +828,8 @@ window.Stage = (() => {
     if (shown) { layout(); applyMode(); } else { if (Editor3D.isActive()) Editor3D.hide(); Editor3D.overlay(false); }
   }
 
-  return { init, show, layout, draw, coverShot, nudge, fitText, textBitmap, textFxColor: (el) => (Studio.textFxOf(el) || {}).color || "#ffffff", setCropRatio, resetCrop, pickColor, stopPick, startScatter, stopDrawing, copyBoxes,
+  const trailHandle = (el) => { const b = boxes[el.id], q = trailEndPx(el, b); return q ? { x: q.x * Math.cos(b.rot) - q.y * Math.sin(b.rot), y: q.x * Math.sin(b.rot) + q.y * Math.cos(b.rot) } : null; };
+  return { init, show, trailHandle, layout, draw, coverShot, nudge, fitText, textBitmap, textFxColor: (el) => (Studio.textFxOf(el) || {}).color || "#ffffff", setCropRatio, resetCrop, pickColor, stopPick, startScatter, stopDrawing, copyBoxes,
     get picking() { return picker ? picker.id : null; }, get drawing() { return drawing ? { srcId: drawing.srcId, straight: drawing.straight, taps: drawing.taps.length } : null; },
     get pointSel() { return pointSel; }, set pointSel(v) { pointSel = v; }, get cropRatio() { return cropRatio; }, get view() { return view; }, get zoom() { return zoom; }, get pan() { return pan; }, boxes, CROP_TYPES };
 })();

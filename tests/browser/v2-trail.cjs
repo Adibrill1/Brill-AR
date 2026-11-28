@@ -66,6 +66,11 @@ const OUT=process.env.SHOTS||'';
   console.log('lead',JSON.stringify(lead));assert.equal(lead.n,7,'seven cards');assert.ok(Math.abs(lead.a+30)<2,'the line goes where it was aimed');
   const end=await p.evaluate(()=>{const C=document.querySelector('[studio-codefx]').components['studio-codefx'];return StudioCodeFx.trailEnd(JSON.parse(C.data.cfg),C.data.width,C.data.height);});
   assert.ok(Math.abs(end.x-lead.x)<0.02&&Math.abs(end.y-lead.y)<0.02,'the editor handle sits on the end card');
+  // dragged to the middle: straight at the viewer
+  await open({speed:1,path:'line',cards:8,aim:0,tilt:0});await cam(0,0,1.7);await p.waitForTimeout(2600);await shot('trail-straight-at-you');
+  const head=await C('(()=>{const m=C.group.children.find(o=>o.isInstancedMesh),M=new THREE.Matrix4(),v=new THREE.Vector3();m.getMatrixAt(m.count-1,M);v.setFromMatrixPosition(M);return {x:v.x,y:v.y,z:v.z};})()');
+  console.log('head',JSON.stringify(head));assert.ok(Math.hypot(head.x,head.y)<0.08&&head.z>0.5,'the front card is straight out in front');
+  await cam(0.9,0.2,1.2);await p.waitForTimeout(300);await shot('trail-straight-side');
   // laid out from the start: no flight, already held
   await open({speed:1,open:true});st=await C('({...C.parts.trail})');assert.equal(st.phase,'hold','laid out from the start');assert.equal(st.H,1);
   await tap();await p.waitForTimeout(300);assert.equal(await C('C.parts.trail.phase'),'back','and a tap still folds it away');
