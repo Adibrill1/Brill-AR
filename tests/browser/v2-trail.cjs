@@ -55,6 +55,14 @@ const OUT=process.env.SHOTS||'';
   // loop: it opens and closes by itself
   await open({speed:1,loop:true});const seen=new Set();for(let i=0;i<30;i++){seen.add(await C('C.parts.trail.phase'));await p.waitForTimeout(250);}
   console.log('loop',[...seen]);assert.ok(seen.has('hold')&&seen.has('back')&&seen.has('gone'),'the loop goes round');
+  // the paths: a straight line keeps the cards on one line
+  await open({speed:1,path:'line',amount:0.3});await p.waitForTimeout(2600);
+  const bend=await C('(()=>{const m=C.group.children.find(o=>o.isInstancedMesh),M=new THREE.Matrix4(),pts=[];for(let i=0;i<m.count;i++){m.getMatrixAt(i,M);pts.push(new THREE.Vector3().setFromMatrixPosition(M));}const a=pts[0],b=pts[pts.length-1],d=b.clone().sub(a).normalize();return Math.max(...pts.map(q=>q.clone().sub(a).cross(d).length()));})()');
+  assert.ok(bend<0.01,'straight '+bend);
+  for(const path of ['line','wave','arc','spiral']){await open({speed:1,path,amount:0.5});await cam(0.45,0.2,1.7);await p.waitForTimeout(2700);await shot('trail-path-'+path);}
+  // laid out from the start: no flight, already held
+  await open({speed:1,open:true});st=await C('({...C.parts.trail})');assert.equal(st.phase,'hold','laid out from the start');assert.equal(st.H,1);
+  await tap();await p.waitForTimeout(300);assert.equal(await C('C.parts.trail.phase'),'back','and a tap still folds it away');
   // every kind draws
   for(const [k,pic] of [[0,false],[1,false],[1,true],[2,true],[3,false]]){await open({speed:1,kind:k},pic);await cam(0,0,1.7);await p.waitForTimeout(2700);await shot('trail-kind'+k+(pic?'-pic':''));}
   await open({speed:1,kind:0,spacing:'end',gap:0.8,amount:0.7});await cam(-0.45,0.3,1.6);await p.waitForTimeout(2800);await shot('trail-many');

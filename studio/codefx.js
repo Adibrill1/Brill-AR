@@ -2938,13 +2938,29 @@ void main() {
       const sh = (u) => (spacing === "end" ? u + 0.62 * u * (1 - u) : spacing === "start" ? u - 0.62 * u * (1 - u) : u); // the gaps change about fourfold end to end // where along the path each card ends
       // the path: out of the middle of the picture, a widening spiral that comes toward the viewer, measured by its length
       const gw = S * (0.1 + val(cfg.gap, 0.5) * 1.15), reach = Math.min(unit * 6, Math.max(unit * 0.5, gw * (n - 1)));
-      // a sweep that widens out past the frame, then closes in again as it rushes toward the viewer, ending in front
+      // the path, out of the middle of the picture toward the viewer: a spiral that widens out past the frame and closes in
+      // again (the first), a straight line, a wave, or an arch
+      const path = ["spiral", "line", "wave", "arc"].includes(cfg.path) ? cfg.path : "spiral";
       const Rr = Math.min(unit * 0.95, Math.max(unit * 0.42, reach * 0.24)), turns = Math.min(2.2, Math.max(0.55, reach / (TAU * Rr * 0.55)));
       const Zmax = Math.min(unit * 1.15, Math.max(unit * 0.55, unit * 0.4 + reach * 0.15)), th0 = -Math.PI / 2 + (R() - 0.5) * 2.4, dir = (cfg.seed | 0) % 2 ? -1 : 1;
+      const phi = (dir > 0 ? 0.4 : Math.PI - 0.4) + (th0 + Math.PI / 2) * 0.25, lx = Math.cos(phi), ly = Math.sin(phi); // sideways and a little up
+      const px = lx < 0 ? ly : -ly, py = Math.abs(lx); // across the line, on its upper side
+      const Ll = Math.min(reach, unit * 2.6), zc = Math.min(0.72, unit * 1.25 / Ll), sc2 = Math.sqrt(1 - zc * zc); // a straight run, not past the viewer
+      const Ra = Math.min(unit * 0.9, Math.max(unit * 0.3, reach / (Math.PI * 1.1)));
       const N = 320, P = new Float32Array((N + 1) * 3), Lc = new Float32Array(N + 1);
       for (let k = 0; k <= N; k++) {
-        const s = k / N, r = Rr * Math.pow(Math.sin(Math.PI * s * 0.88), 0.85), th = th0 + dir * s * turns * TAU;
-        P[k * 3] = r * Math.cos(th) * (w / unit > 1.2 ? 1.25 : 1); P[k * 3 + 1] = r * Math.sin(th) * 0.85 + unit * 0.1 * s; P[k * 3 + 2] = Zmax * Math.pow(s, 1.25);
+        const s = k / N; let x, y, z;
+        if (path === "line" || path === "wave") {
+          x = lx * sc2 * Ll * s; y = ly * sc2 * Ll * s; z = zc * Ll * s;
+          if (path === "wave") { const a = unit * 0.17 * Math.min(1, s * 5) * Math.sin(s * TAU * Math.max(1, Ll / (unit * 0.9))); x += -ly * a; y += Math.abs(lx) * a; }
+        } else if (path === "arc") {
+          const c = Ra * (1 - Math.cos(Math.PI * s)), u = Ra * Math.sin(Math.PI * s) * 0.9;
+          x = lx * c + px * u; y = ly * c + py * u; z = Zmax * s;
+        } else {
+          const r = Rr * Math.pow(Math.sin(Math.PI * s * 0.88), 0.85), th = th0 + dir * s * turns * TAU;
+          x = r * Math.cos(th) * (w / unit > 1.2 ? 1.25 : 1); y = r * Math.sin(th) * 0.85 + unit * 0.1 * s; z = Zmax * Math.pow(s, 1.25);
+        }
+        P[k * 3] = x; P[k * 3 + 1] = y; P[k * 3 + 2] = z;
         if (k) Lc[k] = Lc[k - 1] + Math.hypot(P[k * 3] - P[k * 3 - 3], P[k * 3 + 1] - P[k * 3 - 2], P[k * 3 + 2] - P[k * 3 - 1]);
       }
       const total = Lc[N] || 1;
@@ -2956,7 +2972,8 @@ void main() {
         tan.set(P[hi * 3] - P[lo * 3], P[hi * 3 + 1] - P[lo * 3 + 1], P[hi * 3 + 2] - P[lo * 3 + 2]).normalize();
       };
       const cards = []; for (let i = 0; i < n; i++) { const u = n > 1 ? i / (n - 1) : 0; cards.push({ u, end: 1 - sh(u), wob: R() * TAU }); } // i = 0 leads
-      const st = { phase: "out", tau: 0, H: 0, wait: 0, ready: false, cards: n, spacing, loop };
+      const st = cfg.open === true ? { phase: "hold", tau: 1, H: 1, wait: 0, ready: false, cards: n, spacing, loop, path } // already laid out at the start
+        : { phase: "out", tau: 0, H: 0, wait: 0, ready: false, cards: n, spacing, loop, path };
       this.parts = { trail: st };
       let mesh = null, geo = null, aA = null;
       const make = (tex, grid, back, aspect, round, tileOf) => {

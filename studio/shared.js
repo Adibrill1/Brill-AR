@@ -1148,7 +1148,7 @@ vec4 baFilter(vec2 uv) {
     if (d[0] === "dust") o.text = "מזל טוב";
     if (CODEFX_PICTURE.includes(d[0])) { o.cover = d[0] === "dissolve" || d[0] === "burn" || d[0] === "ink"; o.picture = "__artwork"; } // broken glass shows what is under it
     if (d[0] === "portal") o.shape = "rect";
-    if (d[0] === "trail") { o.gap = 0.5; o.spacing = "even"; o.loop = false; }
+    if (d[0] === "trail") { o.gap = 0.5; o.spacing = "even"; o.path = "spiral"; o.loop = false; o.open = false; }
     if (d[0] === "scratch") o.text = "גרדו כאן";
     if (d[0] === "countdown") { const t = new Date(Date.now() + 30 * 86400000), z = (v) => String(v).padStart(2, "0"); o.text = "עד היום הגדול"; o.date = t.getFullYear() + "-" + z(t.getMonth() + 1) + "-" + z(t.getDate()); o.time = "00:00"; } // a month from now
     return o;
@@ -1165,8 +1165,9 @@ vec4 baFilter(vec2 uv) {
     if (["picture", "picture2"].some((k) => c[k] != null && !(typeof c[k] === "string" && /^[a-zA-Z0-9_-]{1,128}$/.test(c[k])))) return false;
     if (c.shape != null && !CODEFX_SHAPES.includes(c.shape)) return false;
     if (c.spacing != null && !["even", "end", "start"].includes(c.spacing)) return false; // the card trail: even gaps, or growing toward the front end or the picture
+    if (c.path != null && !["spiral", "line", "wave", "arc"].includes(c.path)) return false; // the card trail's path
     if (c.date != null && !(typeof c.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(c.date)) || c.time != null && !(typeof c.time === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(c.time))) return false;
-    return ["touch", "cover", "keep", "alive", "follow", "loop"].every((k) => c[k] == null || typeof c[k] === "boolean");
+    return ["touch", "cover", "keep", "alive", "follow", "loop", "open"].every((k) => c[k] == null || typeof c[k] === "boolean");
   }
   const isWeather = (el) => !!(el && el.type === "pattern" && el.pattern && WEATHER.some((w) => w[0] === el.pattern.look));
   // Ready colour sets for any look: [Hebrew name, colours]
